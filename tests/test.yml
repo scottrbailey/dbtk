@@ -1,0 +1,45 @@
+settings:
+  default_timezone: UTC
+  default_country: US
+  database:
+    timeout: 30
+
+connections:
+  test_db:
+    type: postgres
+    host: localhost
+    port: 5432
+    database: testdb
+    user: testuser
+    password: testpass
+
+  encrypted_db:
+    type: postgres
+    host: localhost
+    database: proddb
+    user: produser
+    encrypted_password: 'gAAAAABoubtCJ6TENDtuP9xc2AhDQfZ3sbzt4onVYbHdwytquHjTGqMHEgpFGG-6iGGe1kxuF4nUKIjSzRLhxmyg7E3dXk8HHpXek0kPk2-bKFYLcx45w5w='
+
+  env_db:
+    type: postgres
+    host: localhost
+    database: envdb
+    user: envuser
+    password: '${TEST_PASSWORD}'
+
+  missing_env_db:
+    type: postgres
+    host: localhost
+    database: missingdb
+    user: missinguser
+    password: '${MISSING_VAR}'
+
+passwords:
+  api_key:
+    description: Test API key
+    password: secret123
+
+  encrypted_key:
+    description: Encrypted test key
+    encrypted_password: 'gAAAAABoubtCJ6TENDtuP9xc2AhDQfZ3sbzt4onVYbHdwytquHjTGqMHEgpFGG-6iGGe1kxuF4nUKIjSzRLhxmyg7E3dXk8HHpXek0kPk2-bKFYLcx45w5w='
+

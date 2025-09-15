@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbtk"
+version = "0.8.0"
+description = "Data Bender Toolkit - A lightweight toolkit for data integration, ELT and ETL"
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "MIT"}
+authors = [
+    {name = "Scott Bailey <scottrbailey@gmail.com>"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13"
+]
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+encryption = ["cryptography>=3.4.8", "keyring>=23.0.0"]
+formats = ["lxml>=4.6.0", "openpyxl>=3.0.0"]
+recommended = ["cryptography>=3.4.8", "keyring>=23.0.0", "lxml>=4.6.0", "openpyxl>=3.0.0", "phonenumbers>=8.12.0", "python-dateutil>=2.8.0"]
+all = ["cryptography>=3.4.8", "keyring>=23.0.0", "lxml>=4.6.0", "openpyxl>=3.0.0", "phonenumbers>=8.12.0", "python-dateutil>=2.8.0"]
+dev = ["pytest>=6.0", "pytest-cov>=2.10"]
+
+[project.scripts]
+dbtk-encrypt = "dbtk.config:encrypt_password_cli"
+dbtk-encrypt-config = "dbtk.config:encrypt_config_file_cli"
+
+[project.urls]
+Homepage = "https://github.com/scottrbailey/dbtk"
+Repository = "https://github.com/scottrbailey/dbtk.git"

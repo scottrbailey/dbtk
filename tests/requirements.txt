@@ -1,0 +1,14 @@
+# dbtk_tests/requirements.txt
+"""
+Test requirements for dbtk.
+"""
+pytest>=6.0.0
+pytest-cov>=2.10.0
+pytest-mock>=3.5.0
+coverage>=5.0.0
+
+# For testing Excel functionality
+openpyxl>=3.0.0
+
+# For testing date parsing fallbacks
+python-dateutil>=2.8.0
