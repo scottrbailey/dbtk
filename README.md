@@ -13,8 +13,8 @@ However, if you are doing heavy transforms in Python, we recommend looking at ot
 ## Features
 
 - **Universal Database Connectivity** - Uniform interface across PostgreSQL, Oracle, MySQL, and SQL Server
-- **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, XML, and fixed-width text files  
-- **Multiple Export Formats** - Export to CSV, Excel, JSON, XML, fixed-width text, or directly between databases  
+- **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files  
+- **Multiple Export Formats** - Export to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases  
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations and upserts
 - **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning
 - **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
@@ -65,16 +65,14 @@ with dbtk.connect('avatar_training_grounds') as db:
 
     # Define ETL table with transformations - like training a new airbender
     recruit_table = dbtk.etl.Table('air_nomads', {
-        'nomad_id': {'field': 'id'},
-        'name': {'field': 'full_name'},
-        'email': {'field': 'contact_scroll', 'fn': transforms.email_clean},
+        'nomad_id': {'field': 'id', 'primary_key': True},
+        'name': {'field': 'full_name', 'nullable': False},
+        'email': {'field': 'contact_scroll', 'fn': transforms.email_clean, 'nullable': False},
         'sky_bison': {'field': 'companion_name'},
         'training_date': {'field': 'started_training', 'fn': transforms.parse_date},
         'airbending_level': {'field': 'mastery_level', 'db_fn': 'calculate_airbending_rank(#)'},
         'last_meditation': {'db_fn': 'CURRENT_TIMESTAMP'},
         'temple_origin': {'value': 'Eastern Air Temple'}}, 
-        key_fields=('nomad_id',),
-        req_fields=('name', 'email'),
         paramstyle=ParamStyle.NAMED)    
         
     # Flow data from scroll archives into the temple records  
@@ -118,7 +116,7 @@ connections:
 
 ## Core Components
 
-### Database Connections - Master All Four Elements
+### Database Connections
 
 Connect to databases like mastering the four nations:
 
@@ -134,10 +132,10 @@ water_db = dbtk.connect('northern_water_tribe')
 
 # Different cursor types - like different bending styles
 # There is a tradeoff between usability and memory efficiency
-records = db.cursor('record')    # Like Aang - flexible and balanced
-tuples = db.cursor('tuple')      # Like Toph - structured and efficient  
-lists = db.cursor('list')        # Like Ty Lee - simple and agile
-dicts = db.cursor('dict')        # Like Sokka - detailed but resource-heavy
+records = db.cursor('record')    # Record class - row['name'], row.name, row[0], row[0:5]
+tuples = db.cursor('tuple')      # namedtuple   - row.name, row[0], row[0:5]   
+lists = db.cursor('list')        # simple list  - row[0], row[0:5]
+dicts = db.cursor('dict')        # OrderedDict  - row['name']
 ```
 
 ### File Readers - Gathering Intel From All Sources
@@ -148,7 +146,9 @@ Read scrolls and documents from across the Four Nations:
 from dbtk import readers
 
 # Water Tribe census scrolls (CSV format)
-with readers.CSVReader(open('northern_water_tribe_census.csv')) as reader:
+with readers.CSVReader(open('northern_water_tribe_census.csv'),
+                       skip_records=100,
+                       max_records=40) as reader:
     for waterbender in reader:
         print(f"Waterbender: {waterbender.name}, Village: {waterbender.village}")
 
@@ -198,7 +198,7 @@ writers.to_csv(cursor, 'northern_tribe_waterbenders.csv', delimiter='\t')
 # Compile Fire Nation intelligence report (Excel)
 writers.to_excel(cursor, 'fire_nation_threat_assessment.xlsx', sheet='Q1 Intelligence')
 
-# Create Earth Kingdom stone inscription format (XML) - limited to 20 entries for security
+# Create Earth Kingdom stone inscription format (XML) - to stdout limited to 20 entries for security
 writers.to_xml(cursor, record_element='earth_kingdom_citizen')
 
 # Air Nomad temple records (JSON) with spiritual path integration
@@ -231,25 +231,25 @@ print(config)  # Prints Table(...) configuration like ancient airbender scrolls
 
 # Define ETL mapping for Fire Nation recruitment
 phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
-        'soldier_id': {'field': 'recruit_number'},
-        'name': {'field': 'full_name'},
-        'home_village': {'field': 'birthplace'},
+        'soldier_id': {'field': 'recruit_number', 'primary_key': True},
+        'name': {'field': 'full_name', 'nullable': False},
+        'home_village': {'field': 'birthplace', 'nullable': False},
         'firebending_skill': {'field': 'flame_control_level', 'fn': transforms.get_int},
         'enlistment_date': {'field': 'joined_army', 'fn': transforms.parse_date},
         'combat_name': {'field': 'full_name', 'db_fn': 'generate_fire_nation_callsign(#)'},
         'last_drill': {'db_fn': 'CURRENT_TIMESTAMP'},
         'conscription_source': {'value': 'Sozin Recruitment Drive'}}, 
-        key_fields=('soldier_id',),
-        req_fields=('name', 'home_village'),
         paramstyle=ParamStyle.NAMED)  
 
 # Process new recruits with the precision of a firebending master
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
+    # prevent current records from being set to null if their source is not included in the document
+    phoenix_king_army.calc_update_excludes(reader.headers)
     for recruit in reader:
-        phoenix_king_army.set_values(recruit)
-        
+        phoenix_king_army.set_values(recruit)       
         if phoenix_king_army.reqs_met:
-            existing_soldier = phoenix_king_army.current_row(cursor)
+            existing_soldier = phoenix_king_army.get_db_record(cursor)
+            # most databases support merge/upsert phoenix_king_army.exec_merge(cursor)
             if existing_soldier:
                 phoenix_king_army.exec_update(cursor)  # Update existing soldier record
             else:
@@ -257,6 +257,35 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
         else:
             print(f"Recruit rejected from service: missing {phoenix_king_army.reqs_missing}")
 ```
+
+### Handling Large Volumes of Data with DataSurge
+
+Many database drivers support efficient batch handling of large data sets with executemany().  The DataSurge class allows batch
+operations on a Table object. The merge statement is not compatible with batch handling.  Instead, a temporary table is created and batch loaded, 
+and merge is executed against the temp table.
+
+```python
+import dbtk
+from dbtk.etl import transforms
+from dbtk.database import ParamStyle
+
+# Define ETL mapping for Fire Nation recruitment
+phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
+        'soldier_id': {'field': 'recruit_number', 'primary_key': True},
+        'name': {'field': 'full_name', 'nullable': False},
+        'home_village': {'field': 'birthplace', 'nullable': False},
+        'firebending_skill': {'field': 'flame_control_level', 'fn': transforms.get_int},
+        'enlistment_date': {'field': 'joined_army', 'fn': transforms.parse_date},
+        'combat_name': {'field': 'full_name', 'db_fn': 'generate_fire_nation_callsign(#)'},
+        'last_drill': {'db_fn': 'CURRENT_TIMESTAMP'},
+        'conscription_source': {'value': 'Sozin Recruitment Drive'}}, 
+        paramstyle=ParamStyle.NAMED)  
+
+bulk_writer = dbtk.etl.DataSurge(table=phoenix_king_army)
+with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
+    bulk_writer.insert(cursor, reader, batch_size=2000)
+```
+
 
 ### Data Transformations - Bending Raw Data Into Perfect Form
 

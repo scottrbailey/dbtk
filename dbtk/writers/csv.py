@@ -4,15 +4,66 @@ CSV writer for database results.
 """
 
 import csv
-import itertools
 import logging
-import sys
-from typing import Union, List, TextIO, Optional
+from typing import Union, List, Optional
 from pathlib import Path
 
-from .utils import get_data_iterator, format_value
+from .base import BaseWriter
 
 logger = logging.getLogger(__name__)
+
+
+class CSVWriter(BaseWriter):
+    """CSV writer class that extends BaseWriter."""
+
+    def __init__(self,
+                 data,
+                 filename: Optional[Union[str, Path]] = None,
+                 columns: Optional[List[str]] = None,
+                 encoding: str = 'utf-8',
+                 include_headers: bool = True,
+                 delimiter: str = ',',
+                 quotechar: str = '"',
+                 **csv_kwargs):
+        """
+        Initialize CSV writer.
+
+        Args:
+            data: Cursor object or list of records
+            filename: Output filename. If None, writes to stdout
+            columns: Column names for list-of-lists data (optional for other types)
+            encoding: File encoding
+            include_headers: Whether to include column headers
+            delimiter: CSV field delimiter
+            quotechar: CSV quote character
+            **csv_kwargs: Additional arguments passed to csv.writer
+        """
+        # Always convert to text for CSV output
+        super().__init__(data, filename, columns, encoding, preserve_data_types=False)
+        self.include_headers = include_headers
+        self.delimiter = delimiter
+        self.quotechar = quotechar
+        self.csv_kwargs = csv_kwargs
+
+    def _write_data(self, file_obj) -> None:
+        """Write CSV data to file object."""
+        writer = csv.writer(
+            file_obj,
+            delimiter=self.delimiter,
+            quotechar=self.quotechar,
+            **self.csv_kwargs
+        )
+
+        # Write headers if requested
+        if self.include_headers:
+            writer.writerow(self.columns)
+
+        # Write data rows
+        for record in self.data_iterator:
+            row = self._extract_row_values(record)
+            writer.writerow(row)
+            self.row_count += 1
+
 
 def to_csv(data,
            filename: Optional[Union[str, Path]] = None,
@@ -43,40 +94,13 @@ def to_csv(data,
         # Custom delimiter
         to_csv(cursor, 'data.tsv', delimiter='\t')
     """
-    data_iterator, columns = get_data_iterator(data)
-    if filename is None:
-        # limit to 20 rows when writing to stdout
-        data_iterator = itertools.islice(data_iterator, 20)
-
-    row_count = 0
-    # Determine output destination
-    if filename is None:
-        file_obj = sys.stdout
-        close_file = False
-    else:
-        file_obj = open(filename, 'w', newline='', encoding=encoding)
-        close_file = True
-
-    try:
-        writer = csv.writer(
-            file_obj,
-            delimiter=delimiter,
-            quotechar=quotechar,
-            **csv_kwargs
-        )
-
-        # Write headers if requested
-        if include_headers:
-            writer.writerow([col.upper() for col in columns])
-
-        # Write data rows
-        for record in data_iterator:
-            writer.writerow([
-                format_value(record[i] if hasattr(record, '__getitem__') else record.__getattribute__(columns[i]))
-                for i in range(len(columns))
-            ])
-            row_count += 1
-        logger.info(f"Wrote {row_count} rows to {filename or 'stdout'}")
-    finally:
-        if close_file:
-            file_obj.close()
+    writer = CSVWriter(
+        data=data,
+        filename=filename,
+        encoding=encoding,
+        include_headers=include_headers,
+        delimiter=delimiter,
+        quotechar=quotechar,
+        **csv_kwargs
+    )
+    writer.write()

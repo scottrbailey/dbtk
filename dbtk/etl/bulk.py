@@ -33,29 +33,15 @@ class DataSurge:
 
     def __init__(self, table: Table):
         self.table = table
+        self.skips = 0
 
-    def _log_error(self, message: str, log) -> None:
-        """Consistent error logging."""
-        logger.error(message)
-        if log is None:
-            with open('dbtk_errors.log', 'a') as f:
-                f.write(f"{message}\n")
-                f.flush()
-        else:
-            log.write(f"{message}\n")
-            log.flush()
-
-    def calc_update_excludes(self, file_columns: set):
-        """Delegate to Table to calculate update excludes."""
-        self.table.calc_update_excludes(file_columns)
-
-    def insert(self, cursor: Cursor, records: Iterable[RecordLike], batch_size: int = 1000,
-               ignore_errors: bool = False, log=None, log_success: bool = False) -> int:
+    def insert(self, cursor: Cursor, records: Iterable[RecordLike],
+               batch_size: int = 1000,  raise_error: bool = True) -> int:
         """Perform bulk INSERT on records."""
         if self.table._sql_statements['insert'] is None:
             self.table.generate_sql('insert')
+        sql = self.table.sql_statements['insert']
 
-        sql = self.table._sql_statements['insert']
         errors = 0
         skipped = 0
 
@@ -66,7 +52,7 @@ class DataSurge:
                 if not self.table.reqs_met:
                     skipped += 1
                     msg = f"Skipped insert record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    self._log_error(msg, log)
+                    logger.info(msg)
                     continue
                 params = self.table.get_bind_params('insert')
                 batch_params.append(params)
@@ -77,24 +63,22 @@ class DataSurge:
                     self.table.counts['insert'] += len(batch_params)
                 except cursor.connection.interface.DatabaseError as e:
                     error_msg = f"Insert batch failed for {self.table._name}: {str(e)}"
-                    self._log_error(error_msg, log)
-                    if not ignore_errors:
+                    logger.error(error_msg)
+                    if raise_error:
                         raise
                     errors += len(batch_params)
 
-        if log_success:
-            logger.info(
-                f"Successfully inserted {self.table.counts['insert']} records for {self.table._name} with {errors} errors, {skipped} skipped")
-        return errors + skipped
+        logger.info(f"Successfully inserted {self.table.counts['insert']} records for {self.table._name} with {errors} errors, {skipped} skipped")
+        self.skips += skipped
+        return errors
 
-    def update(self, cursor: Cursor, records: Iterable[RecordLike], batch_size: int = 1000,
-               ignore_errors: bool = False, log=None, log_success: bool = False) -> int:
+    def update(self, cursor: Cursor, records: Iterable[RecordLike],
+               batch_size: int = 1000, raise_error: bool = True) -> int:
         """Perform bulk UPDATE on records."""
         if self.table._sql_statements['update'] is None:
-            sql = self.table._create_update()
-            self.table._finalize_sql('update', sql)
+            self.table.generate_sql('update')
 
-        sql = self.table._sql_statements['update']
+        sql = self.table.sql_statements['update']
         errors = 0
         skipped = 0
 
@@ -105,7 +89,7 @@ class DataSurge:
                 if not self.table.reqs_met:
                     skipped += 1
                     msg = f"Skipped update record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    self._log_error(msg, log)
+                    logger.info(msg)
                     continue
                 params = self.table.get_bind_params('update')
                 batch_params.append(params)
@@ -116,24 +100,22 @@ class DataSurge:
                     self.table.counts['update'] += len(batch_params)
                 except cursor.connection.interface.DatabaseError as e:
                     error_msg = f"Update batch failed for {self.table._name}: {str(e)}"
-                    self._log_error(error_msg, log)
-                    if not ignore_errors:
+                    logger.error(error_msg)
+                    if raise_error:
                         raise
                     errors += len(batch_params)
 
-        if log_success:
-            logger.info(
-                f"Successfully updated {self.table.counts['update']} records for {self.table._name} with {errors} errors, {skipped} skipped")
-        return errors + skipped
+        logger.info(f"Successfully updated {self.table.counts['update']} records for {self.table._name} with {errors} errors, {skipped} skipped")
+        self.skips += skipped
+        return errors
 
-    def delete(self, cursor: Cursor, records: Iterable[RecordLike], batch_size: int = 1000,
-               ignore_errors: bool = False, log=None, log_success: bool = False) -> int:
+    def delete(self, cursor: Cursor, records: Iterable[RecordLike],
+               batch_size: int = 1000, raise_error: bool = True) -> int:
         """Perform bulk DELETE on records."""
-        if self.table._sql_statements['delete'] is None:
-            sql = self.table._create_delete()
-            self.table._finalize_sql('delete', sql)
+        if self.table.sql_statements['delete'] is None:
+            self.table.generate_sql('delete')
 
-        sql = self.table._sql_statements['delete']
+        sql = self.table.sql_statements['delete']
         errors = 0
         skipped = 0
 
@@ -144,7 +126,7 @@ class DataSurge:
                 if not self.table.reqs_met:
                     skipped += 1
                     msg = f"Skipped delete record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    self._log_error(msg, log)
+                    logger.info(msg)
                     continue
                 params = self.table.get_bind_params('delete')
                 batch_params.append(params)
@@ -155,23 +137,21 @@ class DataSurge:
                     self.table.counts['delete'] += len(batch_params)
                 except cursor.connection.interface.DatabaseError as e:
                     error_msg = f"Delete batch failed for {self.table._name}: {str(e)}"
-                    self._log_error(error_msg, log)
-                    if not ignore_errors:
+                    logger.error(error_msg)
+                    if raise_error:
                         raise
                     errors += len(batch_params)
 
-        if log_success:
-            logger.info(
-                f"Successfully deleted {self.table.counts['delete']} records for {self.table._name} with {errors} errors, {skipped} skipped")
-        return errors + skipped
+        logger.info(f"Successfully deleted {self.table.counts['delete']} records for {self.table._name} with {errors} errors, {skipped} skipped")
+        return errors
 
-    def merge(self, cursor: Cursor, records: Iterable[RecordLike], batch_size: int = 1000,
-              ignore_errors: bool = False, log=None, log_success: bool = False) -> int:
+    def merge(self, cursor: Cursor, records: Iterable[RecordLike],
+              batch_size: int = 1000, raise_error: bool = True) -> int:
         """
         Perform bulk MERGE using either direct upsert or temporary table strategy.
         """
         db_type = cursor.connection.server_type
-        if db_type == 'postgres' and cursor.connection._connection.server_version < 150000:
+        if db_type == 'postgres' and cursor.connection.server_version < 150000:
             # PostgreSQL < 15 doesn't have MERGE, must use upsert
             use_upsert = True
         else:
@@ -179,19 +159,18 @@ class DataSurge:
             use_upsert = self.table._should_use_upsert(db_type)
 
         if use_upsert:
-            return self._merge_with_upsert(cursor, records, batch_size, ignore_errors, log, log_success)
+            return self._merge_with_upsert(cursor, records, batch_size=batch_size, raise_error=raise_error)
         else:
-            return self._merge_with_temp_table(cursor, records, batch_size, ignore_errors, log, log_success)
+            return self._merge_with_temp_table(cursor, records, batch_size=batch_size, raise_error=raise_error)
 
-    def _merge_with_upsert(self, cursor: Cursor, records: Iterable[RecordLike], batch_size: int,
-                           ignore_errors: bool, log, log_success: bool) -> int:
+    def _merge_with_upsert(self, cursor: Cursor, records: Iterable[RecordLike],
+                           raise_error: bool, batch_size: int) -> int:
         """Perform bulk merge using native INSERT ... ON DUPLICATE KEY/CONFLICT syntax."""
-        if self.table._sql_statements['merge'] is None:
+        if self.table.sql_statements['merge'] is None:
             db_type = cursor.connection.server_type
-            sql = self.table._create_merge(db_type)
-            self.table._finalize_sql('merge', sql)
+            self.table.generate_sql('merge', db_type=db_type)
 
-        base_sql = self.table._sql_statements['merge']
+        base_sql = self.table.sql_statements['merge']
         errors = 0
         skipped = 0
 
@@ -205,7 +184,7 @@ class DataSurge:
                 if not self.table.reqs_met:
                     skipped += 1
                     msg = f"Skipped merge record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    self._log_error(msg, log)
+                    logger.info(msg)
                     continue
 
                 valid_records.append(record)
@@ -222,21 +201,21 @@ class DataSurge:
                     self.table.counts['merge'] += 1
                 except cursor.connection.interface.DatabaseError as e:
                     error_msg = f"Upsert failed for {self.table._name}: {str(e)}"
-                    self._log_error(error_msg, log)
-                    if not ignore_errors:
+                    logger.error(error_msg)
+                    if raise_error:
                         raise
                     errors += 1
             else:
                 # Multiple records - build multi-row VALUES if using positional params
-                if self.table._paramstyle in ParamStyle.positional_styles():
+                if self.table.__paramstyle in ParamStyle.positional_styles():
                     try:
                         batch_sql, flat_params = self._build_multi_row_upsert(base_sql, batch_params)
                         cursor.execute(batch_sql, flat_params)
                         self.table.counts['merge'] += len(valid_records)
                     except cursor.connection.interface.DatabaseError as e:
                         error_msg = f"Upsert batch failed for {self.table._name}: {str(e)}"
-                        self._log_error(error_msg, log)
-                        if not ignore_errors:
+                        logger.error(error_msg)
+                        if raise_error:
                             raise
                         errors += len(valid_records)
                 else:
@@ -260,11 +239,11 @@ class DataSurge:
     def _build_multi_row_upsert(self, base_sql: str, batch_params: list) -> tuple:
         """Build multi-row VALUES clause for upsert statements."""
         # Build placeholders for each row
-        if self.table._paramstyle == ParamStyle.QMARK:
+        if self.table.__paramstyle == ParamStyle.QMARK:
             placeholder = '?'
-        elif self.table._paramstyle == ParamStyle.FORMAT:
+        elif self.table.__paramstyle == ParamStyle.FORMAT:
             placeholder = '%s'
-        elif self.table._paramstyle == ParamStyle.NUMERIC:
+        elif self.table.__paramstyle == ParamStyle.NUMERIC:
             # For numeric, we need to renumber all parameters
             placeholder = None  # Will be handled specially
 
@@ -324,8 +303,8 @@ class DataSurge:
 
             return modified_sql, flat_params
 
-    def _merge_with_temp_table(self, cursor: Cursor, records: Iterable[RecordLike], batch_size: int,
-                               ignore_errors: bool, log, log_success: bool) -> int:
+    def _merge_with_temp_table(self, cursor: Cursor, records: Iterable[RecordLike],
+                               raise_error: bool, batch_size: int) -> int:
         """Perform bulk merge using temporary table (original implementation)."""
 
         # Convert iterator to list since we need to know the count and potentially retry
@@ -347,31 +326,29 @@ class DataSurge:
             cursor.execute(create_sql)
         except cursor.connection.interface.DatabaseError as e:
             error_msg = f"Failed to create temp table {temp_name}: {str(e)}"
-            self._log_error(error_msg, log)
-            if not ignore_errors:
+            logger.error(error_msg)
+            if raise_error:
                 raise
             return len(records_list)
 
         # Use temporary table for bulk insert
         temp_table = Table(
             name=temp_name,
-            columns=self.table._columns,
-            paramstyle=self.table._paramstyle
+            columns=self.table.__columns,
+            paramstyle=self.table.__paramstyle
         )
         temp_surge = DataSurge(temp_table)
-        errors = temp_surge.insert(cursor, records_list, batch_size=batch_size, ignore_errors=ignore_errors, log=log,
-                                   log_success=False)
+        errors = temp_surge.insert(cursor, records_list, raise_error=raise_error, batch_size=batch_size)
 
-        if errors == len(records_list) and not ignore_errors:
+        if errors:
             cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
             return errors
 
         # Generate MERGE SQL if not already done
-        if self.table._sql_statements['merge'] is None:
-            sql = self.table._create_merge(db_type)
-            self.table._finalize_sql('merge', sql)
+        if self.table.sql_statements['merge'] is None:
+            self.table.generate_sql('merge', db_type=db_type)
 
-        merge_sql = self.table._sql_statements['merge']
+        merge_sql = self.table.sql_statements['merge']
         # Replace the USING clause to point to temp table
         modified_merge = re.sub(r'USING\s*\(.*?\)\s*s', f'USING {temp_name} s', merge_sql, flags=re.DOTALL)
 
@@ -381,8 +358,8 @@ class DataSurge:
                 self.table.counts['merge'] += len(records_list) - errors
         except cursor.connection.interface.DatabaseError as e:
             error_msg = f"Merge failed for {self.table._name}: {str(e)}"
-            self._log_error(error_msg, log)
-            if not ignore_errors:
+            logger.error(error_msg)
+            if raise_error:
                 raise
             errors += len(records_list) - errors
         finally:
@@ -391,10 +368,6 @@ class DataSurge:
             except cursor.connection.interface.DatabaseError as e:
                 error_msg = f"Failed to drop temp table {temp_name}: {str(e)}"
                 logger.warning(error_msg)
-                if log:
-                    log.write(f"{error_msg}\n")
 
-        if log_success:
-            logger.info(
-                f"Successfully merged {self.table.counts['merge']} records for {self.table._name} with {errors} errors")
+        logger.info(f"Successfully merged {self.table.counts['merge']} records for {self.table._name} with {errors} errors")
         return errors

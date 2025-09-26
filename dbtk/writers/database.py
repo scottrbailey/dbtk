@@ -45,7 +45,7 @@ def cursor_to_cursor(source_data,
         return 0
 
     # Create INSERT statement
-    paramstyle = target_cursor.connection.interface._paramstyle
+    paramstyle = target_cursor.connection.interface.__paramstyle
     insert_sql = create_insert_statement(target_table, columns, paramstyle)
 
     logger.info(f"Starting copy to {target_table}, {len(rows)} records to process")

@@ -2,7 +2,8 @@
 
 import itertools
 from abc import ABC, abstractmethod
-from typing import Any, Iterator, List, Optional
+from typing import Any, Iterator, List, Optional, Union
+from collections import OrderedDict
 from ..record import Record
 
 
@@ -15,19 +16,28 @@ class Clean:
     STANDARDIZE = 4  # Lower case, remove non-alphanum, strip "code" endings
     DEFAULT = 2  # Default to LOWER_NOSPACE
 
+
+class ReturnType:
+    """Return type options for readers."""
+    RECORD = 'record'
+    DICT = 'dict'
+    DEFAULT = RECORD
+
+
 class Reader(ABC):
     """
     Abstract base class for all file readers.
 
     Provides common functionality for CSV, Excel, and fixed-width file readers.
-    All readers return Record objects for memory efficiency and consistency.
+    Can return either Record objects or dict objects based on return_type parameter.
     """
 
     def __init__(self,
                  add_rownum: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
-                 max_records: Optional[int] = None
+                 max_records: Optional[int] = None,
+                 return_type: str = ReturnType.DEFAULT
                  ):
         """
         Initialize the reader.
@@ -35,12 +45,16 @@ class Reader(ABC):
         Args:
             add_rownum: Add a 'rownum' field to each record
             clean_headers: Header cleaning level from Clean
+            skip_records: Number of data records to skip after headers
+            max_records: Maximum number of records to read, or None for all
+            return_type: Either 'record' for Record objects or 'dict' for OrderedDict
         """
         self.add_rownum = add_rownum
         self.clean_headers = clean_headers
         self.record_num = 0
         self.skip_records = skip_records
         self.max_records = max_records
+        self.return_type = return_type
         self._record_class = None
         self._headers: List[str] = []
         self._headers_initialized = False
@@ -54,11 +68,11 @@ class Reader(ABC):
         """Context manager exit with cleanup."""
         self._cleanup()
 
-    def __iter__(self) -> Iterator[Record]:
+    def __iter__(self) -> Iterator[Union[Record, OrderedDict]]:
         """Make reader iterable."""
         return self
 
-    def __next__(self) -> Record:
+    def __next__(self) -> Union[Record, OrderedDict]:
         if not self._headers_initialized:
             self._setup_record_class()
         row_data = self._read_next_row()
@@ -133,7 +147,7 @@ class Reader(ABC):
             return val
 
     def _setup_record_class(self):
-        """Initialize headers and create Record subclass."""
+        """Initialize headers and create Record subclass if needed."""
         if self._headers_initialized:
             return
 
@@ -147,21 +161,22 @@ class Reader(ABC):
         if self.add_rownum and 'rownum' not in self._headers:
             self._headers.append('rownum')
 
-        # Create Record subclass
-        self._record_class = type('FileRecord', (Record,), {})
-        self._record_class.set_columns(self._headers)
+        # Create Record subclass only if return_type is 'record'
+        if self.return_type == ReturnType.RECORD:
+            self._record_class = type('FileRecord', (Record,), {})
+            self._record_class.set_columns(self._headers)
 
         self._headers_initialized = True
 
-    def _create_record(self, row_data: List[Any]) -> Record:
+    def _create_record(self, row_data: List[Any]) -> Union[Record, OrderedDict]:
         """
-        Create a Record from row data.
+        Create a Record or dict from row data.
 
         Args:
             row_data: List of values for this row
 
         Returns:
-            Record instance with values populated
+            Record instance or OrderedDict with values populated
         """
         if not self._headers_initialized:
             self._setup_record_class()
@@ -182,7 +197,11 @@ class Reader(ABC):
         if len(row_data) > len(self._headers):
             row_data = row_data[:len(self._headers)]
 
-        return self._record_class(*row_data)
+        # Return appropriate type
+        if self.return_type == ReturnType.RECORD:
+            return self._record_class(*row_data)
+        else:  # ReturnType.DICT
+            return OrderedDict(zip(self._headers, row_data))
 
     @property
     def headers(self) -> List[str]:

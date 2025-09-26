@@ -35,16 +35,17 @@ def _generate_oracle_config(cursor, table_name: str, add_comments: bool = False)
     """Generate Oracle table configuration."""
     table_name = table_name.upper()
     tab_info = table_name.split('.')
-    schema = 'PUBLIC'
+    schema_name = None
     if len(tab_info) == 2:
-        schema = tab_info[0]
+        schema_name = tab_info[0]
         table_name = tab_info[1]
     table_config = ''
 
 
     if add_comments:
-        cmt_query = '''SELECT cmt.COMMENTS FROM all_tab_comments cmt WHERE cmt.TABLE_NAME = :table AND cmt.OWNER = :schema'''
-        cursor.execute(cmt_query, {'table': table_name})
+        cmt_query = '''SELECT cmt.comments FROM all_tab_comments cmt 
+        WHERE cmt.table_name = :table_name AND cmt.owner = COALESCE(:schema_name, cmt.owner)'''
+        cursor.execute(cmt_query, {'table_name': table_name, 'schema_name': schema_name})
         row = cursor.fetchone()
         if row and row.comments:
             table_config = f'# {row.comments}\n'
@@ -66,13 +67,13 @@ def _generate_oracle_config(cursor, table_name: str, add_comments: bool = False)
           AND atc.table_name = pkc.table_name
           AND atc.column_name = pkc.column_name
           AND pk.constraint_name = pkc.constraint_name
-        WHERE atc.table_name = :table
+        WHERE atc.table_name = :table_name
+          AND atc.owner = COALESCE(:schema_name, atc.owner)
           AND atc.virtual_column = 'NO'
-          AND atc.owner = :schema
         ORDER BY atc.column_id
     '''
 
-    cursor.execute(col_query, {'table': table_name, 'schema': schema})
+    cursor.execute(col_query, {'table_name': table_name, 'schema_name': schema_name})
 
     for row in cursor:
         if add_comments and row.comments:

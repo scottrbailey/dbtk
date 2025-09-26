@@ -17,7 +17,7 @@ def test_config_file():
 def mock_cursor():
     """Mock cursor for testing ETL operations."""
     cursor = MagicMock()
-    cursor.connection.interface._paramstyle = ParamStyle.NAMED
+    cursor.connection.interface.__paramstyle = ParamStyle.NAMED
     cursor.connection.interface.DatabaseError = Exception
     return cursor
 
@@ -98,7 +98,7 @@ class TestTableInitialization:
         assert 'nomad_id' in airbender_table.columns
         assert 'nomad_id' in airbender_table.req_fields
         assert 'nomad_id' in airbender_table.key_fields
-        assert airbender_table._paramstyle == ParamStyle.NAMED
+        assert airbender_table.__paramstyle == ParamStyle.NAMED
 
     def test_fire_nation_table_init(self, fire_nation_table):
         """Test Fire Nation army table initialization."""
@@ -106,7 +106,7 @@ class TestTableInitialization:
         assert 'soldier_id' in fire_nation_table.columns
         assert 'soldier_id' in fire_nation_table.req_fields
         assert 'soldier_id' in fire_nation_table.key_fields
-        assert fire_nation_table._paramstyle == ParamStyle.PYFORMAT
+        assert fire_nation_table.__paramstyle == ParamStyle.PYFORMAT
 
     def test_table_with_invalid_name(self):
         """Test that invalid table names are rejected."""

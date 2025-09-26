@@ -2,35 +2,105 @@
 """
 JSON writer for database results.
 """
-import itertools
 import json
 import logging
-import sys
-from typing import Union, List, TextIO, Optional, Any
+from datetime import datetime, date, time
+from typing import Union, List, Optional
 from pathlib import Path
 
-from .utils import get_data_iterator, format_value
+from .base import BaseWriter
 
 logger = logging.getLogger(__name__)
+
+
+class JSONWriter(BaseWriter):
+    """JSON writer class that extends BaseWriter."""
+
+    def __init__(self,
+                 data,
+                 filename: Optional[Union[str, Path]] = None,
+                 columns: Optional[List[str]] = None,
+                 encoding: str = 'utf-8',
+                 indent: Optional[int] = 2,
+                 **json_kwargs):
+        """
+        Initialize JSON writer.
+
+        Args:
+            data: Cursor object or list of records
+            filename: Output filename. If None, writes to stdout
+            columns: Column names for list-of-lists data (optional for other types)
+            encoding: File encoding
+            indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
+            **json_kwargs: Additional arguments passed to json.dump
+        """
+        # Preserve data types for JSON output
+        super().__init__(data, filename, columns, encoding, preserve_data_types=True)
+        self.indent = indent
+        self.json_kwargs = json_kwargs
+
+    def _row_to_dict(self, record) -> dict:
+        """Convert record to dict with dates converted to strings for JSON."""
+        record_dict = super()._row_to_dict(record)
+        for key, value in record_dict.items():
+            if isinstance(value, (datetime, date, time)):
+                record_dict[key] = self.to_string(value)
+        return record_dict
+
+    def _write_data(self, file_obj) -> None:
+        """Write JSON data to file object."""
+        records = [self._row_to_dict(record) for record in self.data_iterator]
+        self.row_count = len(records)
+        json.dump(records, file_obj, indent=self.indent, **self.json_kwargs)
+
+
+class NDJSONWriter(JSONWriter):
+    """NDJSON (newline-delimited JSON) writer that extends JSONWriter."""
+
+    def __init__(self,
+                 data,
+                 filename: Optional[Union[str, Path]] = None,
+                 columns: Optional[List[str]] = None,
+                 encoding: str = 'utf-8',
+                 **json_kwargs):
+        """
+        Initialize NDJSON writer.
+
+        Args:
+            data: Cursor object or list of records
+            filename: Output filename. If None, writes to stdout
+            columns: Column names for list-of-lists data (optional for other types)
+            encoding: File encoding
+            **json_kwargs: Additional arguments passed to json.dumps
+        """
+        # NDJSON doesn't use indentation
+        super().__init__(data, filename, columns, encoding, indent=None, **json_kwargs)
+
+    def _write_data(self, file_obj) -> None:
+        """Write NDJSON data to file object."""
+        for record in self.data_iterator:
+            record_dict = self._row_to_dict(record)
+            json_line = json.dumps(record_dict, **self.json_kwargs)
+            file_obj.write(json_line + '\n')
+            self.row_count += 1
+            if self.row_count % 1000 == 0:
+                file_obj.flush()
 
 
 def to_json(data,
             filename: Optional[Union[str, Path]] = None,
             encoding: str = 'utf-8',
             indent: Optional[int] = 2,
-            stream: bool = False,
             **json_kwargs) -> None:
     """
-    Export cursor or result set to JSON file.  The 'array' format converts the entire result set into an array of dictionaries.
-    For large result sets, use either the 'streaming_array' or 'ndjson' formats to write the result incrementally.
-    The streaming_array format produces a valid JSON array, while ndjson produces a newline-delimited JSON stream.
+    Export cursor or result set to JSON file as an array of dictionaries.
 
     Args:
         data: Cursor object or list of records
         filename: Output filename. If None, writes to stdout
         encoding: File encoding
         indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
-        **json_kwargs: Additional arguments passed to json.dump/dumps
+        **json_kwargs: Additional arguments passed to json.dump
 
     Examples:
         # Write to file as JSON array
@@ -39,89 +109,43 @@ def to_json(data,
         # Write to stdout
         to_json(cursor)
 
-        # stream format - valid JSON array
-        to_json(cursor, 'data.json', format='streaming_array')
-
+        # Compact format
+        to_json(cursor, 'data.json', indent=None)
     """
-    data_iterator, columns = get_data_iterator(data)
-    if not data_iterator or not columns:
-        logger.warning("No data to export")
-        return
-
-    # Determine output destination
-    if filename is None:
-        file_obj = sys.stdout
-        close_file = False
-        # limit to 20 rows when writing to stdout
-        data_iterator = itertools.islice(data_iterator, 20)
-    else:
-        file_obj = open(filename, 'w', encoding=encoding)
-        close_file = True
-
-    row_count = 0
-    try:
-        if not stream:
-            records = [_convert_record(record, columns) for record in data_iterator]
-            row_count = len(records)
-            json.dump(records, file_obj, indent=indent, default=format_value, **json_kwargs)
-        else:
-            file_obj.write('[\n')
-            for record in data_iterator:
-                json_line = json.dumps(_convert_record(record, columns), default=format_value, indent=indent, **json_kwargs)
-                if row_count:
-                    file_obj.write(',\n' + json_line)
-                else:
-                    file_obj.write(json_line)
-                row_count += 1
-                if row_count % 1000 == 0:
-                    file_obj.flush()
-            file_obj.write('\n]')
-        logger.info(f"Wrote {row_count} rows to {filename or 'stdout'}")
-    finally:
-        if close_file:
-            file_obj.close()
+    writer = JSONWriter(
+        data=data,
+        filename=filename,
+        encoding=encoding,
+        indent=indent,
+        **json_kwargs
+    )
+    writer.write()
 
 
 def to_ndjson(data,
               filename: Optional[Union[str, Path]] = None,
               encoding: str = 'utf-8',
               **json_kwargs) -> None:
+    """
+    Export cursor or result set to NDJSON (newline-delimited JSON) file.
 
-    data_iterator, columns = get_data_iterator(data)
-    if filename is None:
-        file_obj = sys.stdout
-        close_file = False
-        # limit to 20 rows when writing to stdout
-        data_iterator = itertools.islice(data_iterator, 20)
-    else:
-        file_obj = open(filename, 'w', encoding=encoding)
-        close_file = True
+    Args:
+        data: Cursor object or list of records
+        filename: Output filename. If None, writes to stdout
+        encoding: File encoding
+        **json_kwargs: Additional arguments passed to json.dumps
 
-    row_count = 0
-    try:
-        for record in data_iterator:
-            json_line = json.dumps(_convert_record(record, columns), default=format_value, **json_kwargs)
-            file_obj.write(json_line + '\n')
-            row_count += 1
-            if row_count % 1000 == 0:
-                file_obj.flush()
-        logger.info(f"Wrote {row_count} rows to {filename or 'stdout'}")
-    finally:
-        if close_file:
-            file_obj.close()
+    Examples:
+        # Write to file as NDJSON
+        to_ndjson(cursor, 'users.ndjson')
 
-
-def _convert_record(record, columns: List = None) -> dict:
-    """ Convert record, namedtuple or list (with columns) to dict"""
-    if hasattr(record, 'to_dict'):
-        return record.to_dict()
-    elif hasattr(record, '_asdict'):
-        return record._asdict()
-    elif hasattr(record, 'keys') and callable(record.keys):
-        # dict-like object
-        return {key: record[key] for key in record.keys()}
-    elif isinstance(record, (list, tuple)):
-        # List cursor - convert to dict using columns
-        return {columns[i]: record[i] for i in range(min(len(columns), len(record)))}
-    else:
-        return record
+        # Write to stdout
+        to_ndjson(cursor)
+    """
+    writer = NDJSONWriter(
+        data=data,
+        filename=filename,
+        encoding=encoding,
+        **json_kwargs
+    )
+    writer.write()

@@ -2,25 +2,29 @@
 
 import json
 from typing import List, Any, Dict, Optional, TextIO, Iterator
-from .base import Reader, Clean
+from .base import Reader, Clean, ReturnType
 
 
 class JSONReader(Reader):
-    """JSON array file reader that returns Record objects."""
+    """JSON array file reader that returns Record objects or dicts."""
 
     def __init__(self,
                  fp: TextIO,
+                 flatten: bool = True,
                  add_rownum: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
+                 return_type: str = ReturnType.DEFAULT,
                  **kwargs):
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records)
+                         skip_records=skip_records, max_records=max_records,
+                         return_type=return_type)
         self.fp = fp
+        self.flatten = flatten
         self._data = None
         self._column_cache = None
-        self._flattened_keys = []
+        self._keys = []  # Either flattened keys or original keys depending on flatten setting
         self._parse_json()
 
     def _parse_json(self):
@@ -40,26 +44,16 @@ class JSONReader(Reader):
         """
         Recursively flatten a JSON object with dot notation.
         Arrays are preserved as lists.
-
-        Args:
-            obj: Dictionary to flatten
-            prefix: Current key prefix for nested objects
-
-        Returns:
-            Flattened dictionary
         """
         result = {}
 
         for key, value in obj.items():
-            # Create the full key name
             full_key = f"{prefix}.{key}" if prefix else key
 
             if isinstance(value, dict):
-                # Recursively flatten nested objects
                 nested = self._flatten_object(value, full_key)
                 result.update(nested)
             else:
-                # Keep primitive values and arrays as-is
                 result[full_key] = value
 
         return result
@@ -71,41 +65,35 @@ class JSONReader(Reader):
 
         all_keys = set()
 
-        # Flatten all objects and collect all possible keys
         for obj in self._data:
             if isinstance(obj, dict):
-                flattened = self._flatten_object(obj)
-                all_keys.update(flattened.keys())
+                if self.flatten:
+                    flattened = self._flatten_object(obj)
+                    all_keys.update(flattened.keys())
+                else:
+                    all_keys.update(obj.keys())
 
         # Clean and sort the keys
-        self._flattened_keys = sorted(all_keys)
-        self._column_cache = [self.clean_header(key) for key in self._flattened_keys]
+        self._keys = sorted(all_keys)
+        self._column_cache = [self.clean_header(key) for key in self._keys]
 
         return self._column_cache
 
     def _extract_values(self, obj: Dict) -> List[Any]:
-        """
-        Extract values from a JSON object in the order of discovered columns.
-
-        Args:
-            obj: JSON object to extract from
-
-        Returns:
-            List of values corresponding to column order
-        """
-        flattened = self._flatten_object(obj) if isinstance(obj, dict) else {}
-
-        values = []
-        for key in self._flattened_keys:
-            values.append(flattened.get(key))
-
-        return values
+        """Extract values from a JSON object in the order of discovered columns."""
+        if self.flatten:
+            flattened = self._flatten_object(obj) if isinstance(obj, dict) else {}
+            return [flattened.get(key) for key in self._keys]
+        else:
+            if not isinstance(obj, dict):
+                return [None] * len(self._keys)
+            return [obj.get(key) for key in self._keys]
 
     def _read_headers(self) -> List[str]:
         return self._discover_schema()
 
     def _generate_rows(self) -> Iterator[List[Any]]:
-        if not self._flattened_keys:
+        if not self._keys:
             self._discover_schema()
         for obj in self._data:
             yield self._extract_values(obj)
@@ -118,20 +106,17 @@ class JSONReader(Reader):
     def record_count(self) -> int:
         return len(self._data) if self._data else 0
 
-    def reset(self):
-        self.record_num = 0
-        self._data_iter = None
-
 
 class NDJSONReader(Reader):
-    """Newline-delimited JSON file reader that returns Record objects."""
+    """Newline-delimited JSON file reader that returns Record objects or dicts."""
 
     def __init__(self,
                  fp: TextIO,
                  add_rownum: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
-                 max_records: Optional[int] = None):
+                 max_records: Optional[int] = None,
+                 return_type: str = ReturnType.DEFAULT):
         """
         Initialize NDJSON reader.
 
@@ -141,11 +126,14 @@ class NDJSONReader(Reader):
             clean_headers: Header cleaning level
             skip_records: Number of records to skip from the beginning
             max_records: Maximum number of records to read (None = unlimited)
+            return_type: Either 'record' for Record objects or 'dict' for dict
         """
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records)
+                         skip_records=skip_records, max_records=max_records,
+                         return_type=return_type)
         self.fp = fp
         self._column_cache = None
+        self._original_keys = []  # Track original keys for value extraction
         self._schema_sample_size = 100
 
     def _discover_schema(self) -> List[str]:
@@ -162,7 +150,7 @@ class NDJSONReader(Reader):
         # Reset to beginning for schema discovery
         self.fp.seek(0)
 
-        all_keys = set()
+        all_keys = []
         sample_count = 0
 
         try:
@@ -174,7 +162,10 @@ class NDJSONReader(Reader):
                 try:
                     obj = json.loads(line)
                     if isinstance(obj, dict):
-                        all_keys.update(obj.keys())
+                        # Preserve order of first appearance
+                        for key in obj.keys():
+                            if key not in all_keys:
+                                all_keys.append(key)
                         sample_count += 1
 
                         if sample_count >= self._schema_sample_size:
@@ -188,83 +179,43 @@ class NDJSONReader(Reader):
         # Restore original position
         self.fp.seek(current_pos)
 
-        # Clean and sort the keys
-        sorted_keys = sorted(all_keys)
-        self._column_cache = [self.clean_header(key) for key in sorted_keys]
+        # Store original keys and create cleaned headers
+        self._original_keys = all_keys
+        self._column_cache = [self.clean_header(key) for key in all_keys]
 
         return self._column_cache
+
+    def _extract_values(self, obj: Dict) -> List[Any]:
+        """Extract values from a JSON object in the order of discovered columns."""
+        if not isinstance(obj, dict):
+            return [None] * len(self._original_keys)
+
+        return [obj.get(key) for key in self._original_keys]
 
     def _read_headers(self) -> List[str]:
         """Read and return column names from NDJSON structure."""
         return self._discover_schema()
 
     def _generate_rows(self) -> Iterator[List[Any]]:
+        """Generate data rows from NDJSON file."""
         self.fp.seek(0)  # Reset for data reading
-        while True:
-            line = self.fp.readline()
-            if not line:
-                break
+
+        # Ensure schema is discovered
+        if not self._original_keys:
+            self._discover_schema()
+            self.fp.seek(0)  # Reset again after schema discovery
+
+        for line in self.fp:
             line = line.strip()
             if not line:
                 continue
             try:
                 obj = json.loads(line)
-                if not self._column_cache:
-                    self._discover_schema()  # Ensure schema before yielding
                 yield self._extract_values(obj)
             except json.JSONDecodeError:
-                continue
-
-
-    def _discover_original_keys(self) -> List[str]:
-        """
-        Get the original keys used for schema discovery.
-        This is a bit of a hack - we need to track original keys separately
-        from cleaned headers for proper value extraction.
-        """
-        # For now, re-sample to get original keys
-        # TODO: Optimize by caching original keys during first discovery
-        current_pos = self.fp.tell()
-        self.fp.seek(0)
-
-        all_keys = set()
-        sample_count = 0
-
-        try:
-            for line in self.fp:
-                line = line.strip()
-                if not line:
-                    continue
-
-                try:
-                    obj = json.loads(line)
-                    if isinstance(obj, dict):
-                        all_keys.update(obj.keys())
-                        sample_count += 1
-
-                        if sample_count >= self._schema_sample_size:
-                            break
-                except json.JSONDecodeError:
-                    continue
-
-        except Exception:
-            pass
-
-        self.fp.seek(current_pos)
-        return sorted(all_keys)
-
-    def __next__(self) -> 'Record':
-        """Return the next record."""
-        row_data = self._read_next_row()
-        return self._create_record(row_data)
+                continue  # Skip malformed lines
 
     def _cleanup(self):
         """Close the file pointer."""
         if hasattr(self, 'fp') and self.fp:
             self.fp.close()
-
-    def reset(self):
-        """Reset reader to beginning (respecting skip_records)."""
-        self.fp.seek(0)
-        self._records_read = 0
-        self._data_iter = None

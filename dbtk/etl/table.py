@@ -3,13 +3,7 @@
 import logging
 import re
 from textwrap import dedent
-from types import MappingProxyType
 from typing import Union, Tuple, Optional, Set, Dict, Any
-
-try:
-    from typing import Mapping
-except ImportError:
-    from collections.abc import Mapping
 
 from ..cursors import Cursor
 from ..database import ParamStyle
@@ -113,26 +107,24 @@ class Table:
 
         # Validate each column and add sanitized bind_name
         validated_columns = {}
-        req_fields = []
-        key_fields = []
+        req_cols = []
+        key_cols = []
         for col, col_def in columns.items():
             validate_identifier(col)
-            col_def_copy = dict(col_def)
             bind_name = self._sanitize_for_bind_param(col)
-            col_def_copy['bind_name'] = bind_name
-            if col_def_copy.get('primary_key') or col_def_copy.get('key'):
-                key_fields.append(bind_name)
-                req_fields.append(bind_name)
-            elif bool(col_def_copy.get('nullable', True)) is False or col_def_copy.get('required'):
-                req_fields.append(bind_name)
-            validated_columns[col] = MappingProxyType(col_def_copy)
-        # The MappingProxyType is used to prevent modification of the columns dict
-        self._columns = MappingProxyType(validated_columns)
-        self._paramstyle = paramstyle
+            col_def['bind_name'] = bind_name
+            if col_def.get('primary_key') or col_def.get('key'):
+                key_cols.append(bind_name)
+                req_cols.append(bind_name)
+            elif bool(col_def.get('nullable', True)) is False or col_def.get('required'):
+                req_cols.append(bind_name)
+            validated_columns[col] = col_def
+        self.__columns = validated_columns
+        self.__paramstyle = paramstyle
         self.null_values = tuple(null_values)
 
-        self._req_cols = tuple(req_fields)
-        self._key_cols = tuple(key_fields)
+        self._req_cols = tuple(req_cols)
+        self._key_cols = tuple(key_cols)
 
         self._sql_statements: Dict[str, Optional[str]] = {
             'insert': None, 'select': None, 'update': None, 'delete': None, 'merge': None
@@ -149,12 +141,12 @@ class Table:
         return self._name
 
     @property
-    def columns(self) -> MappingProxyType:
-        return self._columns
+    def columns(self) -> dict:
+        return self.__columns
 
     @property
     def paramstyle(self) -> str:
-        return self._paramstyle
+        return self.__paramstyle
 
     @property
     def sql_statements(self) -> Dict[str, Optional[str]]:
@@ -186,28 +178,17 @@ class Table:
 
     def _finalize_sql(self, operation: str, sql: str) -> None:
         """Process SQL and store results."""
-        self._sql_statements[operation], self._param_config[operation] = process_sql_parameters(sql, self._paramstyle)
-
-    def _log_error(self, message: str, log) -> None:
-        """Consistent error logging."""
-        logger.error(message)
-        if log is None:
-            with open('dbtk_errors.log', 'a') as f:
-                f.write(f"{message}\n")
-                f.flush()
-        else:
-            log.write(f"{message}\n")
-            log.flush()
+        self._sql_statements[operation], self._param_config[operation] = process_sql_parameters(sql, self.__paramstyle)
 
     def _create_insert(self) -> str:
         """Generate INSERT statement with named parameters."""
         table_name = quote_identifier(self._name)
-        cols = list(self._columns.keys())
+        cols = list(self.__columns.keys())
         placeholders = []
 
         for col in cols:
-            bind_name = self._columns[col]['bind_name']
-            db_fn = self._columns[col].get('db_fn')
+            bind_name = self.__columns[col]['bind_name']
+            db_fn = self.__columns[col].get('db_fn')
             placeholders.append(wrap_db_function(bind_name, db_fn))
 
         cols_str = ', '.join(quote_identifier(col) for col in cols)
@@ -224,12 +205,12 @@ class Table:
     def _create_select(self) -> str:
         """Generate SELECT statement with named parameters."""
         if not self._key_cols:
-            raise ValueError(f"Cannot create SELECT for table {self._name}: no key fields defined")
+            raise ValueError(f"Cannot create SELECT for table {self._name}: no key columns defined")
         table_name = quote_identifier(self._name)
         quoted_cols = []
         conditions = []
 
-        for col, col_def in self._columns.items():
+        for col, col_def in self.__columns.items():
             ident = quote_identifier(col)
             quoted_cols.append(ident)
             bind_name = col_def['bind_name']
@@ -252,13 +233,13 @@ class Table:
     def _create_update(self) -> str:
         """Generate UPDATE statement with named parameters."""
         if not self._key_cols:
-            raise ValueError(f"Cannot create UPDATE for table {self._name}: no key fields defined")
+            raise ValueError(f"Cannot create UPDATE for table {self._name}: no key columns defined")
 
         table_name = quote_identifier(self._name)
         update_cols = []
         conditions = []
 
-        for col, col_def in self._columns.items():
+        for col, col_def in self.__columns.items():
             ident = quote_identifier(col)
             bind_name = col_def['bind_name']
             db_fn = col_def.get('db_fn')
@@ -279,15 +260,15 @@ class Table:
     def _create_delete(self) -> str:
         """Generate DELETE statement with named parameters."""
         if not self._key_cols:
-            raise ValueError(f"Cannot create DELETE for table {self._name}: no key fields defined")
+            raise ValueError(f"Cannot create DELETE for table {self._name}: no key columns defined")
 
         table_name = quote_identifier(self._name)
         conditions = []
 
         for col in self._key_cols:
             quoted_col = quote_identifier(col)
-            bind_name = self._columns[col]['bind_name']
-            db_fn = self._columns[col].get('db_fn')
+            bind_name = self.__columns[col]['bind_name']
+            db_fn = self.__columns[col].get('db_fn')
             placeholder = wrap_db_function(bind_name, db_fn)
             conditions.append(f"{quoted_col} = {placeholder}")
         conditions_str = '\n    AND '.join(conditions)
@@ -312,19 +293,19 @@ class Table:
     def _create_upsert(self, db_type: str) -> str:
         """Create INSERT ... ON DUPLICATE KEY/CONFLICT statement with named parameters."""
         table_name = quote_identifier(self._name)
-        cols = list(self._columns.keys())
+        cols = list(self.__columns.keys())
         placeholders = []
 
         # Build INSERT portion with named placeholders
         for col in cols:
-            bind_name = self._columns[col]['bind_name']
-            db_fn = self._columns[col].get('db_fn')
+            bind_name = self.__columns[col]['bind_name']
+            db_fn = self.__columns[col].get('db_fn')
             placeholders.append(wrap_db_function(bind_name, db_fn))
 
         # Get non-key columns for updates (excluding update_excludes)
         update_cols = []
         for col in cols:
-            bind_name = self._columns[col]['bind_name']
+            bind_name = self.__columns[col]['bind_name']
             if bind_name not in self._key_cols and bind_name not in self._update_excludes:
                 update_cols.append(col)
 
@@ -340,8 +321,8 @@ class Table:
             update_assignments = []
             for col in update_cols:
                 quoted_col = quote_identifier(col)
-                bind_name = self._columns[col]['bind_name']
-                db_fn = self._columns[col].get('db_fn')
+                bind_name = self.__columns[col]['bind_name']
+                db_fn = self.__columns[col].get('db_fn')
 
                 if db_fn and '#' in db_fn:
                     # Use alias syntax for MySQL 8.0.19+
@@ -363,7 +344,7 @@ class Table:
         elif db_type == 'postgres':
             # PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
             key_cols = []
-            for col, col_def in self._columns.items():
+            for col, col_def in self.__columns.items():
                 bind_name = col_def['bind_name']
                 if bind_name in self._key_cols:
                     key_cols.append(col)
@@ -373,8 +354,8 @@ class Table:
             update_assignments = []
             for col in update_cols:
                 quoted_col = quote_identifier(col)
-                bind_name = self._columns[col]['bind_name']
-                db_fn = self._columns[col].get('db_fn')
+                bind_name = self.__columns[col]['bind_name']
+                db_fn = self.__columns[col].get('db_fn')
 
                 if db_fn and '#' in db_fn:
                     assignment = f"{quoted_col} = {db_fn.replace('#', f'EXCLUDED.{quoted_col}')}"
@@ -388,9 +369,10 @@ class Table:
             if len(update_assignments) > 4:
                 update_clause = wrap_at_comma(update_clause)
 
-            sql = f"""INSERT INTO {table_name} ({cols_str})
-    VALUES ({placeholders_str})
-    ON CONFLICT ({conflict_cols}) DO UPDATE SET {update_clause}"""
+            sql = dedent(f"""\
+            INSERT INTO {table_name} ({cols_str})
+            VALUES ({placeholders_str})
+            ON CONFLICT ({conflict_cols}) DO UPDATE SET {update_clause}""")
 
         else:
             raise NotImplementedError(f"Upsert not supported for database: {db_type}")
@@ -401,19 +383,19 @@ class Table:
     def _create_merge_statement(self, db_type: str) -> str:
         """Create traditional MERGE statement with named parameters."""
         table_name = quote_identifier(self._name)
-        cols = list(self._columns.keys())
+        cols = list(self.__columns.keys())
         placeholders = []
 
         # Build placeholders for source
         for col in cols:
-            bind_name = self._columns[col]['bind_name']
-            db_fn = self._columns[col].get('db_fn')
+            bind_name = self.__columns[col]['bind_name']
+            db_fn = self.__columns[col].get('db_fn')
             placeholders.append(wrap_db_function(bind_name, db_fn))
 
         # Build key conditions for matching
         key_conditions = []
         key_cols = []
-        for col, col_def in self._columns.items():
+        for col, col_def in self.__columns.items():
             bind_name = col_def['bind_name']
             if bind_name in self._key_cols:
                 quoted_col = quote_identifier(col)
@@ -423,7 +405,7 @@ class Table:
         # Get non-key columns for updates (excluding update_excludes)
         update_cols = []
         for col in cols:
-            bind_name = self._columns[col]['bind_name']
+            bind_name = self.__columns[col]['bind_name']
             if bind_name not in self._key_cols and bind_name not in self._update_excludes:
                 update_cols.append(col)
 
@@ -440,6 +422,7 @@ class Table:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols} FROM dual"
+            table_alias = "AS s"
 
             update_assignments = []
             for col in update_cols:
@@ -503,23 +486,25 @@ class Table:
 
         # Assemble final SQL
         if db_type == 'postgres':
-            sql = f"""MERGE INTO {table_name} t
-    USING ({source_clause}) {table_alias}
-    ON ({' AND '.join(key_conditions)})
-    WHEN MATCHED THEN
-        UPDATE SET {update_set}
-    WHEN NOT MATCHED THEN
-        INSERT ({insert_cols})
-        VALUES ({insert_values})"""
+            sql = dedent(f"""\
+            MERGE INTO {table_name} t
+            USING ({source_clause}) {table_alias}
+            ON ({' AND '.join(key_conditions)})
+            WHEN MATCHED THEN
+                UPDATE SET {update_set}
+            WHEN NOT MATCHED THEN
+                INSERT ({insert_cols})
+                VALUES ({insert_values})""")
         else:
-            sql = f"""MERGE INTO {table_name} t
-    USING ({source_clause}) {table_alias}
-    ON ({' AND '.join(key_conditions)})
-    WHEN MATCHED THEN
-        UPDATE SET {update_set}
-    WHEN NOT MATCHED THEN
-        INSERT ({insert_cols})
-        VALUES ({insert_values})"""
+            sql = dedent(f"""\
+            MERGE INTO {table_name} t
+            USING ({source_clause}) {table_alias}
+            ON ({' AND '.join(key_conditions)})
+            WHEN MATCHED THEN
+                UPDATE SET {update_set}
+            WHEN NOT MATCHED THEN
+                INSERT ({insert_cols})
+                VALUES ({insert_values})""")
 
         logger.debug(f"Generated merge SQL for {self._name}: {sql}")
         return sql
@@ -529,7 +514,7 @@ class Table:
         Generate MERGE or upsert statement for the specified database type.
         """
         if not self._key_cols:
-            raise ValueError(f"Cannot create MERGE for table {self._name}: no key fields defined")
+            raise ValueError(f"Cannot create MERGE for table {self._name}: no key columns defined")
 
         # Choose strategy based on database capabilities
         use_upsert = self._should_use_upsert(db_type)
@@ -549,18 +534,19 @@ class Table:
         Args:
             operation: One of 'insert', 'select', 'update', 'delete', 'merge'
             db_type: Required for 'merge' operation, ignored for others
+            finalize: If True, cache the SQL and param config after generation
 
         Raises:
             ValueError: If operation is invalid or if merge is requested without db_type
-            ValueError: If operation requires key fields but none are defined
+            ValueError: If operation requires key_cols but none are defined
         """
         valid_operations = {'insert', 'select', 'update', 'delete', 'merge'}
         if operation not in valid_operations:
             raise ValueError(f"Invalid operation: {operation}. Must be one of {valid_operations}")
 
-        # Validate key field requirements
-        if operation in ('select', 'update', 'delete', 'merge') and not self._key_fields:
-            raise ValueError(f"Cannot generate {operation} SQL for table {self._name}: no key fields defined")
+        # Validate key_cols requirements
+        if operation in ('select', 'update', 'delete', 'merge') and not self._key_cols:
+            raise ValueError(f"Cannot generate {operation} SQL for table {self._name}: no key columns defined")
 
         # Special handling for merge which needs db_type
         if operation == 'merge':
@@ -586,14 +572,14 @@ class Table:
         if operation not in self._sql_statements:
             raise ValueError(f"Invalid operation: {operation}")
         if operation in ('update', 'delete', 'merge') and not self._key_cols:
-            raise ValueError(f"Cannot get {operation} params: no key fields defined")
+            raise ValueError(f"Cannot get {operation} params: no key columns defined")
 
         param_names = self._param_config[operation]
         if not param_names:
-            return () if self._paramstyle in ParamStyle.positional_styles() else {}
+            return () if self.__paramstyle in ParamStyle.positional_styles() else {}
 
         # Map bind_names back to values using column lookup
-        bind_to_col = {col_def['bind_name']: col for col, col_def in self._columns.items()}
+        bind_to_col = {col_def['bind_name']: col for col, col_def in self.__columns.items()}
         filtered_values = {}
 
         for bind_name in param_names:
@@ -602,7 +588,7 @@ class Table:
                 if col in self.values:
                     filtered_values[bind_name] = self.values[col]
 
-        if self._paramstyle in ParamStyle.positional_styles():
+        if self.__paramstyle in ParamStyle.positional_styles():
             # Return tuple in the order parameters appear in SQL
             return tuple(filtered_values.get(param, None) for param in param_names)
         else:
@@ -664,19 +650,19 @@ class Table:
 
     @property
     def reqs_met(self) -> bool:
-        """Check if required fields are set and not None."""
+        """Check if required columns are set and not None."""
         return all(col in self.values and self.values[col] is not None for col in self._req_cols)
 
     @property
     def reqs_missing(self) -> Set[str]:
-        """Get required fields that are missing or None."""
+        """Get required columns that are missing or None."""
         return {col for col in self._req_cols if col not in self.values or self.values[col] is None}
 
     def get_db_record(self, cursor: Cursor) -> Dict[str, Any]:
         """Fetch a record from the database using current key values."""
         keys_missing = {col for col in self._key_cols if col not in self.values or self.values[col] is None}
         if keys_missing:
-            msg = f"Cannot get record from table {self._name}: missing key fields: {keys_missing}"
+            msg = f"Cannot get record from table {self._name}: missing key columns: {keys_missing}"
             logger.error(msg)
         else:
             err = self.exec_select(cursor)
@@ -686,7 +672,7 @@ class Table:
     def calc_update_excludes(self, file_columns: Set[str]):
         """Calculate columns to exclude from updates."""
         excludes = []
-        for col, col_def in self._columns.items():
+        for col, col_def in self.__columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
             if field not in file_columns:
@@ -698,7 +684,7 @@ class Table:
 
 
     def _exec_sql(self, cursor: Cursor, sql: str, params: Union[dict, tuple],
-                  operation: str, raise_error: bool, log) -> int:
+                  operation: str, raise_error: bool) -> int:
         """Execute SQL with error handling."""
         try:
             cursor.execute(sql, params)
@@ -706,97 +692,83 @@ class Table:
             return 0
         except cursor.connection.interface.DatabaseError as e:
             error_msg = f"SQL failed: {sql}\nParams: {params}\nError: {str(e)}"
-            self._log_error(error_msg, log)
+            logger.error(error_msg)
             if raise_error:
                 raise
             return 1
 
-    def exec_select(self, cursor: Cursor, raise_error: bool = False, log=None) -> int:
+    def exec_select(self, cursor: Cursor, raise_error: bool = False) -> int:
         if not self._key_cols:
-            msg = f"Cannot select from table {self._name}: no key fields defined"
-            self._log_error(msg, log)
-            if raise_error:
-                raise ValueError(msg)
-            return 1
+            msg = f"Cannot select from table {self._name}: no key columns defined"
+            logger.error(msg)
+            raise ValueError(msg)
 
         if self._sql_statements['select'] is None:
             sql = self._create_select()
             self._finalize_sql('select', sql)
 
         params = self.get_bind_params('select')
-        return self._exec_sql(cursor, self._sql_statements['select'], params, 'select', raise_error, log)
+        return self._exec_sql(cursor, self._sql_statements['select'], params, 'select', raise_error)
 
 
-    def exec_insert(self, cursor: Cursor, raise_error: bool = False, log=None) -> int:
+    def exec_insert(self, cursor: Cursor, raise_error: bool = False) -> int:
         """Execute INSERT statement for current record."""
         if not self.reqs_met:
-            msg = f"Cannot insert into table {self._name}: required fields {self.reqs_missing} are null"
-            self._log_error(msg, log)
-            if raise_error:
-                raise ValueError(msg)
-            return 1
+            msg = f"Cannot insert into table {self._name}: required columns {self.reqs_missing} are null"
+            logger.error(msg)
+            raise ValueError(msg)
 
         if self._sql_statements['insert'] is None:
             sql = self._create_insert()
             self._finalize_sql('insert', sql)
 
         params = self.get_bind_params('insert')
-        return self._exec_sql(cursor, self._sql_statements['insert'], params, 'insert', raise_error, log)
+        return self._exec_sql(cursor, self._sql_statements['insert'], params, 'insert', raise_error)
 
-    def exec_update(self, cursor: Cursor, raise_error: bool = False, log=None) -> int:
+    def exec_update(self, cursor: Cursor, raise_error: bool = False) -> int:
         """Execute UPDATE statement for current record."""
         if not self.reqs_met:
-            msg = f"Cannot update table {self._name}: required fields {self.reqs_missing} are null"
-            self._log_error(msg, log)
-            if raise_error:
-                raise ValueError(msg)
-            return 1
+            msg = f"Cannot update table {self._name}: required columns {self.reqs_missing} are null"
+            logger.error(msg)
+            raise ValueError(msg)
 
         if not self._key_cols:
-            msg = f"Cannot update table {self._name}: no key fields defined"
-            self._log_error(msg, log)
-            if raise_error:
-                raise ValueError(msg)
-            return 1
+            msg = f"Cannot update table {self._name}: no key columns defined"
+            logger.error(msg)
+            raise ValueError(msg)
 
         if self._sql_statements['update'] is None:
             sql = self._create_update()
             self._finalize_sql('update', sql)
 
         params = self.get_bind_params('update')
-        return self._exec_sql(cursor, self._sql_statements['update'], params, 'update', raise_error, log)
+        return self._exec_sql(cursor, self._sql_statements['update'], params, 'update', raise_error)
 
-    def exec_delete(self, cursor: Cursor, raise_error: bool = False, log=None) -> int:
+    def exec_delete(self, cursor: Cursor, raise_error: bool = False) -> int:
         """Execute DELETE statement for current record."""
         if not self._key_cols:
-            msg = f"Cannot delete from table {self._name}: no key fields defined"
-            self._log_error(msg, log)
-            if raise_error:
-                raise ValueError(msg)
-            return 1
+            msg = f"Cannot delete from table {self._name}: no key columns defined"
+            logger.error(msg)
+            raise ValueError(msg)
 
         if self._sql_statements['delete'] is None:
             sql = self._create_delete()
             self._finalize_sql('delete', sql)
 
         params = self.get_bind_params('delete')
-        return self._exec_sql(cursor, self._sql_statements['delete'], params, 'delete', raise_error, log)
+        return self._exec_sql(cursor, self._sql_statements['delete'], params, 'delete', raise_error)
 
-    def exec_merge(self, cursor: Cursor, raise_error: bool = False, log=None) -> int:
+    def exec_merge(self, cursor: Cursor, raise_error: bool = False) -> int:
         """Execute MERGE statement for current record."""
         if not self.reqs_met:
-            msg = f"Cannot merge table {self._name}: required fields {self.reqs_missing} are null"
-            self._log_error(msg, log)
-            if raise_error:
-                raise ValueError(msg)
-            return 1
+            msg = f"Cannot merge table {self._name}: required columns {self.reqs_missing} are null"
+            logger.error(msg)
+            raise ValueError(msg)
 
         if not self._key_cols:
-            msg = f"Cannot merge table {self._name}: no key fields defined"
-            self._log_error(msg, log)
-            if raise_error:
-                raise ValueError(msg)
-            return 1
+            msg = f"Cannot merge table {self._name}: no key columns defined"
+            logger.error(msg)
+            raise ValueError(msg)
 
         if self._sql_statements['merge'] is None:
             db_type = cursor.connection.server_type
@@ -807,5 +779,4 @@ class Table:
             self._finalize_sql('merge', sql)
 
         params = self.get_bind_params('merge')
-        return self._exec_sql(cursor, self._sql_statements['merge'], params, 'merge', raise_error, log)
-
+        return self._exec_sql(cursor, self._sql_statements['merge'], params, 'merge', raise_error)

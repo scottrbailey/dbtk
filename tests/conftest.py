@@ -40,7 +40,7 @@ def mock_db_cursor():
 def mock_connection(mock_db_cursor):
     """Create a mock database connection."""
     connection = Mock()
-    connection.interface._paramstyle = 'format'
+    connection.interface.__paramstyle = 'format'
     connection.placeholder = '%s'
     connection._connection.cursor.return_value = mock_db_cursor
     connection.cursor.return_value = mock_db_cursor

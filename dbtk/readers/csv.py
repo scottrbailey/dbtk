@@ -1,10 +1,11 @@
 # dbtk/readers/csv.py
 import csv
 from typing import TextIO, List, Any, Iterator, Optional
-from .base import Reader, Clean
+from .base import Reader, Clean, ReturnType
+
 
 class CSVReader(Reader):
-    """CSV file reader that returns Record objects."""
+    """CSV file reader that returns Record objects or OrderedDict objects."""
 
     def __init__(self,
                  fp: TextIO,
@@ -14,6 +15,7 @@ class CSVReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
+                 return_type: str = ReturnType.DEFAULT,
                  **kwargs):
         """Initialize CSV reader.
 
@@ -25,18 +27,19 @@ class CSVReader(Reader):
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_records: Number of data records to skip after headers (default: 0).
             max_records: Maximum number of records to read, or None for all (default: None).
+            return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
             **kwargs: Additional arguments passed to csv.reader.
         """
         if kwargs.get('delimiter') == '\t' and dialect == csv.excel:
             dialect = csv.excel_tab
             kwargs.pop('delimiter')
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records)
+                         skip_records=skip_records, max_records=max_records,
+                         return_type=return_type)
         self.fp = fp
         self._rdr = csv.reader(fp, dialect=dialect, **kwargs)
         self._headers_read = False
         self._raw_headers = headers  # Use provided headers if given
-        self._skip_first_row = headers is not None  # Skip first row if headers provided
 
     def _read_headers(self) -> List[str]:
         """Read the header row from the CSV file or use provided headers.
@@ -60,16 +63,12 @@ class CSVReader(Reader):
         return self._raw_headers
 
     def _generate_rows(self) -> Iterator[List[Any]]:
-        """Yield data rows from the CSV file.
+        """Yield data rows from the CSV file, skipping _start_row number of rows.
 
         Yields:
             List of values for each data row.
         """
-        if self._skip_first_row:
-            try:
-                next(self._rdr)  # Skip the first row if headers were provided
-            except StopIteration:
-                pass  # File might be empty
+        # Yield remaining rows
         yield from self._rdr
 
     def _cleanup(self):

@@ -1,7 +1,7 @@
 # dbtk/readers/xml.py
 
-from typing import List, Any, Dict, Optional, TextIO, Union
-from .base import Reader, Clean
+from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
+from .base import Reader, Clean, ReturnType
 
 try:
     from lxml import etree
@@ -37,7 +37,10 @@ class XMLReader(Reader):
                  columns: Optional[List[XMLColumn]] = None,
                  sample_size: int = 10,
                  add_rownum: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT):
+                 clean_headers: Clean = Clean.DEFAULT,
+                 skip_records: int = 0,
+                 max_records: Optional[int] = None,
+                 return_type: str = ReturnType.DEFAULT):
         """
         Initialize XML reader.
 
@@ -47,9 +50,14 @@ class XMLReader(Reader):
             columns: List of XMLColumn definitions for custom extraction
             sample_size: Number of records to sample for column discovery
             add_rownum: Add rownum to each record
-            clean_headers: Header cleaning level
+            clean_headers: Header cleaning level (default: Clean.DEFAULT)
+            skip_records: Number of data records to skip after headers
+            max_records: Maximum number of records to read, or None for all
+            return_type: Either 'record' for Record objects or 'dict' for OrderedDict
         """
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers)
+        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
+                         skip_records=skip_records, max_records=max_records,
+                         return_type=return_type)
         self.fp = fp
         self.record_xpath = record_xpath
         self.custom_columns = columns or []
@@ -57,7 +65,6 @@ class XMLReader(Reader):
 
         self._tree = None
         self._record_nodes = None
-        self._current_record_index = 0
         self._column_cache = None
         self._all_columns = []  # Combined auto-discovered + custom columns
 
@@ -90,27 +97,23 @@ class XMLReader(Reader):
         custom_names = {col.name for col in self.custom_columns}
 
         # Auto-discover columns from sample records
-        discovered_elements = set()
+        discovered_elements = []
         sample_records = self._record_nodes[:self.sample_size]
 
         for record_node in sample_records:
             for child in record_node:
                 if child.tag:
                     col_name = self._flatten_element_name(child.tag)
-                    if col_name not in custom_names:  # Don't duplicate custom columns
-                        discovered_elements.add(col_name)
+                    if col_name not in custom_names and col_name not in discovered_elements:  # Don't duplicate custom columns
+                        discovered_elements.append(col_name)
 
-        # Add discovered columns as XMLColumn objects
-        for element_name in sorted(discovered_elements):
+        # Add discovered columns as XMLColumn objects with cleaned names
+        for element_name in discovered_elements:
             cleaned_name = self.clean_header(element_name)
             self._all_columns.append(XMLColumn(cleaned_name))
 
         # Extract just the names for the column cache
         self._column_cache = [col.name for col in self._all_columns]
-
-        # Ensure we start reading from the beginning
-        self._current_record_index = 0
-        self.line_num = 0
 
         return self._column_cache
 
@@ -170,30 +173,18 @@ class XMLReader(Reader):
         """Read and return column names from XML structure."""
         return self._introspect_columns()
 
-    def _read_next_row(self) -> List[Any]:
-        """Read the next data row from XML."""
+    def _generate_rows(self) -> Iterator[List[Any]]:
+        """Generate data rows from XML record nodes."""
         # Ensure columns are discovered before reading data
         if not self._all_columns:
             self._introspect_columns()
 
-        if self._current_record_index >= len(self._record_nodes):
-            raise StopIteration
-
-        record_node = self._record_nodes[self._current_record_index]
-        self._current_record_index += 1
-        self.line_num = self._current_record_index
-
-        row_data = []
-        for xml_column in self._all_columns:
-            value = self._extract_column_value(record_node, xml_column)
-            row_data.append(value)
-
-        return row_data
-
-    def __next__(self) -> 'Record':
-        """Return the next record."""
-        row_data = self._read_next_row()
-        return self._create_record(row_data)
+        for record_node in self._record_nodes:
+            row_data = []
+            for xml_column in self._all_columns:
+                value = self._extract_column_value(record_node, xml_column)
+                row_data.append(value)
+            yield row_data
 
     def _cleanup(self):
         """Close the file pointer."""
@@ -211,11 +202,6 @@ class XMLReader(Reader):
         if not self._all_columns:
             self._introspect_columns()  # Trigger discovery
         return self._all_columns.copy()
-
-    def reset(self):
-        """Reset reader to beginning."""
-        self._current_record_index = 0
-        self.line_num = 0
 
 
 # Convenience function to match other readers
