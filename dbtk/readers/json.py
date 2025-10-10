@@ -74,6 +74,8 @@ class JSONReader(Reader):
                     all_keys.update(obj.keys())
 
         # Clean and sort the keys
+        if not all_keys:
+            raise ValueError("No keys discovered in NDJSON file")
         self._keys = sorted(all_keys)
         self._column_cache = [self.clean_header(key) for key in self._keys]
 
@@ -180,6 +182,8 @@ class NDJSONReader(Reader):
         self.fp.seek(current_pos)
 
         # Store original keys and create cleaned headers
+        if not all_keys:
+            raise ValueError("No keys discovered in NDJSON file")
         self._original_keys = all_keys
         self._column_cache = [self.clean_header(key) for key in all_keys]
 

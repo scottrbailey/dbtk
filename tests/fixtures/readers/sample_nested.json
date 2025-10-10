@@ -1,0 +1,11 @@
+[
+  {
+    "trainee_id": 1,
+    "monk_name": "Aang",
+    "details": {
+      "temple": "Southern Air Temple",
+      "bison": "Appa"
+    },
+    "elements_mastered": ["air", "water", "earth", "fire"]
+  }
+]

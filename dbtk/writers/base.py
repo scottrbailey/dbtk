@@ -62,7 +62,7 @@ class BaseWriter(ABC):
         if self.filename is None:
             return sys.stdout, False
         else:
-            return open(self.filename, mode, encoding=self.encoding), True
+            return open(self.filename, mode, encoding=self.encoding, newline=''), True
 
     def _get_data_iterator(self, data, columns: Optional[List[str]] = None) -> Tuple[Iterator, List[str]]:
         """

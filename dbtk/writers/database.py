@@ -4,11 +4,121 @@ Database writing utilities and ETL table operations.
 """
 
 import logging
+from typing import Optional, Tuple
 
+from .base import BaseWriter
 from ..database import ParamStyle
-from .utils import get_data_iterator, create_insert_statement
+from ..utils import process_sql_parameters
 
 logger = logging.getLogger(__name__)
+
+
+class DatabaseWriter(BaseWriter):
+    """Database writer that extends BaseWriter."""
+
+    def __init__(self,
+                 data,
+                 target_cursor,
+                 target_table: str,
+                 batch_size: int = 1000,
+                 commit_frequency: int = 10000):
+        """
+        Initialize database writer.
+
+        Args:
+            data: Source cursor or list of records
+            target_cursor: Target database cursor
+            target_table: Name of target table
+            batch_size: Number of records to insert per batch
+            commit_frequency: How often to commit (in number of records)
+        """
+        # Call BaseWriter with no filename (we're writing to database)
+        super().__init__(data, filename=None, preserve_data_types=True)
+
+        self.target_cursor = target_cursor
+        self.target_table = target_table
+        self.batch_size = batch_size
+        self.commit_frequency = commit_frequency
+
+        # Get parameter style from target connection
+        self.paramstyle = target_cursor.connection.interface.paramstyle
+
+        # Pre-generate INSERT statement and param order
+        self.insert_sql, self.param_names = self._create_insert_statement()
+
+    def _create_insert_statement(self) -> Tuple[str, Tuple[str, ...]]:
+        """Create INSERT statement for the target table."""
+        # Build with named parameters
+        columns_str = ', '.join(self.columns)
+        params_str = ', '.join([f':{col}' for col in self.columns])
+        sql = f'INSERT INTO {self.target_table} ({columns_str}) VALUES ({params_str})'
+
+        # Convert to target paramstyle and get parameter order
+        return process_sql_parameters(sql, self.paramstyle)
+
+    def _write_data(self, file_obj) -> None:
+        """Write data to database using batched inserts."""
+        # file_obj is None and unused - we're writing to database
+
+        logger.info(f"Starting copy to {self.target_table}")
+        logger.debug(f"Using INSERT statement: {self.insert_sql}")
+
+        batch = []
+
+        try:
+            for record in self.data_iterator:
+                # Extract values from record
+                values = self._extract_row_values(record)
+
+                # Handle parameter style
+                if self.paramstyle in ParamStyle.named_styles():
+                    # Convert to dict for named parameters, using param_names order
+                    params = {name: values[i] for i, name in enumerate(self.param_names)}
+                    batch.append(params)
+                else:
+                    # Positional parameters - values already in correct order
+                    batch.append(tuple(values))
+
+                # Execute batch when it reaches batch_size
+                if len(batch) >= self.batch_size:
+                    if len(batch) == 1:
+                        self.target_cursor.execute(self.insert_sql, batch[0])
+                    else:
+                        self.target_cursor.executemany(self.insert_sql, batch)
+
+                    self.row_count += len(batch)
+                    batch = []
+
+                    # Commit periodically
+                    if self.row_count % self.commit_frequency == 0:
+                        self.target_cursor.connection.commit()
+                        logger.info(f"Committed {self.row_count} records")
+
+            # Execute remaining batch
+            if batch:
+                if len(batch) == 1:
+                    self.target_cursor.execute(self.insert_sql, batch[0])
+                else:
+                    self.target_cursor.executemany(self.insert_sql, batch)
+                self.row_count += len(batch)
+
+            # Final commit
+            self.target_cursor.connection.commit()
+            logger.info(f"Copy completed: {self.row_count} records inserted into {self.target_table}")
+
+        except self.target_cursor.connection.interface.DatabaseError as e:
+            logger.error(f"Error during copy: {e}")
+            self.target_cursor.connection.rollback()
+            raise
+
+    def write(self) -> int:
+        """Override to bypass file handle creation and call _write_data directly."""
+        try:
+            self._write_data(None)  # Pass None since we don't need file_obj
+            return self.row_count
+        except Exception as e:
+            logger.error(f"Error writing database data: {e}")
+            raise
 
 
 def cursor_to_cursor(source_data,
@@ -38,78 +148,11 @@ def cursor_to_cursor(source_data,
         count = cursor_to_cursor(source_cursor, target_cursor, 'users_copy')
         print(f"Copied {count} records")
     """
-    rows, columns = get_data_iterator(source_data)
-
-    if not rows:
-        logger.warning("No data to copy")
-        return 0
-
-    # Create INSERT statement
-    paramstyle = target_cursor.connection.interface.__paramstyle
-    insert_sql = create_insert_statement(target_table, columns, paramstyle)
-
-    logger.info(f"Starting copy to {target_table}, {len(rows)} records to process")
-    logger.debug(f"Using INSERT statement: {insert_sql}")
-
-    total_inserted = 0
-    batch = []
-
-    try:
-        for i, record in enumerate(rows):
-            # Convert record to tuple/list for parameter binding
-            if hasattr(record, '_fields'):
-                # namedtuple or Record
-                record_values = tuple(record)
-            elif hasattr(record, 'values') and callable(record.values):
-                # dict-like object
-                record_values = tuple(record[col] for col in columns)
-            elif isinstance(record, (list, tuple)):
-                # Already a sequence
-                record_values = tuple(record)
-            else:
-                # Try to extract values by column names
-                record_values = tuple(getattr(record, col, None) for col in columns)
-
-            # Handle parameter style
-            if paramstyle in ParamStyle.named_styles():
-                # Convert to dict for named parameters
-                params = {col: val for col, val in zip(columns, record_values)}
-                batch.append(params)
-            else:
-                # Use positional parameters
-                batch.append(record_values)
-
-            # Execute batch when it reaches batch_size
-            if len(batch) >= batch_size:
-                if len(batch) == 1:
-                    target_cursor.execute(insert_sql, batch[0])
-                else:
-                    target_cursor.executemany(insert_sql, batch)
-
-                total_inserted += len(batch)
-                batch = []
-
-                # Commit periodically
-                if total_inserted % commit_frequency == 0:
-                    target_cursor.connection.commit()
-                    logger.info(f"Committed {total_inserted} records")
-
-        # Execute remaining batch
-        if batch:
-            if len(batch) == 1:
-                target_cursor.execute(insert_sql, batch[0])
-            else:
-                target_cursor.executemany(insert_sql, batch)
-            total_inserted += len(batch)
-
-        # Final commit
-        target_cursor.connection.commit()
-        logger.info(f"Copy completed: {total_inserted} records inserted into {target_table}")
-
-    except target_cursor.connection.interface.DatabaseError as e:
-        logger.error(f"Error during copy: {e}")
-        target_cursor.connection.rollback()
-        raise
-
-    return total_inserted
-
+    writer = DatabaseWriter(
+        data=source_data,
+        target_cursor=target_cursor,
+        target_table=target_table,
+        batch_size=batch_size,
+        commit_frequency=commit_frequency
+    )
+    return writer.write()

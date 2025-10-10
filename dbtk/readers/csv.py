@@ -59,7 +59,7 @@ class CSVReader(Reader):
             except StopIteration:
                 self._raw_headers = []
                 self._headers_read = True
-                raise
+                raise ValueError("Empty CSV file")
         return self._raw_headers
 
     def _generate_rows(self) -> Iterator[List[Any]]:

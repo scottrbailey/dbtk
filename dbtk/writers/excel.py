@@ -15,8 +15,10 @@ try:
     from openpyxl.styles import Font, NamedStyle
     from openpyxl.utils.exceptions import InvalidFileException
     from openpyxl.utils import get_column_letter
+    HAS_OPENPYXL = True
 except ImportError:
-    raise ImportError("openpyxl is required for Excel support. Install with: pip install openpyxl")
+    HAS_OPENPYXL = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -199,3 +201,10 @@ def to_excel(data,
         overwrite_sheet=overwrite_sheet
     )
     writer.write()
+
+def check_dependencies():
+    """Check for optional dependencies and issue warnings if missing."""
+    if not HAS_OPENPYXL:
+        logger.error('Openpyxl is not available. Excel files not supported.')
+
+check_dependencies()

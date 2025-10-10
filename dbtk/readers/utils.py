@@ -21,7 +21,7 @@ def get_reader(filename: str,
         **kwargs: Additional arguments passed to specific readers
 
     Returns:
-        CSVReader, FixedReader, JSONReader, XLReader, XLSXReader, or XMLReader instance
+        CSVReader, FixedReader, JSONReader, NDJSONReader, XLSXReader, or XMLReader instance
 
     Examples:
         # CSV file with custom header cleaning
@@ -50,7 +50,6 @@ def get_reader(filename: str,
         from .csv import CSVReader
         fp = open(filename, encoding=encoding)
         return CSVReader(fp, clean_headers=clean_headers, **kwargs)
-
     elif ext in ('xls', 'xlsx'):
         from .excel import open_workbook, get_sheet_by_index, XLReader, XLSXReader
         wb = open_workbook(filename)
@@ -66,6 +65,10 @@ def get_reader(filename: str,
         from .json import JSONReader
         fp = open(filename, encoding=encoding)
         return JSONReader(fp, clean_headers=clean_headers, **kwargs)
+    elif ext == 'ndjson':
+        from .json import NDJSONReader
+        fp = open(filename, encoding=encoding)
+        return NDJSONReader(fp, clean_headers=clean_headers, **kwargs)
     elif ext == 'xml':
         from .xml import XMLReader
         fp = open(filename, encoding=encoding)

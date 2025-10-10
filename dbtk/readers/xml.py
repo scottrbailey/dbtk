@@ -1,12 +1,16 @@
 # dbtk/readers/xml.py
 
+import logging
 from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
 from .base import Reader, Clean, ReturnType
 
 try:
     from lxml import etree
+    HAS_LXML = True
 except ImportError:
-    raise ImportError("XML support requires lxml. Install with: pip install lxml")
+    HAS_LXML = False
+
+logger = logging.getLogger(__name__)
 
 
 class XMLColumn:
@@ -33,7 +37,7 @@ class XMLReader(Reader):
 
     def __init__(self,
                  fp: TextIO,
-                 record_xpath: str = "//row",
+                 record_xpath: str = "//record",
                  columns: Optional[List[XMLColumn]] = None,
                  sample_size: int = 10,
                  add_rownum: bool = True,
@@ -223,3 +227,10 @@ def open_xml(filename: str, **kwargs) -> XMLReader:
     """
     fp = open(filename, 'rb')  # lxml prefers binary mode
     return XMLReader(fp, **kwargs)
+
+
+def check_dependencies():
+    if not HAS_LXML:
+        logger.error('lxml is required for XML support. Install with "pip install lxml".')
+
+check_dependencies()

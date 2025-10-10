@@ -10,8 +10,9 @@ from pathlib import Path
 
 try:
     from lxml import etree
+    HAS_LXML = True
 except ImportError:
-    raise ImportError("lxml is required for XML support. Install with: pip install lxml")
+    HAS_LXML = False
 
 from .base import BaseWriter
 
@@ -197,3 +198,10 @@ def to_xml(data,
         )
 
     writer.write()
+
+
+def check_dependencies():
+    if not HAS_LXML:
+        logger.error('lxml is required for XML support. Install with "pip install lxml".')
+
+check_dependencies()

@@ -1,0 +1,101 @@
+trainee_id,monk_name,home_temple,mastery_rank,bison_companion,daily_meditation,birth_date,last_training
+1,Master Aang,Northern Air Temple,10,Lefty,9.93,1965-12-16,2024-12-25 15:51:42
+2,Acolyte Xai Bau Airheart,Western Air Temple,3,Appa,9.93,1996-10-14,2023-01-04 22:15:29
+3,Master Kelsang the Swift,Southern Air Temple,10,Cloud,8.88,1966-08-23,2023-02-11 09:58:00
+4,Acolyte Ikki Skyborn,Eastern Air Temple,1,Oogi,6.62,2002-07-03,2024-01-10 19:15:05
+5,Acolyte Nola Skyborn,Western Air Temple,3,Whisper,5.58,1993-02-06,2023-11-17 08:06:11
+6,Master Zaheer Airheart,Western Air Temple,9,Breeze,7.54,1974-07-10,2023-10-16 20:58:43
+7,Novice Ikki Airheart,Northern Air Temple,5,Cloud,5.31,1991-05-20,2024-02-05 21:29:39
+8,Adept Laghima,Western Air Temple,7,Oogi,7.38,1978-02-06,2023-05-31 09:59:04
+9,Novice Meelo of the North,Northern Air Temple,5,,8.85,1993-08-10,2024-01-31 19:44:21
+10,Acolyte Afiko Gentlewind,Southern Air Temple,2,Appa,5.42,1996-04-24,2024-09-22 07:10:43
+11,Master Afiko of the East,Northern Air Temple,9,Appa,7.51,1971-12-29,2023-07-31 12:44:07
+12,Adept Pasang the Swift,Northern Air Temple,7,Pepper,6.55,1976-08-05,2024-12-20 23:31:30
+13,Novice Yee-Li of the West,Western Air Temple,5,Whisper,5.56,1994-01-08,2024-04-09 15:01:42
+14,Acolyte Laghima,Northern Air Temple,3,Pepper,6.83,1999-02-17,2023-09-07 03:16:39
+15,Master Tseten Skyborn,Western Air Temple,9,Gale,9.82,1977-07-30,2024-08-03 01:51:33
+16,Acolyte Jamyang Cloudwalker,Southern Air Temple,3,,6.55,1998-06-10,2024-07-06 23:44:37
+17,Adept Jamyang Windwhisperer,Northern Air Temple,6,,7.38,1980-03-11,2023-09-19 23:40:57
+18,Acolyte Jamyang of the South,Northern Air Temple,1,,9.22,2009-06-27,2024-07-15 02:03:20
+19,Acolyte Yee-Li Gentlewind,Eastern Air Temple,2,Sky,7.22,1996-11-22,2023-01-15 07:22:04
+20,Master Jinora the Wise,Western Air Temple,10,Oogi,5.67,1972-07-06,2024-11-12 04:16:46
+21,Novice Tseten Tempest,Eastern Air Temple,4,Sky,6.62,1992-02-04,2024-12-25 16:31:22
+22,Acolyte Kai,Southern Air Temple,2,,9.44,2002-02-05,2024-05-12 22:40:15
+23,Novice Daw,Southern Air Temple,4,Zephyr,6.2,1996-07-04,2023-10-24 18:24:34
+24,Master Zaheer Stormrider,Eastern Air Temple,10,Breeze,8.3,1965-05-12,2023-12-24 17:42:09
+25,Master Tseten Breezecaller,Eastern Air Temple,9,Breeze,8.7,1974-01-30,2023-06-24 16:31:00
+26,Acolyte Kelsang,Western Air Temple,3,Whisper,9.38,1994-07-13,2023-11-07 21:14:15
+27,Novice Tseten of the South,Southern Air Temple,4,,8.8,1994-10-13,2024-09-07 20:18:36
+28,Acolyte Yangchen,Western Air Temple,2,,8.66,2002-04-18,2024-04-17 05:10:17
+29,Acolyte Lek,Northern Air Temple,2,,6.55,2005-03-04,2023-01-20 23:22:51
+30,Master Meelo Tempest,Southern Air Temple,9,,8.12,1976-11-19,2023-04-17 16:47:38
+31,Master Ikki of the East,Eastern Air Temple,9,Whisper,7.1,1975-02-21,2023-03-27 15:39:24
+32,Master Yangchen,Southern Air Temple,8,Oogi,5.96,1978-11-05,2024-06-21 00:00:10
+33,Master Kya of the East,Western Air Temple,9,Whisper,9.52,1970-08-01,2023-05-11 05:17:24
+34,Master Aang Windwhisperer,Northern Air Temple,10,Lefty,7.9,1971-12-09,2023-09-13 10:58:39
+35,Master Pathik Windwhisperer,Southern Air Temple,9,Oogi,6.57,1977-04-24,2023-05-17 08:06:36
+36,Master Rohan Windwhisperer,Northern Air Temple,8,Cloud,6.48,1977-07-29,2023-04-23 17:11:24
+37,Adept Rohan Skyborn,Northern Air Temple,6,Pepper,7.98,1986-06-23,2024-11-01 01:14:47
+38,Master Sora Windwhisperer,Northern Air Temple,9,Appa,5.55,1977-06-26,2023-08-05 07:51:43
+39,Acolyte Daw Stormrider,Eastern Air Temple,1,Gale,8.78,2003-09-29,2023-03-31 04:10:42
+40,Adept Rohan Windwhisperer,Southern Air Temple,6,Breeze,9.09,1987-01-14,2024-12-03 11:32:23
+41,Acolyte Pasang the Swift,Western Air Temple,2,Breeze,6.91,2000-09-14,2023-09-30 15:06:30
+42,Novice Pathik of the East,Southern Air Temple,4,Sky,7.81,1995-06-25,2024-12-21 06:06:42
+43,Master Opal Cloudwalker,Western Air Temple,10,Appa,6.29,1971-12-17,2024-09-08 15:34:24
+44,Adept Meelo,Eastern Air Temple,6,Appa,6.24,1985-01-01,2024-07-04 09:09:53
+45,Master Xai Bau the Wise,Southern Air Temple,9,Appa,7.22,1968-12-08,2024-02-10 23:42:40
+46,Master Sora,Northern Air Temple,8,Zephyr,7.96,1973-05-20,2024-12-17 01:48:31
+47,Adept Tyson the Wise,Western Air Temple,6,Sky,7.04,1983-05-23,2024-10-12 12:33:22
+48,Master Zaheer the Wise,Eastern Air Temple,8,,5.78,1981-06-05,2024-03-15 16:09:55
+49,Master Jinora Windwhisperer,Eastern Air Temple,10,Sky,8.34,1971-12-27,2023-09-19 18:20:58
+50,Adept Yangchen Skyborn,Southern Air Temple,6,Sky,8.59,1985-02-14,2023-09-23 22:10:00
+51,Master Daw Skyborn,Western Air Temple,8,,6.23,1972-12-24,2024-02-16 12:05:32
+52,Novice Yee-Li the Wise,Eastern Air Temple,4,Sky,8.51,1993-08-26,2024-04-30 07:22:14
+53,Acolyte Tyson of the West,Eastern Air Temple,1,Breeze,6.58,2009-10-17,2023-12-10 05:11:43
+54,Acolyte Kelsang of the East,Southern Air Temple,3,Pepper,10.0,1995-12-10,2024-06-17 04:20:38
+55,Acolyte Xai Bau Stormrider,Eastern Air Temple,3,Sky,5.03,1998-03-19,2024-01-22 13:38:39
+56,Acolyte Jamyang Gentlewind,Western Air Temple,2,Appa,8.88,2003-10-10,2023-06-14 21:39:35
+57,Master Meelo the Wise,Eastern Air Temple,8,,9.85,1974-10-06,2023-01-13 05:37:26
+58,Adept Yee-Li Gentlewind,Northern Air Temple,7,Oogi,8.18,1980-05-20,2024-06-15 15:32:27
+59,Acolyte Tseten Skyborn,Western Air Temple,3,Whisper,9.81,1997-07-28,2023-08-28 13:13:07
+60,Master Kai Breezecaller,Northern Air Temple,9,,6.49,1972-12-22,2024-02-04 20:48:28
+61,Master Rohan of the East,Eastern Air Temple,10,Cloud,5.37,1972-02-03,2024-11-02 22:02:31
+62,Acolyte Daw,Northern Air Temple,1,Whisper,6.99,2009-12-19,2023-01-26 19:30:53
+63,Adept Tyson Breezecaller,Western Air Temple,6,Whisper,6.77,1983-05-18,2023-04-30 10:53:46
+64,Novice Kelsang Skyborn,Eastern Air Temple,5,Oogi,8.74,1988-05-09,2023-09-15 09:17:06
+65,Adept Pema the Wise,Southern Air Temple,6,Zephyr,8.89,1983-09-24,2024-08-22 17:04:37
+66,Acolyte Afiko,Northern Air Temple,2,Sky,6.27,2003-05-13,2023-12-31 08:08:42
+67,Master Yee-Li Gentlewind,Eastern Air Temple,9,Oogi,7.0,1972-12-14,2024-06-03 21:22:45
+68,Novice Yangchen Tempest,Southern Air Temple,5,Zephyr,5.14,1989-03-11,2023-04-09 15:38:31
+69,Master Yee-Li of the East,Northern Air Temple,10,Oogi,9.17,1966-07-28,2024-06-13 21:21:25
+70,Acolyte Tenzin,Western Air Temple,2,Cloud,6.14,2000-12-21,2024-09-26 03:12:25
+71,Acolyte Zaheer of the South,Western Air Temple,3,Lefty,8.22,1996-06-26,2024-06-24 23:35:07
+72,Novice Lek of the West,Southern Air Temple,5,Gale,5.19,1989-03-31,2024-08-24 08:21:12
+73,Acolyte Shung of the East,Northern Air Temple,3,,8.47,2001-01-09,2024-11-27 08:43:46
+74,Novice Yangchen Airheart,Northern Air Temple,4,Lefty,8.58,1996-10-13,2024-10-29 07:53:49
+75,Master Gyatso of the East,Southern Air Temple,8,Whisper,7.17,1980-06-29,2023-01-12 20:07:14
+76,Novice Iio,Western Air Temple,5,Gale,5.58,1985-11-25,2024-12-02 07:13:45
+77,Acolyte Rohan Skyborn,Northern Air Temple,1,Sky,9.81,2003-09-12,2024-01-24 02:58:47
+78,Novice Tenzin of the East,Southern Air Temple,5,,5.53,1988-10-03,2024-06-01 05:27:33
+79,Acolyte Gyatso of the South,Southern Air Temple,1,Oogi,9.26,2001-04-29,2024-03-09 20:47:19
+80,Master Pema,Southern Air Temple,8,Whisper,5.39,1977-10-10,2023-05-04 20:07:21
+81,Novice Laghima,Southern Air Temple,5,,8.99,1984-12-28,2024-03-23 22:35:46
+82,Novice Afiko Skyborn,Western Air Temple,4,,8.72,1993-09-07,2023-02-18 13:05:12
+83,Adept Jamyang Cloudwalker,Southern Air Temple,6,,6.8,1981-08-11,2023-05-30 16:00:26
+84,Novice Nola Gentlewind,Southern Air Temple,5,Gale,8.64,1986-10-12,2024-05-25 17:06:16
+85,Adept Jamyang Gentlewind,Western Air Temple,7,,6.82,1981-04-21,2023-04-28 01:00:06
+86,Adept Shung the Wise,Western Air Temple,7,Zephyr,6.07,1981-01-08,2024-01-26 07:54:26
+87,Adept Aang Gentlewind,Western Air Temple,6,Pepper,6.88,1989-08-28,2024-09-20 04:32:29
+88,Master Jinora Gentlewind,Eastern Air Temple,8,Gale,8.25,1978-02-19,2023-07-18 13:41:07
+89,Acolyte Jinora Gentlewind,Eastern Air Temple,3,Sky,6.38,1993-12-23,2023-09-27 01:40:26
+90,Master Pema Gentlewind,Eastern Air Temple,8,,8.3,1980-07-18,2023-09-18 16:54:10
+91,Master Jamyang Airheart,Eastern Air Temple,10,,7.77,1973-06-20,2024-07-12 13:02:49
+92,Master Iio Windwhisperer,Southern Air Temple,8,Cloud,6.34,1980-08-08,2024-07-06 05:44:07
+93,Master Tyson of the South,Eastern Air Temple,8,Zephyr,8.4,1980-10-16,2024-04-03 07:56:30
+94,Novice Nola the Swift,Eastern Air Temple,4,Breeze,5.71,1992-08-28,2024-05-14 21:43:38
+95,Acolyte Xai Bau the Swift,Western Air Temple,2,,7.99,1996-01-26,2023-04-05 08:57:14
+96,Master Tenzin Skyborn,Northern Air Temple,10,Whisper,9.34,1968-01-17,2024-10-23 23:37:04
+97,Novice Kai the Swift,Eastern Air Temple,5,Sky,7.8,1986-05-28,2023-01-07 16:03:42
+98,Acolyte Bumi Windwhisperer,Eastern Air Temple,2,Cloud,9.4,2000-06-10,2024-01-07 18:35:42
+99,Master Tseten of the West,Northern Air Temple,8,Cloud,5.72,1973-08-06,2023-12-04 22:47:37
+100,Master Opal,Western Air Temple,10,Gale,9.99,1964-12-19,2023-01-24 22:51:57
