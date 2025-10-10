@@ -1,6 +1,8 @@
 # dbtk/readers/base.py
 
 import itertools
+import re
+
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
 from collections import OrderedDict
@@ -15,6 +17,50 @@ class Clean:
     LOWER_ALPHANUM = 3  # Lower case, remove all non-alphanum characters
     STANDARDIZE = 4  # Lower case, remove non-alphanum, strip "code" endings
     DEFAULT = 2  # Default to LOWER_NOSPACE
+
+    @staticmethod
+    def normalize(val: Any, clean_level: Union[int, 'Clean', None] = None) -> str:
+        """
+        Normalize column header names.
+
+        Args:
+            val: Column name (any type, will be converted to string)
+            clean_level: Cleaning level, either an integer (0-4), a Clean class constant,
+                        or None to use Clean.DEFAULT
+
+        Returns:
+            Normalized column name string
+
+        Examples:
+            Clean.normalize("#Term Code", Clean.NOOP)           # -> "#Term Code"
+            Clean.normalize("#Term Code", Clean.LOWER)          # -> "#term code"
+            Clean.normalize("#Term Code", Clean.LOWER_NOSPACE)  # -> "#term_code"
+            Clean.normalize("#Term Code", Clean.LOWER_ALPHANUM) # -> "termcode"
+            Clean.normalize("#Term Code", Clean.STANDARDIZE)    # -> "term"
+            Clean.normalize("#Term Code")                       # -> "#term_code" (default to Clean.LOWER_NOSPACE)
+        """
+        # Use Clean.DEFAULT if clean_level is None
+        if clean_level is None:
+            clean_level = Clean.DEFAULT
+        # Convert clean_level to integer if it's a Clean constant
+        clean_level = clean_level if isinstance(clean_level, int) else clean_level.value
+        # Validate clean_level
+        if clean_level not in {Clean.NOOP, Clean.LOWER, Clean.LOWER_NOSPACE, Clean.LOWER_ALPHANUM, Clean.STANDARDIZE}:
+            raise ValueError(f"Invalid clean_level: {clean_level}. Must be 0-4 or a Clean constant.")
+
+        if val in (None, '') or clean_level == Clean.NOOP:
+            return str(val) if val is not None else ''
+        val = str(val).lower().strip()
+        if clean_level == Clean.LOWER:
+            return val
+        elif clean_level == Clean.LOWER_NOSPACE:
+            return val.replace(' ', '_')
+        elif clean_level == Clean.LOWER_ALPHANUM:
+            return re.sub(r'[^a-z0-9]', '', val)
+        elif clean_level == Clean.STANDARDIZE:
+            return re.sub(r'[^a-z0-9]+|code$', '', val)
+        else:
+            return val
 
 
 class ReturnType:
@@ -107,45 +153,6 @@ class Reader(ABC):
         """
         pass
 
-    def clean_header(self, val: Any) -> str:
-        """
-        Clean up column header names.
-
-        Args:
-            val: Column name (any type, will be converted to string)
-
-        Returns:
-            Cleaned column name string
-
-        Examples:
-            clean_header("#Term Code")                        # -> "#term_code"
-            clean_header("#Term Code", Clean.LOWER)           # -> "#term code"
-            clean_header("#Term Code", Clean.LOWER_NOSPACE)   # -> "#term_code"
-            clean_header("#Term Code", Clean.LOWER_ALPHANUM)  # -> "termcode"
-            clean_header("#Term Code", Clean.STANDARDIZE)     # -> "term"
-        """
-        import re
-
-        if val in (None, '') or self.clean_headers == Clean.NOOP:
-            return str(val) if val is not None else ''
-
-        val = str(val).lower().strip()
-
-        if self.clean_headers == Clean.LOWER:
-            # "#Term Code" -> "#term code"
-            return val
-        elif self.clean_headers == Clean.LOWER_NOSPACE:
-            # "#Term Code" -> "#term_code"
-            return val.replace(' ', '_')
-        elif self.clean_headers == Clean.LOWER_ALPHANUM:
-            # "#Term Code" -> "termcode"
-            return re.sub(r'[^a-z0-9]', '', val)
-        elif self.clean_headers == Clean.STANDARDIZE:
-            # "#Term Code" -> "term"
-            return re.sub(r'[^a-z0-9]+|code$', '', val)
-        else:
-            return val
-
     def _setup_record_class(self):
         """Initialize headers and create Record subclass if needed."""
         if self._headers_initialized:
@@ -155,7 +162,7 @@ class Reader(ABC):
         raw_headers = self._read_headers()
 
         # Clean headers
-        self._headers = [self.clean_header(h) for h in raw_headers]
+        self._headers = [Clean.normalize(h, self.clean_headers) for h in raw_headers]
 
         # Add rownum if requested and not already present
         if self.add_rownum and 'rownum' not in self._headers:

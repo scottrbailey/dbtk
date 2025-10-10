@@ -77,7 +77,7 @@ class JSONReader(Reader):
         if not all_keys:
             raise ValueError("No keys discovered in NDJSON file")
         self._keys = sorted(all_keys)
-        self._column_cache = [self.clean_header(key) for key in self._keys]
+        self._column_cache = [Clean.normalize(key, self.clean_headers) for key in self._keys]
 
         return self._column_cache
 
@@ -185,7 +185,7 @@ class NDJSONReader(Reader):
         if not all_keys:
             raise ValueError("No keys discovered in NDJSON file")
         self._original_keys = all_keys
-        self._column_cache = [self.clean_header(key) for key in all_keys]
+        self._column_cache = [Clean.normalize(key, self.clean_headers) for key in all_keys]
 
         return self._column_cache
 

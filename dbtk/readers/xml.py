@@ -113,7 +113,7 @@ class XMLReader(Reader):
 
         # Add discovered columns as XMLColumn objects with cleaned names
         for element_name in discovered_elements:
-            cleaned_name = self.clean_header(element_name)
+            cleaned_name = Clean.normalize(element_name, self.clean_headers)
             self._all_columns.append(XMLColumn(cleaned_name))
 
         # Extract just the names for the column cache
