@@ -12,7 +12,46 @@ try:
 except ImportError:
     from collections.abc import Mapping
 
-from .database import ParamStyle
+
+class ParamStyle:
+    QMARK = 'qmark'         # id = ?
+    NUMERIC = 'numeric'     # id = :1
+    NAMED = 'named'         # id = :id  also :1 for positional
+    FORMAT = 'format'       # id = %s
+    PYFORMAT = 'pyformat'   # id = %(id)s also %s for positional
+    DEFAULT = NAMED
+
+    @classmethod
+    def values(cls):
+        return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
+
+    @classmethod
+    def positional_styles(cls):
+        """ Parameter styles where parameters must be in properly ordered tuple instead of dict"""
+        return (cls.QMARK, cls.NUMERIC, cls.FORMAT)
+
+    @classmethod
+    def named_styles(cls):
+        """ Parameter styles where parameters must be in dict instead of tuple"""
+        return (cls.NAMED, cls.PYFORMAT)
+
+    @classmethod
+    def get_placeholder(cls, paramstyle: str) -> str:
+        if paramstyle == cls.QMARK:
+            return '?'
+        elif paramstyle == cls.FORMAT:
+            return '%s'
+        elif paramstyle == cls.NUMERIC:
+            return ':1'
+        elif paramstyle == cls.NAMED:
+            # adapters that use named parameters can also use :1 for positional parameters
+            return ':1'
+        elif paramstyle == cls.PYFORMAT:
+            # adapters that use pyformat parameters can also use %s for positional parameters
+            return '%s'
+        return ''
+
+
 
 class QueryLogger:
     """Simple query logger."""
@@ -105,6 +144,56 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
         return new_sql, param_names
     else:
         raise ValueError(f"Unsupported paramstyle: {paramstyle}")
+
+def validate_identifier(identifier: str, max_length: int = 64) -> str:
+    """
+    Validate that an identifier is safe for use (even if it needs quoting).
+    Returns the identifier if valid, raises ValueError if invalid.
+    """
+    if '.' in identifier:
+        # Split and recursively validate each part
+        parts = identifier.split('.')
+        validated_parts = [validate_identifier(part, max_length) for part in parts]
+        return '.'.join(validated_parts)
+
+    # Single identifier validation
+    if not identifier:
+        raise ValueError("Invalid identifier: cannot be empty")
+    if not identifier[0].isalpha():
+        raise ValueError(f"Invalid identifier: must start with a letter: {identifier}")
+    if len(identifier) > max_length:
+        raise ValueError(f"Invalid identifier: exceeds max length of {max_length}")
+
+    # Check for characters/sequences that could enable injection or break SQL parsing
+    dangerous_patterns = ['\x00', '\n', '\r', '"', ';', '\x1a', '--', '/*', '*/']
+    for pattern in dangerous_patterns:
+        if pattern in identifier:
+            raise ValueError(f"Invalid identifier: contains dangerous pattern '{pattern}': {identifier}")
+
+    if identifier.startswith(' ') or identifier.endswith(' '):
+        raise ValueError(f"Invalid identifier: has leading/trailing spaces: {identifier}")
+
+    return identifier
+
+
+def identifier_needs_quoting(identifier: str) -> bool:
+    """Check if identifier needs quoting."""
+    return not re.match(r'^([a-z][a-z0-9_]*|[A-Z][A-Z0-9_]*)$', identifier)
+
+
+def quote_identifier(identifier: str) -> str:
+    """Quote identifier, handling qualified names by splitting on dots."""
+    if '.' in identifier:
+        # Split and recursively quote each part
+        parts = identifier.split('.')
+        quoted_parts = [quote_identifier(part) for part in parts]
+        return '.'.join(quoted_parts)
+
+    # Single identifier quoting
+    if identifier_needs_quoting(identifier):
+        return f'"{identifier}"'
+    else:
+        return identifier
 
 
 def batch_iterable(iterable: Iterable[Any], batch_size: int) -> Iterable[List[Any]]:

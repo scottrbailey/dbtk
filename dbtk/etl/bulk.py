@@ -18,6 +18,7 @@ from ..utils import batch_iterable, RecordLike
 
 logger = logging.getLogger(__name__)
 
+
 class DataSurge:
     """
     Handles bulk ETL operations by delegating to a stateful Table instance.
@@ -26,305 +27,129 @@ class DataSurge:
     Ensure the Table is not used concurrently by other operations or threads.
 
     Example:
-        table = Table(...)
+        table = Table(..., cursor=cursor)
         surge = DataSurge(table)
-        errors = surge.merge(cursor, records, batch_size=500, ignore_errors=True)
+        errors = surge.merge(records, batch_size=500, raise_error=False)
     """
 
     def __init__(self, table: Table):
         self.table = table
+        self.cursor = table.cursor
         self.skips = 0
+        self._sql_statements = {}  # Only for modified SQL
 
-    def insert(self, cursor: Cursor, records: Iterable[RecordLike],
-               batch_size: int = 1000,  raise_error: bool = True) -> int:
+    def get_sql(self, operation: str) -> str:
+        """Get SQL for operation, checking local modifications first."""
+        if operation in self._sql_statements:
+            return self._sql_statements[operation]
+        return self.table.get_sql(operation)
+
+    def insert(self, records: Iterable[RecordLike],
+               batch_size: int = 1000, raise_error: bool = True,
+               use_transaction: bool = False) -> int:
         """Perform bulk INSERT on records."""
-        if self.table._sql_statements['insert'] is None:
-            self.table.generate_sql('insert')
-        sql = self.table.sql_statements['insert']
+        return self._process_records(records, 'insert', batch_size, raise_error, use_transaction)
 
-        errors = 0
-        skipped = 0
-
-        for batch in batch_iterable(records, batch_size):
-            batch_params = []
-            for record in batch:
-                self.table.set_values(record)
-                if not self.table.reqs_met:
-                    skipped += 1
-                    msg = f"Skipped insert record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    logger.info(msg)
-                    continue
-                params = self.table.get_bind_params('insert')
-                batch_params.append(params)
-
-            if batch_params:
-                try:
-                    cursor.executemany(sql, batch_params)
-                    self.table.counts['insert'] += len(batch_params)
-                except cursor.connection.interface.DatabaseError as e:
-                    error_msg = f"Insert batch failed for {self.table._name}: {str(e)}"
-                    logger.error(error_msg)
-                    if raise_error:
-                        raise
-                    errors += len(batch_params)
-
-        logger.info(f"Successfully inserted {self.table.counts['insert']} records for {self.table._name} with {errors} errors, {skipped} skipped")
-        self.skips += skipped
-        return errors
-
-    def update(self, cursor: Cursor, records: Iterable[RecordLike],
-               batch_size: int = 1000, raise_error: bool = True) -> int:
+    def update(self, records: Iterable[RecordLike],
+               batch_size: int = 1000, raise_error: bool = True,
+               use_transaction: bool = False) -> int:
         """Perform bulk UPDATE on records."""
-        if self.table._sql_statements['update'] is None:
-            self.table.generate_sql('update')
+        return self._process_records(records, 'update', batch_size, raise_error, use_transaction)
 
-        sql = self.table.sql_statements['update']
-        errors = 0
-        skipped = 0
-
-        for batch in batch_iterable(records, batch_size):
-            batch_params = []
-            for record in batch:
-                self.table.set_values(record)
-                if not self.table.reqs_met:
-                    skipped += 1
-                    msg = f"Skipped update record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    logger.info(msg)
-                    continue
-                params = self.table.get_bind_params('update')
-                batch_params.append(params)
-
-            if batch_params:
-                try:
-                    cursor.executemany(sql, batch_params)
-                    self.table.counts['update'] += len(batch_params)
-                except cursor.connection.interface.DatabaseError as e:
-                    error_msg = f"Update batch failed for {self.table._name}: {str(e)}"
-                    logger.error(error_msg)
-                    if raise_error:
-                        raise
-                    errors += len(batch_params)
-
-        logger.info(f"Successfully updated {self.table.counts['update']} records for {self.table._name} with {errors} errors, {skipped} skipped")
-        self.skips += skipped
-        return errors
-
-    def delete(self, cursor: Cursor, records: Iterable[RecordLike],
-               batch_size: int = 1000, raise_error: bool = True) -> int:
+    def delete(self, records: Iterable[RecordLike],
+               batch_size: int = 1000, raise_error: bool = True,
+               use_transaction: bool = False) -> int:
         """Perform bulk DELETE on records."""
-        if self.table.sql_statements['delete'] is None:
-            self.table.generate_sql('delete')
+        return self._process_records(records, 'delete', batch_size, raise_error, use_transaction)
 
-        sql = self.table.sql_statements['delete']
-        errors = 0
-        skipped = 0
-
-        for batch in batch_iterable(records, batch_size):
-            batch_params = []
-            for record in batch:
-                self.table.set_values(record)
-                if not self.table.reqs_met:
-                    skipped += 1
-                    msg = f"Skipped delete record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    logger.info(msg)
-                    continue
-                params = self.table.get_bind_params('delete')
-                batch_params.append(params)
-
-            if batch_params:
-                try:
-                    cursor.executemany(sql, batch_params)
-                    self.table.counts['delete'] += len(batch_params)
-                except cursor.connection.interface.DatabaseError as e:
-                    error_msg = f"Delete batch failed for {self.table._name}: {str(e)}"
-                    logger.error(error_msg)
-                    if raise_error:
-                        raise
-                    errors += len(batch_params)
-
-        logger.info(f"Successfully deleted {self.table.counts['delete']} records for {self.table._name} with {errors} errors, {skipped} skipped")
-        return errors
-
-    def merge(self, cursor: Cursor, records: Iterable[RecordLike],
-              batch_size: int = 1000, raise_error: bool = True) -> int:
+    def merge(self, records: Iterable[RecordLike],
+              batch_size: int = 1000, raise_error: bool = True,
+              use_transaction: bool = False) -> int:
         """
         Perform bulk MERGE using either direct upsert or temporary table strategy.
         """
-        db_type = cursor.connection.server_type
-        if db_type == 'postgres' and cursor.connection.server_version < 150000:
-            # PostgreSQL < 15 doesn't have MERGE, must use upsert
-            use_upsert = True
-        else:
-            # Check if we should use upsert based on database capabilities
-            use_upsert = self.table._should_use_upsert(db_type)
+        use_upsert = self.table._should_use_upsert()
 
         if use_upsert:
-            return self._merge_with_upsert(cursor, records, batch_size=batch_size, raise_error=raise_error)
+            return self._process_records(records, 'merge', batch_size, raise_error, use_transaction)
         else:
-            return self._merge_with_temp_table(cursor, records, batch_size=batch_size, raise_error=raise_error)
+            return self._merge_with_temp_table(records, batch_size=batch_size,
+                                               raise_error=raise_error, use_transaction=use_transaction)
 
-    def _merge_with_upsert(self, cursor: Cursor, records: Iterable[RecordLike],
-                           raise_error: bool, batch_size: int) -> int:
-        """Perform bulk merge using native INSERT ... ON DUPLICATE KEY/CONFLICT syntax."""
-        if self.table.sql_statements['merge'] is None:
-            db_type = cursor.connection.server_type
-            self.table.generate_sql('merge', db_type=db_type)
+    def _process_records(self, records: Iterable[RecordLike], operation: str,
+                         batch_size: int, raise_error: bool, use_transaction: bool) -> int:
+        """
+        Common processing logic for insert, update, delete, and upsert operations.
+        Validates records, batches them, and executes with executemany().
+        """
+        sql = self.get_sql(operation)
 
-        base_sql = self.table.sql_statements['merge']
         errors = 0
         skipped = 0
 
-        for batch in batch_iterable(records, batch_size):
-            valid_records = []
-            batch_params = []
+        def process_batches():
+            nonlocal errors, skipped
+            for batch in batch_iterable(records, batch_size):
+                batch_params = []
+                for record in batch:
+                    self.table.set_values(record)
+                    # Validate: delete needs keys, all others need full requirements
+                    if ((operation == 'delete' and not self.table.has_all_keys) or
+                            (operation != 'delete' and not self.table.reqs_met)):
+                        skipped += 1
+                        if operation == 'delete':
+                            msg = f"Skipped {operation} record for {self.table.name}: missing key columns {self.table.keys_missing}"
+                        else:
+                            msg = f"Skipped {operation} record for {self.table.name}: missing required fields {self.table.reqs_missing}"
+                        logger.info(msg)
+                        continue
+                    params = self.table.get_bind_params(operation)
+                    batch_params.append(params)
 
-            # Process records and collect valid ones
-            for record in batch:
-                self.table.set_values(record)
-                if not self.table.reqs_met:
-                    skipped += 1
-                    msg = f"Skipped merge record for {self.table._name}: missing required fields {self.table.reqs_missing}"
-                    logger.info(msg)
-                    continue
-
-                valid_records.append(record)
-                params = self.table.get_bind_params('merge')
-                batch_params.append(params)
-
-            if not valid_records:
-                continue
-
-            if len(valid_records) == 1:
-                # Single record - use base SQL as-is
-                try:
-                    cursor.execute(base_sql, batch_params[0])
-                    self.table.counts['merge'] += 1
-                except cursor.connection.interface.DatabaseError as e:
-                    error_msg = f"Upsert failed for {self.table._name}: {str(e)}"
-                    logger.error(error_msg)
-                    if raise_error:
-                        raise
-                    errors += 1
-            else:
-                # Multiple records - build multi-row VALUES if using positional params
-                if self.table.__paramstyle in ParamStyle.positional_styles():
+                if batch_params:
                     try:
-                        batch_sql, flat_params = self._build_multi_row_upsert(base_sql, batch_params)
-                        cursor.execute(batch_sql, flat_params)
-                        self.table.counts['merge'] += len(valid_records)
-                    except cursor.connection.interface.DatabaseError as e:
-                        error_msg = f"Upsert batch failed for {self.table._name}: {str(e)}"
+                        self.cursor.executemany(sql, batch_params)
+                        self.table.counts[operation] += len(batch_params)
+                    except self.cursor.connection.interface.DatabaseError as e:
+                        error_msg = f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}"
                         logger.error(error_msg)
                         if raise_error:
                             raise
-                        errors += len(valid_records)
-                else:
-                    # For named parameters, execute individually
-                    for i, params in enumerate(batch_params):
-                        try:
-                            cursor.execute(base_sql, params)
-                            self.table.counts['merge'] += 1
-                        except cursor.connection.interface.DatabaseError as e:
-                            error_msg = f"Upsert failed for {self.table._name}: {str(e)}"
-                            self._log_error(error_msg, log)
-                            if not ignore_errors:
-                                raise
-                            errors += 1
+                        errors += len(batch_params)
 
-        if log_success:
-            logger.info(
-                f"Successfully merged {self.table.counts['merge']} records for {self.table._name} with {errors} errors, {skipped} skipped")
-        return errors + skipped
-
-    def _build_multi_row_upsert(self, base_sql: str, batch_params: list) -> tuple:
-        """Build multi-row VALUES clause for upsert statements."""
-        # Build placeholders for each row
-        if self.table.__paramstyle == ParamStyle.QMARK:
-            placeholder = '?'
-        elif self.table.__paramstyle == ParamStyle.FORMAT:
-            placeholder = '%s'
-        elif self.table.__paramstyle == ParamStyle.NUMERIC:
-            # For numeric, we need to renumber all parameters
-            placeholder = None  # Will be handled specially
-
-        if placeholder:
-            # Build VALUES clauses
-            param_count = len(batch_params[0]) if batch_params else 0
-            row_placeholders = ', '.join([placeholder] * param_count)
-            value_clauses = [f"({row_placeholders})" for _ in batch_params]
-            multi_values = f"VALUES {', '.join(value_clauses)}"
-
-            # Replace single VALUES clause with multi-row
-            batch_sql = re.sub(r'VALUES\s*\([^)]*\)', multi_values, base_sql, flags=re.IGNORECASE)
-
-            # Flatten parameters
-            flat_params = []
-            for params in batch_params:
-                if isinstance(params, (list, tuple)):
-                    flat_params.extend(params)
-                else:
-                    flat_params.append(params)
-
-            return batch_sql, flat_params
+        if use_transaction:
+            with self.cursor.connection.transaction():
+                process_batches()
         else:
-            # Handle NUMERIC style by renumbering parameters
-            flat_params = []
-            param_counter = 1
-            modified_sql = base_sql
+            process_batches()
 
-            for i, params in enumerate(batch_params):
-                if i == 0:
-                    # First row uses existing SQL
-                    flat_params.extend(params)
-                    param_counter += len(params)
-                else:
-                    # Additional rows need new parameter numbers
-                    row_placeholders = []
-                    for _ in params:
-                        row_placeholders.append(f':{param_counter}')
-                        param_counter += 1
+        logger.info(
+            f"Successfully {operation}d {self.table.counts[operation]} records for {self.table.name} with {errors} errors, {skipped} skipped")
+        self.skips += skipped
+        return errors
 
-                    additional_values = f", ({', '.join(row_placeholders)})"
-                    # Find the end of the VALUES clause and append
-                    values_end = modified_sql.find(')')
-                    if 'ON DUPLICATE KEY' in modified_sql:
-                        insert_pos = modified_sql.find('ON DUPLICATE KEY')
-                    elif 'ON CONFLICT' in modified_sql:
-                        insert_pos = modified_sql.find('ON CONFLICT')
-                    else:
-                        insert_pos = len(modified_sql)
-
-                    # Find the last ) before the ON clause
-                    values_section = modified_sql[:insert_pos]
-                    last_paren = values_section.rfind(')')
-                    modified_sql = modified_sql[:last_paren] + additional_values + modified_sql[last_paren:]
-
-                    flat_params.extend(params)
-
-            return modified_sql, flat_params
-
-    def _merge_with_temp_table(self, cursor: Cursor, records: Iterable[RecordLike],
-                               raise_error: bool, batch_size: int) -> int:
-        """Perform bulk merge using temporary table (original implementation)."""
+    def _merge_with_temp_table(self, records: Iterable[RecordLike],
+                               raise_error: bool, batch_size: int, use_transaction: bool) -> int:
+        """Perform bulk merge using temporary table (for databases requiring true MERGE)."""
 
         # Convert iterator to list since we need to know the count and potentially retry
         records_list = list(records)
         if not records_list:
             return 0
 
-        db_type = cursor.connection.server_type
-        if db_type == 'postgres' and cursor.connection._connection.server_version < 150000:
+        db_type = self.cursor.connection.server_type
+        if db_type == 'postgres' and self.cursor.connection.server_version < 150000:
             raise NotImplementedError(
-                f"PostgreSQL MERGE requires version >= 15, found {cursor.connection._connection.server_version}")
+                f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}")
 
-        temp_name = f"tmp_{self.table._name}_{int(time.time())}"
+        temp_name = f"tmp_{self.table.name}_{int(time.time())}"
         if db_type == 'sqlserver':
             temp_name = f"#{temp_name}"
 
-        create_sql = f"CREATE TEMPORARY TABLE {temp_name} AS SELECT * FROM {self.table._name} WHERE 1=0"
+        create_sql = f"CREATE TEMPORARY TABLE {temp_name} AS SELECT * FROM {self.table.name} WHERE 1=0"
         try:
-            cursor.execute(create_sql)
-        except cursor.connection.interface.DatabaseError as e:
+            self.cursor.execute(create_sql)
+        except self.cursor.connection.interface.DatabaseError as e:
             error_msg = f"Failed to create temp table {temp_name}: {str(e)}"
             logger.error(error_msg)
             if raise_error:
@@ -334,40 +159,49 @@ class DataSurge:
         # Use temporary table for bulk insert
         temp_table = Table(
             name=temp_name,
-            columns=self.table.__columns,
-            paramstyle=self.table.__paramstyle
+            columns=self.table.columns,
+            cursor=self.cursor
         )
         temp_surge = DataSurge(temp_table)
-        errors = temp_surge.insert(cursor, records_list, raise_error=raise_error, batch_size=batch_size)
+        errors = temp_surge.insert(records_list, raise_error=raise_error, batch_size=batch_size)
 
         if errors:
-            cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
+            self.cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
             return errors
 
         # Generate MERGE SQL if not already done
-        if self.table.sql_statements['merge'] is None:
-            self.table.generate_sql('merge', db_type=db_type)
-
+        self.table.generate_sql('merge')
         merge_sql = self.table.sql_statements['merge']
-        # Replace the USING clause to point to temp table
+
+        # Replace the USING clause to point to temp table and store modified version
         modified_merge = re.sub(r'USING\s*\(.*?\)\s*s', f'USING {temp_name} s', merge_sql, flags=re.DOTALL)
+        self._sql_statements['merge'] = modified_merge
+
+        def execute_merge():
+            nonlocal errors
+            try:
+                self.cursor.execute(self.get_sql('merge'))
+                self.table.counts['merge'] += len(records_list) - errors
+            except self.cursor.connection.interface.DatabaseError as e:
+                error_msg = f"Merge failed for {self.table.name}: {str(e)}"
+                logger.error(error_msg)
+                if raise_error:
+                    raise
+                errors += len(records_list) - errors
 
         try:
-            with cursor.connection.transaction():
-                cursor.execute(modified_merge)
-                self.table.counts['merge'] += len(records_list) - errors
-        except cursor.connection.interface.DatabaseError as e:
-            error_msg = f"Merge failed for {self.table._name}: {str(e)}"
-            logger.error(error_msg)
-            if raise_error:
-                raise
-            errors += len(records_list) - errors
+            if use_transaction:
+                with self.cursor.connection.transaction():
+                    execute_merge()
+            else:
+                execute_merge()
         finally:
             try:
-                cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
-            except cursor.connection.interface.DatabaseError as e:
+                self.cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
+            except self.cursor.connection.interface.DatabaseError as e:
                 error_msg = f"Failed to drop temp table {temp_name}: {str(e)}"
                 logger.warning(error_msg)
 
-        logger.info(f"Successfully merged {self.table.counts['merge']} records for {self.table._name} with {errors} errors")
+        logger.info(
+            f"Successfully merged {self.table.counts['merge']} records for {self.table.name} with {errors} errors")
         return errors

@@ -2,9 +2,13 @@
 # Copy to ~/.config/dbtk.yml and customize
 
 settings:
-  default_timezone: UTC
+  default_column_case: lower
   default_country: US
-  default_paramstyle: named
+  default_cursor_type: record
+  default_header_clean: 2  # Clean.LOWER_NOSPACE
+  default_timezone: UTC
+  lookup_preload_threshold: 500  # if table size > threshold, preload all values for transforms.CodeLookup
+  validator_preload_threshold: 1000 # if table size > threshold, preload all values for transforms.CodeValidator
 
 connections:
   # Example connection configurations

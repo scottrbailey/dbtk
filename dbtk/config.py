@@ -8,7 +8,9 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
-from .database import ParamStyle, get_params_for_database
+
+from .defaults import settings # noqa: F401
+from .database import Database, get_params_for_database
 try:
     import yaml
 except ImportError:
@@ -26,15 +28,7 @@ try:
 except ImportError:
     HAS_KEYRING = False
 
-from .database import Database
-
 logger = logging.getLogger(__name__)
-
-settings = {
-    'default_timezone': 'UTC',
-    'default_country': 'US',
-    'default_paramstyle': ParamStyle.FORMAT
-}
 
 
 class ConfigManager:

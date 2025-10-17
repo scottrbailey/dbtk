@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
 from collections import OrderedDict
 from ..record import Record
+from ..defaults import settings
 
 
 class Clean:
@@ -16,7 +17,22 @@ class Clean:
     LOWER_NOSPACE = 2  # Lower case and replace spaces with _
     LOWER_ALPHANUM = 3  # Lower case, remove all non-alphanum characters
     STANDARDIZE = 4  # Lower case, remove non-alphanum, strip "code" endings
-    DEFAULT = 2  # Default to LOWER_NOSPACE
+    DEFAULT = LOWER_NOSPACE
+
+    @classmethod
+    def from_string(cls, value):
+        """Convert string to Clean constant, or pass through if already int."""
+        if isinstance(value, int):
+            return value
+
+        string_map = {
+            'noop': cls.NOOP,
+            'lower': cls.LOWER,
+            'lower_nospace': cls.LOWER_NOSPACE,
+            'lower_alphanum': cls.LOWER_ALPHANUM,
+            'standardize': cls.STANDARDIZE
+        }
+        return string_map.get(value.lower(), cls.NOOP)
 
     @staticmethod
     def normalize(val: Any, clean_level: Union[int, 'Clean', None] = None) -> str:
@@ -41,7 +57,7 @@ class Clean:
         """
         # Use Clean.DEFAULT if clean_level is None
         if clean_level is None:
-            clean_level = Clean.DEFAULT
+            clean_level = Clean.LOWER_NOSPACE
         # Convert clean_level to integer if it's a Clean constant
         clean_level = clean_level if isinstance(clean_level, int) else clean_level.value
         # Validate clean_level
@@ -80,7 +96,7 @@ class Reader(ABC):
 
     def __init__(self,
                  add_rownum: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
+                 clean_headers: Clean = None,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT
@@ -96,7 +112,9 @@ class Reader(ABC):
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict
         """
         self.add_rownum = add_rownum
-        self.clean_headers = clean_headers
+        if clean_headers is None:
+            clean_headers = settings.get('default_header_clean', Clean.LOWER_NOSPACE)
+        self.clean_headers = Clean.from_string(clean_headers)
         self.record_num = 0
         self.skip_records = skip_records
         self.max_records = max_records

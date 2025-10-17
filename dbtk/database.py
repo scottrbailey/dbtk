@@ -10,51 +10,13 @@ import logging
 from typing import Dict, Any, Optional, Union, Type, List
 from contextlib import contextmanager
 
-from .cursors import Cursor, RecordCursor, TupleCursor, DictCursor
+from .cursors import Cursor, RecordCursor, TupleCursor, DictCursor, ParamStyle
+from .defaults import settings
 
 logger = logging.getLogger(__name__)
 
 # users can define their own drivers in the config file
 _user_drivers = {}
-
-
-class ParamStyle:
-    QMARK = 'qmark'         # id = ?
-    NUMERIC = 'numeric'     # id = :1
-    NAMED = 'named'         # id = :id  also :1 for positional
-    FORMAT = 'format'       # id = %s
-    PYFORMAT = 'pyformat'   # id = %(id)s also %s for positional
-    DEFAULT = NAMED
-
-    @classmethod
-    def values(cls):
-        return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
-
-    @classmethod
-    def positional_styles(cls):
-        """ Parameter styles where parameters must be in properly ordered tuple instead of dict"""
-        return (cls.QMARK, cls.NUMERIC, cls.FORMAT)
-
-    @classmethod
-    def named_styles(cls):
-        """ Parameter styles where parameters must be in dict instead of tuple"""
-        return (cls.NAMED, cls.PYFORMAT)
-
-    @classmethod
-    def get_placeholder(cls, paramstyle: str) -> str:
-        if paramstyle == cls.QMARK:
-            return '?'
-        elif paramstyle == cls.FORMAT:
-            return '%s'
-        elif paramstyle == cls.NUMERIC:
-            return ':1'
-        elif paramstyle == cls.NAMED:
-            # adapters that use named parameters can also use :1 for positional parameters
-            return ':1'
-        elif paramstyle == cls.PYFORMAT:
-            # adapters that use pyformat parameters can also use %s for positional parameters
-            return '%s'
-        return ''
 
 
 class CursorType:
@@ -500,7 +462,7 @@ class Database:
         """Context manager exit - close connection."""
         self.close()
 
-    def cursor(self, cursor_type: Union[str, Type] = 'record', **kwargs) -> Cursor:
+    def cursor(self, cursor_type: Union[str, Type] = None, **kwargs) -> Cursor:
         """
         Create a cursor of the specified type.
 
@@ -517,6 +479,8 @@ class Database:
             cursor = db.cursor('tuple')  # TupleCursor
             cursor = db.cursor(RecordCursor)  # Explicit class
         """
+        if cursor_type is None:
+            cursor_type = settings.get('default_cursor_type', CursorType.RECORD)
         if isinstance(cursor_type, str):
             if cursor_type not in CursorType.values():
                 raise ValueError(
