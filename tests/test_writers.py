@@ -89,7 +89,6 @@ def sample_columns(sample_records):
 
 
 # Base Writer Tests using CSV
-@pytest.mark.writers
 class TestBaseWriter:
     """Tests for base writer functionality using CSVWriter."""
 
@@ -225,7 +224,6 @@ class TestBaseWriter:
         assert writer.row_count == 10
 
 
-@pytest.mark.writers
 class TestCSVWriter:
     """Tests specific to CSV writer."""
 
@@ -275,8 +273,6 @@ class TestCSVWriter:
         assert sample_records[0]['monk_name'] == records_back[0]['monk_name']
 
 
-@pytest.mark.writers
-@pytest.mark.excel
 class TestExcelWriter:
     """Tests specific to Excel writer."""
 
@@ -360,7 +356,6 @@ class TestExcelWriter:
         assert isinstance(birth_date_cell.value, datetime)
 
 
-@pytest.mark.writers
 class TestFixedWidthWriter:
     """Tests specific to fixed-width writer."""
 
@@ -439,7 +434,6 @@ class TestFixedWidthWriter:
             to_fixed_width(sample_records, column_widths, output_file)
 
 
-@pytest.mark.writers
 class TestJSONWriter:
     """Tests specific to JSON writer."""
 
@@ -499,7 +493,6 @@ class TestJSONWriter:
         assert data[0]['birth_date'] == '1965-12-16'
 
 
-@pytest.mark.writers
 class TestNDJSONWriter:
     """Tests specific to NDJSON writer."""
 
@@ -598,7 +591,6 @@ class TestXMLWriter:
         assert len(records) == 10
 
 
-@pytest.mark.writers
 class TestDatabaseWriter:
     """Tests specific to DatabaseWriter."""
 
@@ -743,7 +735,6 @@ class TestDatabaseWriter:
         assert len(records) == 10
 
 
-@pytest.mark.writers
 class TestDatabaseWriter:
     """Tests specific to DatabaseWriter."""
 

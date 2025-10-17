@@ -138,7 +138,6 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
 
 
 # Base Reader Tests
-@pytest.mark.readers
 class TestReaderBase:
     """Tests for base reader functionality across all formats."""
 
@@ -390,7 +389,6 @@ class TestReaderBase:
                 assert len(records) == 0
 
 
-@pytest.mark.readers
 class TestCSVReader:
     """Tests specific to CSV reader."""
 
@@ -451,7 +449,6 @@ class TestCSVReader:
             assert 'trainee_id' in reader.fieldnames
 
 
-@pytest.mark.readers
 class TestGetReader:
     """Tests for the get_reader utility function."""
 
@@ -462,7 +459,6 @@ class TestGetReader:
             records = list(reader)
             assert len(records) == 100
 
-    @pytest.mark.excel
     def test_get_reader_excel(self, excel_file):
         """Test get_reader with Excel file."""
         with get_reader(str(excel_file)) as reader:

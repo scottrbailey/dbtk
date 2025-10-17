@@ -6,9 +6,25 @@ Like the elemental benders of Avatar, this library gives you precise control ove
 
 **Design philosophy:** This library is designed to get data to and from your databases with minimal hassle. It is well suited for data integration and ELT jobs. Modern databases do an amazing job at aggregating and transforming data, and we believe in leveraging those strengths. However, if you are doing heavy transforms in Python, we recommend looking at other tool chains like Pandas and polars.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Components](#core-components)
+  - [Database Connections](#database-connections) - Write once, run anywhere
+  - [File Readers](#file-readers) - Unified interface for all formats
+  - [Data Writers](#data-writers) - Export anywhere with one call
+  - [ETL Operations](#etl-operations) - Production-ready data pipelines
+- [Configuration & Security](#configuration--security)
+- [Advanced Features](#advanced-features)
+- [Database Support](#database-support)
+- [Performance Tips](#performance-tips)
+
 ## Features
 
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
+- **Portable SQL Queries** - Write SQL once with named parameters, run on any database regardless of parameter style
 - **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
 - **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
@@ -17,9 +33,7 @@ Like the elemental benders of Avatar, this library gives you precise control ove
 - **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
 - **Smart Cursors** - Multiple result formats: Records, named tuples, dictionaries, or plain lists
 
-## Quick Start
-
-### Installation
+## Installation
 
 ```bash
 pip install dbtk
@@ -39,7 +53,7 @@ pip install oracledb          # Oracle
 pip install mysqlclient       # MySQL
 ```
 
-### Basic Usage
+## Quick Start
 
 ```python
 import dbtk
@@ -87,60 +101,37 @@ with dbtk.connect('avatar_training_grounds') as db:
                 print(f"Recruit needs more training: missing {recruit_table.reqs_missing}")
 ```
 
-### Configuration
-
-Create a `dbtk.yml` file for your database connections. Configurations can be project-scoped (`./dbtk.yml`) or user-scoped (`~/.config/dbtk.yml`).
-
-```yaml
-settings:
-  default_timezone: UTC
-  default_country: US
-  default_paramstyle: named
-
-connections:
-  fire_nation_census:
-    type: postgres
-    host: sozin.fire-nation.gov
-    port: 5432
-    database: population_records
-    user: fire_lord_archivist
-    encrypted_password: gAAAAABh...  # Encrypted password
-
-  ba_sing_se_records:
-    type: oracle
-    host: earth-kingdom-db.bss
-    port: 1521
-    database: CITIZEN_REGISTRY
-    user: dai_li_agent
-    password: ${EARTH_KINGDOM_SECRET}  # Environment variable
-```
-
 ## Core Components
 
 ### Database Connections
 
-Connect to databases with automatic driver detection and unified interface. 
+**The problem:** Every database has different connection parameters, drivers, and parameter styles. Writing portable database code is painful.
 
-The Database class provides a uniform API across all database types, abstracting away driver-specific differences. This means you can write code once and easily switch between PostgreSQL, Oracle, MySQL, and other databases without rewriting your application logic.
+**The solution:** DBTK provides a unified interface that handles all the complexity. Write your code once, and it works seamlessly across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite. The library automatically detects available drivers and handles parameter style conversions transparently.
 
-DBTK maintains a clean reference hierarchy that gives you access to the full stack when needed. Cursor objects maintain a reference to the connection (cursor.connection), and the connection objects maintain a reference to the underlying driver (connection.interface).
 ```python
 import dbtk
 
-# Direct connections
+# Direct connections - same API for all databases
 fire_db = dbtk.database.postgres(user='azula', password='blue_flames', database='fire_nation')
 earth_db = dbtk.database.oracle(user='toph', password='metal_bending', database='ba_sing_se')
 
-# From configuration
+# From configuration - store credentials securely
 db = dbtk.connect('northern_water_tribe')
 
 # Different cursor types for different needs
-cursor = db.cursor('record')        # Record class - row['name'], row.name, row[0]
+cursor = db.cursor('record')        # Record class - row['name'], row.name, row[0], row.get('name')
 cursor_t = db.cursor('tuple')       # namedtuple   - row.name, row[0]
 cursor_l = db.cursor('list')        # simple list  - row[0]
-cursor_d = db.cursor('dict')        # OrderedDict  - row['name']
+cursor_d = db.cursor('dict')        # OrderedDict  - row['name'], row.get('name')
+```
 
-# Access the underlying driver for maximum flexibility
+**Access the full stack when you need it:**
+
+DBTK maintains a clean reference hierarchy that gives you access to the underlying driver for maximum flexibility:
+
+```python
+# Access the underlying driver for database-specific features
 print(db.interface.__name__)  # 'psycopg2', 'oracledb', etc.
 print(db.interface.paramstyle)  # 'named', 'qmark', etc.
 
@@ -148,13 +139,49 @@ print(db.interface.paramstyle)  # 'named', 'qmark', etc.
 try:
     cursor.execute(sql)
 except cursor.connection.interface.DatabaseError as e:
-    # Handle database-specific errors
     logger.error(f"Database error: {e}")
 
 # Access driver-specific features when needed
 if db.interface.__name__ == 'psycopg2':
-    # Use PostgreSQL-specific functionality
     cursor.execute("LISTEN channel_name")
+```
+
+**Transaction management:**
+
+Context managers make transactions safe and simple:
+
+```python
+with db.transaction():
+    cursor = db.cursor()
+    cursor.execute("INSERT INTO battles ...")
+    cursor.execute("UPDATE casualties ...")
+    # Auto-commit on success, rollback on exception
+```
+
+**Cursor types matter:**
+
+Choose the right cursor type for your use case to balance functionality and performance:
+
+```python
+# Record cursor - memory efficient and most flexible (recommended for most use cases)
+cursor = db.cursor('record')
+row = cursor.fetchone()
+print(row['name'], row.name, row[0], '\t'.join(row[:5]))  # All work!
+
+# Tuple cursor - lightweight namedtuple
+cursor = db.cursor('tuple')
+row = cursor.fetchone()
+print(row.name, row[0], '\t'.join(row[:5]))  # Named and indexed access
+
+# Dict cursor - dictionary-only access
+cursor = db.cursor('dict')
+row = cursor.fetchone()
+print(row['name'])  # Dictionary access only
+
+# List cursor - minimal overhead for simple iteration
+cursor = db.cursor('list')
+row = cursor.fetchone()
+print(row[0], '\t'.join(row[:5]))  # Index access only
 ```
 
 **Supported databases:**
@@ -164,9 +191,13 @@ if db.interface.__name__ == 'psycopg2':
 - SQL Server (pyodbc, pymssql)
 - SQLite (built-in)
 
+See [Database Support](#database-support) for detailed driver information.
+
 ### File Readers
 
-Read data from multiple file formats with a consistent interface:
+**The problem:** Each file format has its own quirks and APIs. You end up writing different code for CSV vs Excel vs JSON, making your ETL pipelines fragile and hard to maintain.
+
+**The solution:** DBTK provides a single, consistent interface for reading all common file formats. Whether you're reading CSV, Excel, JSON, XML, or fixed-width files, the API is identical. Even better - `get_reader()` automatically detects the format from the file extension.
 
 ```python
 from dbtk import readers
@@ -211,17 +242,42 @@ with readers.XMLReader(open('avatar_chronicles.xml'),
 
 **Automatic format detection:**
 
+Let dbtk figure out what you're reading:
+
 ```python
-import dbtk
 # Automatically detects format from extension
 with dbtk.readers.get_reader('data.xlsx') as reader:
     for record in reader:
         process(record)
 ```
 
+**Header cleaning for messy data:**
+
+Real-world data has messy headers. DBTK can standardize them automatically:
+
+```python
+from dbtk.readers import Clean
+
+headers = ["ID #", "Student Name", "Residency Code", "GPA Score", "Has Holds?"]
+
+# C
+[Clean.normalize(h, Clean.LOWER_NOSPACE) for h in headers]
+# ['id_#', 'student_name', 'residency_code', 'gpa_score', 'has_holds?']
+
+[Clean.normalize(h, Clean.STANDARDIZE) for h in headers]
+# ['id', 'studentname', 'residency', 'gpascore', 'hasholds']
+
+# Apply when opening a reader
+reader = dbtk.readers.CSVReader(fp, clean_headers=Clean.STANDARDIZE) 
+```
+
+This is particularly useful when processing similar files from multiple vendors - standardize the headers and your downstream code stays simple.
+
 ### Data Writers
 
-Export data to multiple formats with a consistent interface. All writers can consume a result set directly from a cursor, or a materialized result set (list of Records, namedtuples, dicts).
+**The problem:** You've queried your data, now you need to export it. Do you write CSV? Excel? JSON? Load it into another database? Each format requires different code and libraries.
+
+**The solution:** DBTK writers provide a unified interface for exporting to any format. All writers accept either a cursor or materialized results (lists of Records/namedtuples/dicts), making it trivial to export the same data to multiple formats.
 
 ```python
 from dbtk import writers
@@ -251,7 +307,92 @@ count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
 print(f"Transferred {count} strategic records")
 ```
 
+**Export once, write everywhere:**
+
+Since all writers accept materialized results, you can fetch once and export to multiple formats:
+
+```python
+# Fetch once
+data = cursor.fetchall()
+
+# Export to multiple formats
+writers.to_csv(data, 'output.csv')
+writers.to_excel(data, 'output.xlsx')
+writers.to_json(data, 'output.json')
+```
+
 ### ETL Operations
+
+**The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
+
+**The solution:** DBTK's ETL framework provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
+
+#### SQL File Execution
+
+**The killer feature:** Write SQL once with named parameters, run it anywhere. DBTK automatically converts between parameter styles, making your queries truly portable across databases.
+
+```python
+# query.sql - write once with named parameters
+# SELECT * FROM users WHERE status = :status AND created > :start_date
+
+# Works on ANY database - dbtk handles the conversion
+cursor.execute_file('queries/get_users.sql', {
+    'status': 'active', 
+    'start_date': '2025-01-01'
+})
+
+# Behind the scenes:
+# Oracle:    :status, :start_date  
+# Postgres:  %(status)s, %(start_date)s
+# MySQL:     %s, %s (parameters reordered automatically)
+# SQLite:    ?, ? (parameters reordered automatically)
+```
+
+**One-off queries:**
+
+For queries you run once, `execute_file()` is simple and convenient:
+
+```python
+# Execute SQL from file with parameters
+cursor.execute_file('queries/monthly_report.sql', {
+    'start_date': '2025-01-01',
+    'end_date': '2025-01-31'
+})
+results = cursor.fetchall()
+```
+
+**Prepared statements for repeated execution:**
+
+When you need to execute the same query many times, `prepare_file()` reads and converts the SQL once, then executes efficiently:
+
+```python
+# Prepare once
+stmt = cursor.prepare_file('queries/insert_user.sql')
+
+# Execute many times
+for user_data in import_data:
+    stmt.execute({
+        'user_id': user_data['id'],
+        'name': user_data['name'],
+        'email': user_data['email']
+    })
+
+# PreparedStatement acts like a cursor - fetch directly
+stmt = cursor.prepare_file('queries/get_active_users.sql')
+stmt.execute({'status': 'active', 'min_logins': 5})
+for user in stmt:
+    process_user(user)
+```
+
+**Benefits of SQL files:**
+- Keep SQL separate from Python code for better organization
+- Get syntax highlighting and linting in your editor
+- Test queries independently before integration
+- Reuse queries across different scripts
+- Version control SQL changes separately
+- **Write once, run on any database** (the big win!)
+
+#### Table Class for ETL
 
 The Table class provides a stateful interface for complex ETL operations with field mapping, transformations, and validations:
 
@@ -260,8 +401,9 @@ import dbtk
 from dbtk.etl import transforms
 from dbtk.database import ParamStyle
 
+cursor = dbtk.connect('intel_prod')
 # Auto-generate configuration from existing table
-config = dbtk.etl.generate_table_config(cursor, 'air_nomad_training', add_comments=True)
+config = dbtk.etl.generate_table_config(cursor, 'soldier_training', add_comments=True)
 
 # Define ETL mapping with transformations
 phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
@@ -273,7 +415,7 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
     'combat_name': {'field': 'full_name', 'db_fn': 'generate_fire_nation_callsign(#)'},
     'last_drill': {'db_fn': 'CURRENT_TIMESTAMP'},
     'conscription_source': {'value': 'Sozin Recruitment Drive'}}, 
-    paramstyle=ParamStyle.NAMED)
+    cursor=cursor)
 
 # Process records with validation
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
@@ -281,11 +423,11 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
     for recruit in reader:
         phoenix_king_army.set_values(recruit)
         if phoenix_king_army.reqs_met:
-            existing_soldier = phoenix_king_army.get_db_record(cursor)
+            existing_soldier = phoenix_king_army.get_db_record()
             if existing_soldier:
-                phoenix_king_army.exec_update(cursor)
+                phoenix_king_army.exec_update()
             else:
-                phoenix_king_army.exec_insert(cursor)
+                phoenix_king_army.exec_insert()
         else:
             print(f"Recruit rejected: missing {phoenix_king_army.reqs_missing}")
 ```
@@ -293,21 +435,23 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
 **Key features:**
 - Field mapping and renaming
 - Data type transformations
-- Database function integration
-- Required field validation
+- Database function integration (`db_fn` lets you leverage database capabilities)
+- Required field validation with clear error messages
 - Primary key management
 - Automatic UPDATE exclusions
 - Support for INSERT, UPDATE, DELETE, MERGE operations
 
-### Bulk Operations with DataSurge
+#### Bulk Operations with DataSurge
 
-For high-volume data processing, use DataSurge for efficient batch operations:
+**The problem:** Processing thousands or millions of records row-by-row is painfully slow. You need batching, but implementing it correctly is complex.
+
+**The solution:** DataSurge handles batching, error tracking, and optimal merge strategies automatically. It's built for high-volume data processing.
 
 ```python
 from dbtk.etl import DataSurge
 
 # Define table configuration
-recruit_table = dbtk.etl.Table('fire_nation_soldiers', columns_config)
+recruit_table = dbtk.etl.Table('fire_nation_soldiers', columns_config, cursor)
 
 # Create DataSurge instance for bulk operations
 bulk_writer = DataSurge(recruit_table)
@@ -324,24 +468,26 @@ with dbtk.readers.get_reader('soldier_updates.csv') as reader:
 
 **DataSurge features:**
 - Automatic batching for optimal performance
-- Smart merge strategies (native upsert vs temp table based on database)
+- Smart merge strategies (native MERGE vs temp table based on database capabilities)
 - Configurable error handling
 - Progress tracking and logging
 - Support for INSERT, UPDATE, DELETE, MERGE operations
 
-### Data Transformations
+**Performance impact:** DataSurge can be 10-100x faster than row-by-row operations, depending on your database and network latency.
 
-Built-in transformation functions for common data cleaning tasks:
+#### Data Transformations
+
+Built-in transformation functions handle common data cleaning tasks:
 
 ```python
 from dbtk.etl import transforms as tx
 
-# Date and time parsing
-tx.parse_date("Year 100 AG, Day 15")      # Flexible date parsing
+# Date and time parsing with flexible formats
+tx.parse_date("Year 100 AG, Day 15")
 tx.parse_datetime("100 AG Summer Solstice T14:30:00Z")  # With timezone support
-tx.parse_timestamp("1642262200")          # Unix timestamp support
+tx.parse_timestamp("1642262200")  # Unix timestamp support
 
-# International phone number handling (with phonenumbers library)
+# International phone number handling (requires phonenumbers library)
 tx.phone_clean("5551234567")              # -> "(555) 123-4567"
 tx.phone_format("+44 20 7946 0958", tx.PhoneFormat.NATIONAL)  # UK format
 tx.phone_validate("+1-800-AVATAR")        # Validation
@@ -357,56 +503,9 @@ tx.indicator("Firebender", true_val="Fire Nation Citizen")  # Conditional values
 tx.get_int("123.45 gold pieces")  # -> 123
 ```
 
-**Transformation features:**
-- Flexible date/time parsing with multiple format support
-- International phone number support with country-specific formatting
-- Email validation and normalization
-- Type coercion and conversion
-- Null value handling
-- Timezone support
+**Custom transformations:**
 
-## Advanced Features
-
-### Encrypted Configuration
-
-Secure database credentials with password encryption:
-
-```python
-import dbtk
-
-# Generate encryption key (store in DBTK_ENCRYPTION_KEY environment variable)
-key = dbtk.config.generate_encryption_key()
-
-# Encrypt all passwords in configuration file
-dbtk.config.encrypt_config_file_cli('fire_nation_secrets.yml')
-
-# Retrieve encrypted password
-sozin_secret = dbtk.config.get_password('phoenix_king_battle_plans')
-
-# Manually encrypt a single password
-encrypted = dbtk.config.encrypt_password_cli('only_azula_knows_this')
-
-# Migrate configuration with new encryption key
-new_key = dbtk.config.generate_encryption_key()
-dbtk.config.migrate_config_cli('old_regime.yml', 'phoenix_king_era.yml', 
-                                new_encryption_key=new_key)
-```
-
-### Transaction Management
-
-Use context managers for safe transaction handling:
-
-```python
-with db.transaction():
-    cursor = db.cursor()
-    cursor.execute("INSERT INTO battles ...")
-    cursor.execute("UPDATE casualties ...")
-    # Auto-commit on success, rollback on exception
-```
-
-### Custom Transformations
-
-Create custom transformation functions for your ETL pipelines:
+Create your own transformation functions for domain-specific logic:
 
 ```python
 def standardize_nation(val):
@@ -425,81 +524,15 @@ four_nations_census = dbtk.etl.Table('population_registry', {
 })
 ```
 
-### Multiple Cursor Types
+## Configuration & Security
 
-Choose the right cursor type for your use case:
+**The problem:** Hardcoded credentials are a security nightmare, and managing different database connections across environments is tedious.
 
-```python
-# Record cursor - most flexible, supports dict and attribute access
-cursor = db.cursor('record')
-row = cursor.fetchone()
-print(row['name'], row.name, row[0], '\t'.join(row[:5]))  # All work
+**The solution:** DBTK uses YAML configuration files with support for encrypted passwords and environment variables. Store credentials securely, version control your configuration (without passwords), and switch between environments effortlessly.
 
-# Tuple cursor - lightweight namedtuple
-cursor = db.cursor('tuple')
-row = cursor.fetchone()
-print(row.name, row[0], '\t'.join(row[:5]))  # Named and indexed access, slice
+### Configuration File Format
 
-# Dict cursor - dictionary-only access
-cursor = db.cursor('dict')
-row = cursor.fetchone()
-print(row['name'])  # Dictionary access only
-
-# List cursor - minimal overhead
-cursor = db.cursor('list')
-row = cursor.fetchone()
-print(row[0], '\t'.join([:5]))  # Index access and slice only
-```
-
-### Header Cleaning
-
-Automatically clean and standardize column names. Clean.STANDARDIZE is useful when you need to process similar files from multiple sources, for instance, prospect records from multiple vendors. 
-
-```python
-import dbtk
-from dbtk.readers import Clean
-
-# Different cleaning levels
-headers = ["ID #", "Student Name", "Residency Code", "GPA Score", "Has Holds?"]
-
-[Clean.normalize(h, Clean.NOOP) for h in headers]
-# ['ID #', 'Student Name', 'Residency Code', 'GPA Score', 'Has Holds?']
-[Clean.normalize(h, Clean.LOWER) for h in headers]
-# ['id #', 'student name', 'residency code', 'gpa score', 'has holds?']
-[Clean.normalize(h, Clean.LOWER_NOSPACE) for h in headers]
-# ['id_#', 'student_name', 'residency_code', 'gpa_score', 'has_holds?']
-[Clean.normalize(h, Clean.LOWER_ALPHANUM) for h in headers]
-# ['id', 'studentname', 'residencycode', 'gpascore', 'hasholds']
-[Clean.normalize(h, Clean.STANDARDIZE) for h in headers]
-# ['id', 'studentname', 'residency', 'gpascore', 'hasholds']
-
-# Specifying how much header cleaning should be done when opening a reader
-reader = dbtk.readers.CSVReader(fp, clean_headers=Clean.STANDARDIZE) 
-```
-
-## Database Support
-
-DBTK supports multiple database adapters with automatic detection and fallback:
-
-| Database    | Driver           | Install Command                      | Notes                                                     |
-|-------------|------------------|--------------------------------------|-----------------------------------------------------------|
-| PostgreSQL  | psycopg2         | `pip install psycopg2-binary`        | Recommended                                               |
-| PostgreSQL  | psycopg (3)      | `pip install psycopg-binary`         | Newest version                                            |
-| PostgreSQL  | pgdb             | `pip install pgdb`                   | DB-API compliant                                          |
-| Oracle      | oracledb         | `pip install oracledb`               | Oracle client not required                                |
-| Oracle      | cx_Oracle        | `pip install cx_Oracle`              | Requires Oracle client                                    |
-| MySQL       | mysqlclient      | `pip install mysqlclient`            | Fastest option                                            |
-| MySQL       | mysql.connector  | `pip install mysql-connector-python` | Official MySQL connector                                  |
-| MySQL       | pymysql          | `pip install pymysql`                | Pure Python, lightweight                                  |
-| SQL Server  | pyodbc           | `pip install pyodbc`                 | ODBC driver required                                      |
-| SQL Server  | pymssql          | `pip install pymssql`                | Lightweight, DB-API compliant                             |
-| SQLite      | sqlite3          | Built-in                             | No installation needed                                    |
-
-**Note:** ODBC adapters require appropriate ODBC drivers to be installed on the system.
-
-## Configuration File Format
-
-Complete YAML configuration example:
+Create a `dbtk.yml` file for your database connections. Configurations can be project-scoped (`./dbtk.yml`) or user-scoped (`~/.config/dbtk.yml`).
 
 ```yaml
 settings:
@@ -542,7 +575,7 @@ connections:
     database: /path/to/air_temples.db
 
 passwords:
-  # Standalone encrypted passwords
+  # Standalone encrypted passwords for API keys, etc.
   api_key_avatar_hotline:
     encrypted_password: gAAAAABh...
     description: Avatar hotline API key
@@ -553,6 +586,86 @@ passwords:
     description: Secret tunnel access code
 ```
 
+### Password Encryption
+
+Secure your credentials with encryption:
+
+```python
+import dbtk
+
+# Generate encryption key (store in DBTK_ENCRYPTION_KEY environment variable)
+key = dbtk.config.generate_encryption_key()
+
+# Encrypt all passwords in configuration file
+dbtk.config.encrypt_config_file_cli('fire_nation_secrets.yml')
+
+# Retrieve encrypted password
+sozin_secret = dbtk.config.get_password('phoenix_king_battle_plans')
+
+# Manually encrypt a single password
+encrypted = dbtk.config.encrypt_password_cli('only_azula_knows_this')
+
+# Migrate configuration with new encryption key
+new_key = dbtk.config.generate_encryption_key()
+dbtk.config.migrate_config_cli('old_regime.yml', 'phoenix_king_era.yml', 
+                                new_encryption_key=new_key)
+```
+
+## Advanced Features
+
+### Multiple Configuration Locations
+
+DBTK searches for configuration files in this order:
+1. `./dbtk.yml` (project-specific)
+2. `~/.config/dbtk.yml` (user-specific)
+3. Custom path via `set_config_file()`
+
+This lets you maintain per-project configurations while having a fallback for personal databases.
+
+### Custom Driver Registration
+
+If you're using a database driver not built into DBTK, you can register it:
+
+```python
+from dbtk.database import register_user_drivers
+
+custom_drivers = {
+    'my_postgres_fork': {
+        'database_type': 'postgres',
+        'priority': 10,
+        'param_map': {'database': 'dbname'},
+        'required_params': [{'host', 'database', 'user'}],
+        'optional_params': {'port', 'password'},
+        'connection_method': 'kwargs',
+        'default_port': 5432
+    }
+}
+
+register_user_drivers(custom_drivers)
+```
+
+## Database Support
+
+DBTK supports multiple database adapters with automatic detection and fallback:
+
+| Database    | Driver           | Install Command                      | Notes                                                     |
+|-------------|------------------|--------------------------------------|-----------------------------------------------------------|
+| PostgreSQL  | psycopg2         | `pip install psycopg2-binary`        | Recommended, most mature                                  |
+| PostgreSQL  | psycopg (3)      | `pip install psycopg-binary`         | Newest version, async support                             |
+| PostgreSQL  | pgdb             | `pip install pgdb`                   | DB-API compliant                                          |
+| Oracle      | oracledb         | `pip install oracledb`               | Thin mode - no Oracle client required (recommended)       |
+| Oracle      | cx_Oracle        | `pip install cx_Oracle`              | Requires Oracle client installation                       |
+| MySQL       | mysqlclient      | `pip install mysqlclient`            | Fastest option, C extension                               |
+| MySQL       | mysql.connector  | `pip install mysql-connector-python` | Official MySQL connector, pure Python                     |
+| MySQL       | pymysql          | `pip install pymysql`                | Pure Python, lightweight                                  |
+| SQL Server  | pyodbc           | `pip install pyodbc`                 | ODBC driver required on system                            |
+| SQL Server  | pymssql          | `pip install pymssql`                | Lightweight, DB-API compliant, no ODBC needed             |
+| SQLite      | sqlite3          | Built-in                             | No installation needed                                    |
+
+**Driver priority:** DBTK automatically selects the best available driver based on priority. You can override this by specifying `driver='driver_name'` in your connection.
+
+**Note:** ODBC adapters require appropriate ODBC drivers to be installed on the system.
+
 ## Performance Tips
 
 1. **Use appropriate batch sizes** - Larger batches are faster but use more memory:
@@ -560,10 +673,10 @@ passwords:
    bulk_writer.insert(cursor, records, batch_size=5000)  # Tune based on your data
    ```
 
-2. **Choose the right cursor type** - Records and namedtuples offer a nice balance between functionality and performance. Dict cursors are the most interoperable but have the highest overhead.
+2. **Choose the right cursor type** - Records offer the best balance of functionality and performance:
    ```python
-   from dbtk.cursors import ColumnCase
-   cursor = db.cursor('dict', column_case=ColumnCase.PRESERVE)  # High functionality - High memory usage
+   cursor = db.cursor('record')  # Recommended default
+   cursor = db.cursor('list')    # When you only need positional access
    ```
 
 3. **Materialize results when needed** - Don't fetch twice:
@@ -585,6 +698,15 @@ passwords:
    bulk_writer = DataSurge(table)
    bulk_writer.insert(cursor, records, batch_size=2000)
    ```
+
+6. **Use prepared statements for repeated queries** - Read and parse SQL once:
+   ```python
+   stmt = cursor.prepare_file('query.sql')
+   for params in parameter_sets:
+       stmt.execute(params)
+   ```
+
+7. **Let the database do the work** - Use `db_fn` in Table definitions to leverage database functions instead of processing in Python.
 
 ## License
 
