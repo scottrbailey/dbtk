@@ -4,7 +4,7 @@ import re
 from typing import TextIO, List, Any, Optional, Iterator
 from collections import Counter, defaultdict
 from .base import Reader, Clean, ReturnType
-from ..etl.transforms import parse_date, parse_datetime, parse_timestamp
+from ..etl.transforms.datetime import parse_date, parse_datetime, parse_timestamp
 
 
 class FixedColumn(object):
