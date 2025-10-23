@@ -28,6 +28,9 @@ Optional Dependencies:
 
     dateutil - For additional date/time parsing flexibility
         pip install python-dateutil
+
+    usaddress - For parsing and cleaning address strings
+        pip install usaddress
 """
 
 # Import and re-export all core functions

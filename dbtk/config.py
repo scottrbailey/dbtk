@@ -121,7 +121,7 @@ class ConfigManager:
         default_tz = settings.get('default_timezone')
         if default_tz:
             try:
-                from .etl.transforms import set_default_timezone
+                from .etl.transforms.datetime import set_default_timezone
                 set_default_timezone(default_tz)
                 logger.info(f"Set default timezone to: {default_tz}")
             except ValueError as e:

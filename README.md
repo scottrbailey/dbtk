@@ -75,7 +75,11 @@ with dbtk.connect('fire_nation_prod') as db:
 
 ```python
 import dbtk
-from dbtk.etl import Table, transforms
+from dbtk.etl import Table
+from dbtk.etl.transforms import 
+from dbtk.etl.transforms.datetime import parse_date, parse_datetime
+from dbtk.etl.transforms.email import email_clean
+from dbtk.etl.transforms.phone import Phone, phone_clean
 
 with dbtk.connect('avatar_training_grounds') as db:
     cursor = db.cursor()
@@ -84,9 +88,10 @@ with dbtk.connect('avatar_training_grounds') as db:
     recruit_table = Table('air_nomads', {
         'nomad_id': {'field': 'id', 'primary_key': True},
         'name': {'field': 'full_name', 'nullable': False},
-        'email': {'field': 'contact_scroll', 'fn': transforms.email_clean, 'nullable': False},
+        'phone': {'field': 'phone_number', 'fn': phone_clean},
+        'email': {'field': 'contact_scroll', 'fn': email_clean, 'nullable': False},
         'sky_bison': {'field': 'companion_name'},
-        'training_date': {'field': 'started_training', 'fn': transforms.parse_date},
+        'training_date': {'field': 'started_training', 'fn': parse_date},
         'airbending_level': {'field': 'mastery_level', 'db_fn': 'calculate_airbending_rank(#)'},
         'last_meditation': {'db_fn': 'CURRENT_TIMESTAMP'},
         'temple_origin': {'value': 'Eastern Air Temple'}})
@@ -329,7 +334,7 @@ writers.to_json(data, 'output.json')
 
 #### SQL File Execution
 
-**The killer feature:** Write SQL once with named parameters, run it anywhere. DBTK automatically converts between parameter styles, making your queries truly portable across databases.
+**The killer feature:** Write SQL once with named parameters, run it anywhere. DBTK automatically converts between parameter styles, making your queries truly portable across databases. (No queries were killed in the making of this library.)
 
 ```python
 # query.sql - write once with named parameters
@@ -350,7 +355,10 @@ cursor.execute_file('queries/get_users.sql', {
 
 **One-off queries:**
 
-For queries you run once, `execute_file()` is simple and convenient:
+Portable query handling with `execute_file()`:
+- Loads query from file. Use NAMED parameter format (:customer_id) in query
+- Converts query to match cursor's parmstyle
+- Stores query parameter metadata and automatically converts parameters into format needed to execute query.
 
 ```python
 # Execute SQL from file with parameters
@@ -363,7 +371,7 @@ results = cursor.fetchall()
 
 **Prepared statements for repeated execution:**
 
-When you need to execute the same query many times, `prepare_file()` reads and converts the SQL once, then executes efficiently:
+When you need to execute the same query many times, `prepare_file()`. Does query and parameter transformations like `execute_file`, but returns a PreparedStatement object that can be executed repeatedly and behaves like a cursor.
 
 ```python
 # Prepare once
@@ -381,7 +389,7 @@ for user_data in import_data:
 stmt = cursor.prepare_file('queries/get_active_users.sql')
 stmt.execute({'status': 'active', 'min_logins': 5})
 for user in stmt:
-    process_user(user)
+    process_user(user) 
 ```
 
 **Benefits of SQL files:**

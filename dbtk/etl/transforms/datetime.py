@@ -491,39 +491,6 @@ def parse_datetimetz(val: Any) -> Optional[dt.datetime]:
     return dt_obj
 
 
-def parse_timestamp(val: Any, default_tz: Optional[str] = None) -> Optional[dt.datetime]:
-    """
-    Parse timestamp with timezone support (alias for parse_datetime).
-
-    Args:
-        val: Timestamp string or other value
-        default_tz: Default timezone name if not specified in string
-
-    Returns:
-        timezone-aware datetime object or None if parsing fails
-
-    Examples:
-        parse_timestamp("2024-01-15 14:30:00+00:00")     # -> datetime with UTC
-        parse_timestamp("2024-01-15 14:30:00", "UTC")    # -> datetime with UTC
-        parse_timestamp("1642262200")                     # -> datetime from Unix timestamp
-    """
-    if not val or val == '':
-        return None
-
-    val_str = str(val).strip()
-
-    # Check if it's a Unix timestamp (10 digits for seconds, more for milliseconds)
-    if re.match(r'^\d{10}(\.\d+)?$', val_str):
-        try:
-            timestamp = float(val_str)
-            return dt.datetime.fromtimestamp(timestamp, tz=dt.timezone.utc)
-        except (ValueError, OSError):
-            pass
-
-    # Use parse_datetime for everything else
-    return parse_datetime(val)
-
-
 # Initialize default timezone from settings if present
 _default_tz_setting = settings.get('default_timezone', None)
 if _default_tz_setting:
