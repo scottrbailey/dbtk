@@ -1,10 +1,10 @@
 # dbtk/tests/run_tests.py
-# !/usr/bin/env python3
+
 """
 Test runner script for dbtk library.
 
 Usage:
-    python dbtk/tests/run_tests.py                    # Run all dbtk_tests
+    python dbtk/tests/run_tests.py                    # Run all tests
     python dbtk/tests/run_tests.py --verbose          # Verbose output
     python dbtk/tests/run_tests.py --coverage         # With coverage report
     python dbtk/tests/run_tests.py --module utils     # Test specific module
@@ -26,7 +26,7 @@ def run_tests(args):
     cmd = ['python', '-m', 'pytest']
 
     # Add test directory
-    test_dir = Path(__file__).parent
+    test_dir = Path(__file__).parent / 'tests'
     cmd.append(str(test_dir))
 
     # Add options based on arguments
@@ -52,13 +52,13 @@ def run_tests(args):
             return 1
 
     if args.fast:
-        # Skip slow dbtk_tests
+        # Skip slow tests
         cmd.append('-m not slow')
 
     if args.pattern:
         cmd.extend(['-k', args.pattern])
 
-    # Run the dbtk_tests
+    # Run the tests
     print(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd)
 
@@ -73,7 +73,7 @@ def check_dependencies():
         print("✓ Core dependencies found")
     except ImportError as e:
         print(f"✗ Missing dependency: {e}")
-        print("Install test requirements with: pip install -r dbtk_tests/requirements.txt")
+        print("Install test requirements with: pip install -r tests/requirements.txt")
         return False
 
     # Check optional dependencies
@@ -100,11 +100,11 @@ def main():
     parser.add_argument('--coverage', '-c', action='store_true',
                         help='Generate coverage report')
     parser.add_argument('--module', '-m', type=str,
-                        help='Run dbtk_tests for specific module (e.g., utils, config)')
+                        help='Run tests for specific module (e.g., utils, config)')
     parser.add_argument('--fast', '-f', action='store_true',
-                        help='Skip slow dbtk_tests')
+                        help='Skip slow tests')
     parser.add_argument('--pattern', '-k', type=str,
-                        help='Run dbtk_tests matching pattern')
+                        help='Run tests matching pattern')
     parser.add_argument('--check-deps', action='store_true',
                         help='Check test dependencies and exit')
 
@@ -117,7 +117,7 @@ def main():
     if args.check_deps:
         return 0
 
-    # Run dbtk_tests
+    # Run tests
     return run_tests(args)
 
 

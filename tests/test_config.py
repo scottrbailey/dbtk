@@ -56,7 +56,7 @@ class TestConfigManager:
         connections = config_manager.list_connections()
         assert 'test_db' in connections
         assert 'encrypted_db' in connections
-        assert len(connections) == 4
+        assert len(connections) == 5
 
     def test_get_setting_simple(self, config_manager):
         """Test getting simple setting value."""

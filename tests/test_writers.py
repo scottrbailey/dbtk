@@ -527,7 +527,6 @@ class TestNDJSONWriter:
         assert '  ' not in first_line
 
 
-@pytest.mark.writers
 class TestXMLWriter:
     """Tests specific to XML writer."""
 

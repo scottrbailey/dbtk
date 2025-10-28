@@ -1,4 +1,7 @@
 # dbtk/readers/excel.py
+
+"""Excel workbook reader supporting XLS and XLSX formats."""
+
 import datetime as dt
 import logging
 from typing import List, Any, Iterator, Optional

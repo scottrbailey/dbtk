@@ -13,7 +13,7 @@ from pathlib import Path
 from dbtk.database import Database
 from dbtk.readers import CSVReader
 from dbtk.etl import Table, DataSurge
-from dbtk.etl.transforms import CodeValidator, CodeLookup
+from dbtk.etl.transforms.database import CodeValidator, CodeLookup
 
 # Test database and data paths
 TEST_DB_PATH = Path(__file__).parent / 'test_states.db'

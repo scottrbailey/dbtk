@@ -1,5 +1,12 @@
 # dbtk/etl/bulk.py
 
+"""
+Bulk ETL operations for high-performance data loading.
+
+Provides the DataSurge class for executing batch INSERT, UPDATE, DELETE,
+and MERGE operations with automatic transaction management and batch sizing.
+"""
+
 import logging
 import re
 import time
@@ -29,12 +36,22 @@ class DataSurge:
     Example:
         table = Table(..., cursor=cursor)
         surge = DataSurge(table)
-        errors = surge.merge(records, batch_size=500, raise_error=False)
+        errors = surge.merge(records, raise_error=False)
     """
 
-    def __init__(self, table: Table):
+    def __init__(self, table: Table, batch_size: int = 1000, use_transaction: bool = False):
+        """
+            Initialize DataSurge for bulk operations.
+
+            Args:
+                table: Table instance with schema metadata
+                batch_size: Number of records per batch (default: 1000)
+                use_transaction: Use transaction for all operations (default: False)
+            """
         self.table = table
         self.cursor = table.cursor
+        self.batch_size = batch_size
+        self.use_transaction = use_transaction
         self.skips = 0
         self._sql_statements = {}  # Only for modified SQL
 
@@ -45,39 +62,34 @@ class DataSurge:
         return self.table.get_sql(operation)
 
     def insert(self, records: Iterable[RecordLike],
-               batch_size: int = 1000, raise_error: bool = True,
-               use_transaction: bool = False) -> int:
+               raise_error: bool = True) -> int:
         """Perform bulk INSERT on records."""
-        return self._process_records(records, 'insert', batch_size, raise_error, use_transaction)
+        return self._process_records(records, 'insert', raise_error)
 
     def update(self, records: Iterable[RecordLike],
-               batch_size: int = 1000, raise_error: bool = True,
-               use_transaction: bool = False) -> int:
+               raise_error: bool = True) -> int:
         """Perform bulk UPDATE on records."""
-        return self._process_records(records, 'update', batch_size, raise_error, use_transaction)
+        return self._process_records(records, 'update', raise_error)
 
     def delete(self, records: Iterable[RecordLike],
-               batch_size: int = 1000, raise_error: bool = True,
-               use_transaction: bool = False) -> int:
+               raise_error: bool = True) -> int:
         """Perform bulk DELETE on records."""
-        return self._process_records(records, 'delete', batch_size, raise_error, use_transaction)
+        return self._process_records(records, 'delete', raise_error)
 
     def merge(self, records: Iterable[RecordLike],
-              batch_size: int = 1000, raise_error: bool = True,
-              use_transaction: bool = False) -> int:
+              raise_error: bool = True) -> int:
         """
         Perform bulk MERGE using either direct upsert or temporary table strategy.
         """
         use_upsert = self.table._should_use_upsert()
 
         if use_upsert:
-            return self._process_records(records, 'merge', batch_size, raise_error, use_transaction)
+            return self._process_records(records, 'merge', raise_error)
         else:
-            return self._merge_with_temp_table(records, batch_size=batch_size,
-                                               raise_error=raise_error, use_transaction=use_transaction)
+            return self._merge_with_temp_table(records, raise_error)
 
     def _process_records(self, records: Iterable[RecordLike], operation: str,
-                         batch_size: int, raise_error: bool, use_transaction: bool) -> int:
+                         raise_error: bool) -> int:
         """
         Common processing logic for insert, update, delete, and upsert operations.
         Validates records, batches them, and executes with executemany().
@@ -89,7 +101,7 @@ class DataSurge:
 
         def process_batches():
             nonlocal errors, skipped
-            for batch in batch_iterable(records, batch_size):
+            for batch in batch_iterable(records, self.batch_size):
                 batch_params = []
                 for record in batch:
                     self.table.set_values(record)
@@ -117,7 +129,7 @@ class DataSurge:
                             raise
                         errors += len(batch_params)
 
-        if use_transaction:
+        if self.use_transaction:
             with self.cursor.connection.transaction():
                 process_batches()
         else:
@@ -129,7 +141,7 @@ class DataSurge:
         return errors
 
     def _merge_with_temp_table(self, records: Iterable[RecordLike],
-                               raise_error: bool, batch_size: int, use_transaction: bool) -> int:
+                               raise_error: bool) -> int:
         """Perform bulk merge using temporary table (for databases requiring true MERGE)."""
 
         # Convert iterator to list since we need to know the count and potentially retry
@@ -163,7 +175,7 @@ class DataSurge:
             cursor=self.cursor
         )
         temp_surge = DataSurge(temp_table)
-        errors = temp_surge.insert(records_list, raise_error=raise_error, batch_size=batch_size)
+        errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
             self.cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
@@ -190,7 +202,7 @@ class DataSurge:
                 errors += len(records_list) - errors
 
         try:
-            if use_transaction:
+            if self.use_transaction:
                 with self.cursor.connection.transaction():
                     execute_merge()
             else:

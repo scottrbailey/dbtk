@@ -20,6 +20,20 @@ _user_drivers = {}
 
 
 class CursorType:
+    """
+    Cursor type constants for specifying return data structures.
+
+    Used when creating cursors to determine how query results are returned:
+
+    - RECORD: Returns Record objects (attribute, key, and index access)
+    - TUPLE: Returns namedtuples (attribute and index access)
+    - DICT: Returns OrderedDict objects (dictionary interface)
+    - LIST: Returns plain lists (index access only)
+
+    Example:
+        >>> cursor = db.cursor(CursorType.RECORD)  # or just 'record'
+        >>> cursor = db.cursor('tuple')
+    """
     RECORD = 'record'
     TUPLE = 'tuple'
     DICT = 'dict'
@@ -411,8 +425,13 @@ class Database:
         """
         self._connection = connection
         self.interface = interface
+        if database_name is None:
+            database_name = (connection.get('database') or
+                                  connection.get('service_name') or
+                                  connection.get('dbname') or
+                                  connection.get('db'))
+
         self.database_name = database_name
-        # self.name = database_name  # Can be overridden
 
         # Set parameter placeholder based on adapter style
         paramstyle = getattr(interface, 'paramstyle', ParamStyle.DEFAULT)
@@ -453,6 +472,12 @@ class Database:
             return f'Database({self.database_name}:{self.server_type})'
         else:
             return f'Database({self.server_type})'
+
+    def __repr__(self) -> str:
+        if self.database_name:
+            return f"Database('{self.database_name}', server_type='{self.server_type}')"
+        else:
+            return f"Database(server_type='{self.server_type}')"
 
     def __enter__(self):
         """Context manager entry."""
@@ -579,39 +604,174 @@ class Database:
             connection = db_driver.connect(get_odbc_connection_string(**params))
 
         if connection:
-            return cls(connection, db_driver, params.get('database'))
+            return cls(connection, db_driver, kwargs.get('database'))
 
 
 def postgres(user: str, password: Optional[str] = None, database: str = 'postgres',
              host: str = 'localhost', port: int = 5432, driver: str = None, **kwargs) -> Database:
-    """Create PostgreSQL connection."""
+    """
+    Create a PostgreSQL database connection.
+
+    Automatically selects the best available PostgreSQL driver (psycopg2, psycopg3, or pgdb).
+    You can specify a specific driver if needed.
+
+    Args:
+        user: Database username
+        password: Database password (prompts if None)
+        database: Database name (default: 'postgres')
+        host: Server hostname or IP (default: 'localhost')
+        port: Server port (default: 5432)
+        driver: Specific driver to use ('psycopg2', 'psycopg', 'pgdb')
+        **kwargs: Additional driver-specific connection parameters
+
+    Returns:
+        Database connection object with context manager support
+
+    Example:
+        >>> from dbtk.database import postgres
+        >>> with postgres(user='user', password='pass', database='mydb') as db:
+        ...     cursor = db.cursor()
+        ...     cursor.execute("SELECT * FROM users")
+
+    See Also:
+        Database.create() for more connection options
+    """
     return Database.create('postgres', user=user, password=password, database=database,
                            host=host, port=port, driver=driver, **kwargs)
 
 
 def oracle(user: str, password: Optional[str] = None, database: str = None,
            host: Optional[str] = None, port: int = 1521, driver: str = None,  **kwargs) -> Database:
-    """Create Oracle connection."""
+    """
+    Create an Oracle database connection.
+
+    Supports both DSN and connection string formats. Automatically selects
+    the best available Oracle driver (oracledb or cx_Oracle).
+
+    Args:
+        user: Database username
+        password: Database password (prompts if None)
+        database: Service name or SID
+        host: Server hostname or IP (required if not using dsn)
+        port: Server port (default: 1521)
+        driver: Specific driver to use ('oracledb', 'cx_Oracle')
+        **kwargs: Additional driver-specific parameters (dsn, mode, etc.)
+
+    Returns:
+        Database connection object with context manager support
+
+    Example:
+        >>> from dbtk.database import oracle
+        >>> # Using service name
+        >>> db = oracle(user='scott', password='tiger',
+        ...             host='oracle.example.com', database='ORCL')
+        >>>
+        >>> # Using DSN directly
+        >>> db = oracle(user='scott', password='tiger',
+        ...             dsn='oracle.example.com:1521/ORCL')
+
+    See Also:
+        Database.create() for more connection options
+    """
     return Database.create('oracle', user=user, password=password, database=database,
                            host=host, port=port, driver=driver, **kwargs)
 
 
 def mysql(user: str, password: Optional[str] = None, database: str = 'mysql',
           host: str = 'localhost', port: int = 3306, driver: str = None, **kwargs) -> Database:
-    """Create MySQL connection."""
+    """
+    Create a MySQL/MariaDB database connection.
+
+    Automatically selects the best available MySQL driver (mysqlclient, mysql.connector,
+    pymysql, or MySQLdb).
+
+    Args:
+        user: Database username
+        password: Database password (prompts if None)
+        database: Database name (default: 'mysql')
+        host: Server hostname or IP (default: 'localhost')
+        port: Server port (default: 3306)
+        driver: Specific driver to use ('mysqlclient', 'mysql.connector', 'pymysql', 'MySQLdb')
+        **kwargs: Additional driver-specific parameters (charset, ssl, etc.)
+
+    Returns:
+        Database connection object with context manager support
+
+    Example:
+        >>> from dbtk.database import mysql
+        >>> with mysql(user='root', password='pass', database='myapp') as db:
+        ...     cursor = db.cursor()
+        ...     cursor.execute("SELECT * FROM users")
+
+    See Also:
+        Database.create() for more connection options
+    """
     return Database.create('mysql', user=user, password=password, database=database,
                            host=host, port=port, driver=driver, **kwargs)
 
 
 def sqlserver(user: str, password: Optional[str] = None, database: str = None,
               host: str = 'localhost', port: int = 1433, **kwargs) -> Database:
-    """Create SQL Server connection."""
+    """
+    Create a Microsoft SQL Server database connection.
+
+    Automatically selects the best available SQL Server driver (pyodbc or pymssql).
+
+    Args:
+        user: Database username
+        password: Database password (prompts if None)
+        database: Database name
+        host: Server hostname or IP (default: 'localhost')
+        port: Server port (default: 1433)
+        **kwargs: Additional driver-specific parameters (driver, encrypt, etc.)
+
+    Returns:
+        Database connection object with context manager support
+
+    Example:
+        >>> from dbtk.database import sqlserver
+        >>> db = sqlserver(user='sa', password='pass',
+        ...                database='AdventureWorks', host='sqlserver.local')
+        >>> cursor = db.cursor()
+
+    Note:
+        When using pyodbc, you may need to specify the ODBC driver:
+        sqlserver(..., driver='ODBC Driver 17 for SQL Server')
+
+    See Also:
+        Database.create() for more connection options
+    """
     return Database.create('sqlserver', user=user, password=password, database=database,
                            host=host, port=port, **kwargs)
 
 
 def sqlite(database: str, **kwargs) -> Database:
-    """Create SQLite connection."""
+    """
+    Create a SQLite database connection.
+
+    SQLite is a serverless, file-based database. Use ':memory:' for an in-memory database.
+
+    Args:
+        database: Path to database file or ':memory:' for in-memory database
+        **kwargs: Additional sqlite3.connect() parameters (timeout, isolation_level, etc.)
+
+    Returns:
+        Database connection object with context manager support
+
+    Example:
+        >>> from dbtk.database import sqlite
+        >>> # File-based database
+        >>> with sqlite('app.db') as db:
+        ...     cursor = db.cursor()
+        ...     cursor.execute("CREATE TABLE users (id INTEGER, name TEXT)")
+        >>>
+        >>> # In-memory database (useful for testing)
+        >>> db = sqlite(':memory:')
+
+    See Also:
+        Database.create() for more connection options
+        sqlite3 module documentation for additional parameters
+    """
     import sqlite3
 
     connection = sqlite3.connect(database, **kwargs)

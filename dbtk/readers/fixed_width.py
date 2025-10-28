@@ -1,5 +1,7 @@
 # dbtk/readers/fixed_width.py
 
+"""Fixed-width text file reader with column position specifications."""
+
 import re
 from typing import TextIO, List, Any, Optional, Iterator
 from collections import Counter, defaultdict

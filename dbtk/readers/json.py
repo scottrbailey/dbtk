@@ -1,5 +1,7 @@
 # dbtk/readers/json.py
 
+"""JSON and NDJSON (newline-delimited JSON) file readers."""
+
 import json
 from typing import List, Any, Dict, Optional, TextIO, Iterator
 from .base import Reader, Clean, ReturnType

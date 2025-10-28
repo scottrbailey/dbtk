@@ -1,5 +1,7 @@
 # dbtk/writers/utils.py
 
+"""Internal utilities for writer implementations."""
+
 import datetime as dt
 
 from typing import Any, Iterator, List, Tuple

@@ -6,6 +6,8 @@ settings:
   default_timezone: UTC
   lookup_preload_threshold: 500  # if table size > threshold, preload all values for transforms.CodeLookup
   validator_preload_threshold: 1000 # if table size > threshold, preload all values for transforms.CodeValidator
+  database:
+    timeout: 30
 
 connections:
   states_db:

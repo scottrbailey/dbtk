@@ -18,7 +18,20 @@ logger = logging.getLogger(__name__)
 
 
 class ColumnCase:
-    """Column case options."""
+    """
+    Column name case transformation options for result sets.
+
+    Controls how column names from database queries are transformed:
+
+    - UPPER: Convert to uppercase (USER_ID)
+    - LOWER: Convert to lowercase (user_id) [default]
+    - TITLE: Convert to title case (User_Id)
+    - PRESERVE: Keep original case from database
+
+    Example:
+        >>> cursor = db.cursor(column_case=ColumnCase.UPPER)
+        >>> cursor = db.cursor(column_case='preserve')
+    """
     UPPER = 'upper'
     LOWER = 'lower'
     TITLE = 'title'

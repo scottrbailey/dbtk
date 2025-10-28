@@ -1,5 +1,7 @@
 # dbtk/readers/utils.py
 
+"""Utility functions for automatic file format detection and reader selection."""
+
 from typing import List, Optional
 
 
@@ -8,7 +10,7 @@ def get_reader(filename: str,
                fixed_config: Optional[List['FixedColumn']] = None,
                encoding: str = 'utf-8',
                clean_headers: Optional['Clean'] = None,
-               **kwargs):
+               **kwargs) -> 'Reader':
     """
     Initialize a reader based on file extension.
 

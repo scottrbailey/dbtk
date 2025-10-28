@@ -1,10 +1,12 @@
 # Data Bender Toolkit (dbtk)
+<img src="/docs/assets/databender.png" height="320" style="float: right; padding-left: 50px"/>
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
 
 Like the elemental benders of Avatar, this library gives you precise control over data - the world's most rapidly growing element. Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go. This library is designed by and for data integrators.
 
 **Design philosophy:** This library is designed to get data to and from your databases with minimal hassle. It is well suited for data integration and ELT jobs. Modern databases do an amazing job at aggregating and transforming data, and we believe in leveraging those strengths. However, if you are doing heavy transforms in Python, we recommend looking at other tool chains like Pandas and polars.
+
 
 ## Table of Contents
 
@@ -136,11 +138,11 @@ cursor_d = db.cursor('dict')        # OrderedDict  - row['name'], row.get('name'
 DBTK maintains a clean reference hierarchy that gives you access to the underlying driver for maximum flexibility:
 
 ```python
-# Access the underlying driver for database-specific features
+# The connection maintains a reference to the driver on the interface attribute
 print(db.interface.__name__)  # 'psycopg2', 'oracledb', etc.
 print(db.interface.paramstyle)  # 'named', 'qmark', etc.
 
-# Use driver-specific exceptions for targeted error handling
+# The cursor maintains a reference to the connection
 try:
     cursor.execute(sql)
 except cursor.connection.interface.DatabaseError as e:

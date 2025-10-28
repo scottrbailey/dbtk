@@ -1,5 +1,12 @@
 # dbtk/etl/table.py
 
+"""
+Schema-aware table operations and SQL generation.
+
+Provides the Table class which manages table metadata and generates
+parameterized SQL statements for common operations.
+"""
+
 import logging
 import re
 from textwrap import dedent
@@ -70,28 +77,40 @@ class Table:
         self._update_excludes: Set[str] = set()
         self.values: Dict[str, Any] = {}
 
+        # Generate INSERT SQL immediately to filter req_cols
+        self.generate_sql('insert')
+        # Only require params that are actually used in this operation's SQL
+        self._req_cols = tuple(col for col in self._req_cols
+                               if col in self._param_config['insert'])
+
     @property
     def name(self) -> str:
+        """Table name as used in SQL statements."""
         return self._name
 
     @property
     def columns(self) -> dict:
+        """Column metadata dictionary with types and constraints."""
         return self.__columns
 
     @property
     def paramstyle(self) -> str:
+        """Parameter style for SQL placeholders (from cursor)."""
         return self.__paramstyle
 
     @property
     def cursor(self) -> Cursor:
+        """Database cursor for executing SQL operations."""
         return self._cursor
 
     @property
     def req_cols(self) -> Tuple[str]:
+        """List of required (non-nullable) column names."""
         return self._req_cols
 
     @property
     def key_cols(self) -> Tuple[str]:
+        """List of key/primary key column names."""
         return self._key_cols
 
     def get_sql(self, operation: str) -> str:
@@ -100,7 +119,7 @@ class Table:
         Generates the SQL if it hasn't been created yet (lazy initialization).
 
         Args:
-            operation: One of 'insert', 'update', 'delete', 'merge', 'select'
+            operation: One of 'select', 'insert', 'update', 'delete', 'merge'
 
         Returns:
             The SQL statement string

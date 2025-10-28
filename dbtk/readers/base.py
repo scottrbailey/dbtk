@@ -1,5 +1,12 @@
 # dbtk/readers/base.py
 
+"""
+Base classes and utilities for file readers.
+
+Defines the abstract Reader interface and Clean enumeration for
+header normalization across all reader implementations.
+"""
+
 import itertools
 import re
 

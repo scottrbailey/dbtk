@@ -14,6 +14,30 @@ except ImportError:
 
 
 class ParamStyle:
+    """
+    SQL parameter placeholder styles for different database drivers.
+
+    Different database drivers use different parameter placeholder formats.
+    This class provides constants and utilities for working with these formats:
+
+    - QMARK: Question mark placeholders (?, ?) - SQLite, ODBC
+    - NUMERIC: Numeric placeholders (:1, :2) - Oracle
+    - NAMED: Named placeholders (:name, :email) - Oracle, psycopg2
+    - FORMAT: Printf-style (%s, %s) - MySQL (MySQLdb)
+    - PYFORMAT: Python format (%(name)s) - psycopg2, pymysql
+
+    Methods:
+        values(): Get all available parameter styles
+        positional_styles(): Get styles that require tuples
+        named_styles(): Get styles that require dicts
+        get_placeholder(paramstyle): Get placeholder string for a style
+
+    Example:
+        >>> ParamStyle.get_placeholder('qmark')
+        '?'
+        >>> ParamStyle.get_placeholder('named')
+        ':1'
+    """
     QMARK = 'qmark'         # id = ?
     NUMERIC = 'numeric'     # id = :1
     NAMED = 'named'         # id = :id  also :1 for positional

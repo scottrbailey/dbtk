@@ -1,5 +1,7 @@
 # dbtk/readers/xml.py
 
+"""XML file reader with XPath support for element extraction."""
+
 import logging
 from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
 from .base import Reader, Clean, ReturnType

@@ -1,4 +1,7 @@
 # dbtk/readers/csv.py
+
+"""CSV file reader with flexible delimiter and quoting support."""
+
 import csv
 from typing import TextIO, List, Any, Iterator, Optional
 from .base import Reader, Clean, ReturnType
