@@ -1,6 +1,6 @@
 # dbtk/__init__.py
 """
-dbtk - Database ToolKit - for ETL and data integration
+dbtk - Data Benders ToolKit - for ETL and data integration
 
 A lightweight database toolkit that provides:
 - Uniform interface across different databases (PostgreSQL, Oracle, MySQL, SQL Server, SQLite)
@@ -9,7 +9,8 @@ A lightweight database toolkit that provides:
 - Writers for CSV, Excel, fixed-width, and database-to-database export
 - Context managers for connections and transactions
 
-Basic usage:
+Basic usage::
+
     import dbtk
 
     # From YAML config file

@@ -97,11 +97,11 @@ def states_db():
         'region': {'field': 'region'}
     }, cursor=cursor)
 
-    surge = DataSurge(states_table)
+    surge = DataSurge(states_table, batch_size=25)
 
     with open(STATES_CSV_PATH, 'r') as f:
         with CSVReader(f) as reader:
-            errors = surge.insert(reader, batch_size=25)
+            errors = surge.insert(reader)
 
     db.commit()
 
@@ -576,14 +576,14 @@ class TestCompleteDataCycle:
         }, cursor=cursor)
 
         # Use DataSurge for bulk loading
-        surge = DataSurge(summary_table)
+        surge = DataSurge(summary_table, batch_size=10)
 
         # Read from existing states table (simulating CSV read)
         cursor.execute("SELECT * FROM states")
         source_data = cursor.fetchall()
 
         # Bulk insert transformed data
-        errors = surge.insert(source_data, batch_size=10)
+        errors = surge.insert(source_data)
         states_db.commit()
 
         assert errors == 0

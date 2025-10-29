@@ -8,7 +8,8 @@ This module provides tools for managing database tables and performing bulk oper
 - DataSurge: High-performance bulk INSERT, UPDATE, DELETE, and MERGE operations
 - generate_table_config: Generate table configuration from database schema
 
-Example:
+Example::
+
     from dbtk.etl import Table, DataSurge
 
     # Define table structure
@@ -19,14 +20,13 @@ Example:
     }, cursor=cursor)
 
     # Bulk operations
-    surge = DataSurge(cursor, table)
-    surge.insert(records, batch_size=1000)
-    surge.merge(records, batch_size=500)
+    surge = DataSurge(cursor, table, batch_size=500)
+    surge.insert(records)
+    surge.merge(records)
 """
 
 from .table import Table
 from .bulk import DataSurge
-from .config_generators import generate_table_config
+from .config_generators import column_defs_from_db
 
-__all__ = ['Table', 'DataSurge', 'generate_table_config']
-
+__all__ = ['Table', 'DataSurge', 'column_defs_from_db']

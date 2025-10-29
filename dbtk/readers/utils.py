@@ -25,7 +25,8 @@ def get_reader(filename: str,
     Returns:
         CSVReader, FixedReader, JSONReader, NDJSONReader, XLSXReader, or XMLReader instance
 
-    Examples:
+    Examples::
+
         # CSV file with custom header cleaning
         with get_reader('data.csv', clean_headers=Clean.STANDARDIZE) as reader:
             for record in reader:

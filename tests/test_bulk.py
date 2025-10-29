@@ -218,7 +218,7 @@ class TestInsertOperation:
         """Test inserting Air Nomad records in single batch."""
         surge = DataSurge(airbender_table)
 
-        errors = surge.insert(airbender_records, batch_size=100)
+        errors = surge.insert(airbender_records)
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 3
@@ -232,9 +232,9 @@ class TestInsertOperation:
 
     def test_insert_multiple_batches(self, airbender_table, airbender_records, cursor):
         """Test inserting Air Nomad records across multiple batches."""
-        surge = DataSurge(airbender_table)
+        surge = DataSurge(airbender_table, batch_size=2)
 
-        errors = surge.insert(airbender_records, batch_size=2)
+        errors = surge.insert(airbender_records)
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 3
@@ -262,7 +262,7 @@ class TestInsertOperation:
         ]
 
         surge = DataSurge(airbender_table)
-        errors = surge.insert(incomplete_records, batch_size=100)
+        errors = surge.insert(incomplete_records)
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 1  # Only valid record inserted
@@ -279,12 +279,12 @@ class TestInsertOperation:
         surge = DataSurge(airbender_table)
 
         # First insert succeeds
-        errors = surge.insert(airbender_records, batch_size=100)
+        errors = surge.insert(airbender_records)
         assert errors == 0
         cursor.connection.commit()
 
         # Second insert with same keys fails
-        errors = surge.insert(airbender_records, batch_size=100, raise_error=False)
+        errors = surge.insert(airbender_records, raise_error=False)
 
         assert errors == 3  # All 3 records fail due to duplicate keys
         assert airbender_table.counts['insert'] == 3  # Count doesn't increase
@@ -294,18 +294,18 @@ class TestInsertOperation:
         surge = DataSurge(airbender_table)
 
         # First insert
-        surge.insert(airbender_records, batch_size=100)
+        surge.insert(airbender_records)
         cursor.connection.commit()
 
         # Second insert should raise
         with pytest.raises(Exception):
-            surge.insert(airbender_records, batch_size=100, raise_error=True)
+            surge.insert(airbender_records, raise_error=True)
 
     def test_insert_with_transaction(self, airbender_table, airbender_records, cursor):
         """Test insert with transaction wrapping."""
-        surge = DataSurge(airbender_table)
+        surge = DataSurge(airbender_table, use_transaction=True)
 
-        errors = surge.insert(airbender_records, batch_size=100, use_transaction=True)
+        errors = surge.insert(airbender_records)
 
         assert errors == 0
         # Note: Transaction is auto-committed in SQLite when context exits
@@ -322,7 +322,7 @@ class TestUpdateOperation:
         surge = DataSurge(fire_nation_table)
 
         # Insert records first
-        surge.insert(fire_nation_records, batch_size=100)
+        surge.insert(fire_nation_records)
         cursor.connection.commit()
 
         # Update records
@@ -331,7 +331,7 @@ class TestUpdateOperation:
             for rec in fire_nation_records
         ]
 
-        errors = surge.update(updated_records, batch_size=100)
+        errors = surge.update(updated_records)
 
         assert errors == 0
         assert fire_nation_table.counts['update'] == 3
@@ -345,10 +345,10 @@ class TestUpdateOperation:
 
     def test_update_multiple_batches(self, fire_nation_table, fire_nation_records, cursor):
         """Test updating Fire Nation records across multiple batches."""
-        surge = DataSurge(fire_nation_table)
+        surge = DataSurge(fire_nation_table, batch_size=1)
 
         # Insert records first
-        surge.insert(fire_nation_records, batch_size=100)
+        surge.insert(fire_nation_records)
         cursor.connection.commit()
 
         # Update in small batches
@@ -357,7 +357,7 @@ class TestUpdateOperation:
             for rec in fire_nation_records
         ]
 
-        errors = surge.update(updated_records, batch_size=1)
+        errors = surge.update(updated_records)
 
         assert errors == 0
         assert fire_nation_table.counts['update'] == 3
@@ -373,7 +373,7 @@ class TestUpdateOperation:
             'military_rank': 'Acrobat',
             'flame_intensity': '3'
         }
-        surge.insert([valid_record], batch_size=100)
+        surge.insert([valid_record])
         cursor.connection.commit()
 
         incomplete_records = [
@@ -388,7 +388,7 @@ class TestUpdateOperation:
             }
         ]
 
-        errors = surge.update(incomplete_records, batch_size=100)
+        errors = surge.update(incomplete_records)
 
         assert errors == 0
         assert fire_nation_table.counts['update'] == 1
@@ -396,11 +396,10 @@ class TestUpdateOperation:
 
     def test_update_with_transaction(self, fire_nation_table, fire_nation_records, cursor):
         """Test update with transaction wrapping."""
-        surge = DataSurge(fire_nation_table)
+        surge = DataSurge(fire_nation_table, use_transaction=True)
 
         # Insert records first
-        surge.insert(fire_nation_records, batch_size=100)
-        cursor.connection.commit()
+        surge.insert(fire_nation_records)
 
         # Update with transaction
         updated_records = [
@@ -408,8 +407,7 @@ class TestUpdateOperation:
             for rec in fire_nation_records
         ]
 
-        errors = surge.update(updated_records, batch_size=100, use_transaction=True)
-
+        errors = surge.update(updated_records)
         assert errors == 0
 
 
@@ -421,7 +419,7 @@ class TestDeleteOperation:
         surge = DataSurge(airbender_table)
 
         # Insert records first
-        surge.insert(airbender_records, batch_size=100)
+        surge.insert(airbender_records)
         cursor.connection.commit()
 
         # Delete records
@@ -430,7 +428,7 @@ class TestDeleteOperation:
             for rec in airbender_records
         ]
 
-        errors = surge.delete(delete_records, batch_size=100)
+        errors = surge.delete(delete_records)
 
         assert errors == 0
         assert airbender_table.counts['delete'] == 3
@@ -446,7 +444,7 @@ class TestDeleteOperation:
         surge = DataSurge(airbender_table)
 
         # Insert records first
-        surge.insert(airbender_records, batch_size=100)
+        surge.insert(airbender_records)
         cursor.connection.commit()
 
         delete_records = [
@@ -455,7 +453,7 @@ class TestDeleteOperation:
             {'trainee_id': 'JINORA001'}
         ]
 
-        errors = surge.delete(delete_records, batch_size=100)
+        errors = surge.delete(delete_records)
 
         assert errors == 0
         assert airbender_table.counts['delete'] == 2
@@ -469,10 +467,10 @@ class TestDeleteOperation:
 
     def test_delete_with_transaction(self, airbender_table, airbender_records, cursor):
         """Test delete with transaction wrapping."""
-        surge = DataSurge(airbender_table)
+        surge = DataSurge(airbender_table, use_transaction=True)
 
         # Insert records first
-        surge.insert(airbender_records, batch_size=100)
+        surge.insert(airbender_records)
         cursor.connection.commit()
 
         delete_records = [
@@ -480,7 +478,7 @@ class TestDeleteOperation:
             for rec in airbender_records[:2]
         ]
 
-        errors = surge.delete(delete_records, batch_size=100, use_transaction=True)
+        errors = surge.delete(delete_records)
 
         assert errors == 0
 
@@ -492,7 +490,7 @@ class TestMergeWithUpsert:
         """Test that SQLite Air Nomad merge uses INSERT...ON CONFLICT."""
         surge = DataSurge(airbender_table)
 
-        errors = surge.merge(airbender_records, batch_size=100)
+        errors = surge.merge(airbender_records)
 
         assert errors == 0
         assert airbender_table.counts['merge'] == 3
@@ -507,7 +505,7 @@ class TestMergeWithUpsert:
         """Test merge inserts new Air Nomad records."""
         surge = DataSurge(airbender_table)
 
-        errors = surge.merge(airbender_records, batch_size=100)
+        errors = surge.merge(airbender_records)
         cursor.connection.commit()
 
         assert errors == 0
@@ -521,7 +519,7 @@ class TestMergeWithUpsert:
         surge = DataSurge(airbender_table)
 
         # Initial insert
-        surge.insert(airbender_records, batch_size=100)
+        surge.insert(airbender_records)
         cursor.connection.commit()
 
         # Merge with updated data
@@ -530,7 +528,7 @@ class TestMergeWithUpsert:
             for rec in airbender_records
         ]
 
-        errors = surge.merge(updated_records, batch_size=100)
+        errors = surge.merge(updated_records)
         cursor.connection.commit()
 
         assert errors == 0
@@ -548,7 +546,7 @@ class TestMergeWithUpsert:
         surge = DataSurge(fire_nation_table)
 
         # Insert first record
-        surge.insert([fire_nation_records[0]], batch_size=100)
+        surge.insert([fire_nation_records[0]])
         cursor.connection.commit()
 
         # Merge all three (1 update, 2 inserts)
@@ -558,7 +556,7 @@ class TestMergeWithUpsert:
             fire_nation_records[2]
         ]
 
-        errors = surge.merge(updated_records, batch_size=100)
+        errors = surge.merge(updated_records)
         cursor.connection.commit()
 
         assert errors == 0
@@ -588,7 +586,7 @@ class TestMergeWithUpsert:
         ]
 
         surge = DataSurge(airbender_table)
-        errors = surge.merge(merge_records, batch_size=100)
+        errors = surge.merge(merge_records)
         cursor.connection.commit()
 
         assert errors == 0
@@ -616,8 +614,8 @@ class TestBatchProcessing:
             for i in range(10)
         ]
 
-        surge = DataSurge(airbender_table)
-        errors = surge.insert(records, batch_size=3)
+        surge = DataSurge(airbender_table, batch_size=3)
+        errors = surge.insert(records)
         cursor.connection.commit()
 
         assert errors == 0
@@ -631,7 +629,7 @@ class TestBatchProcessing:
         """Test handling empty Air Nomad records list."""
         surge = DataSurge(airbender_table)
 
-        errors = surge.insert([], batch_size=100)
+        errors = surge.insert([])
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 0
@@ -645,7 +643,7 @@ class TestBatchProcessing:
         ]
 
         surge = DataSurge(airbender_table)
-        errors = surge.insert(invalid_records, batch_size=100)
+        errors = surge.insert(invalid_records)
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 0
@@ -661,14 +659,14 @@ class TestErrorHandling:
 
     def test_partial_batch_failure(self, fire_nation_table, fire_nation_records, cursor):
         """Test handling when some Fire Nation batches fail."""
-        surge = DataSurge(fire_nation_table)
+        surge = DataSurge(fire_nation_table, batch_size=2)
 
         # Insert first batch
-        surge.insert(fire_nation_records[:2], batch_size=100)
+        surge.insert(fire_nation_records[:2])
         cursor.connection.commit()
 
         # Try to insert all again (first 2 will fail on duplicate key)
-        errors = surge.insert(fire_nation_records, batch_size=2, raise_error=False)
+        errors = surge.insert(fire_nation_records, raise_error=False)
 
         assert errors == 2  # First batch of 2 fails
         # Note: The third one in second batch should succeed
@@ -690,8 +688,8 @@ class TestTransactionHandling:
             for i in range(5)
         ]
 
-        surge = DataSurge(airbender_table)
-        errors = surge.insert(records, batch_size=2, use_transaction=True)
+        surge = DataSurge(airbender_table, batch_size=2, use_transaction=True)
+        errors = surge.insert(records)
 
         assert errors == 0
 
@@ -703,7 +701,7 @@ class TestTransactionHandling:
         """Test that transactions are not used by default."""
         surge = DataSurge(airbender_table)
 
-        errors = surge.insert(airbender_records, batch_size=100)
+        errors = surge.insert(airbender_records)
 
         assert errors == 0
         # Manual commit needed without transaction
@@ -718,12 +716,12 @@ class TestCountTracking:
         surge = DataSurge(airbender_table)
 
         # First insert
-        surge.insert(airbender_records[:2], batch_size=100)
+        surge.insert(airbender_records[:2])
         cursor.connection.commit()
         assert airbender_table.counts['insert'] == 2
 
         # Second insert
-        surge.insert(airbender_records[2:], batch_size=100)
+        surge.insert(airbender_records[2:])
         cursor.connection.commit()
         assert airbender_table.counts['insert'] == 3
 
@@ -736,23 +734,23 @@ class TestCountTracking:
 
         surge = DataSurge(airbender_table)
 
-        surge.insert(incomplete_records, batch_size=100)
+        surge.insert(incomplete_records)
         assert surge.skips == 2
 
-        surge.update(incomplete_records, batch_size=100)
+        surge.update(incomplete_records)
         assert surge.skips == 4  # Accumulated
 
     def test_separate_operation_counts(self, airbender_table, airbender_records, cursor):
         """Test that different operations have separate counts."""
         surge = DataSurge(airbender_table)
 
-        surge.insert(airbender_records, batch_size=100)
+        surge.insert(airbender_records)
         cursor.connection.commit()
 
-        surge.update(airbender_records, batch_size=100)
+        surge.update(airbender_records)
         cursor.connection.commit()
 
-        surge.delete(airbender_records, batch_size=100)
+        surge.delete(airbender_records)
         cursor.connection.commit()
 
         assert airbender_table.counts['insert'] == 3
@@ -790,7 +788,7 @@ class TestComplexScenarios:
         ]
 
         surge = DataSurge(airbender_table)
-        errors = surge.insert(mixed_records, batch_size=100)
+        errors = surge.insert(mixed_records)
         cursor.connection.commit()
 
         assert errors == 0
@@ -813,7 +811,7 @@ class TestComplexScenarios:
         ]
 
         surge = DataSurge(fire_nation_table)
-        errors = surge.insert(records, batch_size=25)
+        errors = surge.insert(records)
         cursor.connection.commit()
 
         assert errors == 0
@@ -827,7 +825,7 @@ class TestComplexScenarios:
         surge = DataSurge(airbender_table)
 
         # Initial load
-        errors = surge.insert(airbender_records, batch_size=100)
+        errors = surge.insert(airbender_records)
         cursor.connection.commit()
         assert errors == 0
         assert airbender_table.counts['insert'] == 3
@@ -841,7 +839,7 @@ class TestComplexScenarios:
             for record in airbender_records
         ]
 
-        errors = surge.update(updated_records, batch_size=100)
+        errors = surge.update(updated_records)
         cursor.connection.commit()
         assert errors == 0
         assert airbender_table.counts['update'] == 3
@@ -858,7 +856,7 @@ class TestComplexScenarios:
             }
         ]
 
-        errors = surge.merge(merge_records, batch_size=100)
+        errors = surge.merge(merge_records)
         cursor.connection.commit()
         assert errors == 0
         assert airbender_table.counts['merge'] == 4

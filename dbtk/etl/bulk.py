@@ -19,8 +19,6 @@ try:
 except ImportError:
     from collections.abc import Mapping
 
-from ..cursors import Cursor
-from ..database import ParamStyle
 from ..utils import batch_iterable, RecordLike
 
 logger = logging.getLogger(__name__)
@@ -33,10 +31,11 @@ class DataSurge:
     Note: The Table instance's state (self.values) is modified during processing.
     Ensure the Table is not used concurrently by other operations or threads.
 
-    Example:
+    Example::
+
         table = Table(..., cursor=cursor)
-        surge = DataSurge(table)
-        errors = surge.merge(records, raise_error=False)
+        surge = DataSurge(table, batch_size=1000, use_transaction=True))
+        errors = surge.insert(records, raise_error=False)
     """
 
     def __init__(self, table: Table, batch_size: int = 1000, use_transaction: bool = False):

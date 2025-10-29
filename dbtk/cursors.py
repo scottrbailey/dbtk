@@ -15,6 +15,8 @@ from .utils import ParamStyle, process_sql_parameters
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
+__all__ = ['Cursor', 'RecordCursor', 'TupleCursor', 'DictCursor',
+           'ColumnCase', 'PreparedStatement']
 
 
 class ColumnCase:
@@ -341,7 +343,7 @@ class Cursor:
             )
             raise
 
-    def prepare_file(self, filename: str, **kwargs) -> PreparedStatement:
+    def prepare_file(self, filename: str, encoding: str = 'utf-8') -> PreparedStatement:
         """
         Prepare a SQL statement from a file for repeated execution.
 
@@ -350,18 +352,17 @@ class Cursor:
 
         Args:
             filename: Path to SQL file (relative to CWD)
-            **kwargs:
-                encoding: File encoding (default: utf-8)
+            encoding: File encoding (default: utf-8)
 
         Returns:
             PreparedStatement object
 
-        Example:
+        Example::
+
             stmt = cursor.prepare_file('queries/insert_user.sql')
             for user in users:
                 stmt.execute({'user_id': user.id, 'name': user.name})
         """
-        encoding = kwargs.get('encoding', 'utf-8')
         return PreparedStatement(self, filename, encoding)
 
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:

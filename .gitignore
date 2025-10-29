@@ -33,3 +33,4 @@ htmlcov/
 venv/
 env/
 ENV/
+/docs/_build/

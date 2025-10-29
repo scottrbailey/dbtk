@@ -209,18 +209,19 @@ DRIVERS = {
     }
 }
 
+
 def register_user_drivers(drivers_config: dict) -> None:
     """Register drivers from config file."""
     global _user_drivers
     _user_drivers.update(drivers_config)
 
 
-def get_all_drivers() -> dict:
+def _get_all_drivers() -> dict:
     """Get combined built-in and user drivers."""
     return {**DRIVERS, **_user_drivers}
 
 
-def get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str]:
+def _get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str]:
     """
     Gets a list of drivers available for the specified database type.
 
@@ -236,7 +237,7 @@ def get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str]
     Returns:
         List[str]: A sorted list of driver names available for the given database type.
     """
-    all_drivers = get_all_drivers()
+    all_drivers = _get_all_drivers()
     available_drivers = []
 
     for driver_name, info in all_drivers.items():
@@ -259,16 +260,16 @@ def get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str]
     return available_drivers
 
 
-def get_db_type_for_driver(driver_name: str) -> str:
+def _get_db_type_for_driver(driver_name: str) -> str:
     """Get database type for a driver."""
-    return get_all_drivers().get(driver_name, dict()).get('database_type')
+    return _get_all_drivers().get(driver_name, dict()).get('database_type')
 
 
-def get_params_for_database(db_type: str, driver: str = None) -> set:
+def _get_params_for_database(db_type: str, driver: str = None) -> set:
     """Get all valid parameters for a database type from DRIVERS metadata."""
-    from .database import get_all_drivers
+    from .database import _get_all_drivers
 
-    all_drivers = get_all_drivers()
+    all_drivers = _get_all_drivers()
     valid_params = set()
 
     # Collect parameters from all drivers for this database type
@@ -288,13 +289,13 @@ def get_params_for_database(db_type: str, driver: str = None) -> set:
 def get_supported_db_types() -> set:
     """Get all supported database types."""
     valid_db_types = set()
-    all_drivers = get_all_drivers()
+    all_drivers = _get_all_drivers()
     for driver_name, driver_info in all_drivers.items():
         valid_db_types.add(driver_info['database_type'])
     return valid_db_types
 
 
-def validate_connection_params(driver_name: str, config_only: bool = False, **params) -> dict:
+def _validate_connection_params(driver_name: str, config_only: bool = False, **params) -> dict:
     """
     Validate connection parameters against driver requirements.
 
@@ -360,12 +361,12 @@ def validate_connection_params(driver_name: str, config_only: bool = False, **pa
     return validated_params
 
 
-def get_connection_string(**kwargs) -> str:
+def _get_connection_string(**kwargs) -> str:
     """ Get connection string from keyword arguments."""
     return " ".join([f"{key}={value}" for key, value in kwargs.items()])
 
 
-def get_odbc_connection_string(**kwargs) -> str:
+def _get_odbc_connection_string(**kwargs) -> str:
     """ Get connection string for ODBC from keyword arguments."""
     odbc_driver_name = kwargs.pop('odbc_driver_name', None)
     server = '%s,%s'.format(kwargs.pop('host', 'localhost'), kwargs.pop('port'))
@@ -427,9 +428,9 @@ class Database:
         self.interface = interface
         if database_name is None:
             database_name = (connection.get('database') or
-                                  connection.get('service_name') or
-                                  connection.get('dbname') or
-                                  connection.get('db'))
+                            connection.get('service_name') or
+                            connection.get('dbname') or
+                            connection.get('db'))
 
         self.database_name = database_name
 
@@ -574,7 +575,7 @@ class Database:
                 logger.warning(f"Driver '{driver}' not available, falling back to default")
 
         if db_driver is None:
-            for driver_name in get_drivers_for_database(db_type):
+            for driver_name in _get_drivers_for_database(db_type):
                 try:
                     db_driver = importlib.import_module(driver_name)
                     break
@@ -584,7 +585,7 @@ class Database:
         if db_driver is None:
             raise ImportError(f"No database driver found for database type '{db_type}'")
 
-        params = validate_connection_params(driver_name,  **kwargs)
+        params = _validate_connection_params(driver_name, **kwargs)
         if not params:
             raise ValueError("The connection parameters were not valid.")
 
@@ -592,7 +593,7 @@ class Database:
         if driver_conf['connection_method'] == 'kwargs':
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'connection_string':
-            connection = db_driver.connect(get_connection_string(**params))
+            connection = db_driver.connect(_get_connection_string(**params))
         elif driver_conf['connection_method'] == 'dsn':
             if hasattr(db_driver, 'makedsn') and 'dsn' not in params:
                 host = params.pop('host', 'localhost')
@@ -601,7 +602,7 @@ class Database:
                 params['dsn'] = db_driver.makedsn(host, port, service_name=service_name)
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'odbc_string':
-            connection = db_driver.connect(get_odbc_connection_string(**params))
+            connection = db_driver.connect(_get_odbc_connection_string(**params))
 
         if connection:
             return cls(connection, db_driver, kwargs.get('database'))

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from .defaults import settings # noqa: F401
-from .database import Database, get_params_for_database
+from .database import Database, _get_params_for_database
 try:
     import yaml
 except ImportError:
@@ -462,7 +462,7 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     if not db_type:
         db_type = config.pop('server_type', 'postgres')
 
-    allowed_params = get_params_for_database(db_type)
+    allowed_params = _get_params_for_database(db_type)
     config = {key: val for key, val in config.items() if key in allowed_params}
 
     # Create database connection

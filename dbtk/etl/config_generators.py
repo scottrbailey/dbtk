@@ -32,7 +32,7 @@ def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> 
             'id': {'field': 'id', 'primary_key': True},
             'name': {'field': 'name', 'nullable': False},
             'email': {'field': 'email'},
-            'created_at': {'value': 'CURRENT_TIMESTAMP', 'db_fn': 'CURRENT_TIMESTAMP'}
+            'created_at': {'db_fn': 'CURRENT_TIMESTAMP'}
         }
 
         >>> # Copy output into your code:
@@ -40,7 +40,7 @@ def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> 
         ...     'id': {'field': 'id', 'primary_key': True},
         ...     'name': {'field': 'name', 'nullable': False},
         ...     'email': {'field': 'email'},
-        ...     'created_at': {'value': 'CURRENT_TIMESTAMP', 'db_fn': 'CURRENT_TIMESTAMP'}
+        ...     'created_at': {'db_fn': 'CURRENT_TIMESTAMP'}
         ... }, cursor=cursor)
     """
     # Swap DictCursor for RecordCursor to allow positional access in metadata functions
@@ -256,10 +256,7 @@ def _get_postgres_metadata(cursor, table_name: str, add_comments: bool = False) 
 
         # Handle special timestamp columns (Rails/Django pattern)
         if col_name.endswith('_at') and data_type in ('timestamp', 'timestamptz', 'timestamp without time zone', 'timestamp with time zone'):
-            columns[col_name] = {
-                'value': 'CURRENT_TIMESTAMP',
-                'db_fn': 'CURRENT_TIMESTAMP'
-            }
+            columns[col_name] = {'db_fn': 'CURRENT_TIMESTAMP'}
             continue
 
         # Build column config
@@ -338,11 +335,7 @@ def _get_mysql_metadata(cursor, table_name: str, add_comments: bool = False) -> 
 
         # Handle special timestamp columns (Laravel/Rails pattern)
         if col_name in ('created_at', 'updated_at') and data_type in ('datetime', 'timestamp'):
-            default_val = 'CURRENT_TIMESTAMP' if col_name == 'created_at' else 'CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-            columns[col_name] = {
-                'value': default_val,
-                'db_fn': default_val
-            }
+            columns[col_name] = {'db_fn': 'CURRENT_TIMESTAMP'}
             continue
 
         # Build column config
