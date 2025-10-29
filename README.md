@@ -722,6 +722,10 @@ DBTK supports multiple database adapters with automatic detection and fallback:
 
 MIT License - see LICENSE file for details.
 
+## Acknowledgments
+
+Documentation, testing and architectural improvements assisted by [Claude](https://claude.ai) (Anthropic).
+
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/dbtk/issues)

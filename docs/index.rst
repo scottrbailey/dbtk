@@ -1,3 +1,8 @@
+.. image:: assets/databender.png
+   :width: 320px
+   :align: right
+   :alt: dbtk - The Data Bender
+
 dbtk - Data Benders ToolKit
 =================================
 
