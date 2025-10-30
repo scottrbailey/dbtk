@@ -645,16 +645,11 @@ class Table:
         """Get key columns that are missing or None."""
         return {col for col in self._key_cols if col not in self.values or self.values[col] is None}
 
-    def get_db_record(self) -> Dict[str, Any]:
+    def fetch(self) -> Dict[str, Any]:
         """Fetch a record from the database using current key values."""
-        keys_missing = {col for col in self._key_cols if col not in self.values or self.values[col] is None}
-        if keys_missing:
-            msg = f"Cannot get record from table {self._name}: missing key columns: {keys_missing}"
-            logger.error(msg)
-        else:
-            err = self.exec_select()
-            if not err:
-                return self._cursor.fetchone()
+        err = self.exec_select()
+        if not err:
+            return self._cursor.fetchone()
 
     def calc_update_excludes(self, file_columns: Set[str]):
         """Calculate columns to exclude from updates."""

@@ -1,8 +1,8 @@
 # dbtk/__init__.py
 """
-dbtk - Data Benders ToolKit - for ETL and data integration
+DBTK - Data Benders ToolKit
 
-A lightweight database toolkit that provides:
+A lightweight database integration toolkit that provides:
 - Uniform interface across different databases (PostgreSQL, Oracle, MySQL, SQL Server, SQLite)
 - Flexible cursor types returning different data structures
 - YAML-based configuration with password encryption

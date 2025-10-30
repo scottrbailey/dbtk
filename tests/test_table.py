@@ -469,7 +469,7 @@ class TestDatabaseOperations:
             'military_rank': 'Royal Guard'
         })
 
-        result = fire_nation_table.get_db_record()
+        result = fire_nation_table.fetch()
 
         assert result['soldier_id'] == 'MAI001'
         assert result['name'] == 'Mai'
@@ -791,7 +791,7 @@ class TestAdvancedFeatures:
         assert airbender_table.reqs_met
 
         # Check if record exists (should be None)
-        existing = airbender_table.get_db_record()
+        existing = airbender_table.fetch()
         assert existing is None
 
         # Insert new record
