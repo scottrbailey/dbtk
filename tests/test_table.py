@@ -406,14 +406,26 @@ class TestDatabaseOperations:
         assert row['name'] == 'Avatar Aang'
         assert row['temple'] == 'All Temples'
 
-    def test_exec_update_missing_requirements(self, airbender_table):
-        """Test update failure when Air Nomad requirements not met."""
+    def test_exec_update_missing_requirements_strict(self, airbender_table):
+        """Test update raises error when requirements not met and raise_error=True."""
         airbender_table.set_values({
             'trainee_id': 'INCOMPLETE001'
         })
 
         with pytest.raises(ValueError, match="required columns"):
-            airbender_table.exec_update()
+            airbender_table.exec_update(raise_error=True)
+
+    def test_exec_update_missing_requirements_graceful(self, airbender_table):
+        """Test update logs and tracks incomplete when requirements not met."""
+        airbender_table.set_values({
+            'trainee_id': 'INCOMPLETE001'
+        })
+
+        result = airbender_table.exec_update(raise_error=False)
+
+        assert result == 1  # Error code
+        assert airbender_table.counts['incomplete'] == 1
+        assert airbender_table.counts['update'] == 0  # Should not have executed
 
     def test_exec_delete_success(self, airbender_table, cursor):
         """Test successful delete of Air Nomad record."""
@@ -462,6 +474,223 @@ class TestDatabaseOperations:
         assert result['soldier_id'] == 'MAI001'
         assert result['name'] == 'Mai'
         assert result['rank'] == 'Royal Guard'
+
+
+class TestIncompleteTracking:
+    """Test counts['incomplete'] tracking for missing requirements."""
+
+    def test_incomplete_counter_initialization(self, airbender_table):
+        """Test that incomplete counter starts at zero."""
+        assert airbender_table.counts['incomplete'] == 0
+
+    def test_insert_incomplete_tracking(self, airbender_table):
+        """Test incomplete tracking for insert operations."""
+        # Missing required temple field
+        airbender_table.set_values({
+            'trainee_id': 'INC001',
+            'monk_name': 'Incomplete Nomad'
+        })
+
+        result = airbender_table.exec_insert(raise_error=False)
+
+        assert result == 1
+        assert airbender_table.counts['incomplete'] == 1
+        assert airbender_table.counts['insert'] == 0
+
+    def test_update_incomplete_tracking(self, airbender_table):
+        """Test incomplete tracking for update operations."""
+        airbender_table.set_values({
+            'trainee_id': 'INC002'
+        })
+
+        result = airbender_table.exec_update(raise_error=False)
+
+        assert result == 1
+        assert airbender_table.counts['incomplete'] == 1
+        assert airbender_table.counts['update'] == 0
+
+    def test_merge_incomplete_tracking(self, airbender_table):
+        """Test incomplete tracking for merge operations."""
+        airbender_table.set_values({
+            'trainee_id': 'INC003',
+            'monk_name': 'Incomplete Merge'
+        })
+
+        result = airbender_table.exec_merge(raise_error=False)
+
+        assert result == 1
+        assert airbender_table.counts['incomplete'] == 1
+        assert airbender_table.counts['merge'] == 0
+
+    def test_select_incomplete_tracking(self, airbender_table):
+        """Test incomplete tracking for select operations with missing keys."""
+        airbender_table.set_values({
+            'monk_name': 'No ID Nomad',
+            'home_temple': 'Unknown Temple'
+        })
+
+        result = airbender_table.exec_select(raise_error=False)
+
+        assert result == 1
+        assert airbender_table.counts['incomplete'] == 1
+        assert airbender_table.counts['select'] == 0
+
+    def test_delete_incomplete_tracking(self, airbender_table):
+        """Test incomplete tracking for delete operations with missing keys."""
+        airbender_table.set_values({
+            'monk_name': 'No ID Nomad',
+            'home_temple': 'Unknown Temple'
+        })
+
+        result = airbender_table.exec_delete(raise_error=False)
+
+        assert result == 1
+        assert airbender_table.counts['incomplete'] == 1
+        assert airbender_table.counts['delete'] == 0
+
+    def test_multiple_incomplete_accumulation(self, airbender_table):
+        """Test that incomplete counter accumulates across operations."""
+        # First incomplete insert
+        airbender_table.set_values({
+            'trainee_id': 'INC004',
+            'monk_name': 'First Incomplete'
+        })
+        airbender_table.exec_insert(raise_error=False)
+
+        # Second incomplete update
+        airbender_table.set_values({
+            'trainee_id': 'INC005'
+        })
+        airbender_table.exec_update(raise_error=False)
+
+        # Third incomplete merge
+        airbender_table.set_values({
+            'trainee_id': 'INC006',
+            'monk_name': 'Third Incomplete'
+        })
+        airbender_table.exec_merge(raise_error=False)
+
+        assert airbender_table.counts['incomplete'] == 3
+        assert airbender_table.counts['insert'] == 0
+        assert airbender_table.counts['update'] == 0
+        assert airbender_table.counts['merge'] == 0
+
+
+class TestReqsCheckedParameter:
+    """Test reqs_checked parameter to skip redundant validation."""
+
+    def test_insert_with_reqs_checked(self, airbender_table, cursor):
+        """Test insert with reqs_checked=True skips validation."""
+        airbender_table.set_values({
+            'trainee_id': 'CHECK001',
+            'monk_name': 'Pre-Checked Nomad',
+            'home_temple': 'Validated Temple'
+        })
+
+        # Verify requirements before calling
+        assert airbender_table.reqs_met
+
+        # Execute with reqs_checked=True
+        result = airbender_table.exec_insert(reqs_checked=True)
+
+        assert result == 0
+        assert airbender_table.counts['insert'] == 1
+        assert airbender_table.counts['incomplete'] == 0
+
+    def test_update_with_reqs_checked(self, airbender_table, cursor):
+        """Test update with reqs_checked=True skips validation."""
+        # Insert initial record
+        airbender_table.set_values({
+            'trainee_id': 'CHECK002',
+            'monk_name': 'Checkable Nomad',
+            'home_temple': 'Validation Temple'
+        })
+        airbender_table.exec_insert()
+        cursor.connection.commit()
+
+        # Update with pre-validation
+        airbender_table.set_values({
+            'trainee_id': 'CHECK002',
+            'monk_name': 'Updated Nomad',
+            'home_temple': 'New Temple'
+        })
+
+        assert airbender_table.reqs_met
+
+        result = airbender_table.exec_update(reqs_checked=True)
+
+        assert result == 0
+        assert airbender_table.counts['update'] == 1
+
+    def test_select_with_reqs_checked(self, airbender_table, cursor):
+        """Test select with reqs_checked=True skips key validation."""
+        # Insert record first
+        airbender_table.set_values({
+            'trainee_id': 'CHECK003',
+            'monk_name': 'Selectable Nomad',
+            'home_temple': 'Select Temple'
+        })
+        airbender_table.exec_insert()
+        cursor.connection.commit()
+
+        # Select with pre-validation
+        airbender_table.set_values({
+            'trainee_id': 'CHECK003',
+            'monk_name': 'Any Name',
+            'home_temple': 'Any Temple'
+        })
+
+        assert airbender_table.has_all_keys
+
+        result = airbender_table.exec_select(reqs_checked=True)
+
+        assert result == 0
+        assert airbender_table.counts['select'] == 1
+
+    def test_optional_table_pattern(self, cursor):
+        """Test optional table pattern with explicit requirement checking."""
+        # Create an optional address table
+        cursor.execute("""
+                       CREATE TABLE optional_addresses
+                       (
+                           nomad_id TEXT PRIMARY KEY,
+                           street   TEXT NOT NULL,
+                           city     TEXT NOT NULL
+                       )
+                       """)
+        cursor.connection.commit()
+
+        address_table = Table('optional_addresses', {
+            'nomad_id': {'field': 'id', 'primary_key': True},
+            'street': {'field': 'address_line', 'nullable': False},
+            'city': {'field': 'city_name', 'nullable': False}
+        }, cursor=cursor)
+
+        # Record with complete address
+        complete_record = {
+            'id': 'ADDR001',
+            'address_line': '123 Air Temple Way',
+            'city_name': 'Southern Air Temple'
+        }
+
+        address_table.set_values(complete_record)
+        if address_table.reqs_met:
+            result = address_table.exec_insert(reqs_checked=True)
+            assert result == 0
+
+        # Record without address (optional)
+        incomplete_record = {
+            'id': 'ADDR002'
+        }
+
+        address_table.set_values(incomplete_record)
+        if address_table.reqs_met:
+            address_table.exec_insert(reqs_checked=True)
+        # If not met, don't insert - this is expected
+
+        # Should have inserted 1, skipped 1
+        assert address_table.counts['insert'] == 1
+        assert address_table.counts['incomplete'] == 0  # We never called exec
 
 
 class TestUpdateExclusions:
@@ -530,6 +759,7 @@ class TestReset:
         airbender_table.generate_sql('insert')
         airbender_table.set_values({'trainee_id': 'TEST001', 'monk_name': 'Test'})
         airbender_table.counts['insert'] = 5
+        airbender_table.counts['incomplete'] = 3
         airbender_table._update_excludes.add('test_col')
 
         airbender_table._reset()
@@ -538,6 +768,7 @@ class TestReset:
         assert airbender_table._param_config['insert'] == ()
         assert len(airbender_table._update_excludes) == 0
         assert airbender_table.counts['insert'] == 0
+        assert airbender_table.counts['incomplete'] == 0
         assert len(airbender_table.values) == 0
 
 
