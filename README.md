@@ -1,12 +1,18 @@
-# Data Bender Toolkit (dbtk)
+# DBTK - Data Benders Toolkit
 <img src="/docs/assets/databender.png" height="320" style="float: right; padding-left: 50px"/>
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
 
-Like the elemental benders of Avatar, this library gives you precise control over data - the world's most rapidly growing element. Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go. This library is designed by and for data integrators.
+Like the elemental benders of Avatar, this library gives you precise control over data, the world's most rapidly growing element. Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go. This library is designed by and for data integrators.
 
-**Design philosophy:** This library is designed to get data to and from your databases with minimal hassle. It is well suited for data integration and ELT jobs. Modern databases do an amazing job at aggregating and transforming data, and we believe in leveraging those strengths. However, if you are doing heavy transforms in Python, we recommend looking at other tool chains like Pandas and polars.
+**Design philosophy:** Modern databases excel at aggregating and transforming data at scale. DBTK embraces
+this by focusing on what Python does well: flexible record-by-record transformations,
+connecting disparate systems, and orchestrating data movement.
 
+If you need to pivot, aggregate, or perform complex SQL operations - write SQL and let
+your database handle it. If you need dataframes and heavy analytics - reach for Pandas
+or polars. DBTK sits in between: getting your data where it needs to be, cleaned and
+validated along the way.
 
 ## Table of Contents
 
@@ -96,16 +102,21 @@ with dbtk.connect('avatar_training_grounds') as db:
         'training_date': {'field': 'started_training', 'fn': parse_date},
         'airbending_level': {'field': 'mastery_level', 'db_fn': 'calculate_airbending_rank(#)'},
         'last_meditation': {'db_fn': 'CURRENT_TIMESTAMP'},
-        'temple_origin': {'value': 'Eastern Air Temple'}})
-        
+        'temple_origin': {'value': 'Eastern Air Temple'}},
+        cursor=cursor)
+
     # Process records with validation and transformation
     with dbtk.readers.get_reader('new_air_nomad_recruits.csv') as reader:
         for recruit in reader:
             recruit_table.set_values(recruit)
             if recruit_table.reqs_met:
-                recruit_table.exec_insert(cursor)
+                recruit_table.exec_insert(reqs_checked=True)  # Skip redundant check
             else:
                 print(f"Recruit needs more training: missing {recruit_table.reqs_missing}")
+
+    # Check processing results
+    print(f"Inserted: {recruit_table.counts['insert']} recruits")
+    print(f"Skipped: {len([r for r in reader if not recruit_table.reqs_met])} incomplete records")
 ```
 
 ## Core Components
@@ -171,7 +182,7 @@ Choose the right cursor type for your use case to balance functionality and perf
 
 ```python
 # Record cursor - memory efficient and most flexible (recommended for most use cases)
-cursor = db.cursor('record')
+cursor = db.cursor('record') # default
 row = cursor.fetchone()
 print(row['name'], row.name, row[0], '\t'.join(row[:5]))  # All work!
 
@@ -189,6 +200,10 @@ print(row['name'])  # Dictionary access only
 cursor = db.cursor('list')
 row = cursor.fetchone()
 print(row[0], '\t'.join(row[:5]))  # Index access only
+
+# Cursor chaining
+cursor = db.cursor(return_cursor=True)
+cursor.execute("SELECT * FROM firebenders WHERE rank = 'general'").fetchone()
 ```
 
 **Supported databases:**
@@ -249,7 +264,7 @@ with readers.XMLReader(open('avatar_chronicles.xml'),
 
 **Automatic format detection:**
 
-Let dbtk figure out what you're reading:
+Let DBTK figure out what you're reading:
 
 ```python
 # Automatically detects format from extension
@@ -336,7 +351,7 @@ writers.to_json(data, 'output.json')
 
 #### SQL File Execution
 
-**The killer feature:** Write SQL once with named parameters, run it anywhere. DBTK automatically converts between parameter styles, making your queries truly portable across databases. (No queries were killed in the making of this library.)
+Write SQL once with named parameters, run it anywhere. DBTK automatically converts between parameter styles, making your queries truly portable across databases.
 
 ```python
 # query.sql - write once with named parameters
@@ -424,22 +439,24 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
     'enlistment_date': {'field': 'joined_army', 'fn': transforms.parse_date},
     'combat_name': {'field': 'full_name', 'db_fn': 'generate_fire_nation_callsign(#)'},
     'last_drill': {'db_fn': 'CURRENT_TIMESTAMP'},
-    'conscription_source': {'value': 'Sozin Recruitment Drive'}}, 
-    cursor=cursor)
+    'conscription_source': {'value': 'Sozin Recruitment Drive'}},
+                                   cursor=cursor)
 
-# Process records with validation
+# Process records with validation and upsert logic
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
     phoenix_king_army.calc_update_excludes(reader.headers)
     for recruit in reader:
         phoenix_king_army.set_values(recruit)
         if phoenix_king_army.reqs_met:
-            existing_soldier = phoenix_king_army.get_db_record()
+            existing_soldier = phoenix_king_army.fetch()
             if existing_soldier:
-                phoenix_king_army.exec_update()
+                phoenix_king_army.exec_update(reqs_checked=True)
             else:
-                phoenix_king_army.exec_insert()
+                phoenix_king_army.exec_insert(reqs_checked=True)
         else:
             print(f"Recruit rejected: missing {phoenix_king_army.reqs_missing}")
+
+print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
 ```
 
 **Key features:**
@@ -450,6 +467,48 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
 - Primary key management
 - Automatic UPDATE exclusions
 - Support for INSERT, UPDATE, DELETE, MERGE operations
+- Incomplete record tracking with `counts['incomplete']`
+
+**Handling Incomplete Records:**
+
+DBTK supports two patterns for handling incomplete records:
+
+```python
+# Pattern 1: Tables expected to be complete - let exec methods handle validation
+# Use this when you want to track all incomplete records
+for record in records:
+    soldier_table.set_values(record)
+    # exec_* functions automatically validate keys and required columns have values
+    soldier_table.exec_insert(raise_error=False)  # Track incomplete, don't raise
+
+print(f"Inserted: {soldier_table.counts['insert']}")
+print(f"Skipped (incomplete data): {soldier_table.counts['incomplete']}")
+
+# Pattern 2: "Optional" tables, check requirements before executing DML
+# Use this when missing data is expected and you want to skip incomplete records.
+# If you call exec_insert(raise_error=False) with many incomplete records you will flood 
+# your logs.
+for record in records:
+    recruit_table.set_values(record)
+    if recruit_table.reqs_met: #
+        recruit_table.exec_insert(reqs_checked=True)  # Skip redundant validation
+    # Records with missing data are silently skipped. 
+
+print(f"Inserted: {recruit_table.counts['insert']}")
+
+# Pattern 3: Strict mode - raise errors on incomplete data
+# Use this when all data must be complete
+for record in records:
+    critical_table.set_values(record)
+    critical_table.exec_insert(raise_error=True)  # Raises ValueError if incomplete
+```
+
+**Performance tip:** Use `reqs_checked=True` when you've already validated requirements to avoid redundant checks:
+
+```python
+if address_table.reqs_met:  # Check once
+    address_table.exec_insert(reqs_checked=True)  # Skip redundant check
+```
 
 #### Bulk Operations with DataSurge
 
