@@ -73,6 +73,7 @@ class Table:
         self._param_config: Dict[str, Tuple[str, ...]] = {op: () for op in self.OPERATIONS}
         self.counts: Dict[str, int] = {op: 0 for op in self.OPERATIONS}
         self.counts['records'] = 0  # Add special records counter
+        self.counts['incomplete'] = 0  # Track records skipped due to missing requirements
 
         self._update_excludes: Set[str] = set()
         self.values: Dict[str, Any] = {}
@@ -620,6 +621,7 @@ class Table:
         self._param_config = {op: () for op in self.OPERATIONS}
         self.counts = {op: 0 for op in self.OPERATIONS}
         self.counts['records'] = 0
+        self.counts['incomplete'] = 0
         self._update_excludes = set()
         self.values = {}
 
@@ -681,34 +683,84 @@ class Table:
                 raise
             return 1
 
-    def exec_select(self, raise_error: bool = False) -> int:
-        """Execute SELECT statement for current record."""
+    def exec_select(self, raise_error: bool = False, reqs_checked: bool = False) -> int:
+        """
+        Execute SELECT statement for current record.
+
+        Args:
+            raise_error: If True, raise exceptions on errors or missing requirements.
+                        If False, log and return error code.
+            reqs_checked: If True, skip requirement validation (caller has already checked).
+
+        Returns:
+            0 on success, 1 on error or incomplete data.
+        """
         if not self._key_cols:
             msg = f"Cannot select from table {self._name}: no key columns defined"
             logger.error(msg)
             raise ValueError(msg)
 
+        if not reqs_checked and not self.has_all_keys:
+            msg = f"key columns {self.keys_missing} are null"
+            if raise_error:
+                logger.error(f"Cannot select from table {self._name}: {msg}")
+                raise ValueError(f"Cannot select from table {self._name}: {msg}")
+            else:
+                logger.info(f"Skipping select on table {self._name}: {msg}")
+                self.counts['incomplete'] += 1
+                return 1
+
         sql = self.get_sql('select')
         params = self.get_bind_params('select')
         return self._exec_sql(sql, params, 'select', raise_error)
 
-    def exec_insert(self, raise_error: bool = False) -> int:
-        """Execute INSERT statement for current record."""
-        if not self.reqs_met:
-            msg = f"Cannot insert into table {self._name}: required columns {self.reqs_missing} are null"
-            logger.error(msg)
-            raise ValueError(msg)
+    def exec_insert(self, raise_error: bool = False, reqs_checked: bool = False) -> int:
+        """
+        Execute INSERT statement for current record.
+
+        Args:
+            raise_error: If True, raise exceptions on errors or missing requirements.
+                        If False, log and return error code.
+            reqs_checked: If True, skip requirement validation (caller has already checked).
+
+        Returns:
+            0 on success, 1 on error or incomplete data.
+        """
+        if not reqs_checked and not self.reqs_met:
+            msg = f"required columns {self.reqs_missing} are null"
+            if raise_error:
+                logger.error(f"Cannot insert into table {self._name}: {msg}")
+                raise ValueError(f"Cannot insert into table {self._name}: {msg}")
+            else:
+                logger.info(f"Skipping insert on table {self._name}: {msg}")
+                self.counts['incomplete'] += 1
+                return 1
 
         sql = self.get_sql('insert')
         params = self.get_bind_params('insert')
         return self._exec_sql(sql, params, 'insert', raise_error)
 
-    def exec_update(self, raise_error: bool = False) -> int:
-        """Execute UPDATE statement for current record."""
-        if not self.reqs_met:
-            msg = f"Cannot update table {self._name}: required columns {self.reqs_missing} are null"
-            logger.error(msg)
-            raise ValueError(msg)
+    def exec_update(self, raise_error: bool = False, reqs_checked: bool = False) -> int:
+        """
+        Execute UPDATE statement for current record.
+
+        Args:
+            raise_error: If True, raise exceptions on errors or missing requirements.
+                        If False, log and return error code.
+            reqs_checked: If True, skip requirement validation (caller has already checked).
+
+        Returns:
+            0 on success, 1 on error or incomplete data.
+        """
+        if not reqs_checked and not self.reqs_met:
+            msg = f"required columns {self.reqs_missing} are null"
+            if raise_error:
+                logger.error(f"Cannot update table {self._name}: {msg}")
+                raise ValueError(f"Cannot update table {self._name}: {msg}")
+            else:
+                logger.info(f"Skipping update on table {self._name}: {msg}")
+                self.counts['incomplete'] += 1
+                return 1
 
         if not self._key_cols:
             msg = f"Cannot update table {self._name}: no key columns defined"
@@ -719,23 +771,58 @@ class Table:
         params = self.get_bind_params('update')
         return self._exec_sql(sql, params, 'update', raise_error)
 
-    def exec_delete(self, raise_error: bool = False) -> int:
-        """Execute DELETE statement for current record."""
+    def exec_delete(self, raise_error: bool = False, reqs_checked: bool = False) -> int:
+        """
+        Execute DELETE statement for current record.
+
+        Args:
+            raise_error: If True, raise exceptions on errors or missing requirements.
+                        If False, log and return error code.
+            reqs_checked: If True, skip requirement validation (caller has already checked).
+
+        Returns:
+            0 on success, 1 on error or incomplete data.
+        """
         if not self._key_cols:
             msg = f"Cannot delete from table {self._name}: no key columns defined"
             logger.error(msg)
             raise ValueError(msg)
 
+        if not reqs_checked and not self.has_all_keys:
+            msg = f"key columns {self.keys_missing} are null"
+            if raise_error:
+                logger.error(f"Cannot delete from table {self._name}: {msg}")
+                raise ValueError(f"Cannot delete from table {self._name}: {msg}")
+            else:
+                logger.info(f"Skipping delete on table {self._name}: {msg}")
+                self.counts['incomplete'] += 1
+                return 1
+
         sql = self.get_sql('delete')
         params = self.get_bind_params('delete')
         return self._exec_sql(sql, params, 'delete', raise_error)
 
-    def exec_merge(self, raise_error: bool = False) -> int:
-        """Execute MERGE statement for current record."""
-        if not self.reqs_met:
-            msg = f"Cannot merge table {self._name}: required columns {self.reqs_missing} are null"
-            logger.error(msg)
-            raise ValueError(msg)
+    def exec_merge(self, raise_error: bool = False, reqs_checked: bool = False) -> int:
+        """
+        Execute MERGE statement for current record.
+
+        Args:
+            raise_error: If True, raise exceptions on errors or missing requirements.
+                        If False, log and return error code.
+            reqs_checked: If True, skip requirement validation (caller has already checked).
+
+        Returns:
+            0 on success, 1 on error or incomplete data.
+        """
+        if not reqs_checked and not self.reqs_met:
+            msg = f"required columns {self.reqs_missing} are null"
+            if raise_error:
+                logger.error(f"Cannot merge table {self._name}: {msg}")
+                raise ValueError(f"Cannot merge table {self._name}: {msg}")
+            else:
+                logger.info(f"Skipping merge on table {self._name}: {msg}")
+                self.counts['incomplete'] += 1
+                return 1
 
         if not self._key_cols:
             msg = f"Cannot merge table {self._name}: no key columns defined"
