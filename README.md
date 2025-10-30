@@ -96,16 +96,21 @@ with dbtk.connect('avatar_training_grounds') as db:
         'training_date': {'field': 'started_training', 'fn': parse_date},
         'airbending_level': {'field': 'mastery_level', 'db_fn': 'calculate_airbending_rank(#)'},
         'last_meditation': {'db_fn': 'CURRENT_TIMESTAMP'},
-        'temple_origin': {'value': 'Eastern Air Temple'}})
-        
+        'temple_origin': {'value': 'Eastern Air Temple'}},
+        cursor=cursor)
+
     # Process records with validation and transformation
     with dbtk.readers.get_reader('new_air_nomad_recruits.csv') as reader:
         for recruit in reader:
             recruit_table.set_values(recruit)
             if recruit_table.reqs_met:
-                recruit_table.exec_insert(cursor)
+                recruit_table.exec_insert(reqs_checked=True)  # Skip redundant check
             else:
                 print(f"Recruit needs more training: missing {recruit_table.reqs_missing}")
+
+    # Check processing results
+    print(f"Inserted: {recruit_table.counts['insert']} recruits")
+    print(f"Skipped: {len([r for r in reader if not recruit_table.reqs_met])} incomplete records")
 ```
 
 ## Core Components
@@ -249,7 +254,7 @@ with readers.XMLReader(open('avatar_chronicles.xml'),
 
 **Automatic format detection:**
 
-Let dbtk figure out what you're reading:
+Let DBTK figure out what you're reading:
 
 ```python
 # Automatically detects format from extension
@@ -427,7 +432,7 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
     'conscription_source': {'value': 'Sozin Recruitment Drive'}}, 
     cursor=cursor)
 
-# Process records with validation
+# Process records with validation and upsert logic
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
     phoenix_king_army.calc_update_excludes(reader.headers)
     for recruit in reader:
@@ -435,11 +440,13 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
         if phoenix_king_army.reqs_met:
             existing_soldier = phoenix_king_army.get_db_record()
             if existing_soldier:
-                phoenix_king_army.exec_update()
+                phoenix_king_army.exec_update(reqs_checked=True)
             else:
-                phoenix_king_army.exec_insert()
+                phoenix_king_army.exec_insert(reqs_checked=True)
         else:
             print(f"Recruit rejected: missing {phoenix_king_army.reqs_missing}")
+
+print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
 ```
 
 **Key features:**
@@ -450,6 +457,45 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
 - Primary key management
 - Automatic UPDATE exclusions
 - Support for INSERT, UPDATE, DELETE, MERGE operations
+- Incomplete record tracking with `counts['incomplete']`
+
+**Optional vs. Always Tables:**
+
+DBTK supports two patterns for handling incomplete records:
+
+```python
+# Pattern 1: Optional Tables - check requirements first
+# Use this when missing data is expected and you want to skip incomplete records
+for record in records:
+    recruit_table.set_values(record)
+    if recruit_table.reqs_met:
+        recruit_table.exec_insert(reqs_checked=True)  # Skip redundant validation
+    # Records with missing data are silently skipped
+
+print(f"Inserted: {recruit_table.counts['insert']}")
+
+# Pattern 2: Always Tables - let exec methods handle validation
+# Use this when you want to track all incomplete records
+for record in records:
+    soldier_table.set_values(record)
+    soldier_table.exec_insert(raise_error=False)  # Track incomplete, don't raise
+
+print(f"Inserted: {soldier_table.counts['insert']}")
+print(f"Skipped (incomplete data): {soldier_table.counts['incomplete']}")
+
+# Pattern 3: Strict mode - raise errors on incomplete data
+# Use this when all data must be complete
+for record in records:
+    critical_table.set_values(record)
+    critical_table.exec_insert(raise_error=True)  # Raises ValueError if incomplete
+```
+
+**Performance tip:** Use `reqs_checked=True` when you've already validated requirements to avoid redundant checks:
+
+```python
+if address_table.reqs_met:  # Check once
+    address_table.exec_insert(reqs_checked=True)  # Skip redundant check
+```
 
 #### Bulk Operations with DataSurge
 
