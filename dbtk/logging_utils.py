@@ -1,0 +1,205 @@
+# dbtk/logging_utils.py
+"""
+Logging utilities for integration scripts.
+
+Provides convenient logging setup for ETL and integration scripts that follow
+the pattern of creating timestamped log files like script_name_YYYYMMDD_HHMMSS.log
+"""
+
+import logging
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Optional, Tuple, List
+
+logger = logging.getLogger(__name__)
+
+
+def setup_logging(
+    script_name: Optional[str] = None,
+    log_dir: Optional[str] = None,
+    level: Optional[str] = None,
+    split_errors: Optional[bool] = None,
+    console: Optional[bool] = None
+) -> Tuple[str, Optional[str]]:
+    """
+    Configure logging for integration scripts.
+
+    Creates log files with pattern: {script_name}_{datetime}.log
+    Optionally creates separate error log: {script_name}_{datetime}_error.log
+
+    Args:
+        script_name: Base name for log files (defaults to script filename without extension)
+        log_dir: Directory for log files (defaults to config setting or './logs')
+        level: Logging level string - DEBUG, INFO, WARNING, ERROR (defaults to config or 'INFO')
+        split_errors: Create separate error log file (defaults to config or True)
+        console: Also log to console/stdout (defaults to config or True)
+
+    Returns:
+        Tuple of (log_file_path, error_log_path or None)
+
+    Example:
+        import dbtk
+
+        # Simple - uses defaults from config
+        dbtk.setup_logging('fire_nation_etl')
+
+        # Custom settings
+        dbtk.setup_logging('my_script', log_dir='/var/log/etl', level='DEBUG')
+
+        # Single log file per day (set filename_format in config to '%Y%m%d')
+        dbtk.setup_logging('daily_job')
+
+        # Single rolling log file (set filename_format in config to '')
+        dbtk.setup_logging('rolling_log')
+
+    Note:
+        To customize filename patterns, set 'logging.filename_format' in dbtk.yml:
+        - '%Y%m%d_%H%M%S' - One log per run with date and time (default)
+        - '%Y%m%d' - One log per day
+        - '' - Single rolling log file (overwrites)
+    """
+    from dbtk.config import get_setting
+
+    # Get script name from command line if not provided
+    if script_name is None:
+        script_name = Path(sys.argv[0]).stem
+
+    # Load logging config dict
+    logging_config = get_setting('logging', {})
+
+    # Get settings with fallbacks
+    log_dir = log_dir or logging_config.get('directory', './logs')
+    level = level or logging_config.get('level', 'INFO')
+    split_errors = split_errors if split_errors is not None else logging_config.get('split_errors', True)
+    console = console if console is not None else logging_config.get('console', True)
+
+    log_format = logging_config.get('format', '%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    timestamp_format = logging_config.get('timestamp_format', '%Y-%m-%d %H:%M:%S')
+    filename_format = logging_config.get('filename_format', '%Y%m%d_%H%M%S')
+
+    # Create log directory
+    log_dir_path = Path(log_dir)
+    log_dir_path.mkdir(parents=True, exist_ok=True)
+
+    # Generate filename with optional timestamp
+    if filename_format:
+        timestamp = datetime.now().strftime(filename_format)
+        log_file = log_dir_path / f"{script_name}_{timestamp}.log"
+        error_file = log_dir_path / f"{script_name}_{timestamp}_error.log" if split_errors else None
+    else:
+        # No timestamp - single rolling log file
+        log_file = log_dir_path / f"{script_name}.log"
+        error_file = log_dir_path / f"{script_name}_error.log" if split_errors else None
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, level.upper()))
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    # Create formatter
+    formatter = logging.Formatter(log_format, datefmt=timestamp_format)
+
+    # Main log file handler (all messages)
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+    # Error log file handler (errors and critical only)
+    if split_errors:
+        error_handler = logging.FileHandler(error_file, encoding='utf-8')
+        error_handler.setLevel(logging.ERROR)
+        error_handler.setFormatter(formatter)
+        root_logger.addHandler(error_handler)
+
+    # Console handler
+    if console:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(getattr(logging, level.upper()))
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+
+    # Log startup message
+    logging.info(f"Logging initialized: {log_file}")
+    if error_file:
+        logging.info(f"Error log: {error_file}")
+
+    return (str(log_file), str(error_file) if error_file else None)
+
+
+def cleanup_old_logs(
+    log_dir: Optional[str] = None,
+    retention_days: Optional[int] = None,
+    pattern: str = "*.log",
+    dry_run: bool = False
+) -> List[str]:
+    """
+    Remove log files older than retention period.
+
+    Args:
+        log_dir: Directory to clean (defaults to config setting or './logs')
+        retention_days: Keep logs newer than this many days (defaults to config or 30)
+        pattern: Glob pattern for log files (default: '*.log')
+        dry_run: If True, only report what would be deleted without actually deleting
+
+    Returns:
+        List of deleted (or would-be-deleted if dry_run) file paths
+
+    Example:
+        import dbtk
+
+        # Clean logs older than 30 days (from config)
+        deleted = dbtk.cleanup_old_logs()
+        print(f"Deleted {len(deleted)} old log files")
+
+        # Custom retention
+        deleted = dbtk.cleanup_old_logs(retention_days=7)
+
+        # Dry run to see what would be deleted
+        would_delete = dbtk.cleanup_old_logs(dry_run=True)
+        print(f"Would delete: {would_delete}")
+
+        # Clean specific pattern
+        deleted = dbtk.cleanup_old_logs(pattern="error_*.log")
+    """
+    from dbtk.config import get_setting
+
+    # Load logging config dict
+    logging_config = get_setting('logging', {})
+
+    # Get settings with fallbacks
+    log_dir = log_dir or logging_config.get('directory', './logs')
+    retention_days = retention_days or logging_config.get('retention_days', 30)
+
+    log_dir_path = Path(log_dir)
+    if not log_dir_path.exists():
+        logger.warning(f"Log directory does not exist: {log_dir_path}")
+        return []
+
+    cutoff = datetime.now() - timedelta(days=retention_days)
+    deleted = []
+
+    for log_file in log_dir_path.glob(pattern):
+        if not log_file.is_file():
+            continue
+
+        file_mtime = datetime.fromtimestamp(log_file.stat().st_mtime)
+        if file_mtime < cutoff:
+            if dry_run:
+                logger.info(f"Would delete: {log_file}")
+            else:
+                try:
+                    log_file.unlink()
+                    logger.info(f"Deleted old log: {log_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete {log_file}: {e}")
+                    continue
+            deleted.append(str(log_file))
+
+    if not dry_run and deleted:
+        logger.info(f"Cleaned up {len(deleted)} old log files")
+
+    return deleted

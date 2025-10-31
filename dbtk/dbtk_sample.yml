@@ -10,6 +10,19 @@ settings:
   lookup_preload_threshold: 500  # if table size > threshold, preload all values for transforms.CodeLookup
   validator_preload_threshold: 1000 # if table size > threshold, preload all values for transforms.CodeValidator
 
+  # Logging configuration for integration scripts
+  logging:
+    directory: ./logs                  # Directory for log files
+    level: INFO                         # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    timestamp_format: '%Y-%m-%d %H:%M:%S'  # Format for timestamps in log messages
+    filename_format: '%Y%m%d_%H%M%S'   # Timestamp format for log filenames
+                                        # Set to '%Y%m%d' for one log per day
+                                        # Set to '' for single rolling log file (no timestamp)
+    split_errors: true                  # Create separate _error.log file for errors
+    console: true                       # Also output to console
+    retention_days: 30                  # Days to keep old log files (for cleanup_old_logs)
+
 connections:
   # Example connection configurations
   dev_postgres:

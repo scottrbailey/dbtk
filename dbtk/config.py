@@ -5,6 +5,7 @@ Supports YAML configuration files with optional password encryption and global s
 """
 
 import os
+import sys
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -29,6 +30,40 @@ except ImportError:
     HAS_KEYRING = False
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_sample_config():
+    """Copy sample config to ~/.config if no config exists and sample doesn't exist there."""
+    import shutil
+
+    # Define paths
+    user_config_dir = Path.home() / '.config'
+    user_config_file = user_config_dir / 'dbtk.yml'
+
+    # If user config already exists, nothing to do
+    if user_config_file.exists():
+        return
+
+    # Find sample config in package
+    package_dir = Path(__file__).parent
+    sample_config = package_dir / 'dbtk_sample.yml'
+
+    if not sample_config.exists():
+        return  # No sample to copy
+
+    try:
+        # Create ~/.config if it doesn't exist
+        user_config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy sample config
+        shutil.copy(sample_config, user_config_file)
+        logger.info(f"Created sample config at {user_config_file}")
+        import sys
+        print(f"Created sample DBTK config at {user_config_file}", file=sys.stderr)
+
+    except Exception as e:
+        logger.debug(f"Could not create sample config: {e}")
+        # Don't fail - just continue without config
 
 
 class ConfigManager:
@@ -66,6 +101,14 @@ class ConfigManager:
             Path.home() / ".config" / "dbtk.yaml"
         ]
 
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        # No config found - try to create sample config
+        _ensure_sample_config()
+
+        # Check again after creating sample
         for candidate in candidates:
             if candidate.exists():
                 return candidate
@@ -411,13 +454,21 @@ def generate_encryption_key() -> str:
     Generate a random encryption key.
 
     This function generates a random encryption key that can be used to encrypt
-    and decrypt data securely. The key is returned as a string and should be stored in the DBTK_ENCRYPTION_KEY environment variable.
+    and decrypt data securely. The key is returned as a string and should be
+    stored in the DBTK_ENCRYPTION_KEY environment variable.
 
     Returns:
         str: A randomly generated encryption key.
     """
-    print("Store generated key in DBTK_ENCRYPTION_KEY environment variable.")
     return Fernet.generate_key().decode()
+
+
+def generate_encryption_key_cli() -> str:
+    """CLI utility to generate and print encryption key."""
+    key = generate_encryption_key()
+    print(key)
+    print("Store this key in DBTK_ENCRYPTION_KEY environment variable", file=sys.stderr)
+    return key
 
 
 def set_config_file(config_file: str) -> None:
@@ -526,23 +577,33 @@ def get_setting(key: str, default: Any = None, config_file: Optional[str] = None
     return config_mgr.get_setting(key, default)
 
 
-def encrypt_password_cli(password: str, encryption_key: str = None) -> str:
+def encrypt_password_cli(password: str = None, encryption_key: str = None) -> str:
     """
     CLI utility function to encrypt a password.
 
     Args:
-        password: Password to encrypt
+        password: Password to encrypt (if None, prompts for input)
         encryption_key: Optional encryption key. If None, uses DBTK_ENCRYPTION_KEY env var
+
+    Returns:
+        str: Encrypted password
     """
+    if password is None:
+        import getpass
+        password = getpass.getpass("Enter password to encrypt: ")
+
     if encryption_key:
         # Use provided key
         fernet = Fernet(encryption_key.encode())
-        return fernet.encrypt(password.encode()).decode()
+        encrypted = fernet.encrypt(password.encode()).decode()
     else:
         # Use DBTK_ENCRYPTION_KEY to encrypt
         temp_config = ConfigManager.__new__(ConfigManager)
         temp_config._fernet = None
-        return temp_config.encrypt_password(password)
+        encrypted = temp_config.encrypt_password(password)
+
+    print(encrypted)
+    return encrypted
 
 
 def encrypt_config_file_cli(filename: str) -> None:

@@ -35,6 +35,7 @@ __author__ = 'Scott Bailey <scottrbailey@gmail.com>'
 from .database import Database
 from .config import connect, set_config_file
 from .cursors import Cursor, RecordCursor, TupleCursor, DictCursor
+from .logging_utils import setup_logging, cleanup_old_logs
 from . import readers
 from . import writers
 
@@ -49,5 +50,7 @@ __all__ = [
     'DictCursor',
     'etl',
     'readers',
-    'writers'
+    'writers',
+    'setup_logging',
+    'cleanup_old_logs'
 ]
