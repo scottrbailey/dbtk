@@ -43,3 +43,6 @@ dbtk-encrypt-config = "dbtk.config:encrypt_config_file_cli"
 [project.urls]
 Homepage = "https://github.com/scottrbailey/dbtk"
 Repository = "https://github.com/scottrbailey/dbtk.git"
+
+[tool.setuptools.package-data]
+dbtk = ["dbtk_sample.yml"]
