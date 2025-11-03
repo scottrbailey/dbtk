@@ -38,6 +38,7 @@ validated along the way.
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
 - **Bulk Operations** - DataSurge class for high-performance batch INSERT/UPDATE/DELETE/MERGE operations
 - **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning with international support
+- **Integration Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
 - **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
 - **Smart Cursors** - Multiple result formats: Records, named tuples, dictionaries, or plain lists
 
@@ -592,6 +593,125 @@ four_nations_census = dbtk.etl.Table('population_registry', {
     # ... other fields
 })
 ```
+
+#### Logging for Integration Scripts
+
+**The problem:** Integration scripts need proper logging with timestamped files, separate error logs, and easy cleanup. Setting this up manually is repetitive and error-prone.
+
+**The solution:** DBTK provides `setup_logging()` and `cleanup_old_logs()` to handle the common pattern of creating timestamped log files like `script_name_20251031_154505.log`.
+
+```python
+import dbtk
+import logging
+
+# One-line setup with automatic script name detection
+dbtk.setup_logging()  # Creates logs/my_script_20251031_154505.log
+
+# Or specify name and options
+dbtk.setup_logging('fire_nation_etl', log_dir='/var/log/etl', level='DEBUG')
+
+# Now use standard Python logging
+logger = logging.getLogger(__name__)
+logger.info("Starting ETL process...")
+logger.error("Failed to process record")
+```
+
+**Configuration options** (via `dbtk.yml` or function parameters):
+
+```yaml
+settings:
+  logging:
+    directory: ./logs                   # Where to write logs
+    level: INFO                          # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    timestamp_format: '%Y-%m-%d %H:%M:%S'  # For log message timestamps
+    filename_format: '%Y%m%d_%H%M%S'    # For log filenames
+    split_errors: true                   # Separate _error.log for errors
+    console: true                        # Also output to console
+    retention_days: 30                   # For cleanup_old_logs()
+```
+
+**Filename patterns:**
+
+```python
+# One log per run (default)
+# filename_format: '%Y%m%d_%H%M%S'
+# Creates: script_20251031_154505.log
+
+# One log per day
+# filename_format: '%Y%m%d'
+# Creates: script_20251031.log
+
+# Single rolling log file
+# filename_format: ''
+# Creates: script.log (overwrites each run)
+```
+
+**Automatic log cleanup:**
+
+```python
+# Clean logs older than retention period (default: 30 days)
+deleted = dbtk.cleanup_old_logs()
+print(f"Deleted {len(deleted)} old log files")
+
+# Custom retention
+dbtk.cleanup_old_logs(retention_days=7)
+
+# Dry run to see what would be deleted
+would_delete = dbtk.cleanup_old_logs(dry_run=True)
+```
+
+**Complete integration script example:**
+
+```python
+#!/usr/bin/env python3
+"""Fire Nation intelligence ETL."""
+
+import dbtk
+import logging
+
+# Set up logging - creates dated log files automatically
+dbtk.setup_logging()
+
+logger = logging.getLogger(__name__)
+
+def main():
+    logger.info("Starting Fire Nation ETL")
+
+    try:
+        with dbtk.connect('fire_nation_db') as db:
+            cursor = db.cursor()
+
+            # Your ETL logic
+            soldier_table = dbtk.etl.Table('soldiers', config, cursor)
+
+            with dbtk.readers.get_reader('conscripts.csv') as reader:
+                for record in reader:
+                    soldier_table.set_values(record)
+                    soldier_table.exec_insert(raise_error=False)
+
+            logger.info(f"Processed {soldier_table.counts['insert']} soldiers")
+            logger.info(f"Skipped {soldier_table.counts['incomplete']} incomplete records")
+
+            db.commit()
+
+    except Exception as e:
+        logger.error(f"ETL failed: {e}", exc_info=True)
+        raise
+
+if __name__ == '__main__':
+    main()
+
+    # Clean up old logs
+    dbtk.cleanup_old_logs()
+```
+
+**Benefits:**
+- **Automatic setup** - Sample config created at `~/.config/dbtk.yml` on first use
+- **Timestamped files** - Never overwrite important logs
+- **Split error logs** - Easy monitoring and alerting
+- **Standard logging** - Works with all Python logging features
+- **Configurable** - Control via config file or function arguments
 
 ## Configuration & Security
 
