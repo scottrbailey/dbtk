@@ -131,12 +131,10 @@ import dbtk
 from dbtk.etl import Table
 from dbtk.etl.transforms import parse_date, email_clean, get_int
 
-# Custom transform - only require master_code for senior officers
-def require_master_code_if_senior(record):
-    """Set master_code requirement based on rank."""
-    if record.get('rank') in ['General', 'Admiral', 'Commander']:
-        return record.get('master_code')  # Required
-    return record.get('master_code', 'N/A')  # Optional, default to N/A
+# Custom transform - provide default for missing master codes
+def master_code_or_default(value):
+    """Return master code or 'N/A' if empty."""
+    return value if value else 'N/A'
 
 with dbtk.connect('fire_nation_db') as db:
     cursor = db.cursor()
@@ -152,11 +150,12 @@ with dbtk.connect('fire_nation_db') as db:
         'status': {'value': 'active'}  # Default value for all
     }, cursor=cursor)
 
-    # Optional specialization table - only insert if data exists
+    # Optional specialization table - only insert if specialty data exists
+    # master_code required for senior ranks, but that's validated by nullable=False
     specialization_table = Table('soldier_specializations', {
         'soldier_id': {'field': 'id', 'primary_key': True},
         'specialty': {'field': 'special_training', 'nullable': False},
-        'master_code': {'field': 'master_code', 'fn': require_master_code_if_senior,
+        'master_code': {'field': 'master_code', 'fn': master_code_or_default,
                        'nullable': False},
         'certification_date': {'field': 'cert_date', 'fn': parse_date}
     }, cursor=cursor)
@@ -164,11 +163,12 @@ with dbtk.connect('fire_nation_db') as db:
     # Process incoming CSV file
     with dbtk.readers.get_reader('incoming/new_recruits.csv') as reader:
         for record in reader:
-            # Main table - track incomplete records
+            # Main table - track all records, even incomplete ones
             soldier_table.set_values(record)
             soldier_table.exec_insert(raise_error=False)
 
-            # Optional table - only insert if requirements met
+            # Optional table - check if specialty fields are present
+            # Only insert if requirements met (specialty and master_code not null)
             specialization_table.set_values(record)
             if specialization_table.reqs_met:
                 specialization_table.exec_insert(reqs_checked=True)
@@ -184,7 +184,7 @@ with dbtk.connect('fire_nation_db') as db:
 **What makes this easy:**
 - Field mapping separates database schema from source data format
 - Built-in transforms (dates, emails, integers) with custom transform support
-- Conditional logic in transforms (master_code based on rank)
+- Transform functions receive field values, can provide defaults or clean data
 - Optional tables with `reqs_met` pattern - no noisy logs for expected missing data
 - Automatic tracking with `counts` dictionary
 - One connection, multiple tables, all validated and transformed
