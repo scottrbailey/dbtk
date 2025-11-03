@@ -14,6 +14,25 @@ from typing import Optional, Tuple, List
 
 logger = logging.getLogger(__name__)
 
+# Module-level state for error tracking
+_error_handler: Optional['ErrorCountHandler'] = None
+_main_log_path: Optional[str] = None
+_error_log_path: Optional[str] = None
+_split_errors: bool = False
+
+
+class ErrorCountHandler(logging.Handler):
+    """Custom handler that counts ERROR and CRITICAL level messages."""
+
+    def __init__(self):
+        super().__init__()
+        self.error_count = 0
+
+    def emit(self, record):
+        """Count errors without actually writing anything."""
+        if record.levelno >= logging.ERROR:
+            self.error_count += 1
+
 
 def setup_logging(
     script_name: Optional[str] = None,
@@ -99,6 +118,12 @@ def setup_logging(
     # Remove existing handlers to avoid duplicates
     root_logger.handlers.clear()
 
+    # Create and add error counting handler (always, regardless of split_errors)
+    global _error_handler
+    _error_handler = ErrorCountHandler()
+    _error_handler.setLevel(logging.ERROR)
+    root_logger.addHandler(_error_handler)
+
     # Create formatter
     formatter = logging.Formatter(log_format, datefmt=timestamp_format)
 
@@ -127,7 +152,60 @@ def setup_logging(
     if error_file:
         logging.info(f"Error log: {error_file}")
 
+    # Store state for errors_logged() function
+    global _main_log_path, _error_log_path, _split_errors
+    _main_log_path = str(log_file)
+    _error_log_path = str(error_file) if error_file else None
+    _split_errors = split_errors
+
     return (str(log_file), str(error_file) if error_file else None)
+
+
+def errors_logged() -> Optional[str]:
+    """
+    Check if any ERROR or CRITICAL messages were logged during this run.
+
+    Returns the path to the log file containing errors if any were logged,
+    None otherwise. This allows integration scripts to easily detect if
+    errors occurred and take action (e.g., send notification emails).
+
+    Returns:
+        str: Path to error log (if split_errors=True) or main log (if split_errors=False)
+             when errors were logged
+        None: If no errors were logged or setup_logging() was not called
+
+    Example:
+        import dbtk
+        import logging
+
+        dbtk.setup_logging('my_integration')
+
+        # ... do ETL work ...
+        try:
+            process_data()
+        except Exception as e:
+            logging.error(f"Processing failed: {e}")
+
+        # Check if errors occurred
+        error_log = dbtk.errors_logged()
+        if error_log:
+            print(f"Errors detected! See: {error_log}")
+            # send_notification_email(subject="Integration errors", attachment=error_log)
+        else:
+            print("Integration completed successfully")
+    """
+    if _error_handler is None:
+        logger.warning("errors_logged() called but setup_logging() was not called")
+        return None
+
+    if _error_handler.error_count == 0:
+        return None
+
+    # Errors were logged - return the appropriate log file
+    if _split_errors and _error_log_path:
+        return _error_log_path
+    else:
+        return _main_log_path
 
 
 def cleanup_old_logs(

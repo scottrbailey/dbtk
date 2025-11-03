@@ -731,6 +731,41 @@ dbtk.cleanup_old_logs(retention_days=7)
 would_delete = dbtk.cleanup_old_logs(dry_run=True)
 ```
 
+**Error detection for notifications:**
+
+When running unattended integration scripts, you often want to send notification emails if errors occurred. The `errors_logged()` function makes this trivial:
+
+```python
+import dbtk
+import logging
+
+# Setup logging with split_errors=True (default)
+dbtk.setup_logging('fire_nation_etl')
+
+logger = logging.getLogger(__name__)
+
+# ... do your ETL work ...
+try:
+    process_data()
+except Exception as e:
+    logger.error(f"Processing failed: {e}")
+
+# Check if any errors were logged
+error_log = dbtk.errors_logged()
+if error_log:
+    print(f"Errors detected! See: {error_log}")
+    # send_notification_email(subject="ETL errors", attachment=error_log)
+else:
+    print("Integration completed successfully")
+```
+
+**How it works:**
+- Returns `None` if no errors were logged
+- Returns error log path if `split_errors=True` (separate _error.log file)
+- Returns main log path if `split_errors=False` (errors in combined log)
+- Automatically tracks ERROR and CRITICAL level messages
+- Works regardless of logging configuration
+
 **Complete integration script example:**
 
 ```python
@@ -774,6 +809,12 @@ if __name__ == '__main__':
 
     # Clean up old logs
     dbtk.cleanup_old_logs()
+
+    # Check for errors and send notification if needed
+    error_log = dbtk.errors_logged()
+    if error_log:
+        # send_notification_email(subject="Fire Nation ETL Errors", attachment=error_log)
+        print(f"Errors occurred - check {error_log}")
 ```
 
 **Benefits:**
