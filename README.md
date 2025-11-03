@@ -64,61 +64,131 @@ pip install mysqlclient       # MySQL
 
 ## Quick Start
 
+### Outbound Integration - Export Data
+
+Extract data from your database and export to multiple formats with portable SQL queries:
+
 ```python
 import dbtk
 
-# Connect using YAML config
-with dbtk.connect('fire_nation_prod') as db:
+# queries/monthly_report.sql - Write once with named parameters
+# SELECT soldier_id, name, rank, missions_completed, last_mission_date
+# FROM soldiers
+# WHERE rank >= :min_rank
+#   AND enlistment_date >= :start_date
+#   AND (region = :region OR :region IS NULL)
+#   AND status = :status
+
+# queries/officer_summary.sql
+# SELECT rank, COUNT(*) as count, AVG(missions_completed) as avg_missions
+# FROM soldiers
+# WHERE rank >= :min_rank
+#   AND status = :status
+# GROUP BY rank
+
+with dbtk.connect('fire_nation_db') as db:
     cursor = db.cursor()
-    cursor.execute("SELECT * FROM firebenders WHERE rank = 'General'")
-    
-    # Materialize results for multiple outputs
-    generals = cursor.fetchall()
-    
-    # Export to different formats
-    dbtk.writers.to_excel(generals, 'fire_nation_generals.xlsx')
-    dbtk.writers.to_csv(generals, 'fire_nation_generals.csv')
+
+    # Same parameters work for both queries
+    # Extra params (start_date, region) ignored by officer_summary
+    # Missing params automatically become NULL
+    params = {
+        'min_rank': 'Captain',
+        'start_date': '2024-01-01',
+        'region': 'Western Fleet',  # Only used by monthly_report
+        'status': 'active'
+    }
+
+    # Execute first query - DBTK converts parameters to match database style
+    cursor.execute_file('queries/monthly_report.sql', params)
+    monthly_data = cursor.fetchall()
+
+    # Execute second query - reuses same params, ignores unused ones
+    cursor.execute_file('queries/officer_summary.sql', params)
+    summary_data = cursor.fetchall()
+
+    # Export to multiple formats trivially
+    dbtk.writers.to_csv(monthly_data, 'reports/soldiers_monthly.csv')
+    dbtk.writers.to_excel(summary_data, 'reports/officer_summary.xlsx',
+                          sheet='Officer Stats')
+
+    print(f"Exported {len(monthly_data)} soldier records")
+    print(f"Exported {len(summary_data)} officer summary rows")
 ```
 
-**ETL Example with transformations:**
+**What makes this easy:**
+- Write SQL once with named parameters (`:param`), works on any database
+- Pass the same dict to multiple queries - extra params ignored, missing params = NULL
+- Export to CSV/Excel/JSON with one line
+- No parameter style conversions needed - DBTK handles it automatically
+
+### Inbound Integration - Import Data
+
+Import data with field mapping, transformations, and validation:
 
 ```python
 import dbtk
 from dbtk.etl import Table
-from dbtk.etl.transforms import 
-from dbtk.etl.transforms.datetime import parse_date, parse_datetime
-from dbtk.etl.transforms.email import email_clean
-from dbtk.etl.transforms.phone import Phone, phone_clean
+from dbtk.etl.transforms import parse_date, email_clean, get_int
 
-with dbtk.connect('avatar_training_grounds') as db:
+# Custom transform - only require master_code for senior officers
+def require_master_code_if_senior(record):
+    """Set master_code requirement based on rank."""
+    if record.get('rank') in ['General', 'Admiral', 'Commander']:
+        return record.get('master_code')  # Required
+    return record.get('master_code', 'N/A')  # Optional, default to N/A
+
+with dbtk.connect('fire_nation_db') as db:
     cursor = db.cursor()
 
-    # Define ETL table with transformations
-    recruit_table = Table('air_nomads', {
-        'nomad_id': {'field': 'id', 'primary_key': True},
+    # Main soldier table - all records must have complete data
+    soldier_table = Table('soldiers', {
+        'soldier_id': {'field': 'id', 'primary_key': True},
         'name': {'field': 'full_name', 'nullable': False},
-        'phone': {'field': 'phone_number', 'fn': phone_clean},
-        'email': {'field': 'contact_scroll', 'fn': email_clean, 'nullable': False},
-        'sky_bison': {'field': 'companion_name'},
-        'training_date': {'field': 'started_training', 'fn': parse_date},
-        'airbending_level': {'field': 'mastery_level', 'db_fn': 'calculate_airbending_rank(#)'},
-        'last_meditation': {'db_fn': 'CURRENT_TIMESTAMP'},
-        'temple_origin': {'value': 'Eastern Air Temple'}},
-        cursor=cursor)
+        'rank': {'field': 'officer_rank', 'nullable': False},
+        'email': {'field': 'contact_email', 'fn': email_clean},
+        'enlistment_date': {'field': 'join_date', 'fn': parse_date},
+        'missions_completed': {'field': 'mission_count', 'fn': get_int},
+        'status': {'value': 'active'}  # Default value for all
+    }, cursor=cursor)
 
-    # Process records with validation and transformation
-    with dbtk.readers.get_reader('new_air_nomad_recruits.csv') as reader:
-        for recruit in reader:
-            recruit_table.set_values(recruit)
-            if recruit_table.reqs_met:
-                recruit_table.exec_insert(reqs_checked=True)  # Skip redundant check
-            else:
-                print(f"Recruit needs more training: missing {recruit_table.reqs_missing}")
+    # Optional specialization table - only insert if data exists
+    specialization_table = Table('soldier_specializations', {
+        'soldier_id': {'field': 'id', 'primary_key': True},
+        'specialty': {'field': 'special_training', 'nullable': False},
+        'master_code': {'field': 'master_code', 'fn': require_master_code_if_senior,
+                       'nullable': False},
+        'certification_date': {'field': 'cert_date', 'fn': parse_date}
+    }, cursor=cursor)
 
-    # Check processing results
-    print(f"Inserted: {recruit_table.counts['insert']} recruits")
-    print(f"Skipped: {len([r for r in reader if not recruit_table.reqs_met])} incomplete records")
+    # Process incoming CSV file
+    with dbtk.readers.get_reader('incoming/new_recruits.csv') as reader:
+        for record in reader:
+            # Main table - track incomplete records
+            soldier_table.set_values(record)
+            soldier_table.exec_insert(raise_error=False)
+
+            # Optional table - only insert if requirements met
+            specialization_table.set_values(record)
+            if specialization_table.reqs_met:
+                specialization_table.exec_insert(reqs_checked=True)
+
+    # Report results
+    print(f"Soldiers inserted: {soldier_table.counts['insert']}")
+    print(f"Soldiers skipped (incomplete): {soldier_table.counts['incomplete']}")
+    print(f"Specializations recorded: {specialization_table.counts['insert']}")
+
+    db.commit()
 ```
+
+**What makes this easy:**
+- Field mapping separates database schema from source data format
+- Built-in transforms (dates, emails, integers) with custom transform support
+- Conditional logic in transforms (master_code based on rank)
+- Optional tables with `reqs_met` pattern - no noisy logs for expected missing data
+- Automatic tracking with `counts` dictionary
+- One connection, multiple tables, all validated and transformed
+
 
 ## Core Components
 
