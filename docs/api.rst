@@ -25,6 +25,42 @@ Configuration
    :undoc-members:
    :show-inheritance:
 
+Command Line Interface
+----------------------
+
+DBTK provides command-line tools for managing encryption keys and configuration files.
+
+.. code-block:: bash
+
+   # Generate encryption key
+   dbtk generate-key
+
+   # Encrypt passwords in config file
+   dbtk encrypt-config [config_file]
+
+   # Encrypt a single password
+   dbtk encrypt-password [password]
+
+   # Migrate config to new encryption key
+   dbtk migrate-config old_file new_file [--new-key KEY]
+
+The CLI is implemented in ``dbtk.cli`` module:
+
+.. automodule:: dbtk.cli
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Logging Utilities
+-----------------
+
+Integration script logging with timestamped files and error tracking:
+
+.. automodule:: dbtk.logging_utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 ETL
 -----------
 

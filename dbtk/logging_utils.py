@@ -169,12 +169,17 @@ def errors_logged() -> Optional[str]:
     None otherwise. This allows integration scripts to easily detect if
     errors occurred and take action (e.g., send notification emails).
 
-    Returns:
-        str: Path to error log (if split_errors=True) or main log (if split_errors=False)
-             when errors were logged
-        None: If no errors were logged or setup_logging() was not called
+    Returns
+    -------
+    str or None
+        Path to error log (if split_errors=True) or main log (if split_errors=False)
+        when errors were logged. Returns None if no errors were logged or
+        setup_logging() was not called.
 
-    Example:
+    Example
+    -------
+    ::
+
         import dbtk
         import logging
 
@@ -220,13 +225,16 @@ def cleanup_old_logs(
     Args:
         log_dir: Directory to clean (defaults to config setting or './logs')
         retention_days: Keep logs newer than this many days (defaults to config or 30)
-        pattern: Glob pattern for log files (default: '*.log')
+        pattern: Glob pattern for log files (default: ``'*.log'``)
         dry_run: If True, only report what would be deleted without actually deleting
 
     Returns:
         List of deleted (or would-be-deleted if dry_run) file paths
 
-    Example:
+    Example
+    -------
+    ::
+
         import dbtk
 
         # Clean logs older than 30 days (from config)
