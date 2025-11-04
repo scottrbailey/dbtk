@@ -819,24 +819,35 @@ class Table:
         if not err:
             return self._cursor.fetchone()
 
-    def calc_update_excludes(self, file_columns: Set[str]):
+    def calc_update_excludes(self, record_fields: Optional[Set[str]] = None):
         """
         Calculate columns to exclude from updates/merges because source field is missing from record.
         This prevents us from unintentionally NULLing out values because a field was missing or misnamed
         in a data source. Columns can be explicitly excluded from updates by setting the 'no_update' attribute.
 
-        This can be called manually. But when self.set_values() is called, the source fields are cached to self._record_fields.
-        And when self.execute_update() or self.execute_merge() is called, the cached fields are used to call self.calc_update_excludes().
+        This method is called automatically by exec_update() and exec_merge() using fields cached from
+        set_values(). You can also call it manually with an explicit set of record fields.
 
         Args:
-            file_columns: Set of column names from the source file.
+            record_fields: Set of field names present in source records. If None, uses fields
+                cached from the first call to set_values(). Pass explicitly to override.
+
+        Raises:
+            ValueError: If a key column's source field is missing from record_fields.
         """
+        if record_fields is None:
+            record_fields = self._record_fields
+
+        if not record_fields:
+            logger.debug(f"No record_fields available for {self.name}, skipping exclude calculation")
+            return
+
         current_excludes = self._update_excludes
         excludes = []
         for col, col_def in self.__columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
-            if field and field not in file_columns:
+            if field and field not in record_fields:
                 if field in self.key_cols:
                     raise ValueError(f"A key column {col} is sourced from {field}, but is missing from source.")
                 else:

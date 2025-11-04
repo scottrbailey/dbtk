@@ -698,9 +698,9 @@ class TestUpdateExclusions:
 
     def test_calc_update_excludes_missing_fields(self, airbender_table):
         """Test excluding Air Nomad fields missing from source data."""
-        file_headers = {'trainee_id', 'monk_name', 'home_temple'}
+        record_fields = {'trainee_id', 'monk_name', 'home_temple'}
 
-        airbender_table.calc_update_excludes(file_headers)
+        airbender_table.calc_update_excludes(record_fields)
 
         sky_bison_bind = airbender_table.columns['sky_bison']['bind_name']
         meditation_bind = airbender_table.columns['meditation_score']['bind_name']
@@ -714,12 +714,34 @@ class TestUpdateExclusions:
 
     def test_calc_update_excludes_no_update_flag(self, airbender_table):
         """Test excluding Air Nomad fields marked as no_update."""
-        file_headers = {col_def.get('field', col) for col, col_def in airbender_table.columns.items()}
+        record_fields = {col_def.get('field', col) for col, col_def in airbender_table.columns.items()}
 
-        airbender_table.calc_update_excludes(file_headers)
+        airbender_table.calc_update_excludes(record_fields)
 
         instructor_bind = airbender_table.columns['instructor']['bind_name']
         assert instructor_bind in airbender_table._update_excludes
+
+    def test_calc_update_excludes_uses_cached_fields(self, airbender_table):
+        """Test that calc_update_excludes uses cached _record_fields when called without arguments."""
+        # Set values to cache record fields
+        airbender_table.set_values({
+            'trainee_id': 'CACHE001',
+            'monk_name': 'Cached Nomad',
+            'home_temple': 'Cache Temple'
+        })
+
+        # Call without arguments - should use cached fields
+        airbender_table.calc_update_excludes()
+
+        # Fields not in cached set should be excluded
+        sky_bison_bind = airbender_table.columns['sky_bison']['bind_name']
+        meditation_bind = airbender_table.columns['meditation_score']['bind_name']
+        assert sky_bison_bind in airbender_table._update_excludes
+        assert meditation_bind in airbender_table._update_excludes
+
+        # Fields in cached set should not be excluded
+        name_bind = airbender_table.columns['name']['bind_name']
+        assert name_bind not in airbender_table._update_excludes
 
 
 class TestSetCursor:
