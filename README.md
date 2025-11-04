@@ -64,7 +64,7 @@ pip install mysqlclient       # MySQL
 
 ## Quick Start
 
-### Outbound Integration - Export Data
+### Sample Outbound Integration - Export Data
 
 Extract data from your database and export to multiple formats with portable SQL queries:
 
@@ -122,19 +122,26 @@ with dbtk.connect('fire_nation_db') as db:
 - Export to CSV/Excel/JSON with one line
 - No parameter style conversions needed - DBTK handles it automatically
 
-### Inbound Integration - Import Data
+### Sample Inbound Integration - Import Data
 
 Import data with field mapping, transformations, and validation:
 
 ```python
+# /integrations/hr/import_new_recruits.py 
 import dbtk
 from dbtk.etl import Table
 from dbtk.etl.transforms import parse_date, email_clean, get_int
 
-# Custom transform - provide default for missing master codes
-def master_code_or_default(value):
-    """Return master code or 'N/A' if empty."""
-    return value if value else 'N/A'
+# Custom transform - so only ranks of General, Admiral & Commander have master_codes 
+def get_master_code(value):
+    """Return master code or None"""
+    mc_map = {'General': 'G', 'Admiral': 'A', 'Commander': 'C'}
+    if value in mc_map:
+        return mc_map[value]
+    return None
+
+# One-line setup with automatic script name detection (see Logging configuration)
+dbtk.setup_logging()  # Creates logs/import_new_recruits_20251031.log
 
 with dbtk.connect('fire_nation_db') as db:
     cursor = db.cursor()
@@ -155,7 +162,7 @@ with dbtk.connect('fire_nation_db') as db:
     specialization_table = Table('soldier_specializations', {
         'soldier_id': {'field': 'id', 'primary_key': True},
         'specialty': {'field': 'special_training', 'nullable': False},
-        'master_code': {'field': 'master_code', 'fn': master_code_or_default,
+        'master_code': {'field': 'officer_rank', 'fn': get_master_code,
                        'nullable': False},
         'certification_date': {'field': 'cert_date', 'fn': parse_date}
     }, cursor=cursor)

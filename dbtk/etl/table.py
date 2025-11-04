@@ -21,8 +21,132 @@ logger = logging.getLogger(__name__)
 
 class Table:
     """
-    Stateful table class for generating and executing SQL statements.
-    Maintains current record state in self.values.
+    Stateful table class for ETL operations with schema-aware SQL generation.
+
+    The Table class provides a high-level interface for database operations by maintaining
+    table metadata and current record state. It automatically generates parameterized SQL
+    statements and handles field mapping, data transformations, and requirement validation.
+
+    Key features:
+    - Field mapping: Map source record fields to database columns
+    - Transformations: Apply functions to clean/transform data before database operations
+    - Database functions: Use database-side functions (e.g., CURRENT_TIMESTAMP)
+    - Default values: Provide constant values for columns
+    - Requirement validation: Track required/nullable columns and validate before operations
+    - Automatic SQL generation: Generate INSERT, UPDATE, SELECT, DELETE, MERGE statements
+    - Operation tracking: Count successful operations and incomplete records via self.counts
+
+    Column Configuration:
+        Each column in the columns dict is configured with a dict containing:
+
+        field: str or list of str
+            Source field name(s) from input records. If list, extracts multiple fields
+            as a list value. If omitted, column is populated via 'value' or 'db_fn'.
+
+        value: any (optional)
+            Default/constant value to use for this column. Applied when source field
+            is missing, empty, or None.
+
+        fn: callable or list of callables (optional)
+            Transform function(s) applied to field value. If list, functions are
+            applied in order (pipeline). Function receives field value and returns
+            transformed value.
+
+        db_fn: str (optional)
+            Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
+            Use '#' as placeholder for the bind parameter. If specified without '#',
+            no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
+
+        primary_key: bool (optional, default False)
+            Marks column as primary key. Automatically sets key=True and required=True.
+
+        key: bool (optional, default False)
+            Marks column as key for WHERE clauses in SELECT, UPDATE, DELETE operations.
+
+        nullable: bool (optional, default True)
+            If False, marks column as required (must have non-None value for INSERT/MERGE).
+
+        required: bool (optional, default False)
+            Explicitly marks column as required.
+
+        no_update: bool (optional, default False)
+            If True, excludes column from UPDATE and MERGE operations.
+
+        bind_name: str (auto-generated)
+            Sanitized parameter name for SQL bind variables. Automatically created from
+            column name (replaces special chars with underscores).
+
+    Example::
+        import dbtk
+        from dbtk.etl import Table
+        from dbtk.etl.transforms import parse_date, get_int
+
+        with dbtk.connect('fire_nation_db') as db:
+            cursor = db.cursor()
+
+            soldiers = Table('fire_nation_army', {
+                # Primary key from source 'recruit_id' field
+                'soldier_id': {
+                    'field': 'recruit_id',
+                    'primary_key': True
+                },
+
+                # Required field with transformation
+                'enlistment_date': {
+                    'field': 'join_date',
+                    'fn': parse_date,
+                    'nullable': False
+                },
+
+                # Optional field with chained transformations
+                'firebending_level': {
+                    'field': 'flame_skill',
+                    'fn': [str.strip, get_int]  # Clean then convert
+                },
+
+                # Constant value for all records
+                'status': {
+                    'value': 'active'
+                },
+
+                # Database-side function with parameter
+                'combat_name': {
+                    'field': 'full_name',
+                    'db_fn': 'generate_callsign(#)'
+                },
+
+                # Database-side function, no parameter
+                'created_at': {
+                    'db_fn': 'CURRENT_TIMESTAMP'
+                },
+
+                # Multiple source fields as list
+                'contact_methods': {
+                    'field': ['email', 'phone', 'pigeon']
+                }
+            }, cursor=cursor)
+
+            # Set values from source record
+            soldiers.set_values({
+                'recruit_id': 'FN001',
+                'join_date': '2024-03-15',
+                'flame_skill': '  7  ',
+                'full_name': 'Zuko'
+            })
+
+            # Execute operations
+            soldiers.exec_insert()  # Automatically validates requirements
+            print(soldiers.counts)  # {'insert': 1, 'update': 0, ...}
+
+    Attributes:
+        name: Table name as used in SQL
+        columns: Column configuration dictionary
+        values: Current record values (dict of column_name: value)
+        counts: Operation counters (insert, update, delete, select, merge, records, incomplete)
+        reqs_met: True if all required columns have non-None values
+        reqs_missing: Set of required column names that are None
+        has_all_keys: True if all key columns have non-None values
+        keys_missing: Set of key column names that are None
     """
 
     OPERATIONS = ('insert', 'select', 'update', 'delete', 'merge')
@@ -35,13 +159,38 @@ class Table:
             null_values: Tuple[str, ...] = ('', 'NULL', '<null>', r'\N'),
     ):
         """
-        Initialize Table with configuration.
+        Initialize Table with schema configuration and database cursor.
+
+        Creates a Table instance that manages the mapping between source data fields
+        and database columns, along with all metadata needed for SQL generation and
+        data validation.
 
         Args:
-            name: Table name.
-            columns: Dict of column names to their configuration (e.g., {'field', 'db_fn'}).
-            cursor: Database cursor (provides paramstyle and connection info).
-            null_values: String values to be considered as null values.
+            name: Database table name. Must be a valid SQL identifier.
+
+            columns: Dictionary mapping database column names to their configuration.
+                Each column is configured with a dict containing options like 'field',
+                'fn', 'value', 'db_fn', 'primary_key', 'nullable', etc.
+                See class docstring for complete column configuration options.
+
+            cursor: Database cursor instance. Provides connection to database and
+                determines SQL parameter style (qmark, named, format, pyformat, numeric).
+
+            null_values: Tuple of string values that should be treated as NULL.
+                When set_values() encounters these strings, they are converted to None.
+                Default: ('', 'NULL', '<null>', '\\N')
+
+        Raises:
+            ValueError: If table name or column names are invalid SQL identifiers.
+
+        Example::
+            cursor = db.cursor()
+
+            table = Table('users', {
+                'user_id': {'field': 'id', 'primary_key': True},
+                'email': {'field': 'email_address', 'nullable': False},
+                'created': {'db_fn': 'CURRENT_TIMESTAMP'}
+            }, cursor=cursor)
         """
         validate_identifier(name)
         self._name = name
@@ -64,8 +213,9 @@ class Table:
             validated_columns[col] = col_def
         self.__columns = validated_columns
         self.null_values = tuple(null_values)
-
+        # Required columns (nullable=False or required=True)
         self._req_cols = tuple(req_cols)
+        # Key columns (primary_key=True or key=True)
         self._key_cols = tuple(key_cols)
 
         # Initialize operation-specific dictionaries using OPERATIONS tuple
@@ -75,7 +225,12 @@ class Table:
         self.counts['records'] = 0  # Add special records counter
         self.counts['incomplete'] = 0  # Track records skipped due to missing requirements
 
+        # Caches field names when self.set_values is called and used to calculate _update_excludes fields
+        self._record_fields = set()
+        # Fields that shouldn't be updated in UPDATEs/MERGEs because the source fields were not in the record
         self._update_excludes: Set[str] = set()
+        self._update_excludes_calculated = False
+
         self.values: Dict[str, Any] = {}
 
         # Generate INSERT SQL immediately to filter req_cols
@@ -192,7 +347,7 @@ class Table:
             placeholders_str = wrap_at_comma(placeholders_str)
 
         sql = f"INSERT INTO {table_name} ({cols_str})\nVALUES\n({placeholders_str})"
-        logger.debug(f"Generated insert SQL for {self._name}: {sql}")
+        logger.debug(f"Generated insert SQL for {self._name}:\n{sql}")
         return sql
 
     def _create_select(self) -> str:
@@ -220,7 +375,7 @@ class Table:
             conditions_str = '\n  AND '.join(conditions)
             sql += f"\nWHERE {conditions_str}"
 
-        logger.debug(f"Generated select SQL for {self._name}: {sql}")
+        logger.debug(f"Generated select SQL for {self._name}:\n{sql}")
         return sql
 
     def _create_update(self) -> str:
@@ -247,7 +402,7 @@ class Table:
         conditions_str = '\n    AND '.join(conditions)
 
         sql = f"UPDATE {table_name} SET {set_clause_str} \nWHERE {conditions_str}"
-        logger.debug(f"Generated update SQL for {self._name}: {sql}")
+        logger.debug(f"Generated update SQL for {self._name}:\n{sql}")
         return sql
 
     def _create_delete(self) -> str:
@@ -266,7 +421,7 @@ class Table:
             conditions.append(f"{quoted_col} = {placeholder}")
         conditions_str = '\n    AND '.join(conditions)
         sql = f"DELETE FROM {table_name} \nWHERE {conditions_str}"
-        logger.debug(f"Generated delete SQL for {self._name}: {sql}")
+        logger.debug(f"Generated delete SQL for {self._name}:\n{sql}")
         return sql
 
     def _should_use_upsert(self) -> bool:
@@ -326,9 +481,10 @@ class Table:
             if len(update_assignments) > 4:
                 update_clause = wrap_at_comma(update_clause)
 
-            sql = f"""INSERT INTO {table_name} ({cols_str})
-    VALUES ({placeholders_str}) AS new_vals
-    ON DUPLICATE KEY UPDATE {update_clause}"""
+            sql = dedent(f"""/
+            INSERT INTO {table_name} ({cols_str})
+            VALUES ({placeholders_str}) AS new_vals
+            ON DUPLICATE KEY UPDATE {update_clause}""")
 
         elif db_type in ('postgres', 'sqlite'):
             # PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
@@ -366,7 +522,7 @@ class Table:
         else:
             raise NotImplementedError(f"Upsert not supported for database: {db_type}")
 
-        logger.debug(f"Generated upsert SQL for {self._name}: {sql}")
+        logger.debug(f"Generated upsert SQL for {self._name}:\n{sql}")
         return sql
 
     def _create_merge_statement(self) -> str:
@@ -467,7 +623,7 @@ class Table:
             INSERT ({insert_cols})
             VALUES ({insert_values})""")
 
-        logger.debug(f"Generated merge SQL for {self._name}: {sql}")
+        logger.debug(f"Generated merge SQL for {self._name}:\n{sql}")
         return sql
 
     def _create_merge(self) -> str:
@@ -558,6 +714,9 @@ class Table:
 
         # Only warn about missing fields on first record
         warn_missing = self.counts['records'] == 1
+        # Cache fields so we can calculate missing fields to exclude from updates/merges
+        if not self._record_fields:
+            self._record_fields = set(record.keys())
 
         values = {}
         for col, col_def in self.columns.items():
@@ -623,6 +782,8 @@ class Table:
         self.counts['records'] = 0
         self.counts['incomplete'] = 0
         self._update_excludes = set()
+        self._update_excludes_calculated = False
+        self._record_fields = set()
         self.values = {}
 
     @property
@@ -652,17 +813,37 @@ class Table:
             return self._cursor.fetchone()
 
     def calc_update_excludes(self, file_columns: Set[str]):
-        """Calculate columns to exclude from updates."""
+        """
+        Calculate columns to exclude from updates/merges because source field is missing from record.
+        This prevents us from unintentionally NULLing out values because a field was missing or misnamed
+        in a data source. Columns can be explicitly excluded from updates by setting the 'no_update' attribute.
+
+        This can be called manually. But when self.set_values() is called, the source fields are cached to self._record_fields.
+        And when self.execute_update() or self.execute_merge() is called, the cached fields are used to call self.calc_update_excludes().
+
+        Args:
+            file_columns: Set of column names from the source file.
+        """
+        current_excludes = self._update_excludes
         excludes = []
         for col, col_def in self.__columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
-            if field not in file_columns:
-                excludes.append(bind_name)
+            if field and field not in file_columns:
+                if field in self.key_cols:
+                    raise ValueError(f"A key column {col} is sourced from {field}, but is missing from source.")
+                else:
+                    excludes.append(bind_name)
             elif col_def.get('no_update'):
                 excludes.append(bind_name)
-
+        if excludes:
+            logger.debug(f"Columns excluded from update/merge because source field is missing or no_update attribute set:\n{excludes}")
         self._update_excludes = set(excludes)
+        self._update_excludes_calculated = True
+        if current_excludes != self._update_excludes:
+            # Excluded columns have changed, invalidate the SQL statements so they are regenerated
+            self._sql_statements['update'] = None
+            self._sql_statements['merge'] = None
 
     def _exec_sql(self, sql: str, params: Union[dict, tuple],
                   operation: str, raise_error: bool) -> int:
@@ -701,7 +882,7 @@ class Table:
                 logger.error(f"Cannot select from table {self._name}: {msg}")
                 raise ValueError(f"Cannot select from table {self._name}: {msg}")
             else:
-                logger.info(f"Skipping select on table {self._name}: {msg}")
+                logger.warning(f"Skipping select on table {self._name}: {msg}")
                 self.counts['incomplete'] += 1
                 return 1
 
@@ -727,7 +908,7 @@ class Table:
                 logger.error(f"Cannot insert into table {self._name}: {msg}")
                 raise ValueError(f"Cannot insert into table {self._name}: {msg}")
             else:
-                logger.info(f"Skipping insert on table {self._name}: {msg}")
+                logger.warning(f"Skipping insert on table {self._name}: {msg}")
                 self.counts['incomplete'] += 1
                 return 1
 
@@ -747,13 +928,17 @@ class Table:
         Returns:
             0 on success, 1 on error or incomplete data.
         """
+        # Calculate columns we don't want to update to NULL because the field is missing from the source record
+        if self._record_fields and not self._update_excludes_calculated:
+            self.calc_update_excludes(self._record_fields)
+
         if not reqs_checked and not self.reqs_met:
             msg = f"required columns {self.reqs_missing} are null"
             if raise_error:
                 logger.error(f"Cannot update table {self._name}: {msg}")
                 raise ValueError(f"Cannot update table {self._name}: {msg}")
             else:
-                logger.info(f"Skipping update on table {self._name}: {msg}")
+                logger.warning(f"Skipping update on table {self._name}: {msg}")
                 self.counts['incomplete'] += 1
                 return 1
 
@@ -789,7 +974,7 @@ class Table:
                 logger.error(f"Cannot delete from table {self._name}: {msg}")
                 raise ValueError(f"Cannot delete from table {self._name}: {msg}")
             else:
-                logger.info(f"Skipping delete on table {self._name}: {msg}")
+                logger.warning(f"Skipping delete on table {self._name}: {msg}")
                 self.counts['incomplete'] += 1
                 return 1
 
@@ -809,13 +994,17 @@ class Table:
         Returns:
             0 on success, 1 on error or incomplete data.
         """
+        # Calculate columns we don't want to update to NULL because the field is missing from the source record
+        if self._record_fields and not self._update_excludes_calculated:
+            self.calc_update_excludes(self._record_fields)
+
         if not reqs_checked and not self.reqs_met:
             msg = f"required columns {self.reqs_missing} are null"
             if raise_error:
                 logger.error(f"Cannot merge table {self._name}: {msg}")
                 raise ValueError(f"Cannot merge table {self._name}: {msg}")
             else:
-                logger.info(f"Skipping merge on table {self._name}: {msg}")
+                logger.warning(f"Skipping merge on table {self._name}: {msg}")
                 self.counts['incomplete'] += 1
                 return 1
 

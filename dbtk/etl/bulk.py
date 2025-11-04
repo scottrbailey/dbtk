@@ -112,7 +112,7 @@ class DataSurge:
                             msg = f"Skipped {operation} record for {self.table.name}: missing key columns {self.table.keys_missing}"
                         else:
                             msg = f"Skipped {operation} record for {self.table.name}: missing required fields {self.table.reqs_missing}"
-                        logger.info(msg)
+                        logger.warning(msg)
                         continue
                     params = self.table.get_bind_params(operation)
                     batch_params.append(params)

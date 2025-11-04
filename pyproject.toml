@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dbtk"
 version = "0.8.0"
-description = "Data Bender Toolkit - A lightweight toolkit for data integration, ELT and ETL"
+description = "Data Benders Toolkit - A lightweight toolkit for data integration, ELT and ETL"
 readme = "README.md"
 requires-python = ">=3.6"
 license = {text = "MIT"}
@@ -37,8 +37,7 @@ all = ["cryptography>=3.4.8", "keyring>=23.0.0", "lxml>=4.6.0", "openpyxl>=3.0.0
 dev = ["pytest>=6.0", "pytest-cov>=2.10"]
 
 [project.scripts]
-dbtk-encrypt = "dbtk.config:encrypt_password_cli"
-dbtk-encrypt-config = "dbtk.config:encrypt_config_file_cli"
+dbtk = "dbtk.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/scottrbailey/dbtk"
