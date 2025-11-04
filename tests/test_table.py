@@ -772,6 +772,222 @@ class TestReset:
         assert len(airbender_table.values) == 0
 
 
+class TestAutomaticUpdateExcludes:
+    """Test automatic _record_fields caching and calc_update_excludes() calls."""
+
+    def test_record_fields_cached_on_set_values(self, airbender_table):
+        """Test that _record_fields is cached when set_values() is called."""
+        # Initially empty
+        assert airbender_table._record_fields == set()
+
+        # Set values with some fields
+        record_data = {
+            'trainee_id': 'CACHE001',
+            'monk_name': 'Cache Test',
+            'home_temple': 'Test Temple'
+        }
+
+        airbender_table.set_values(record_data)
+
+        # _record_fields should now contain the field names
+        assert airbender_table._record_fields == {'trainee_id', 'monk_name', 'home_temple'}
+
+    def test_record_fields_only_set_once(self, airbender_table):
+        """Test that _record_fields is only cached on first set_values() call."""
+        first_record = {
+            'trainee_id': 'FIRST001',
+            'monk_name': 'First',
+            'home_temple': 'First Temple'
+        }
+
+        airbender_table.set_values(first_record)
+        initial_fields = airbender_table._record_fields.copy()
+
+        # Set values again with different fields
+        second_record = {
+            'trainee_id': 'SECOND001',
+            'monk_name': 'Second',
+            'home_temple': 'Second Temple',
+            'bison_companion': 'New Bison'  # Extra field not in first record
+        }
+
+        airbender_table.set_values(second_record)
+
+        # _record_fields should still have the original field set
+        assert airbender_table._record_fields == initial_fields
+
+    def test_exec_update_automatically_calls_calc_update_excludes(self, airbender_table, cursor):
+        """Test that exec_update() automatically calculates update excludes."""
+        # Insert initial record
+        airbender_table.set_values({
+            'trainee_id': 'AUTO001',
+            'monk_name': 'Auto Update',
+            'home_temple': 'Auto Temple',
+            'mastery_rank': '5'
+        })
+        airbender_table.exec_insert()
+        cursor.connection.commit()
+
+        # Create new table instance to simulate fresh start
+        from dbtk.etl.table import Table
+        col_def = {
+            'nomad_id': {'field': 'trainee_id', 'primary_key': True},
+            'name': {'field': 'monk_name', 'required': True},
+            'temple': {'field': 'home_temple', 'nullable': False},
+            'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
+            'sky_bison': {'field': 'bison_companion'},
+            'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
+            'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
+            'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+        }
+        new_table = Table('air_nomad_training', columns=col_def, cursor=cursor)
+
+        # Set values with only some fields (missing bison_companion and daily_meditation)
+        update_data = {
+            'trainee_id': 'AUTO001',
+            'monk_name': 'Auto Updated',
+            'home_temple': 'Updated Temple',
+            'mastery_rank': '6'
+        }
+
+        new_table.set_values(update_data)
+
+        # Verify _record_fields is cached
+        assert new_table._record_fields == {'trainee_id', 'monk_name', 'home_temple', 'mastery_rank'}
+
+        # _update_excludes should not be calculated yet
+        assert not new_table._update_excludes_calculated
+
+        # Execute update - should automatically call calc_update_excludes()
+        result = new_table.exec_update()
+        assert result == 0
+
+        # _update_excludes should now be calculated
+        assert new_table._update_excludes_calculated
+
+        # Missing fields should be in excludes (plus no_update field)
+        sky_bison_bind = new_table.columns['sky_bison']['bind_name']
+        meditation_bind = new_table.columns['meditation_score']['bind_name']
+        instructor_bind = new_table.columns['instructor']['bind_name']
+
+        assert sky_bison_bind in new_table._update_excludes
+        assert meditation_bind in new_table._update_excludes
+        assert instructor_bind in new_table._update_excludes  # no_update=True
+
+    def test_exec_merge_automatically_calls_calc_update_excludes(self, airbender_table, cursor):
+        """Test that exec_merge() automatically calculates update excludes."""
+        # Set values with only some fields
+        merge_data = {
+            'trainee_id': 'MERGE001',
+            'monk_name': 'Merge Test',
+            'home_temple': 'Merge Temple',
+            'mastery_rank': '3'
+        }
+
+        airbender_table.set_values(merge_data)
+
+        # Verify _record_fields is cached
+        assert airbender_table._record_fields == {'trainee_id', 'monk_name', 'home_temple', 'mastery_rank'}
+
+        # _update_excludes should not be calculated yet
+        assert not airbender_table._update_excludes_calculated
+
+        # Execute merge - should automatically call calc_update_excludes()
+        result = airbender_table.exec_merge()
+        assert result == 0
+
+        # _update_excludes should now be calculated
+        assert airbender_table._update_excludes_calculated
+
+        # Missing fields should be in excludes
+        sky_bison_bind = airbender_table.columns['sky_bison']['bind_name']
+        meditation_bind = airbender_table.columns['meditation_score']['bind_name']
+
+        assert sky_bison_bind in airbender_table._update_excludes
+        assert meditation_bind in airbender_table._update_excludes
+
+    def test_update_excludes_calculated_flag_prevents_redundant_calls(self, airbender_table, cursor):
+        """Test that _update_excludes_calculated flag prevents redundant calculations."""
+        # Insert initial record
+        airbender_table.set_values({
+            'trainee_id': 'REDUN001',
+            'monk_name': 'Redundant Test',
+            'home_temple': 'Redundant Temple',
+            'mastery_rank': '4'
+        })
+        airbender_table.exec_insert()
+        cursor.connection.commit()
+
+        # Create new table and set values
+        from dbtk.etl.table import Table
+        col_def = {
+            'nomad_id': {'field': 'trainee_id', 'primary_key': True},
+            'name': {'field': 'monk_name', 'required': True},
+            'temple': {'field': 'home_temple', 'nullable': False},
+            'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
+            'sky_bison': {'field': 'bison_companion'},
+            'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
+            'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
+            'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+        }
+        new_table = Table('air_nomad_training', columns=col_def, cursor=cursor)
+
+        update_data = {
+            'trainee_id': 'REDUN001',
+            'monk_name': 'Updated Name',
+            'home_temple': 'Updated Temple',
+            'mastery_rank': '5'
+        }
+
+        new_table.set_values(update_data)
+
+        # Execute first update
+        new_table.exec_update()
+        assert new_table._update_excludes_calculated
+
+        # Store the excludes set
+        first_excludes = new_table._update_excludes.copy()
+
+        # Execute another update without calling set_values again
+        new_table.values['name'] = 'Another Update'
+        new_table.exec_update()
+
+        # Excludes should be the same (not recalculated)
+        assert new_table._update_excludes == first_excludes
+
+    def test_update_excludes_sql_regeneration(self, fire_nation_table):
+        """Test that UPDATE/MERGE SQL is regenerated when excludes change."""
+        # Set values with all fields
+        all_fields_data = {
+            'recruit_number': 'REGEN001',
+            'full_name': 'Regen Test',
+            'military_rank': 'Soldier',
+            'flame_intensity': '5',
+            'birthplace': 'Fire Nation',
+            'joined_date': '100 AG'
+        }
+
+        fire_nation_table.set_values(all_fields_data)
+
+        # Generate initial UPDATE SQL (no excludes)
+        fire_nation_table.generate_sql('update')
+        initial_sql = fire_nation_table._sql_statements['update']
+
+        # Now manually calculate excludes with a subset of fields
+        fire_nation_table.calc_update_excludes({'recruit_number', 'full_name', 'military_rank', 'flame_intensity'})
+
+        # SQL statements should be invalidated (set to None)
+        assert fire_nation_table._sql_statements['update'] is None
+        assert fire_nation_table._sql_statements['merge'] is None
+
+        # Regenerate UPDATE SQL
+        fire_nation_table.generate_sql('update')
+        new_sql = fire_nation_table._sql_statements['update']
+
+        # SQL should be different (excludes birthplace fields)
+        assert new_sql != initial_sql
+
+
 class TestAdvancedFeatures:
     """Test advanced ETL features."""
 
