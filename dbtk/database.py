@@ -397,8 +397,62 @@ def _password_prompt(prompt: str = 'Enter password: ') -> str:
 
 class Database:
     """
-    Database connection wrapper that provides uniform interface
-    across different database adapters.
+    Database connection wrapper providing a uniform interface across database adapters.
+
+    The Database class wraps database-specific connection objects and provides a consistent
+    API regardless of which database driver is being used (psycopg2, oracledb, mysqlclient,
+    etc.). It handles parameter style conversions, manages cursors, and delegates attribute
+    access to the underlying connection for driver-specific functionality.
+
+    Key features:
+
+    * **Unified interface** - Same API for PostgreSQL, Oracle, MySQL, SQL Server, SQLite
+    * **Cursor factory** - Create different cursor types (Record, tuple, dict, list)
+    * **Transaction management** - Context managers for safe transactions
+    * **Attribute delegation** - Access underlying driver features when needed
+    * **Parameter style abstraction** - Automatic handling of different bind parameter formats
+
+    Attributes
+    ----------
+    interface
+        The database adapter module (e.g., psycopg2, oracledb)
+    server_type : str
+        Database type: 'postgres', 'oracle', 'mysql', 'sqlserver', or 'sqlite'
+    database_name : str
+        Name of the connected database
+    placeholder : str
+        Parameter placeholder for this database's parameter style
+
+    Example
+    -------
+    ::
+
+        import dbtk
+
+        # Create connection
+        db = dbtk.database.postgres(user='admin', password='secret', database='mydb')
+
+        # Or from configuration
+        db = dbtk.connect('production_db')
+
+        # Use as context manager
+        with db:
+            cursor = db.cursor()
+            cursor.execute("SELECT * FROM users WHERE status = :status", {'status': 'active'})
+            users = cursor.fetchall()
+
+        # Manual connection management
+        db = dbtk.connect('production_db')
+        cursor = db.cursor('dict')  # Dictionary cursor
+        cursor.execute("SELECT * FROM orders")
+        db.commit()
+        db.close()
+
+    See Also
+    --------
+    dbtk.connect : Connect to database from configuration
+    Database.cursor : Create a cursor for executing queries
+    Database.transaction : Context manager for transactions
     """
 
     # Attributes stored locally, others delegated to _connection
@@ -417,12 +471,33 @@ class Database:
 
     def __init__(self, connection, interface, database_name: Optional[str] = None):
         """
-        Initialize Database wrapper.
+        Initialize Database wrapper around an existing connection.
 
-        Args:
-            connection: Underlying database connection object
-            interface: Database adapter module (psycopg2, cx_Oracle, etc.)
-            database_name: Name of the database
+        This is typically called by connection factory functions rather than directly.
+        Use ``dbtk.database.postgres()``, ``dbtk.connect()``, etc. instead.
+
+        Parameters
+        ----------
+        connection
+            Underlying database connection object from the adapter
+        interface
+            Database adapter module (psycopg2, oracledb, mysqlclient, etc.)
+        database_name : str, optional
+            Name of the database. If None, attempts to extract from connection.
+
+        Example
+        -------
+        ::
+
+            import psycopg2
+            from dbtk.database import Database
+
+            # Direct instantiation (not typical)
+            conn = psycopg2.connect(dbname='mydb', user='admin', password='secret')
+            db = Database(conn, psycopg2, 'mydb')
+
+            # Typical usage via factory functions
+            db = dbtk.database.postgres(user='admin', password='secret', database='mydb')
         """
         self._connection = connection
         self.interface = interface
@@ -490,20 +565,64 @@ class Database:
 
     def cursor(self, cursor_type: Union[str, Type] = None, **kwargs) -> Cursor:
         """
-        Create a cursor of the specified type.
+        Create a cursor for executing database queries.
 
-        Args:
-            cursor_type: Type of cursor ('record', 'tuple', 'dict', 'list')
-                        or cursor class
-            **kwargs: Additional arguments passed to cursor
+        Creates a cursor with the specified type, determining how query results are returned.
+        Different cursor types provide different access patterns optimized for various use cases.
 
-        Returns:
-            Cursor instance
+        Parameters
+        ----------
+        cursor_type : str or type, optional
+            Type of cursor to create. Can be:
 
-        Examples:
-            cursor = db.cursor()  # RecordCursor by default
-            cursor = db.cursor('tuple')  # TupleCursor
-            cursor = db.cursor(RecordCursor)  # Explicit class
+            * ``'record'`` (default) - Record objects with attribute, key, and index access
+            * ``'tuple'`` - namedtuples with attribute and index access
+            * ``'dict'`` - OrderedDict objects with dictionary interface
+            * ``'list'`` - Plain lists with index access only
+            * Cursor class - Explicit cursor class to instantiate
+
+        **kwargs
+            Additional arguments passed to the underlying cursor constructor
+
+        Returns
+        -------
+        Cursor
+            Cursor instance of the requested type
+
+        Raises
+        ------
+        ValueError
+            If cursor_type is invalid
+
+        Example
+        -------
+        ::
+
+            # Default Record cursor - most flexible
+            cursor = db.cursor()
+            row = cursor.fetchone()
+            print(row['name'], row.name, row[0])  # All work!
+
+            # Tuple cursor - lightweight namedtuple
+            cursor = db.cursor('tuple')
+            row = cursor.fetchone()
+            print(row.name, row[0])  # Attribute and index access
+
+            # Dict cursor - dictionary-only access
+            cursor = db.cursor('dict')
+            row = cursor.fetchone()
+            print(row['name'], row.get('email', 'N/A'))
+
+            # List cursor - minimal overhead
+            cursor = db.cursor('list')
+            row = cursor.fetchone()
+            print(row[0], row[1])  # Index access only
+
+        See Also
+        --------
+        RecordCursor : Flexible cursor returning Record objects
+        TupleCursor : Lightweight cursor returning namedtuples
+        DictCursor : Dictionary-based cursor
         """
         if cursor_type is None:
             cursor_type = settings.get('default_cursor_type', CursorType.RECORD)
@@ -524,14 +643,48 @@ class Database:
     @contextmanager
     def transaction(self):
         """
-        Context manager for database transactions.
+        Context manager for safe database transactions.
 
-        Example:
+        Automatically commits the transaction on successful completion or rolls back
+        if an exception occurs. This ensures transactions are properly cleaned up
+        even if errors occur.
+
+        Yields
+        ------
+        Database
+            This database connection instance
+
+        Raises
+        ------
+        Exception
+            Re-raises any exception that occurs within the transaction block
+            after rolling back the transaction
+
+        Example
+        -------
+        ::
+
             with db.transaction():
                 cursor = db.cursor()
-                cursor.execute("INSERT ...")
-                cursor.execute("UPDATE ...")
-                # Auto-commit on success, rollback on exception
+                cursor.execute("INSERT INTO orders (customer, amount) VALUES (:c, :a)",
+                             {'c': 'Aang', 'a': 100})
+                cursor.execute("UPDATE inventory SET stock = stock - 1 WHERE item_id = :id",
+                             {'id': 42})
+                # Automatically commits on success
+
+            # If exception occurs, transaction is automatically rolled back
+            try:
+                with db.transaction():
+                    cursor = db.cursor()
+                    cursor.execute("INSERT INTO invalid_table ...")  # Raises error
+                    # Rollback happens automatically
+            except Exception as e:
+                logger.error(f"Transaction failed: {e}")
+
+        See Also
+        --------
+        Database.commit : Manually commit a transaction
+        Database.rollback : Manually roll back a transaction
         """
         try:
             yield self

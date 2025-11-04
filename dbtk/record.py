@@ -9,14 +9,77 @@ from datetime import date as _date
 
 class Record(list):
     """
-    Row object that allows access by:
-       column name   row['column_name']
-       attributes    row.column_name
-       column index  row[3]
-       slicing       row[1:4]
+    Flexible row object supporting multiple access patterns.
 
-    Record will be dynamically subclassed each time a cursor is executed
-    with different column names.
+    Record extends list to provide a rich interface for accessing query result rows.
+    It supports attribute access, dictionary-style key access, integer indexing, and
+    slicing - all on the same object. This makes it the most flexible cursor type,
+    ideal when you need different access patterns in different parts of your code.
+
+    The Record class is dynamically subclassed for each query to set column names
+    as class attributes, enabling attribute access while maintaining list semantics.
+
+    Access Patterns
+    ---------------
+    * **Dictionary-style**: ``row['column_name']`` - Safe with .get() method
+    * **Attribute access**: ``row.column_name`` - Clean, readable syntax
+    * **Integer index**: ``row[3]`` - Positional access
+    * **Slicing**: ``row[1:4]`` - Get multiple columns at once
+    * **Iteration**: ``for value in row`` - Iterate over values
+    * **Containment**: ``'column_name' in row`` - Check if column exists
+
+    Key Methods
+    -----------
+    * **get(key, default=None)** - Safe dictionary-style access with default
+    * **keys()** - Get list of column names
+    * **values()** - Get list of column values
+    * **items()** - Get (column, value) pairs
+    * **copy()** - Create a shallow copy of the record
+    * **update(dict)** - Update multiple columns from a dictionary
+    * **pprint()** - Pretty-print the record
+
+    Note
+    ----
+    Record is dynamically subclassed when a cursor executes a query. Each unique
+    set of column names gets its own Record subclass with those names set as
+    class attributes. This enables attribute access while maintaining the list
+    base class for compatibility.
+
+    Example
+    -------
+    ::
+
+        cursor = db.cursor('record')  # or db.cursor() - record is default
+        cursor.execute("SELECT id, name, email, created FROM users WHERE id = :id",
+                      {'id': 42})
+        user = cursor.fetchone()
+
+        # All these access patterns work on the same object:
+        print(user['name'])           # Dictionary-style: 'Aang'
+        print(user.name)               # Attribute access: 'Aang'
+        print(user[1])                 # Index access: 'Aang'
+        print(user[1:3])               # Slicing: ['Aang', 'aang@avatar.com']
+
+        # Safe access with default
+        print(user.get('phone', 'N/A'))  # 'N/A' if no phone column
+
+        # Dictionary methods
+        for col, val in user.items():
+            print(f"{col}: {val}")
+
+        # List compatibility
+        user_id, name, email, created = user  # Unpack like a tuple
+        print(' | '.join(user))                # Join like a list
+
+        # Update columns
+        user['email'] = 'newemail@avatar.com'
+        user.name = 'Avatar Aang'
+
+    See Also
+    --------
+    RecordCursor : Cursor that returns Record objects
+    TupleCursor : Lighter-weight alternative returning namedtuples
+    DictCursor : Dictionary-only alternative
     """
 
     __slots__ = ('_deleted_fields',)
