@@ -132,13 +132,6 @@ class Reader(ABC):
     return_type : str, default 'record'
         Return type for records: 'record' for Record objects, 'dict' for OrderedDict
 
-    Attributes
-    ----------
-    headers : List[str]
-        Cleaned column headers from the file
-    record_num : int
-        Current 1-based record number (increments as records are yielded)
-
     Example
     -------
     ::
