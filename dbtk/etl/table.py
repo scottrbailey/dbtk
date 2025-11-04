@@ -36,47 +36,51 @@ class Table:
     - Automatic SQL generation: Generate INSERT, UPDATE, SELECT, DELETE, MERGE statements
     - Operation tracking: Count successful operations and incomplete records via self.counts
 
-    Column Configuration:
+    Column Configuration
+    --------------------
         Each column in the columns dict is configured with a dict containing:
 
-        field: str or list of str
-            Source field name(s) from input records. If list, extracts multiple fields
-            as a list value. If omitted, column is populated via 'value' or 'db_fn'.
+        * **field** (str or list of str):
+          Source field name(s) from input records. If list, extracts multiple fields
+          as a list value. If omitted, column is populated via 'value' or 'db_fn'.
 
-        value: any (optional)
-            Default/constant value to use for this column. Applied when source field
-            is missing, empty, or None.
+        * **value** (any, optional):
+          Default/constant value to use for this column. Applied when source field
+          is missing, empty, or None.
 
-        fn: callable or list of callables (optional)
-            Transform function(s) applied to field value. If list, functions are
-            applied in order (pipeline). Function receives field value and returns
-            transformed value.
+        * **fn** (callable or list of callables, optional):
+          Transform function(s) applied to field value. If list, functions are
+          applied in order (pipeline). Function receives field value and returns
+          transformed value.
 
-        db_fn: str (optional)
-            Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
-            Use '#' as placeholder for the bind parameter. If specified without '#',
-            no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
+        * **db_fn** (str, optional):
+          Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
+          Use '#' as placeholder for the bind parameter. If specified without '#',
+          no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
 
-        primary_key: bool (optional, default False)
-            Marks column as primary key. Automatically sets key=True and required=True.
+        * **primary_key** (bool, optional, default False):
+          Marks column as primary key. Automatically sets key=True and required=True.
 
-        key: bool (optional, default False)
-            Marks column as key for WHERE clauses in SELECT, UPDATE, DELETE operations.
+        * **key** (bool, optional, default False):
+          Marks column as key for WHERE clauses in SELECT, UPDATE, DELETE operations.
 
-        nullable: bool (optional, default True)
-            If False, marks column as required (must have non-None value for INSERT/MERGE).
+        * **nullable** (bool, optional, default True):
+          If False, marks column as required (must have non-None value for INSERT/MERGE).
 
-        required: bool (optional, default False)
-            Explicitly marks column as required.
+        * **required** (bool, optional, default False):
+          Explicitly marks column as required.
 
-        no_update: bool (optional, default False)
-            If True, excludes column from UPDATE and MERGE operations.
+        * **no_update** (bool, optional, default False):
+          If True, excludes column from UPDATE and MERGE operations.
 
-        bind_name: str (auto-generated)
-            Sanitized parameter name for SQL bind variables. Automatically created from
-            column name (replaces special chars with underscores).
+        * **bind_name** (str, auto-generated):
+          Sanitized parameter name for SQL bind variables. Automatically created from
+          column name (replaces special chars with underscores).
 
-    Example::
+    Example
+    -------
+    ::
+
         import dbtk
         from dbtk.etl import Table
         from dbtk.etl.transforms import parse_date, get_int
@@ -138,15 +142,15 @@ class Table:
             soldiers.exec_insert()  # Automatically validates requirements
             print(soldiers.counts)  # {'insert': 1, 'update': 0, ...}
 
-    Attributes:
-        name: Table name as used in SQL
-        columns: Column configuration dictionary
-        values: Current record values (dict of column_name: value)
-        counts: Operation counters (insert, update, delete, select, merge, records, incomplete)
-        reqs_met: True if all required columns have non-None values
-        reqs_missing: Set of required column names that are None
-        has_all_keys: True if all key columns have non-None values
-        keys_missing: Set of key column names that are None
+    Attributes
+    ----------
+        values (dict): Current record values (dict of column_name: value)
+        counts (dict): Operation counters (insert, update, delete, select, merge, records, incomplete)
+
+    Note:
+        Properties `name`, `columns`, `cursor`, `paramstyle`, `req_cols`, `key_cols`,
+        `reqs_met`, `reqs_missing`, `has_all_keys`, and `keys_missing` are documented
+        separately below.
     """
 
     OPERATIONS = ('insert', 'select', 'update', 'delete', 'merge')
@@ -183,7 +187,10 @@ class Table:
         Raises:
             ValueError: If table name or column names are invalid SQL identifiers.
 
-        Example::
+        Example
+        -------
+        ::
+
             cursor = db.cursor()
 
             table = Table('users', {
@@ -812,24 +819,35 @@ class Table:
         if not err:
             return self._cursor.fetchone()
 
-    def calc_update_excludes(self, file_columns: Set[str]):
+    def calc_update_excludes(self, record_fields: Optional[Set[str]] = None):
         """
         Calculate columns to exclude from updates/merges because source field is missing from record.
         This prevents us from unintentionally NULLing out values because a field was missing or misnamed
         in a data source. Columns can be explicitly excluded from updates by setting the 'no_update' attribute.
 
-        This can be called manually. But when self.set_values() is called, the source fields are cached to self._record_fields.
-        And when self.execute_update() or self.execute_merge() is called, the cached fields are used to call self.calc_update_excludes().
+        This method is called automatically by exec_update() and exec_merge() using fields cached from
+        set_values(). You can also call it manually with an explicit set of record fields.
 
         Args:
-            file_columns: Set of column names from the source file.
+            record_fields: Set of field names present in source records. If None, uses fields
+                cached from the first call to set_values(). Pass explicitly to override.
+
+        Raises:
+            ValueError: If a key column's source field is missing from record_fields.
         """
+        if record_fields is None:
+            record_fields = self._record_fields
+
+        if not record_fields:
+            logger.debug(f"No record_fields available for {self.name}, skipping exclude calculation")
+            return
+
         current_excludes = self._update_excludes
         excludes = []
         for col, col_def in self.__columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
-            if field and field not in file_columns:
+            if field and field not in record_fields:
                 if field in self.key_cols:
                     raise ValueError(f"A key column {col} is sourced from {field}, but is missing from source.")
                 else:

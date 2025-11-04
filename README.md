@@ -25,6 +25,8 @@ validated along the way.
   - [Data Writers](#data-writers) - Export anywhere with one call
   - [ETL Operations](#etl-operations) - Production-ready data pipelines
 - [Configuration & Security](#configuration--security)
+  - [Password Encryption](#password-encryption)
+  - [Command Line Tools](#command-line-tools)
 - [Advanced Features](#advanced-features)
 - [Database Support](#database-support)
 - [Performance Tips](#performance-tips)
@@ -914,8 +916,70 @@ encrypted = dbtk.config.encrypt_password_cli('only_azula_knows_this')
 
 # Migrate configuration with new encryption key
 new_key = dbtk.config.generate_encryption_key()
-dbtk.config.migrate_config_cli('old_regime.yml', 'phoenix_king_era.yml', 
+dbtk.config.migrate_config_cli('old_regime.yml', 'phoenix_king_era.yml',
                                 new_encryption_key=new_key)
+```
+
+### Command Line Tools
+
+DBTK provides command-line utilities for managing encryption keys and configuration files. These are especially useful for automating deployment and configuration management in CI/CD pipelines:
+
+```bash
+# Generate a new encryption key
+# Store the output in DBTK_ENCRYPTION_KEY environment variable
+dbtk generate-key
+
+# Encrypt all passwords in a configuration file
+# Prompts for each plaintext password and replaces with encrypted_password
+dbtk encrypt-config ./dbtk.yml
+
+# Encrypt a specific password
+# Returns the encrypted string you can paste into your config
+dbtk encrypt-password "sozins_comet_2024"
+
+# Migrate config file to a new encryption key
+# Useful when rotating encryption keys
+export DBTK_ENCRYPTION_KEY="old_key_here"
+dbtk migrate-config old_config.yml new_config.yml --new-key "new_key_here"
+```
+
+**Common workflow for new deployments:**
+
+```bash
+# 1. Generate encryption key and save to environment
+export DBTK_ENCRYPTION_KEY=$(dbtk generate-key)
+
+# 2. Create config file with plaintext passwords
+cat > dbtk.yml <<EOF
+connections:
+  production_db:
+    type: postgres
+    host: db.example.com
+    user: admin
+    password: my_secret_password
+EOF
+
+# 3. Encrypt all passwords in config
+dbtk encrypt-config dbtk.yml
+
+# 4. Verify - passwords should now be encrypted_password entries
+cat dbtk.yml
+```
+
+**Key rotation workflow:**
+
+```bash
+# When rotating encryption keys for security
+export DBTK_ENCRYPTION_KEY="current_key"
+NEW_KEY=$(dbtk generate-key)
+
+# Decrypt with old key, encrypt with new key
+dbtk migrate-config dbtk.yml dbtk_new.yml --new-key "$NEW_KEY"
+
+# Update environment variable and swap files
+export DBTK_ENCRYPTION_KEY="$NEW_KEY"
+mv dbtk.yml dbtk_old.yml
+mv dbtk_new.yml dbtk.yml
 ```
 
 ## Advanced Features
