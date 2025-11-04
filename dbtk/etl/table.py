@@ -828,6 +828,12 @@ class Table:
         This method is called automatically by exec_update() and exec_merge() using fields cached from
         set_values(). You can also call it manually with an explicit set of record fields.
 
+        **Effects:**
+
+        * Updates ``self.update_excludes`` with the set of columns to exclude from UPDATE/MERGE operations
+        * Clears cached UPDATE and MERGE SQL statements if exclusions changed (forces regeneration on next use)
+        * Validates that all key columns have their source fields present in record_fields
+
         Args:
             record_fields: Set of field names present in source records. If None, uses fields
                 cached from the first call to set_values(). Pass explicitly to override.
