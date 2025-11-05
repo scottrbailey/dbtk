@@ -9,6 +9,7 @@ header normalization across all reader implementations.
 
 import itertools
 import re
+import time
 
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
@@ -92,6 +93,38 @@ class ReturnType:
     DICT = 'dict'
     DEFAULT = RECORD
 
+class _Progress:
+    __slots__ = ('tell', 'total')
+
+    def __init__(self, obj):
+        if hasattr(obj, 'buffer'):
+            buf = obj.buffer
+            pos = buf.tell()
+            buf.seek(0, 2)
+            self.total = buf.tell()
+            buf.seek(pos)
+            self.tell = buf.tell
+        elif hasattr(obj, 'tell'):
+            pos = obj.tell()
+            obj.seek(0, 2)
+            self.total = obj.tell()
+            obj.seek(pos)
+            self.tell = obj.tell
+        else:
+            # Excel: fake byte size from row count
+            rows = getattr(obj, 'max_row', 1_000_000)
+            self.total = rows * 1024
+            self.tell = lambda: getattr(obj, '_current_row', 1) * 1024
+
+    def update(self):
+        if not self.total:
+            return ""
+        pos = self.tell()
+        pct = pos / self.total
+        filled = round(20 * pct)  # ← ROUND, NOT INT
+        bar = "█" * filled + "░" * (20 - filled)
+        return f"{bar} {pos // 1024:,}K/{self.total // 1024:,}K"
+
 
 class Reader(ABC):
     """
@@ -130,6 +163,8 @@ class Reader(ABC):
         self._headers: List[str] = []
         self._headers_initialized = False
         self._data_iter: Optional[Iterator[List[Any]]] = None
+        self._trackable = None
+        self._start_time = None
 
     def __enter__(self):
         """Context manager entry."""
@@ -143,11 +178,28 @@ class Reader(ABC):
         """Make reader iterable."""
         return self
 
-    def __next__(self) -> Union[Record, OrderedDict]:
+    def __next__(self):
         if not self._headers_initialized:
             self._setup_record_class()
-        row_data = self._read_next_row()
-        self.record_num += 1  # Starts at 1 for first yielded record
+            self._prog = _Progress(self._trackable)
+            self._big = self._prog.total > 5_242_880
+            self._start = time.monotonic()
+
+        try:
+            row_data = self._read_next_row()
+        except StopIteration:
+            took = time.monotonic() - self._start
+            rate = self.record_num / took if took else 0
+            print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} ✅")
+            print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
+            raise  # ← let for-loop end
+
+        self.record_num += 1
+
+        if self._big and self.record_num % 50_000 == 0:
+            print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} "
+                  f"({self.record_num:,})", end="", flush=True)
+
         return self._create_record(row_data)
 
     @abstractmethod
@@ -169,7 +221,9 @@ class Reader(ABC):
             start = self.skip_records
             stop = start + self.max_records if self.max_records is not None else None
             self._data_iter = itertools.islice(gen, start, stop)
+
         return next(self._data_iter)
+
 
     def _cleanup(self):
         """

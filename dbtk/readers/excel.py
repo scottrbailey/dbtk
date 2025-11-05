@@ -57,6 +57,7 @@ class XLSXReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.ws = worksheet
+        self._trackable = self.ws
         self._headers_read = False
         self._raw_headers = headers  # Use provided headers if given
         self._start_row = 1 if headers else 2  # openpyxl 1-based indexing
@@ -127,6 +128,7 @@ class XLReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.ws = worksheet
+        self._trackable = self.ws
         self.datemode = worksheet.book.datemode
         self._headers_read = False
         self._raw_headers = headers  # Use provided headers if given

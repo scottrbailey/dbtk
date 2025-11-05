@@ -33,7 +33,7 @@ dependencies = ["PyYAML>=6.0"]
 encryption = ["cryptography>=3.4.8", "keyring>=23.0.0"]
 formats = ["lxml>=4.6.0", "openpyxl>=3.0.0"]
 recommended = ["cryptography>=3.4.8", "keyring>=23.0.0", "lxml>=4.6.0", "openpyxl>=3.0.0", "phonenumbers>=8.12.0", "python-dateutil>=2.8.0", "usaddress>=0.5.11"]
-all = ["cryptography>=3.4.8", "keyring>=23.0.0", "lxml>=4.6.0", "openpyxl>=3.0.0", "phonenumbers>=8.12.0", "python-dateutil>=2.8.0", "usaddress>=0.5.11"]
+all = ["tomli >=2.0; python_version < '3.11'", "cryptography>=3.4.8", "keyring>=23.0.0", "lxml>=4.6.0", "openpyxl>=3.0.0", "phonenumbers>=8.12.0", "python-dateutil>=2.8.0", "usaddress>=0.5.11"]
 dev = ["pytest>=6.0", "pytest-cov>=2.10"]
 
 [project.scripts]

@@ -63,6 +63,7 @@ class FixedReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.fp = fp
+        self._trackable = self.fp
         self.columns = columns
         self.auto_trim = auto_trim
 

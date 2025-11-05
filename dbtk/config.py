@@ -8,7 +8,7 @@ import os
 import sys
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 
 from .defaults import settings # noqa: F401
 from .database import Database, _get_params_for_database
@@ -47,6 +47,7 @@ def _ensure_sample_config():
     # Find sample config in package
     package_dir = Path(__file__).parent
     sample_config = package_dir / 'dbtk_sample.yml'
+    sample_target = user_config_dir / 'dbtk_sample.yml'
 
     if not sample_config.exists():
         return  # No sample to copy
@@ -56,14 +57,80 @@ def _ensure_sample_config():
         user_config_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy sample config
-        shutil.copy(sample_config, user_config_file)
-        logger.info(f"Created sample config at {user_config_file}")
+        shutil.copy(sample_config, sample_target)
+        logger.info(f"Created sample config at {sample_target}")
         import sys
-        print(f"Created sample DBTK config at {user_config_file}", file=sys.stderr)
+        print(f"Created sample DBTK config at {sample_target}", file=sys.stderr)
 
     except Exception as e:
         logger.debug(f"Could not create sample config: {e}")
         # Don't fail - just continue without config
+
+
+def diagnose_config(config_file: Optional[str] = None) -> List[Tuple[str, str]]:
+    """Full config health check using a real ConfigManager instance."""
+    results = []
+
+    # 1. Spin up a REAL manager — handles path, sample creation, everything
+    try:
+        mgr = ConfigManager(config_file)
+        results.append(('✓', f"Config loaded: {mgr.config_file}"))
+    except Exception as e:
+        results.append(('✗', f"Config failed: {e}"))
+        return results
+
+    # 2. Deps
+    results.append(('✓', "cryptography ready") if HAS_CRYPTO else ('✗', "cryptography missing"))
+    results.append(('✓', "keyring ready") if HAS_KEYRING else ('?', "keyring optional"))
+
+    # 3. Keys — safe peek, no decrypt
+    env_key = os.getenv('DBTK_ENCRYPTION_KEY')
+    keyring_key = keyring.get_password('dbtk', 'encryption_key') if HAS_KEYRING else None
+
+    if env_key:
+        results.append(('✓', "DBTK_ENCRYPTION_KEY set"))
+        results.append(('✓', "Env key valid") if _valid_fernet(env_key) else ('✗', "Env key invalid"))
+    else:
+        results.append(('?', "No env key"))
+
+    if keyring_key:
+        results.append(('✓', "Keyring key set"))
+        results.append(('✓', "Keyring key valid") if _valid_fernet(keyring_key) else ('✗', "Keyring key invalid"))
+    elif HAS_KEYRING:
+        results.append(('?', "Keyring empty"))
+
+    if env_key and keyring_key:
+        results.append(('✓', "Keys match") if env_key == keyring_key else ('✗', "KEYS MISMATCH"))
+
+    # 4. Encrypted passwords? — ask the manager, not the file
+    enc_count = sum(
+        1 for c in mgr.config.get('connections', {}).values()
+        if 'encrypted_password' in c
+    ) + sum(
+        1 for p in mgr.config.get('passwords', {}).values()
+        if 'encrypted_password' in p
+    )
+
+    results.append(('✓', f"{enc_count} encrypted passwords") if enc_count else ('✓', "No encrypted passwords"))
+
+    # 5. Unencrypted passwords
+    uenc_count = sum(
+        1 for c in mgr.config.get('connections', {}).values()
+        if 'password' in c and not(c.get('password', '').startswith('${'))
+    ) + sum(
+        1 for p in mgr.config.get('passwords', {}).values()
+        if 'password' in p and not(p.get('password', '').startswith('${'))
+    )
+    results.append(("✗", f"{uenc_count} unencrypted passwords!") if uenc_count else ('✓', "No unencrypted passwords"))
+    return results
+
+
+def _valid_fernet(key: str) -> bool:
+    try:
+        Fernet(key.encode())
+        return True
+    except Exception:
+        return False
 
 
 class ConfigManager:
@@ -232,12 +299,13 @@ class ConfigManager:
             try:
                 key_str = keyring.get_password('dbtk', 'encryption_key')
                 if key_str:
+                    logger.debug("Retrieved encryption key from system keyring")
                     return key_str.encode()
             except Exception as e:
-                # we'll handle later
-                pass
-        # fall back to environment variable
+                logger.warning(f"Failed to retrieve encryption key from keyring: {e}")
+                # Continue to try other methods
 
+        # fall back to environment variable
         if key_str:
             return key_str.encode()
 
