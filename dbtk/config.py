@@ -134,16 +134,131 @@ def _valid_fernet(key: str) -> bool:
 
 
 class ConfigManager:
-    """Manages database configuration from YAML files."""
+    """
+    Manage DBTK configuration from YAML files.
+
+    ConfigManager handles loading and parsing YAML configuration files that define
+    database connections, encrypted passwords, and global settings. It searches for
+    configuration files in standard locations, validates the structure, and provides
+    methods for accessing connections and passwords.
+
+    The manager supports encrypted passwords using Fernet symmetric encryption,
+    environment variable substitution, and automatic sample config generation for
+    new users.
+
+    Configuration File Structure
+    ----------------------------
+    ::
+
+        # dbtk.yml
+        settings:
+          default_timezone: UTC
+          default_country: US
+          default_paramstyle: named
+
+        connections:
+          my_db:
+            type: postgres
+            host: localhost
+            database: myapp
+            user: admin
+            encrypted_password: gAAAAABh...
+
+        passwords:
+          api_key:
+            encrypted_password: gAAAAABh...
+            description: API key for external service
+
+    Configuration Locations
+    -----------------------
+    ConfigManager searches for configuration files in this order:
+
+    1. File specified in config_file parameter
+    2. ``./dbtk.yml`` (current directory)
+    3. ``./dbtk.yaml`` (current directory)
+    4. ``~/.config/dbtk.yml`` (user config directory)
+    5. ``~/.config/dbtk.yaml`` (user config directory)
+
+    If no config is found, creates a sample config at ``~/.config/dbtk.yml``.
+
+    Parameters
+    ----------
+    config_file : str or Path, optional
+        Path to YAML config file. If None, searches standard locations.
+
+    Attributes
+    ----------
+    config_file : Path
+        Path to the loaded configuration file
+    config : dict
+        Parsed configuration dictionary
+
+    Example
+    -------
+    ::
+
+        from dbtk.config import ConfigManager
+
+        # Load from default location
+        config_mgr = ConfigManager()
+
+        # Access connection settings
+        conn_params = config_mgr.get_connection('production_db')
+
+        # Get encrypted password
+        api_key = config_mgr.get_password('external_api')
+
+        # Load specific config file
+        config_mgr = ConfigManager('/path/to/custom.yml')
+
+    See Also
+    --------
+    dbtk.connect : Connect to database using config
+    generate_encryption_key : Create encryption key for passwords
+    encrypt_config_file_cli : Encrypt passwords in config file
+
+    Notes
+    -----
+    * YAML files must have .yml or .yaml extension
+    * Connections require 'type' field (postgres, oracle, mysql, etc.)
+    * Encrypted passwords require DBTK_ENCRYPTION_KEY environment variable
+    * Environment variables can be used with ${VAR_NAME} syntax
+    * Sample config is created at ~/.config/dbtk.yml on first run if no config exists
+    """
 
     def __init__(self, config_file: Optional[str] = None):
         """
-        Initialize config manager.
+        Initialize config manager and load configuration.
 
-        Args:
-            config_file: Path to YAML config file. If None, looks for:
-                        - dbtk.yml in current directory
-                        - ~/.config/dbtk.yml
+        Parameters
+        ----------
+        config_file : str or Path, optional
+            Path to YAML config file. If None, searches for:
+
+            * ``dbtk.yml`` in current directory
+            * ``dbtk.yaml`` in current directory
+            * ``~/.config/dbtk.yml``
+            * ``~/.config/dbtk.yaml``
+
+        Raises
+        ------
+        FileNotFoundError
+            If no config file found in any search location
+        ValueError
+            If config file is invalid or malformed
+
+        Example
+        -------
+        ::
+
+            # Use default config location
+            config = ConfigManager()
+
+            # Use specific config file
+            config = ConfigManager('/etc/dbtk/production.yml')
+
+            # Config auto-creates sample if none exists
+            config = ConfigManager()  # Creates ~/.config/dbtk.yml if needed
         """
         self.config_file = self._find_config_file(config_file)
         self.config = self._load_config()

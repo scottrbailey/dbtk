@@ -22,16 +22,32 @@ _split_errors: bool = False
 
 
 class ErrorCountHandler(logging.Handler):
-    """Custom handler that counts ERROR and CRITICAL level messages."""
+    """Custom handler that counts ERROR and CRITICAL level messages and lazily creates error log."""
 
-    def __init__(self):
+    def __init__(self, error_log_path: Optional[str] = None, formatter: Optional[logging.Formatter] = None):
         super().__init__()
         self.error_count = 0
+        self.error_log_path = error_log_path
+        self.formatter = formatter
+        self._error_file_handler = None
 
     def emit(self, record):
-        """Count errors without actually writing anything."""
+        """Count errors and lazily create error log file on first error."""
         if record.levelno >= logging.ERROR:
             self.error_count += 1
+
+            # Lazily create error file handler on first error
+            if self.error_log_path and self._error_file_handler is None:
+                try:
+                    self._error_file_handler = logging.FileHandler(self.error_log_path, encoding='utf-8')
+                    self._error_file_handler.setLevel(logging.ERROR)
+                    if self.formatter:
+                        self._error_file_handler.setFormatter(self.formatter)
+                    # Add to root logger
+                    logging.getLogger().addHandler(self._error_file_handler)
+                    logger.debug(f"Created error log file: {self.error_log_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to create error log file: {e}")
 
 
 def setup_logging(
@@ -118,14 +134,17 @@ def setup_logging(
     # Remove existing handlers to avoid duplicates
     root_logger.handlers.clear()
 
-    # Create and add error counting handler (always, regardless of split_errors)
-    global _error_handler
-    _error_handler = ErrorCountHandler()
-    _error_handler.setLevel(logging.ERROR)
-    root_logger.addHandler(_error_handler)
-
     # Create formatter
     formatter = logging.Formatter(log_format, datefmt=timestamp_format)
+
+    # Create and add error counting handler with lazy error log creation
+    global _error_handler
+    _error_handler = ErrorCountHandler(
+        error_log_path=str(error_file) if split_errors and error_file else None,
+        formatter=formatter
+    )
+    _error_handler.setLevel(logging.ERROR)
+    root_logger.addHandler(_error_handler)
 
     # Main log file handler (all messages)
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
@@ -133,12 +152,7 @@ def setup_logging(
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
-    # Error log file handler (errors and critical only)
-    if split_errors:
-        error_handler = logging.FileHandler(error_file, encoding='utf-8')
-        error_handler.setLevel(logging.ERROR)
-        error_handler.setFormatter(formatter)
-        root_logger.addHandler(error_handler)
+    # Note: Error log file handler is created lazily by ErrorCountHandler on first error
 
     # Console handler
     if console:
@@ -149,8 +163,8 @@ def setup_logging(
 
     # Log startup message
     logging.info(f"Logging initialized: {log_file}")
-    if error_file:
-        logging.info(f"Error log: {error_file}")
+    if split_errors and error_file:
+        logging.info(f"Error log will be created at: {error_file} (if errors occur)")
 
     # Store state for errors_logged() function
     global _main_log_path, _error_log_path, _split_errors

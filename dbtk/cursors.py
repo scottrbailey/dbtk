@@ -130,8 +130,50 @@ class PreparedStatement:
 
 class Cursor:
     """
-    Basic cursor that returns results as lists.
-    Base class for other cursor types.
+    Basic cursor that returns query results as lists.
+
+    This is the base class for all DBTK cursor types. It wraps database-specific cursor
+    objects and provides a consistent interface plus additional functionality like SQL
+    file execution, parameter conversion, and prepared statements.
+
+    The basic Cursor returns results as plain lists (index access only). Most users
+    should use higher-level cursor types like RecordCursor, TupleCursor, or DictCursor
+    which provide more convenient access patterns.
+
+    Attributes
+    ----------
+    connection : Database
+        The database connection this cursor belongs to
+    paramstyle : str
+        Parameter style of the underlying database ('qmark', 'named', etc.)
+    placeholder : str
+        Placeholder string for bind parameters (e.g., '?', ':1', etc.)
+    description
+        Column metadata from the last query (delegated to underlying cursor)
+
+    Note
+    ----
+    Cursors delegate attribute access to the underlying database-specific cursor,
+    so all native cursor functionality is available.
+
+    Example
+    -------
+    ::
+
+        # Usually created via Database.cursor()
+        cursor = db.cursor('list')
+        cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
+                      {'status': 'active'})
+
+        for row in cursor:
+            user_id, name, email = row  # Plain list - index access only
+            print(f"{user_id}: {name} ({email})")
+
+    See Also
+    --------
+    RecordCursor : Returns Record objects with multiple access patterns
+    TupleCursor : Returns namedtuples
+    DictCursor : Returns OrderedDict objects
     """
 
     _local_attrs = [
@@ -143,15 +185,36 @@ class Cursor:
     def __init__(self, connection, column_case: str = None,
                  debug: bool = False, return_cursor: bool = False, logger=None, **kwargs):
         """
-        Initialize cursor.
+        Initialize a cursor for database operations.
 
-        Args:
-            connection: Database connection object
-            column_case: How to handle column name casing
-            debug: Enable debug output
-            return_cursor: Return a cursor on .execute(), useful for chaining, annoying otherwise
-            logger: Optional logger function
-            **kwargs: Additional arguments passed to underlying cursor
+        Parameters
+        ----------
+        connection : Database
+            Database connection object
+        column_case : str, optional
+            How to handle column name casing: 'lower', 'upper', 'title', or None (default)
+        debug : bool, default False
+            Enable debug output showing queries and bind variables
+        return_cursor : bool, default False
+            If True, execute() returns the cursor for method chaining
+        logger : callable, optional
+            Custom logger function for debug output
+        **kwargs
+            Additional arguments passed to the underlying database cursor
+
+        Example
+        -------
+        ::
+
+            # Typically created via Database.cursor()
+            cursor = db.cursor()
+
+            # With debug enabled
+            cursor = db.cursor(debug=True)
+
+            # With method chaining
+            cursor = db.cursor(return_cursor=True)
+            results = cursor.execute("SELECT * FROM users").fetchall()
         """
         self.connection = connection
         self.debug = debug

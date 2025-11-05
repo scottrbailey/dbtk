@@ -85,7 +85,32 @@ Column definition generator:
 Readers
 -------
 
-.. automodule:: dbtk.readers
+.. automodule:: dbtk.readers.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.readers.csv
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.readers.excel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.readers.fixed_width
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.readers.json
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.readers.xml
    :members:
    :undoc-members:
    :show-inheritance:
@@ -93,7 +118,37 @@ Readers
 Writers
 -------
 
-.. automodule:: dbtk.writers
+.. automodule:: dbtk.writers.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.writers.csv
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.writers.database
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.writers.excel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.writers.fixed_width
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.writers.json
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.writers.xml
    :members:
    :undoc-members:
    :show-inheritance:

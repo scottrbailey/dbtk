@@ -128,10 +128,93 @@ class _Progress:
 
 class Reader(ABC):
     """
-    Abstract base class for all file readers.
+    Abstract base class for all file readers in DBTK.
 
-    Provides common functionality for CSV, Excel, and fixed-width file readers.
-    Can return either Record objects or dict objects based on return_type parameter.
+    Provides unified interface and common functionality for reading various file formats
+    (CSV, Excel, JSON, XML, fixed-width). All readers support the same features regardless
+    of file format: header cleaning, record skipping, row number tracking, and flexible
+    return types.
+
+    Readers are designed to work as context managers and iterators, making them ideal
+    for memory-efficient processing of large files. They automatically handle resource
+    cleanup and support both Record objects (with multiple access patterns) and plain
+    dictionaries as return types.
+
+    Common Features
+    ---------------
+    * **Automatic header cleaning** - Standardize messy column names
+    * **Row number tracking** - Automatic rownum field for debugging
+    * **Record skipping** - Skip header rows or bad data
+    * **Record limiting** - Process only first N records
+    * **Flexible return types** - Record objects or dictionaries
+    * **Context manager** - Automatic resource cleanup
+    * **Iterator protocol** - Memory-efficient streaming
+
+    Parameters
+    ----------
+    add_rownum : bool, default True
+        Add a 'rownum' field to each record containing the 1-based row number
+    clean_headers : Clean or str, optional
+        Header cleaning level. Options: Clean.LOWER_NOSPACE (default), Clean.STANDARDIZE,
+        Clean.NONE. Can also pass string like 'lower_nospace'.
+    skip_records : int, default 0
+        Number of data records to skip after headers (useful for skipping footer rows
+        or known bad data at start of file)
+    max_records : int, optional
+        Maximum number of records to read. None (default) reads all records.
+    return_type : str, default 'record'
+        Return type for records: 'record' for Record objects, 'dict' for OrderedDict
+
+    Example
+    -------
+    ::
+
+        # Subclasses implement specific file formats
+        from dbtk import readers
+
+        # CSV with default settings
+        with readers.CSVReader(open('data.csv')) as reader:
+            for record in reader:
+                print(record.name, record.email)
+
+        # Skip first 5 records, read only 100, return dicts
+        with readers.CSVReader(open('data.csv'),
+                              skip_records=5,
+                              max_records=100,
+                              return_type='dict') as reader:
+            for row in reader:
+                print(row['name'])
+
+        # Standardize messy headers
+        with readers.CSVReader(open('messy.csv'),
+                              clean_headers=readers.Clean.STANDARDIZE) as reader:
+            # Headers like "ID #", "Student Name" become "id", "studentname"
+            for record in reader:
+                print(record.id, record.studentname)
+
+    See Also
+    --------
+    CSVReader : Read CSV files
+    JSONReader : Read JSON files
+    XLSXReader : Read Excel .xlsx files
+    XMLReader : Read XML files
+    FixedReader : Read fixed-width text files
+    Clean : Header cleaning options
+    Record : Flexible row objects with multiple access patterns
+
+    Notes
+    -----
+    This is an abstract base class. Use one of the concrete implementations
+    (CSVReader, JSONReader, etc.) for actual file reading.
+
+    Subclasses must implement:
+
+    * ``_read_headers()`` - Return list of raw column names from file
+    * ``_generate_rows()`` - Yield raw data rows as lists
+
+    Optionally override:
+
+    * ``_cleanup()`` - Release resources (file handles, etc.)
     """
 
     def __init__(self,
@@ -142,14 +225,38 @@ class Reader(ABC):
                  return_type: str = ReturnType.DEFAULT
                  ):
         """
-        Initialize the reader.
+        Initialize the reader with common options.
 
-        Args:
-            add_rownum: Add a 'rownum' field to each record
-            clean_headers: Header cleaning level from Clean
-            skip_records: Number of data records to skip after headers
-            max_records: Maximum number of records to read, or None for all
-            return_type: Either 'record' for Record objects or 'dict' for OrderedDict
+        Parameters
+        ----------
+        add_rownum : bool, default True
+            Add a 'rownum' field to each record containing the 1-based row number
+        clean_headers : Clean or str, optional
+            Header cleaning level from Clean enum or string. If None, uses
+            default_header_clean from settings (default: Clean.LOWER_NOSPACE)
+        skip_records : int, default 0
+            Number of data records to skip after headers
+        max_records : int, optional
+            Maximum number of records to read, or None for all records
+        return_type : str, default 'record'
+            Either 'record' for Record objects or 'dict' for OrderedDict
+
+        Example
+        -------
+        ::
+
+            # In subclass implementation
+            class MyReader(Reader):
+                def __init__(self, file_path, **kwargs):
+                    super().__init__(**kwargs)
+                    self.file = open(file_path)
+
+                def _read_headers(self):
+                    return ['id', 'name', 'email']
+
+                def _generate_rows(self):
+                    for line in self.file:
+                        yield line.strip().split(',')
         """
         self.add_rownum = add_rownum
         if clean_headers is None:

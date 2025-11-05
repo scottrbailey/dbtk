@@ -73,6 +73,9 @@ Extract data from your database and export to multiple formats with portable SQL
 ```python
 import dbtk
 
+# One-line setup creates timestamped log - all operations automatically logged
+dbtk.setup_logging()  # Creates logs/export_monthly_reports_20251031_143022.log
+
 # queries/monthly_report.sql - Write once with named parameters
 # SELECT soldier_id, name, rank, missions_completed, last_mission_date
 # FROM soldiers
@@ -116,6 +119,10 @@ with dbtk.connect('fire_nation_db') as db:
 
     print(f"Exported {len(monthly_data)} soldier records")
     print(f"Exported {len(summary_data)} officer summary rows")
+
+# Database queries, file operations - all automatically logged by DBTK
+if dbtk.errors_logged():
+    print("⚠️  Export completed with errors - check log file")
 ```
 
 **What makes this easy:**
@@ -188,6 +195,12 @@ with dbtk.connect('fire_nation_db') as db:
     print(f"Specializations recorded: {specialization_table.counts['insert']}")
 
     db.commit()
+
+# Check for errors - DBTK automatically logs all database operations and file errors
+error_log = dbtk.errors_logged()
+if error_log:
+    print(f"⚠️  Errors occurred - check {error_log}")
+    # send_notification_email(subject="Import errors", attachment=error_log)
 ```
 
 **What makes this easy:**
@@ -286,6 +299,45 @@ cursor = db.cursor(return_cursor=True)
 cursor.execute("SELECT * FROM firebenders WHERE rank = 'general'").fetchone()
 ```
 
+**Record objects - Maximum flexibility:**
+
+The Record cursor type (default) provides the most flexible interface for working with database rows:
+
+```python
+cursor = db.cursor('record')  # or just db.cursor()
+row = cursor.fetchone()
+
+# Dictionary-style access
+print(row['soldier_id'], row['name'])
+
+# Attribute access (like namedtuple)
+print(row.soldier_id, row.name)
+
+# Index access (like tuple/list)
+print(row[0], row[1])
+
+# Safe access with default values
+rank = row.get('rank', 'Unknown')
+
+# Slicing for subsets
+first_five = row[:5]
+last_three = row[-3:]
+
+# Iteration and joining
+print('\t'.join(row))            # Join all fields
+print(', '.join(str(v) for v in row))  # Custom formatting
+
+# Length and membership
+print(len(row))                  # Number of columns
+print('email' in row)            # Check if column exists
+
+# Convert to dict or tuple when needed
+row_dict = dict(row)
+row_tuple = tuple(row)
+```
+
+If it quacks like a dict, walks like a tuple, and iterates like a list - it's a Record! This duck-typed design gives you the flexibility to access data however makes sense for your code, without sacrificing performance. Records are memory-efficient and fast while providing the most flexible API. They're the recommended default for most use cases.
+
 **Supported databases:**
 - PostgreSQL (psycopg2, psycopg3, pgdb)
 - Oracle (oracledb, cx_Oracle)
@@ -351,6 +403,27 @@ Let DBTK figure out what you're reading:
 with dbtk.readers.get_reader('data.xlsx') as reader:
     for record in reader:
         process(record)
+```
+
+**Common reader parameters:**
+
+All readers support these parameters for controlling input processing:
+
+```python
+# Skip first 10 data rows, read only 100 records, return dicts instead of Records
+reader = dbtk.readers.CSVReader(
+    open('data.csv'),
+    skip_records=10,      # Skip N records after headers (useful for bad data)
+    max_records=100,      # Only read first N records (useful for testing/sampling)
+    return_type='dict',   # 'record' (default) or 'dict' for OrderedDict
+    add_rownum=True,      # Add 'rownum' field to each record (default True)
+    clean_headers=dbtk.readers.Clean.STANDARDIZE  # Header cleaning level
+)
+
+# Row numbers track position in source file
+with dbtk.readers.get_reader('data.csv', skip_records=5) as reader:
+    for record in reader:
+        print(f"Row {record.rownum}: {record.name}")  # rownum starts at 6 (after skip)
 ```
 
 **Header cleaning for messy data:**
@@ -423,6 +496,20 @@ writers.to_excel(data, 'output.xlsx')
 writers.to_json(data, 'output.json')
 ```
 
+**Quick preview to stdout:**
+
+Pass `None` as the filename to preview data to stdout - perfect for debugging or quick checks:
+
+```python
+# Preview first 10 records to console before writing to file
+cursor.execute("SELECT * FROM soldiers LIMIT 10")
+writers.to_csv(cursor, None)  # Prints to stdout
+
+# Then export the full dataset
+cursor.execute("SELECT * FROM soldiers")
+writers.to_csv(cursor, 'soldiers.csv')
+```
+
 ### ETL Operations
 
 **The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
@@ -471,22 +558,32 @@ results = cursor.fetchall()
 When you need to execute the same query many times, `prepare_file()`. Does query and parameter transformations like `execute_file`, but returns a PreparedStatement object that can be executed repeatedly and behaves like a cursor.
 
 ```python
-# Prepare once
-stmt = cursor.prepare_file('queries/insert_user.sql')
+# queries/kingdom_report.sql
+# SELECT soldier_id, name, rank, missions_completed
+# FROM soldiers
+# WHERE kingdom = :kingdom
+#   AND rank >= :min_rank
+# ORDER BY missions_completed DESC
 
-# Execute many times
-for user_data in import_data:
-    stmt.execute({
-        'user_id': user_data['id'],
-        'name': user_data['name'],
-        'email': user_data['email']
-    })
+# Prepare once, execute many times with different parameters
+stmt = cursor.prepare_file('queries/kingdom_report.sql')
 
-# PreparedStatement acts like a cursor - fetch directly
-stmt = cursor.prepare_file('queries/get_active_users.sql')
-stmt.execute({'status': 'active', 'min_logins': 5})
-for user in stmt:
-    process_user(user) 
+# Define parameters for each kingdom
+kingdoms = [
+    {'kingdom': 'Fire Nation', 'min_rank': 'Captain'},
+    {'kingdom': 'Earth Kingdom', 'min_rank': 'General'},
+    {'kingdom': 'Water Tribe', 'min_rank': 'Warrior'},
+    {'kingdom': 'Air Nomad', 'min_rank': 'Master'}
+]
+
+# Execute query for each kingdom and export to separate files
+for params in kingdoms:
+    stmt.execute(params)
+    data = stmt.fetchall()  # PreparedStatement acts like a cursor
+
+    filename = f"reports/{params['kingdom'].replace(' ', '_')}.csv"
+    dbtk.writers.to_csv(data, filename)
+    print(f"Exported {len(data)} {params['kingdom']} soldiers")
 ```
 
 **Benefits of SQL files:**
@@ -524,7 +621,6 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
 
 # Process records with validation and upsert logic
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
-    phoenix_king_army.calc_update_excludes(reader.headers)
     for recruit in reader:
         phoenix_king_army.set_values(recruit)
         if phoenix_king_army.reqs_met:
@@ -537,6 +633,65 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
             print(f"Recruit rejected: missing {phoenix_king_army.reqs_missing}")
 
 print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
+```
+
+**Column configuration schema:**
+
+Each database column is configured with a dictionary specifying how to source and transform its value:
+
+```python
+{
+    'database_column_name': {
+        # DATA SOURCE - specify ONE of these:
+        'field': 'source_field_name',      # Map from input record field
+        'value': 'static_value',           # Use a constant value for all records
+        'db_fn': 'DATABASE_FUNCTION()',    # Call database function (e.g., CURRENT_TIMESTAMP)
+
+        # TRANSFORMATION - optional:
+        'fn': transform_function,          # Python function to transform field value
+
+        # VALIDATION - optional:
+        'nullable': False,                 # Require value (default: True allows NULL)
+        'primary_key': True,               # Mark as primary key (implies nullable=False)
+
+        # UPDATE CONTROL - optional:
+        'no_update': True,                 # Exclude from UPDATE operations (default: False)
+    }
+}
+```
+
+**Column configuration examples:**
+
+```python
+columns_config = {
+    # Simple field mapping
+    'user_id': {'field': 'id', 'primary_key': True},
+
+    # Field with transformation
+    'email': {'field': 'email_address', 'fn': email_clean},
+
+    # Field with validation
+    'full_name': {'field': 'name', 'nullable': False},
+
+    # Multiple transformations (compose your own function)
+    'phone': {'field': 'phone_number', 'fn': lambda x: phone_format(phone_clean(x))},
+
+    # Static value for all records
+    'status': {'value': 'active'},
+    'import_date': {'db_fn': 'CURRENT_DATE'},
+
+    # Database function with parameter (# is placeholder for field value)
+    'full_name_upper': {'field': 'name', 'db_fn': 'UPPER(#)'},
+
+    # Computed value using database function
+    'age': {'field': 'birthdate', 'db_fn': 'EXTRACT(YEAR FROM AGE(#))'},
+
+    # Primary key that never updates (redundant - primary keys never update)
+    'record_id': {'field': 'id', 'primary_key': True, 'no_update': True},
+
+    # Field that inserts but never updates (useful for created_at timestamps)
+    'created_at': {'db_fn': 'CURRENT_TIMESTAMP', 'no_update': True},
+}
 ```
 
 **Key features:**
@@ -775,11 +930,32 @@ else:
 - Automatically tracks ERROR and CRITICAL level messages
 - Works regardless of logging configuration
 
-**Complete integration script example:**
+**Note for advanced users:** Error tracking is implemented via a custom `ErrorCountHandler` that's automatically added to the root logger by `setup_logging()`. This handler maintains an error counter that `errors_logged()` checks. You can access this handler directly via `logging.getLogger().handlers` if you need custom error tracking logic.
+
+**What DBTK logs automatically:**
+
+DBTK logs all operations without you writing any log statements:
+- Database connections and queries
+- File reading operations and errors
+- Table operations (INSERT/UPDATE/MERGE counts, validation failures)
+- Data transformation errors
+- Parameter conversions and SQL generation
+
+You only need to add custom logging for your specific business logic.
+
+**When to add custom logging:**
+
+Add your own log statements when you have:
+- Custom validation or business rules
+- External API calls
+- Complex decision logic
+- Non-standard error handling
+
+**Complete integration script example with custom logging:**
 
 ```python
 #!/usr/bin/env python3
-"""Fire Nation intelligence ETL."""
+"""Fire Nation intelligence ETL with custom validation logging."""
 
 import dbtk
 import logging
@@ -787,44 +963,51 @@ import logging
 # Set up logging - creates dated log files automatically
 dbtk.setup_logging()
 
+# Optional: Create logger only if you need custom log messages
 logger = logging.getLogger(__name__)
 
+def validate_combat_readiness(soldier_data):
+    """Custom business rule - log only your specific logic."""
+    if soldier_data['missions_completed'] < 5 and soldier_data['rank'] == 'General':
+        logger.warning(f"General {soldier_data['name']} has insufficient mission experience")
+        return False
+    return True
+
 def main():
-    logger.info("Starting Fire Nation ETL")
+    with dbtk.connect('fire_nation_db') as db:
+        cursor = db.cursor()
 
-    try:
-        with dbtk.connect('fire_nation_db') as db:
-            cursor = db.cursor()
+        soldier_table = dbtk.etl.Table('soldiers', config, cursor)
 
-            # Your ETL logic
-            soldier_table = dbtk.etl.Table('soldiers', config, cursor)
+        with dbtk.readers.get_reader('conscripts.csv') as reader:
+            for record in reader:
+                soldier_table.set_values(record)
 
-            with dbtk.readers.get_reader('conscripts.csv') as reader:
-                for record in reader:
-                    soldier_table.set_values(record)
-                    soldier_table.exec_insert(raise_error=False)
+                # Custom validation - log only when YOU need to
+                if soldier_table.reqs_met and not validate_combat_readiness(record):
+                    continue  # Skip this record
 
-            logger.info(f"Processed {soldier_table.counts['insert']} soldiers")
-            logger.info(f"Skipped {soldier_table.counts['incomplete']} incomplete records")
+                soldier_table.exec_insert(raise_error=False)
+                # ↑ DBTK automatically logs all insert operations, errors, validation failures
 
-            db.commit()
+        # Summary output (or log it if you prefer)
+        print(f"Processed {soldier_table.counts['insert']} soldiers")
+        print(f"Skipped {soldier_table.counts['incomplete']} incomplete records")
 
-    except Exception as e:
-        logger.error(f"ETL failed: {e}", exc_info=True)
-        raise
+        db.commit()
 
 if __name__ == '__main__':
     main()
-
-    # Clean up old logs
     dbtk.cleanup_old_logs()
 
-    # Check for errors and send notification if needed
+    # Check if errors occurred (DBTK tracked them automatically)
     error_log = dbtk.errors_logged()
     if error_log:
-        # send_notification_email(subject="Fire Nation ETL Errors", attachment=error_log)
         print(f"Errors occurred - check {error_log}")
+        # send_notification_email(subject="ETL Errors", attachment=error_log)
 ```
+
+**Key takeaway:** DBTK does the logging heavy lifting. You only add custom log statements for your specific business logic, not for database operations, file reading, or ETL mechanics.
 
 **Benefits:**
 - **Automatic setup** - Sample config created at `~/.config/dbtk.yml` on first use
