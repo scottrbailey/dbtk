@@ -9,12 +9,16 @@ header normalization across all reader implementations.
 
 import itertools
 import re
+import logging
+import time
 
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
 from collections import OrderedDict
 from ..record import Record
 from ..defaults import settings
+
+logger = logging.getLogger(__name__)
 
 
 class Clean:
@@ -237,6 +241,7 @@ class Reader(ABC):
         self._headers: List[str] = []
         self._headers_initialized = False
         self._data_iter: Optional[Iterator[List[Any]]] = None
+        self._start_time: Optional[float] = None
 
     def __enter__(self):
         """Context manager entry."""
@@ -246,6 +251,20 @@ class Reader(ABC):
         """Context manager exit with cleanup."""
         self._cleanup()
 
+    def _get_source_name(self) -> str:
+        """
+        Get display name for the data source.
+
+        Default implementation checks for fp.name attribute (works for file-based readers).
+        Override in subclasses for special cases (Excel, XML, etc.).
+
+        Returns:
+            Display name for this data source
+        """
+        if hasattr(self, 'fp') and hasattr(self.fp, 'name'):
+            return self.fp.name
+        return self.__class__.__name__.replace('Reader', '')  # Fallback: "CSV", "JSON", etc.
+
     def __iter__(self) -> Iterator[Union[Record, OrderedDict]]:
         """Make reader iterable."""
         return self
@@ -253,7 +272,21 @@ class Reader(ABC):
     def __next__(self) -> Union[Record, OrderedDict]:
         if not self._headers_initialized:
             self._setup_record_class()
-        row_data = self._read_next_row()
+            self._start_time = time.monotonic()
+            source = self._get_source_name()
+            logger.info(f"Reading {source}")
+
+        try:
+            row_data = self._read_next_row()
+        except StopIteration:
+            # Log completion with timing stats
+            if self._start_time:
+                elapsed = time.monotonic() - self._start_time
+                rate = self.record_num / elapsed if elapsed > 0 else 0
+                source = self._get_source_name()
+                logger.info(f"Completed {source}: {self.record_num:,} records in {elapsed:.2f}s ({int(rate):,} rec/s)")
+            raise
+
         self.record_num += 1  # Starts at 1 for first yielded record
         return self._create_record(row_data)
 

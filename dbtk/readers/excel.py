@@ -61,6 +61,11 @@ class XLSXReader(Reader):
         self._raw_headers = headers  # Use provided headers if given
         self._start_row = 1 if headers else 2  # openpyxl 1-based indexing
 
+    def _get_source_name(self) -> str:
+        """Get Excel filename and sheet name for logging."""
+        wb_name = self.ws.parent.path.name if hasattr(self.ws.parent, 'path') else 'Excel'
+        return f"{wb_name} sheet '{self.ws.title}'"
+
     def _read_headers(self) -> List[str]:
         """Read the header row from the Excel worksheet (row 1) or use provided headers.
 
@@ -131,6 +136,11 @@ class XLReader(Reader):
         self._headers_read = False
         self._raw_headers = headers  # Use provided headers if given
         self._start_row = 1 if headers is not None else 0  # xlrd 0-based indexing
+
+    def _get_source_name(self) -> str:
+        """Get Excel filename and sheet name for logging."""
+        wb_name = self.ws.book.name if hasattr(self.ws.book, 'name') else 'Excel'
+        return f"{wb_name} sheet '{self.ws.name}'"
 
     def _read_headers(self) -> List[str]:
         """Read the header row from the Excel worksheet (row 0) or use provided headers.
