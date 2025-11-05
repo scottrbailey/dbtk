@@ -336,7 +336,7 @@ row_dict = dict(row)
 row_tuple = tuple(row)
 ```
 
-If it walks like a dict, talks like a tuple, and iterates like a list - it's a Record! This duck-typed design gives you the flexibility to access data however makes sense for your code, without sacrificing performance. Records are memory-efficient and fast while providing the most flexible API. They're the recommended default for most use cases.
+If it quacks like a dict, walks like a tuple, and iterates like a list - it's a Record! This duck-typed design gives you the flexibility to access data however makes sense for your code, without sacrificing performance. Records are memory-efficient and fast while providing the most flexible API. They're the recommended default for most use cases.
 
 **Supported databases:**
 - PostgreSQL (psycopg2, psycopg3, pgdb)
