@@ -73,6 +73,9 @@ Extract data from your database and export to multiple formats with portable SQL
 ```python
 import dbtk
 
+# One-line setup creates timestamped log - all operations automatically logged
+dbtk.setup_logging()  # Creates logs/export_monthly_reports_20251031_143022.log
+
 # queries/monthly_report.sql - Write once with named parameters
 # SELECT soldier_id, name, rank, missions_completed, last_mission_date
 # FROM soldiers
@@ -116,6 +119,10 @@ with dbtk.connect('fire_nation_db') as db:
 
     print(f"Exported {len(monthly_data)} soldier records")
     print(f"Exported {len(summary_data)} officer summary rows")
+
+# Database queries, file operations - all automatically logged by DBTK
+if dbtk.errors_logged():
+    print("⚠️  Export completed with errors - check log file")
 ```
 
 **What makes this easy:**
@@ -188,6 +195,12 @@ with dbtk.connect('fire_nation_db') as db:
     print(f"Specializations recorded: {specialization_table.counts['insert']}")
 
     db.commit()
+
+# Check for errors - DBTK automatically logs all database operations and file errors
+error_log = dbtk.errors_logged()
+if error_log:
+    print(f"⚠️  Errors occurred - check {error_log}")
+    # send_notification_email(subject="Import errors", attachment=error_log)
 ```
 
 **What makes this easy:**
@@ -323,7 +336,7 @@ row_dict = dict(row)
 row_tuple = tuple(row)
 ```
 
-Records are memory-efficient and fast while providing the most flexible API. They're the recommended default for most use cases.
+If it walks like a dict, talks like a tuple, and iterates like a list - it's a Record! This duck-typed design gives you the flexibility to access data however makes sense for your code, without sacrificing performance. Records are memory-efficient and fast while providing the most flexible API. They're the recommended default for most use cases.
 
 **Supported databases:**
 - PostgreSQL (psycopg2, psycopg3, pgdb)
@@ -919,11 +932,30 @@ else:
 
 **Note for advanced users:** Error tracking is implemented via a custom `ErrorCountHandler` that's automatically added to the root logger by `setup_logging()`. This handler maintains an error counter that `errors_logged()` checks. You can access this handler directly via `logging.getLogger().handlers` if you need custom error tracking logic.
 
-**Complete integration script example:**
+**What DBTK logs automatically:**
+
+DBTK logs all operations without you writing any log statements:
+- Database connections and queries
+- File reading operations and errors
+- Table operations (INSERT/UPDATE/MERGE counts, validation failures)
+- Data transformation errors
+- Parameter conversions and SQL generation
+
+You only need to add custom logging for your specific business logic.
+
+**When to add custom logging:**
+
+Add your own log statements when you have:
+- Custom validation or business rules
+- External API calls
+- Complex decision logic
+- Non-standard error handling
+
+**Complete integration script example with custom logging:**
 
 ```python
 #!/usr/bin/env python3
-"""Fire Nation intelligence ETL."""
+"""Fire Nation intelligence ETL with custom validation logging."""
 
 import dbtk
 import logging
@@ -931,44 +963,51 @@ import logging
 # Set up logging - creates dated log files automatically
 dbtk.setup_logging()
 
+# Optional: Create logger only if you need custom log messages
 logger = logging.getLogger(__name__)
 
+def validate_combat_readiness(soldier_data):
+    """Custom business rule - log only your specific logic."""
+    if soldier_data['missions_completed'] < 5 and soldier_data['rank'] == 'General':
+        logger.warning(f"General {soldier_data['name']} has insufficient mission experience")
+        return False
+    return True
+
 def main():
-    logger.info("Starting Fire Nation ETL")
+    with dbtk.connect('fire_nation_db') as db:
+        cursor = db.cursor()
 
-    try:
-        with dbtk.connect('fire_nation_db') as db:
-            cursor = db.cursor()
+        soldier_table = dbtk.etl.Table('soldiers', config, cursor)
 
-            # Your ETL logic
-            soldier_table = dbtk.etl.Table('soldiers', config, cursor)
+        with dbtk.readers.get_reader('conscripts.csv') as reader:
+            for record in reader:
+                soldier_table.set_values(record)
 
-            with dbtk.readers.get_reader('conscripts.csv') as reader:
-                for record in reader:
-                    soldier_table.set_values(record)
-                    soldier_table.exec_insert(raise_error=False)
+                # Custom validation - log only when YOU need to
+                if soldier_table.reqs_met and not validate_combat_readiness(record):
+                    continue  # Skip this record
 
-            logger.info(f"Processed {soldier_table.counts['insert']} soldiers")
-            logger.info(f"Skipped {soldier_table.counts['incomplete']} incomplete records")
+                soldier_table.exec_insert(raise_error=False)
+                # ↑ DBTK automatically logs all insert operations, errors, validation failures
 
-            db.commit()
+        # Summary output (or log it if you prefer)
+        print(f"Processed {soldier_table.counts['insert']} soldiers")
+        print(f"Skipped {soldier_table.counts['incomplete']} incomplete records")
 
-    except Exception as e:
-        logger.error(f"ETL failed: {e}", exc_info=True)
-        raise
+        db.commit()
 
 if __name__ == '__main__':
     main()
-
-    # Clean up old logs
     dbtk.cleanup_old_logs()
 
-    # Check for errors and send notification if needed
+    # Check if errors occurred (DBTK tracked them automatically)
     error_log = dbtk.errors_logged()
     if error_log:
-        # send_notification_email(subject="Fire Nation ETL Errors", attachment=error_log)
         print(f"Errors occurred - check {error_log}")
+        # send_notification_email(subject="ETL Errors", attachment=error_log)
 ```
+
+**Key takeaway:** DBTK does the logging heavy lifting. You only add custom log statements for your specific business logic, not for database operations, file reading, or ETL mechanics.
 
 **Benefits:**
 - **Automatic setup** - Sample config created at `~/.config/dbtk.yml` on first use
