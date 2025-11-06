@@ -144,7 +144,7 @@ class CSVReader(Reader):
                          return_type=return_type)
         fp = io.TextIOWrapper(fp.buffer, encoding=fp.encoding or 'utf-8', newline='') if hasattr(fp, 'buffer') else fp
         self.fp = fp
-        self._trackable = self.fp
+        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
         self._rdr = csv.reader(fp, dialect=dialect, **kwargs)
         self._headers_read = False
         self._raw_headers = headers  # Use provided headers if given

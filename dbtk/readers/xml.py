@@ -223,7 +223,9 @@ def open_xml(filename: str, **kwargs) -> XMLReader:
     Returns:
         XMLReader instance
 
-    Example:
+    Example
+    -------
+    ::
         with open_xml('data.xml', record_xpath='//user') as reader:
             for record in reader:
                 print(record.name)

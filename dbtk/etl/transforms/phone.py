@@ -71,7 +71,7 @@ class Phone:
     phone number parsing and validation. Falls back to basic North American
     parsing when phonenumbers is not installed.
 
-    Examples:
+    Example:
         # US number
         phone = Phone("(555) 123-4567")
         print(phone.format(PhoneFormat.INTERNATIONAL))  # +1 555 123 4567
@@ -240,7 +240,7 @@ class Phone:
         Returns:
             ISO 3166-1 alpha-2 country code or None
 
-        Examples:
+        Example:
             Phone("+1 555-123-4567").country   # "US"
             Phone("+44 20 7946 0958").country  # "GB"
         """
@@ -284,7 +284,7 @@ class Phone:
             - 'VOICEMAIL'
             - 'UNKNOWN'
 
-        Examples:
+        Example:
             Phone("+1 555-123-4567").number_type  # "FIXED_LINE_OR_MOBILE"
             Phone("+1 800-555-1234").number_type  # "TOLL_FREE"
         """
@@ -321,7 +321,7 @@ class Phone:
         Returns:
             Formatted phone number string
 
-        Examples:
+        Example:
             phone.format(PhoneFormat.NATIONAL)        # "(555) 123-4567"
             phone.format(PhoneFormat.INTERNATIONAL)   # "+1 555 123 4567"
             phone.format(PhoneFormat.E164)            # "+15551234567"
@@ -438,7 +438,7 @@ def phone_clean(val: Any, country: Optional[str] = None) -> str:
     Returns:
         Formatted phone number or empty string if invalid
 
-    Examples:
+    Example:
         phone_clean("555-123-4567")           # "(555) 123-4567"
         phone_clean("  (555) 123-4567  ")     # "(555) 123-4567"
         phone_clean("invalid")                # ""
@@ -461,7 +461,7 @@ def phone_validate(val: Any, country: Optional[str] = None) -> bool:
     Returns:
         True if valid phone number, False otherwise
 
-    Examples:
+    Example:
         phone_validate("(555) 123-4567")      # True
         phone_validate("555-1234")            # False
         phone_validate("invalid")             # False
@@ -486,7 +486,7 @@ def phone_format(val: Any, style: str = PhoneFormat.NATIONAL,
     Returns:
         Formatted phone number or original value if invalid
 
-    Examples:
+    Example:
         phone_format("5551234567", PhoneFormat.NATIONAL)        # "(555) 123-4567"
         phone_format("5551234567", PhoneFormat.INTERNATIONAL)   # "+1 555 123 4567"
         phone_format("5551234567", PhoneFormat.E164)            # "+15551234567"
@@ -509,7 +509,7 @@ def phone_get_area_code(val: Any, country: Optional[str] = None) -> Optional[str
     Returns:
         Area code or None if not found
 
-    Examples:
+    Example:
         phone_get_area_code("(555) 123-4567")  # "555"
         phone_get_area_code("123-4567")        # None
     """
@@ -531,7 +531,7 @@ def phone_get_exchange(val: Any, country: Optional[str] = None) -> Optional[str]
     Returns:
         Exchange code or None if not found
 
-    Examples:
+    Example:
         phone_get_exchange("(555) 123-4567")  # "123"
         phone_get_exchange("555-4567")        # None
     """
@@ -553,7 +553,7 @@ def phone_get_number(val: Any, country: Optional[str] = None) -> Optional[str]:
     Returns:
         Line number or None if not found
 
-    Examples:
+    Example:
         phone_get_number("(555) 123-4567")  # "4567"
         phone_get_number("invalid")         # None
     """
@@ -575,7 +575,7 @@ def phone_get_extension(val: Any, country: Optional[str] = None) -> Optional[str
     Returns:
         Extension or None if not present
 
-    Examples:
+    Example:
         phone_get_extension("555-123-4567 ext 123")  # "123"
         phone_get_extension("555-123-4567")          # None
     """
@@ -597,7 +597,7 @@ def phone_get_country_code(val: Any, country: Optional[str] = None) -> Optional[
     Returns:
         Country code or None if not found
 
-    Examples:
+    Example:
         phone_get_country_code("+1 555-123-4567")   # "1"
         phone_get_country_code("+44 20 7946 0958")  # "44"
         phone_get_country_code("555-123-4567")      # None (or "1" if parsed as US)
@@ -622,7 +622,7 @@ def phone_get_country(val: Any, country: Optional[str] = None) -> Optional[str]:
     Returns:
         ISO 3166-1 alpha-2 country code or None
 
-    Examples:
+    Example:
         phone_get_country("+1 555-123-4567")   # "US"
         phone_get_country("+44 20 7946 0958")  # "GB"
         phone_get_country("555-123-4567", "US") # "US"
@@ -659,7 +659,7 @@ def phone_get_type(val: Any, country: Optional[str] = None) -> Optional[str]:
         - 'VOICEMAIL'
         - 'UNKNOWN'
 
-    Examples:
+    Example:
         phone_get_type("+1 555-123-4567")  # "FIXED_LINE_OR_MOBILE"
         phone_get_type("+1 800-555-1234")  # "TOLL_FREE"
     """

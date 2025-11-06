@@ -139,7 +139,7 @@ def cursor_to_cursor(source_data,
     Returns:
         Number of records inserted
 
-    Examples:
+    Example:
         # Copy between databases
         source_cursor = source_db.cursor()
         source_cursor.execute("SELECT * FROM users")

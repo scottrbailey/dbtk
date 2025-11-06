@@ -25,7 +25,7 @@ def email_clean(val: str) -> str:
     Returns:
         Cleaned email address (lowercase, stripped) or empty string if invalid
 
-    Examples:
+    Example:
         email_clean("  User@Example.COM  ")  # "user@example.com"
         email_clean("invalid.email")         # ""
         email_clean("user@domain.co")        # "user@domain.co"
@@ -55,7 +55,7 @@ def email_validate(val: str) -> bool:
     Returns:
         True if email appears valid, False otherwise
 
-    Examples:
+    Example:
         email_validate("user@example.com")     # True
         email_validate("user.name@domain.co")  # True
         email_validate("invalid.email")        # False

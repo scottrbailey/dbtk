@@ -30,7 +30,9 @@ class CursorType:
     - DICT: Returns OrderedDict objects (dictionary interface)
     - LIST: Returns plain lists (index access only)
 
-    Example:
+    Example
+    -------
+    ::
         >>> cursor = db.cursor(CursorType.RECORD)  # or just 'record'
         >>> cursor = db.cursor('tuple')
     """
@@ -781,7 +783,9 @@ def postgres(user: str, password: Optional[str] = None, database: str = 'postgre
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import postgres
         >>> with postgres(user='user', password='pass', database='mydb') as db:
         ...     cursor = db.cursor()
@@ -814,7 +818,9 @@ def oracle(user: str, password: Optional[str] = None, database: str = None,
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import oracle
         >>> # Using service name
         >>> db = oracle(user='scott', password='tiger',
@@ -851,7 +857,9 @@ def mysql(user: str, password: Optional[str] = None, database: str = 'mysql',
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import mysql
         >>> with mysql(user='root', password='pass', database='myapp') as db:
         ...     cursor = db.cursor()
@@ -882,7 +890,9 @@ def sqlserver(user: str, password: Optional[str] = None, database: str = None,
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import sqlserver
         >>> db = sqlserver(user='sa', password='pass',
         ...                database='AdventureWorks', host='sqlserver.local')
@@ -912,7 +922,9 @@ def sqlite(database: str, **kwargs) -> Database:
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import sqlite
         >>> # File-based database
         >>> with sqlite('app.db') as db:

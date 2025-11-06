@@ -364,7 +364,7 @@ class ConfigManager:
         Returns:
             Setting value or default
 
-        Examples:
+        Example:
             timeout = config.get_setting('database.timeout', 30)
             tz = config.get_setting('default_timezone', 'UTC')
         """

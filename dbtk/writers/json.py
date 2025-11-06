@@ -102,7 +102,7 @@ def to_json(data,
         indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
         **json_kwargs: Additional arguments passed to json.dump
 
-    Examples:
+    Example:
         # Write to file as JSON array
         to_json(cursor, 'users.json')
 
@@ -135,7 +135,7 @@ def to_ndjson(data,
         encoding: File encoding
         **json_kwargs: Additional arguments passed to json.dumps
 
-    Examples:
+    Example:
         # Write to file as NDJSON
         to_ndjson(cursor, 'users.ndjson')
 

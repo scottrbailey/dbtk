@@ -152,7 +152,7 @@ def to_fixed_width(data,
         truncate_overflow: Whether to truncate values that exceed column width
         fill_char: Character to use for padding
 
-    Examples:
+    Example:
         # Define column widths
         widths = [10, 25, 15, 8]
         to_fixed_width(cursor, widths, 'report.txt')

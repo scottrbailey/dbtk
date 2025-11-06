@@ -182,7 +182,7 @@ def to_excel(data,
         include_headers: Whether to include column headers
         overwrite_sheet: Whether to overwrite existing sheet
 
-    Examples:
+    Example:
         # Create new file
         to_excel(cursor, 'report.xlsx')
 

@@ -73,7 +73,9 @@ def setup_logging(
     Returns:
         Tuple of (log_file_path, error_log_path or None)
 
-    Example:
+    Example
+    -------
+    ::
         import dbtk
 
         # Simple - uses defaults from config

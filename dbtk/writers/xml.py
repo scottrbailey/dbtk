@@ -165,7 +165,7 @@ def to_xml(data,
         stream: Whether to write incrementally (reduces memory usage for large datasets)
         pretty: Whether to format with indentation
 
-    Examples:
+    Example:
         # Write to file
         to_xml(cursor, 'users.xml')
 

@@ -25,7 +25,9 @@ def get_reader(filename: str,
     Returns:
         CSVReader, FixedReader, JSONReader, NDJSONReader, XLSXReader, or XMLReader instance
 
-    Examples::
+    Example
+    -----------------
+    ::
 
         # CSV file with custom header cleaning
         with get_reader('data.csv', clean_headers=Clean.STANDARDIZE) as reader:
@@ -60,10 +62,10 @@ def get_reader(filename: str,
 
         if ws.__class__.__name__ == 'Worksheet':
             # openpyxl
-            return XLSXReader(ws, clean_headers=clean_headers, **kwargs)
+            return XLSXReader(ws, clean_headers=clean_headers, source=filename, **kwargs)
         else:
             # xlrd
-            return XLReader(ws, clean_headers=clean_headers, **kwargs)
+            return XLReader(ws, clean_headers=clean_headers, source=filename, **kwargs)
     elif ext == 'json':
         from .json import JSONReader
         fp = open(filename, encoding=encoding)

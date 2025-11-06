@@ -84,7 +84,7 @@ def to_csv(data,
         quotechar: CSV quote character
         **csv_kwargs: Additional arguments passed to csv.writer
 
-    Examples:
+    Example:
         # Write to file
         to_csv(cursor, 'users.csv')
 

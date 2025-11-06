@@ -22,7 +22,7 @@ class CodeValidator:
     a configurable threshold to determine if the codes should be preloaded into memory. The validation logic
     is handled dynamically based on the database's paramstyle.
 
-    Examples:
+    Example:
         temple_validator = CodeValidator(cursor, table='temples', column='temple_id', case_sensitive=False)
 
         air_bender_table = Table('air_benders', {
@@ -120,7 +120,7 @@ class CodeLookup:
 
     Automatically decides whether to preload based on table size.
 
-    Examples:
+    Example:
         # State abbreviation to full name
         state_lookup = CodeLookup(cursor, 'states', 'abbrev', 'full_name')
         state_lookup('CA')  # -> 'California'

@@ -32,7 +32,9 @@ class ParamStyle:
         named_styles(): Get styles that require dicts
         get_placeholder(paramstyle): Get placeholder string for a style
 
-    Example:
+    Example
+    -------
+    ::
         >>> ParamStyle.get_placeholder('qmark')
         '?'
         >>> ParamStyle.get_placeholder('named')

@@ -31,7 +31,9 @@ class DataSurge:
     Note: The Table instance's state (self.values) is modified during processing.
     Ensure the Table is not used concurrently by other operations or threads.
 
-    Example::
+    Example
+    -------
+    ::
 
         table = Table(..., cursor=cursor)
         surge = DataSurge(table, batch_size=1000, use_transaction=True))

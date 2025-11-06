@@ -420,7 +420,9 @@ class Cursor:
         Returns:
             PreparedStatement object
 
-        Example::
+        Example
+        -------
+        ::
 
             stmt = cursor.prepare_file('queries/insert_user.sql')
             for user in users:
