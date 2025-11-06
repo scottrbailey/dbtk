@@ -74,7 +74,7 @@ Extract data from your database and export to multiple formats with portable SQL
 import dbtk
 
 # One-line setup creates timestamped log - all operations automatically logged
-dbtk.setup_logging()  # Creates logs/export_monthly_reports_20251031_143022.log
+dbtk.setup_logging()  # Location, filename format are controlled by your configuration
 
 # queries/monthly_report.sql - Write once with named parameters
 # SELECT soldier_id, name, rank, missions_completed, last_mission_date
@@ -117,12 +117,16 @@ with dbtk.connect('fire_nation_db') as db:
     dbtk.writers.to_excel(summary_data, 'reports/officer_summary.xlsx',
                           sheet='Officer Stats')
 
-    print(f"Exported {len(monthly_data)} soldier records")
-    print(f"Exported {len(summary_data)} officer summary rows")
+    # writers will automatically log summary info to the logs and will also be
+    # echoed to stdout in default configuration
 
 # Database queries, file operations - all automatically logged by DBTK
-if dbtk.errors_logged():
+# The default error handler keeps track of whether errors or critical events were logged
+# and errors_logged() will return the filename of the error log only if there were errors.
+error_log_fn = dbtk.errors_logged()
+if error_log_fn:
     print("⚠️  Export completed with errors - check log file")
+    # send_notification_email(subject="Export errors", attachment=error_log)
 ```
 
 **What makes this easy:**
@@ -189,17 +193,14 @@ with dbtk.connect('fire_nation_db') as db:
             if specialization_table.reqs_met:
                 specialization_table.exec_insert(reqs_checked=True)
 
-    # Report results
-    print(f"Soldiers inserted: {soldier_table.counts['insert']}")
-    print(f"Soldiers skipped (incomplete): {soldier_table.counts['incomplete']}")
-    print(f"Specializations recorded: {specialization_table.counts['insert']}")
+    # Report results. The Table class will log messages on completion.
 
     db.commit()
 
 # Check for errors - DBTK automatically logs all database operations and file errors
-error_log = dbtk.errors_logged()
-if error_log:
-    print(f"⚠️  Errors occurred - check {error_log}")
+error_log_fn = dbtk.errors_logged()
+if error_log_fn:
+    print(f"⚠️  Errors occurred - check {error_log_fn}")
     # send_notification_email(subject="Import errors", attachment=error_log)
 ```
 

@@ -8,6 +8,15 @@ settings:
   validator_preload_threshold: 1000 # if table size > threshold, preload all values for transforms.CodeValidator
   database:
     timeout: 30
+  logging:
+    directory: ./logs
+    level: INFO
+    format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    timestamp_format: '%Y-%m-%d %H:%M:%S'
+    filename_format: '%Y%m%d_%H%M%S'
+    split_errors: true
+    console: true
+    retention_days: 30
 
 connections:
   states_db:
