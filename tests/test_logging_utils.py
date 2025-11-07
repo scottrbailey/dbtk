@@ -12,6 +12,12 @@ def temp_log_dir():
     """Create temporary directory for log files."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield tmpdir
+        # Clean up logging handlers to release file handles (critical for Windows)
+        root_logger = logging.getLogger()
+        handlers = root_logger.handlers[:]
+        for handler in handlers:
+            handler.close()
+            root_logger.removeHandler(handler)
 
 
 class TestErrorCountHandler:

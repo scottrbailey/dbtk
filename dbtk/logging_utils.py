@@ -116,7 +116,10 @@ def setup_logging(
     root_logger.setLevel(getattr(logging, level.upper()))
 
     # Remove existing handlers to avoid duplicates
-    root_logger.handlers.clear()
+    # Close handlers first to release file handles (critical for Windows)
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
 
     # Create and add error counting handler (always, regardless of split_errors)
     global _error_handler
