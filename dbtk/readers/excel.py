@@ -126,12 +126,11 @@ class XLReader(Reader):
             raise TypeError('worksheet must be of type xlrd.Sheet or use XLSXReader')
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
+                         headers=headers, return_type=return_type)
         self.ws = worksheet
         self._trackable = self.ws
         self.datemode = worksheet.book.datemode
         self._headers_read = False
-        self._raw_headers = headers  # Use provided headers if given
         self._start_row = 1 if headers is not None else 0  # xlrd 0-based indexing
 
     def _read_headers(self) -> List[str]:

@@ -89,7 +89,7 @@ class JSONReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.fp = fp
-        self._trackable = self.fp
+        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
         self.flatten = flatten
         self._data = None
         self._column_cache = None

@@ -65,7 +65,7 @@ class XMLReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.fp = fp
-        self._trackable = self.fp
+        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
         self.record_xpath = record_xpath
         self.custom_columns = columns or []
         self.sample_size = sample_size

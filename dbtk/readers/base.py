@@ -222,6 +222,7 @@ class Reader(ABC):
                  clean_headers: Clean = None,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
+                 headers: Optional[List[str]] = None,
                  return_type: str = ReturnType.DEFAULT
                  ):
         """
@@ -238,6 +239,7 @@ class Reader(ABC):
             Number of data records to skip after headers
         max_records : int, optional
             Maximum number of records to read, or None for all records
+        headers: Optional list of header names to use instead of reading from row 0
         return_type : str, default 'record'
             Either 'record' for Record objects or 'dict' for OrderedDict
 
@@ -267,11 +269,14 @@ class Reader(ABC):
         self.max_records = max_records
         self.return_type = return_type
         self._record_class = None
+        self._raw_headers = headers
         self._headers: List[str] = []
         self._headers_initialized = False
         self._data_iter: Optional[Iterator[List[Any]]] = None
         self._trackable = None
-        self._start_time = None
+        self._prog = None
+        self._big = False
+        self._start_time = 0 # will get updated when the first record is read
 
     def __enter__(self):
         """Context manager entry."""
@@ -288,16 +293,19 @@ class Reader(ABC):
     def __next__(self):
         if not self._headers_initialized:
             self._setup_record_class()
+        if not self._start_time:
+            self._start_time = time.monotonic()
+        if self._prog is None and self._trackable is not None:
             self._prog = _Progress(self._trackable)
             self._big = self._prog.total > 5_242_880
-            self._start = time.monotonic()
 
         try:
             row_data = self._read_next_row()
         except StopIteration:
-            took = time.monotonic() - self._start
+            took = time.monotonic() - self._start_time
             rate = self.record_num / took if took else 0
-            print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} ✅")
+            if self._big:
+                print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} ✅")
             print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
             raise  # ← let for-loop end
 

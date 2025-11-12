@@ -3,7 +3,6 @@
 """CSV file reader with flexible delimiter and quoting support."""
 
 import csv
-import io
 from typing import TextIO, List, Any, Iterator, Optional
 from .base import Reader, Clean, ReturnType
 
@@ -141,13 +140,11 @@ class CSVReader(Reader):
             kwargs.pop('delimiter')
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
-        fp = io.TextIOWrapper(fp.buffer, encoding=fp.encoding or 'utf-8', newline='') if hasattr(fp, 'buffer') else fp
+                         headers=headers, return_type=return_type)
         self.fp = fp
         self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
         self._rdr = csv.reader(fp, dialect=dialect, **kwargs)
         self._headers_read = False
-        self._raw_headers = headers  # Use provided headers if given
 
     def _read_headers(self) -> List[str]:
         """Read the header row from the CSV file or use provided headers.
@@ -159,6 +156,7 @@ class CSVReader(Reader):
             StopIteration: If the file is empty and no headers are provided.
         """
         if self._raw_headers is not None:
+            self._headers_read = True
             return self._raw_headers
         if not self._headers_read:
             try:

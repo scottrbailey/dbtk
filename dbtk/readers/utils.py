@@ -51,7 +51,7 @@ def get_reader(filename: str,
     """
     ext = filename.lower().split('.')[-1]
 
-    if ext == 'csv':
+    if ext in ('csv', 'tsv'):
         from .csv import CSVReader
         fp = open(filename, encoding=encoding)
         return CSVReader(fp, clean_headers=clean_headers, **kwargs)
@@ -62,10 +62,12 @@ def get_reader(filename: str,
 
         if ws.__class__.__name__ == 'Worksheet':
             # openpyxl
-            return XLSXReader(ws, clean_headers=clean_headers, source=filename, **kwargs)
+            reader = XLSXReader(ws, clean_headers=clean_headers, **kwargs)
         else:
             # xlrd
-            return XLReader(ws, clean_headers=clean_headers, source=filename, **kwargs)
+            reader = XLReader(ws, clean_headers=clean_headers, source=filename, **kwargs)
+        reader.source = filename
+        return reader
     elif ext == 'json':
         from .json import JSONReader
         fp = open(filename, encoding=encoding)
