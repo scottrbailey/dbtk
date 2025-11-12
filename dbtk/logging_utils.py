@@ -134,7 +134,10 @@ def setup_logging(
     root_logger.setLevel(getattr(logging, level.upper()))
 
     # Remove existing handlers to avoid duplicates
-    root_logger.handlers.clear()
+    # Close handlers first to release file handles (critical for Windows)
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
 
     # Create formatter
     formatter = logging.Formatter(log_format, datefmt=timestamp_format)
