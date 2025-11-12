@@ -5,15 +5,23 @@ Shared test fixtures and configuration for pytest.
 
 import pytest
 import os
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 
-# Set test encryption key for all tests
+# Set test config file and encryption key for all tests
 @pytest.fixture(autouse=True)
-def set_test_encryption_key():
-    """Automatically set test encryption key for all tests."""
+def setup_test_config():
+    """Automatically set test config file and encryption key for all tests."""
+    from dbtk.config import set_config_file
+
+    # Use test.yml in the tests directory
+    test_config = Path(__file__).parent / 'test.yml'
+    set_config_file(str(test_config))
+
     with patch.dict(os.environ, {'DBTK_ENCRYPTION_KEY': '2YvTXI9DHQPy4d6-ZC9NxcypvLMsJ94OBdmoHyjmwbM='}):
         yield
+
 
 @pytest.fixture
 def mock_db_cursor():
