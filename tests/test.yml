@@ -12,7 +12,7 @@ settings:
 connections:
   states_db:
     type: sqlite
-    database: states.db
+    database: test_states.db
 
   test_db:
     type: postgres

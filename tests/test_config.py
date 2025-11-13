@@ -163,31 +163,25 @@ class TestEncryption:
 class TestGlobalFunctions:
     """Test global convenience functions."""
 
-    @patch('dbtk.config.ConfigManager')
-    @patch('dbtk.database.Database.create')
-    def test_connect_function(self, mock_create, mock_config_manager):
-        """Test global connect function."""
-        # Mock config manager
-        mock_manager = MagicMock()
-        mock_manager.get_connection_config.return_value = {
-            'type': 'postgres',
-            'host': 'localhost',
-            'database': 'testdb',
-            'user': 'testuser',
-            'password': 'testpass'
-        }
-        mock_config_manager.return_value = mock_manager
+    def test_connect_function_sqlite(self, test_config_file):
+        """Test global connect function with sqlite database."""
+        with patch('dbtk.config._config_manager', None):  # Force new instance
+            # Connect to states_db (sqlite) from config
+            db = connect('states_db', config_file=str(test_config_file))
 
-        # Mock database creation
-        mock_db = MagicMock()
-        mock_create.return_value = mock_db
+            # Verify we got a database object
+            assert db is not None
+            assert hasattr(db, 'cursor')
+            assert db.server_type == 'sqlite'
 
-        result = connect('test_connection')
+            # Clean up
+            db.close()
 
-        # Verify calls
-        mock_manager.get_connection_config.assert_called_once_with('test_connection')
-        mock_create.assert_called_once()
-        assert result == mock_db
+    def test_connect_function_config_not_found(self, test_config_file):
+        """Test global connect function raises error for missing connection."""
+        with patch('dbtk.config._config_manager', None):  # Force new instance
+            with pytest.raises(ValueError, match="Connection 'nonexistent' not found"):
+                connect('nonexistent', config_file=str(test_config_file))
 
     def test_get_password_function(self, test_config_file):
         """Test global get_password function."""

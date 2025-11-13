@@ -11,12 +11,14 @@ import pytest
 from pathlib import Path
 
 from dbtk.database import Database
+from dbtk.config import connect
 from dbtk.readers import CSVReader
 from dbtk.etl import Table, DataSurge
 from dbtk.etl.transforms.database import CodeValidator, CodeLookup
 
 # Test database and data paths
 TEST_DB_PATH = Path(__file__).parent / 'test_states.db'
+TEST_CONFIG_PATH = Path(__file__).parent / 'test.yml'
 STATES_CSV_PATH = Path(__file__).parent / 'fixtures' / 'readers' / 'states.csv'
 SQL_DIR = Path(__file__).parent / 'sql'
 
@@ -28,8 +30,8 @@ def states_db():
     if TEST_DB_PATH.exists():
         TEST_DB_PATH.unlink()
 
-    # Create new database
-    db = Database.create('sqlite', database=str(TEST_DB_PATH))
+    # Connect using config
+    db = connect('states_db', config_file=str(TEST_CONFIG_PATH))
     cursor = db.cursor()
 
     # Drop and recreate states table
