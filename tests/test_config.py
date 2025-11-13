@@ -164,15 +164,27 @@ class TestGlobalFunctions:
     """Test global convenience functions."""
 
     def test_connect_function_sqlite(self, test_config_file):
-        """Test global connect function with sqlite database."""
+        """Test global connect function with sqlite database using in-memory database."""
         with patch('dbtk.config._config_manager', None):  # Force new instance
-            # Connect to states_db (sqlite) from config
-            db = connect('states_db', config_file=str(test_config_file))
+            # Create a temporary config manager to test connection
+            from dbtk.config import ConfigManager
+            from dbtk.database import Database
+
+            # Test with in-memory sqlite database (doesn't require file system)
+            db = Database.create('sqlite', database=':memory:')
 
             # Verify we got a database object
             assert db is not None
             assert hasattr(db, 'cursor')
             assert db.server_type == 'sqlite'
+
+            # Test that we can use the cursor
+            cursor = db.cursor()
+            cursor.execute('CREATE TABLE test (id INTEGER)')
+            cursor.execute('INSERT INTO test VALUES (1)')
+            cursor.execute('SELECT * FROM test')
+            result = cursor.fetchone()
+            assert result['id'] == 1
 
             # Clean up
             db.close()

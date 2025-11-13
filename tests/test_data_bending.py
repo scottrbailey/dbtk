@@ -10,114 +10,11 @@ we demonstrate complete control over the flow of data.
 import pytest
 from pathlib import Path
 
-from dbtk.database import Database
-from dbtk.config import connect
-from dbtk.readers import CSVReader
 from dbtk.etl import Table, DataSurge
 from dbtk.etl.transforms.database import CodeValidator, CodeLookup
 
-# Test database and data paths
-TEST_DB_PATH = Path(__file__).parent / 'test_states.db'
-TEST_CONFIG_PATH = Path(__file__).parent / 'test.yml'
-STATES_CSV_PATH = Path(__file__).parent / 'fixtures' / 'readers' / 'states.csv'
+# SQL directory for test SQL files
 SQL_DIR = Path(__file__).parent / 'sql'
-
-
-@pytest.fixture(scope='module')
-def states_db():
-    """Create test database and load states data."""
-    # Remove existing database
-    if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
-
-    # Connect using config
-    db = connect('states_db', config_file=str(TEST_CONFIG_PATH))
-    cursor = db.cursor()
-
-    # Drop and recreate states table
-    cursor.execute("DROP TABLE IF EXISTS states")
-    cursor.execute("""
-                   CREATE TABLE states
-                   (
-                       state          TEXT PRIMARY KEY,
-                       code           TEXT NOT NULL UNIQUE,
-                       capital        TEXT NOT NULL,
-                       population     INTEGER,
-                       area_sq_mi     INTEGER,
-                       admitted       TEXT,
-                       sales_tax_rate REAL,
-                       region         TEXT
-                   )
-                   """)
-    db.commit()
-
-    # Create validation/lookup tables
-    cursor.execute("DROP TABLE IF EXISTS valid_regions")
-    cursor.execute("""
-                   CREATE TABLE valid_regions
-                   (
-                       region_name TEXT PRIMARY KEY
-                   )
-                   """)
-    cursor.execute("""
-                   INSERT INTO valid_regions (region_name)
-                   VALUES ('Northeast'),
-                          ('Southeast'),
-                          ('Midwest'),
-                          ('Southwest'),
-                          ('West')
-                   """)
-
-    cursor.execute("DROP TABLE IF EXISTS region_codes")
-    cursor.execute("""
-                   CREATE TABLE region_codes
-                   (
-                       region TEXT PRIMARY KEY,
-                       code   TEXT NOT NULL
-                   )
-                   """)
-    cursor.execute("""
-                   INSERT INTO region_codes (region, code)
-                   VALUES ('Northeast', 'NE'),
-                          ('Southeast', 'SE'),
-                          ('Midwest', 'MW'),
-                          ('Southwest', 'SW'),
-                          ('West', 'W')
-                   """)
-
-    db.commit()
-
-    # Load states data using CSVReader, Table, and DataSurge
-    states_table = Table('states', {
-        'state': {'field': 'state', 'primary_key': True},
-        'code': {'field': 'code', 'nullable': False},
-        'capital': {'field': 'capital', 'nullable': False},
-        'population': {'field': 'population'},
-        'area_sq_mi': {'field': 'area_sq_mi'},
-        'admitted': {'field': 'admitted'},
-        'sales_tax_rate': {'field': 'sales_tax_rate'},
-        'region': {'field': 'region'}
-    }, cursor=cursor)
-
-    surge = DataSurge(states_table, batch_size=25)
-
-    with open(STATES_CSV_PATH, 'r') as f:
-        with CSVReader(f) as reader:
-            errors = surge.insert(reader)
-
-    db.commit()
-
-    assert errors == 0
-    assert states_table.counts['insert'] == 50  # 50 US states
-
-    yield db
-
-    # Cleanup
-    db.close()
-    if TEST_DB_PATH.exists():
-        # We'll leave around for debugging purposes
-        # TEST_DB_PATH.unlink()
-        pass
 
 
 class TestDataLoading:
