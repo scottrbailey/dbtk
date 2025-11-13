@@ -176,7 +176,7 @@ class TestGlobalFunctions:
             # Verify we got a database object
             assert db is not None
             assert hasattr(db, 'cursor')
-            assert db.server_type == 'sqlite'
+            assert db.database_type == 'sqlite'
 
             # Test that we can use the cursor
             cursor = db.cursor()
