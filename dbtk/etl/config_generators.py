@@ -47,7 +47,7 @@ def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> 
     if isinstance(cursor, DictCursor):
         cursor = cursor.connection.cursor()  # Default is RecordCursor
 
-    db_type = cursor.connection.server_type
+    db_type = cursor.connection.database_type
 
     # Dispatch to database-specific metadata extractor
     if db_type == 'oracle':

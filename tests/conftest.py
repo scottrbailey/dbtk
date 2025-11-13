@@ -173,8 +173,6 @@ def states_db():
 
     # Cleanup
     db.close()
-    if TEST_DB_PATH.exists():
-        # Optional: Remove database after all tests complete
-        TEST_DB_PATH.unlink()
-
-
+    # Optional: Remove database after all tests complete
+    # if TEST_DB_PATH.exists():
+        # TEST_DB_PATH.unlink()

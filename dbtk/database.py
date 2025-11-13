@@ -418,7 +418,7 @@ class Database:
     ----------
     interface
         The database adapter module (e.g., psycopg2, oracledb)
-    server_type : str
+    database_type : str
         Database type: 'postgres', 'oracle', 'mysql', 'sqlserver', or 'sqlite'
     database_name : str
         Name of the connected database
@@ -459,7 +459,7 @@ class Database:
 
     # Attributes stored locally, others delegated to _connection
     _local_attrs = [
-        '_connection', 'server_type', 'database_name', 'interface',
+        '_connection', 'database_type', 'database_name', 'interface',
         'name', 'placeholder'
     ]
 
@@ -517,9 +517,9 @@ class Database:
 
         # Determine server type from interface name
         if interface.__name__ in DRIVERS:
-            self.server_type = DRIVERS[interface.__name__]['database_type']
+            self.database_type = DRIVERS[interface.__name__]['database_type']
         else:
-            self.server_type = 'unknown'
+            self.database_type = 'unknown'
 
 
     def __getattr__(self, key: str) -> Any:
@@ -547,15 +547,15 @@ class Database:
     def __str__(self) -> str:
         """String representation of the database connection."""
         if self.database_name:
-            return f'Database({self.database_name}:{self.server_type})'
+            return f'Database({self.database_name}:{self.database_type})'
         else:
-            return f'Database({self.server_type})'
+            return f'Database({self.database_type})'
 
     def __repr__(self) -> str:
         if self.database_name:
-            return f"Database('{self.database_name}', server_type='{self.server_type}')"
+            return f"Database('{self.database_name}', database_type='{self.database_type}')"
         else:
-            return f"Database(server_type='{self.server_type}')"
+            return f"Database(database_type='{self.database_type}')"
 
     def __enter__(self):
         """Context manager entry."""

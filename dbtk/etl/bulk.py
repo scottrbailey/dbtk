@@ -150,7 +150,7 @@ class DataSurge:
         if not records_list:
             return 0
 
-        db_type = self.cursor.connection.server_type
+        db_type = self.cursor.connection.database_type
         if db_type == 'postgres' and self.cursor.connection.server_version < 150000:
             raise NotImplementedError(
                 f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}")

@@ -433,7 +433,7 @@ class Table:
 
     def _should_use_upsert(self) -> bool:
         """Determine whether to use upsert syntax vs MERGE statement."""
-        db_type = self._cursor.connection.server_type
+        db_type = self._cursor.connection.database_type
 
         if db_type in ('mysql', 'postgres', 'sqlite'):
             return True
@@ -442,7 +442,7 @@ class Table:
 
     def _create_upsert(self) -> str:
         """Create INSERT ... ON DUPLICATE KEY/CONFLICT statement with named parameters."""
-        db_type = self._cursor.connection.server_type
+        db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
         cols = list(self.__columns.keys())
         placeholders = []
@@ -534,7 +534,7 @@ class Table:
 
     def _create_merge_statement(self) -> str:
         """Create traditional MERGE statement with named parameters."""
-        db_type = self._cursor.connection.server_type
+        db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
         cols = list(self.__columns.keys())
         placeholders = []

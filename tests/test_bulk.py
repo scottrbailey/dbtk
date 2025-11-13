@@ -182,7 +182,7 @@ class TestDataSurgeInitialization:
         surge = DataSurge(fire_nation_table)
 
         assert surge.cursor is fire_nation_table.cursor
-        assert surge.cursor.connection.server_type == 'sqlite'
+        assert surge.cursor.connection.database_type == 'sqlite'
 
 
 class TestGetSQL:

@@ -754,7 +754,7 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     # Extract database type
     db_type = config.pop('type', None)
     if not db_type:
-        db_type = config.pop('server_type', 'postgres')
+        db_type = config.pop('database_type', 'postgres')
 
     allowed_params = _get_params_for_database(db_type)
     config = {key: val for key, val in config.items() if key in allowed_params}
