@@ -1113,6 +1113,11 @@ DBTK provides command-line utilities for managing encryption keys and configurat
 # Store the output in DBTK_ENCRYPTION_KEY environment variable
 dbtk generate-key
 
+# Store key on system keyring. If no key is provided, a new one will be generated
+# Use --force to overwrite an existing key
+# The DBTK_ENCRYPTION_KEY environment variable takes precedence
+dbtk store-key [your_key] --force 
+
 # Encrypt all passwords in a configuration file
 # Prompts for each plaintext password and replaces with encrypted_password
 dbtk encrypt-config ./dbtk.yml
@@ -1125,6 +1130,10 @@ dbtk encrypt-password "sozins_comet_2024"
 # Useful when rotating encryption keys
 export DBTK_ENCRYPTION_KEY="old_key_here"
 dbtk migrate-config old_config.yml new_config.yml --new-key "new_key_here"
+
+# Run a check of which recommended libraries, database drivers are installed
+# and check configuration, encryption keys, etc.
+dbtk checkup
 ```
 
 **Common workflow for new deployments:**

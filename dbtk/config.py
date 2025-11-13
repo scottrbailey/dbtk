@@ -5,7 +5,7 @@ Supports YAML configuration files with optional password encryption and global s
 """
 
 import os
-import sys
+from textwrap import dedent
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
@@ -409,32 +409,37 @@ class ConfigManager:
         """Get encryption key from keyring or environment variable."""
         # environment variable takes precedence
         key_str = os.environ.get('DBTK_ENCRYPTION_KEY')
+        if key_str:
+            logger.debug("Using DBTK_ENCRYPTION_KEY from environment")
+            return key_str.encode()
 
-        if not key_str and HAS_KEYRING:
+        if HAS_KEYRING:
             try:
                 key_str = keyring.get_password('dbtk', 'encryption_key')
                 if key_str:
-                    logger.debug("Retrieved encryption key from system keyring")
+                    logger.debug("Using encryption key from keyring")
                     return key_str.encode()
+                else:
+                    raise ValueError("Keyring entry exists but is empty")
             except Exception as e:
-                logger.warning(f"Failed to retrieve encryption key from keyring: {e}")
-                # Continue to try other methods
-
-        # fall back to environment variable
-        if key_str:
-            return key_str.encode()
-
-        if HAS_KEYRING and HAS_CRYPTO:
-            try:
-                import keyring
-                new_key = Fernet.generate_key().decode()
-                keyring.set_password("dbtk", "encryption_key", new_key)
-                logger.info("Generated and stored new encryption key in system keyring")
-                return new_key.encode()
-            except Exception:
-                raise ValueError("No encryption key available and unable to generate one")
-        elif HAS_CRYPTO:
-            raise ValueError("No encryption key. Generate config.generate_encryption_key() and store in DBTK_ENCRYPTION_KEY environment variable")
+                logger.warning(f"Keyring access failed: {e}")
+                raise ValueError(
+                    "Encryption key not found in keyring and DBTK_ENCRYPTION_KEY not set.\n"
+                    "Run: python -c \"import dbtk.config as c, keyring; "
+                    "keyring.set_password('dbtk', 'encryption_key', c.generate_encryption_key())\""
+                )
+        if HAS_CRYPTO:
+            if HAS_KEYRING:
+                msg = dedent("""\
+                Encryption key not found in environment or keyring.
+                Run: `dbtk store-key` to generate and store a new encryption key in the keyring.
+                """)
+            else:
+                msg = dedent("""\
+                Encryption key not found in environment or keyring.
+                Run `dbtk generate-key` to generate and a new encryption key
+                then in the DBTK_ENCRYPTION_KEY environment variable.""")
+            raise ValueError(msg)
         else:
             raise ValueError("Encryption not available. Install cryptography package to enable encryption.")
 
@@ -638,7 +643,9 @@ def generate_encryption_key() -> str:
 
     This function generates a random encryption key that can be used to encrypt
     and decrypt data securely. The key is returned as a string and should be
-    stored in the DBTK_ENCRYPTION_KEY environment variable.
+    stored in the DBTK_ENCRYPTION_KEY environment variable
+    or on keyring by calling `dbtk store-key [your key]`
+
 
     Returns:
         str: A randomly generated encryption key.
@@ -646,11 +653,64 @@ def generate_encryption_key() -> str:
     return Fernet.generate_key().decode()
 
 
+def store_key_cli(key: Optional[str] = None, force: bool = False) -> None:
+    """CLI utility to store encryption key in system keyring."""
+    if not HAS_CRYPTO:
+        raise ValueError("Encryption not available. Install cryptography package to enable encryption.")
+
+    if not HAS_KEYRING:
+        raise ValueError("Keyring not available. Install keyring package to store key in system keyring.")
+
+    try:
+        # check if we have a current key
+        current_key = keyring.get_password("dbtk", "encryption_key")
+    except Exception:
+        current_key = None
+
+    if current_key:
+        if force:
+            msg = "Encryption key already stored in system keyring. Overwriting!"
+            logger.warning(msg)
+            print(msg)
+        else:
+            msg = "Encryption key already stored in system keyring. Use --force to overwrite."
+            logger.warning(msg)
+            print(msg)
+            return
+
+    if key is None:
+        key = generate_encryption_key()
+    else:
+        # make sure passed in key is valid
+        if not _valid_fernet(key):
+           raise ValueError("Invalid encryption key. Must be 32 url-safe base64-encoded bytes.")
+
+    try:
+        keyring.set_password("dbtk", "encryption_key", key)
+        msg = "Stored encryption key in system keyring"
+        logger.info(msg)
+        print(msg)
+        return
+    except Exception as e:
+        msg = f"Failed to store encryption key in system keyring: {e}"
+        logger.error(msg)
+        raise ValueError(msg)
+
+
 def generate_encryption_key_cli() -> str:
-    """CLI utility to generate and print encryption key."""
+    """CLI utility to generate and store print encryption key."""
     key = generate_encryption_key()
+    if HAS_KEYRING:
+        try:
+            keyring.set_password("dbtk", "encryption_key", key)
+            msg = "Generated and stored new encryption key in system keyring"
+            logger.info(msg)
+            print(msg)
+            return
+        except Exception:
+            logger.error("Failed to store encryption key in system keyring")
     print(key)
-    print("Store this key in DBTK_ENCRYPTION_KEY environment variable", file=sys.stderr)
+    print("Store this key in DBTK_ENCRYPTION_KEY environment variable")
     return key
 
 

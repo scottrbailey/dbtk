@@ -83,10 +83,10 @@ def checkup():
         drivers = sorted(by_type[db_type], key=lambda x: x[0])
         print(f"\n{db_type}")  # ← bold header
         for pri, name, info in drivers:
-            # ── TWEAK 1: 2-space indent for hierarchy
+            # ── 2-space indent for hierarchy
             display_name = f"  {name}"  # ← indented
 
-            # ── TWEAK 2: pyodbc_* checks 'pyodbc' only
+            # ── pyodbc_* checks 'pyodbc' only
             check_name = 'pyodbc' if name.startswith('pyodbc_') else name
             spec = importlib.util.find_spec(check_name)
             version = installed.get(check_name.lower().replace('-', '_'), '-')
@@ -114,6 +114,14 @@ def main():
     # generate-key
     subparsers.add_parser('generate-key', help='Generate encryption key')
 
+    # store-key
+    key_parser = subparsers.add_parser('store-key',
+                                       help='Store encryption key in system keyring (generate if not provided)')
+    key_parser.add_argument('key', nargs='?', default=None,
+                            help='Encryption key to store. If omitted, a new key is generated and stored.')
+    key_parser.add_argument('--force', action='store_true',
+                            help='Overwrite existing encryption key in system keyring')
+
     # encrypt-config
     encrypt_parser = subparsers.add_parser('encrypt-config', help='Encrypt passwords in config file')
     encrypt_parser.add_argument('config_file', nargs='?', help='Config file path')
@@ -130,16 +138,18 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == 'generate-key':
+    if args.command == 'checkup':
+        return checkup()
+    elif args.command == 'generate-key':
         return config.generate_encryption_key()
-    elif args.command == 'checkup':
-        checkup()
+    elif args.command == 'store-key':
+        return config.store_key_cli(args.key)
     elif args.command == 'encrypt-config':
-        config.encrypt_config_file_cli(args.config_file)
+        return config.encrypt_config_file_cli(args.config_file)
     elif args.command == 'encrypt-password':
         return config.encrypt_password_cli(args.password)
     elif args.command == 'migrate-config':
-        config.migrate_config_cli(args.old_file, args.new_file, args.new_key)
+        return config.migrate_config_cli(args.old_file, args.new_file, args.new_key)
 
 
 if __name__ == '__main__':
