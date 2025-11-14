@@ -97,7 +97,7 @@ class XLSXReader(Reader):
         pass
 
 
-class XLReader(Reader):
+class XLSReader(Reader):
     """Class to iterate over an Excel Spreadsheet using xlrd."""
 
     def __init__(self,

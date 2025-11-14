@@ -10,7 +10,7 @@ from datetime import date, datetime
 from collections import OrderedDict
 
 from dbtk.readers import (
-    CSVReader, XLReader, XLSXReader, JSONReader, NDJSONReader,
+    CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
     XMLReader, FixedReader, FixedColumn, Clean, get_reader
 )
 from dbtk.record import Record
@@ -124,7 +124,7 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
         if ws.__class__.__name__ == 'Worksheet':
             return XLSXReader(ws, **kwargs)
         else:
-            return XLReader(ws, **kwargs)
+            return XLSReader(ws, **kwargs)
     elif reader_type == 'json':
         return JSONReader(open(json_file, encoding='utf-8'), **kwargs)
     elif reader_type == 'ndjson':
@@ -462,7 +462,7 @@ class TestGetReader:
     def test_get_reader_excel(self, excel_file):
         """Test get_reader with Excel file."""
         with get_reader(str(excel_file)) as reader:
-            assert isinstance(reader, (XLReader, XLSXReader))
+            assert isinstance(reader, (XLSReader, XLSXReader))
             records = list(reader)
             assert len(records) == 100
 

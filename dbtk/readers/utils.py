@@ -56,7 +56,7 @@ def get_reader(filename: str,
         fp = open(filename, encoding=encoding)
         return CSVReader(fp, clean_headers=clean_headers, **kwargs)
     elif ext in ('xls', 'xlsx'):
-        from .excel import open_workbook, get_sheet_by_index, XLReader, XLSXReader
+        from .excel import open_workbook, get_sheet_by_index, XLSReader, XLSXReader
         wb = open_workbook(filename)
         ws = get_sheet_by_index(wb, sheet_index)
 
@@ -65,7 +65,7 @@ def get_reader(filename: str,
             reader = XLSXReader(ws, clean_headers=clean_headers, **kwargs)
         else:
             # xlrd
-            reader = XLReader(ws, clean_headers=clean_headers, source=filename, **kwargs)
+            reader = XLSReader(ws, clean_headers=clean_headers, **kwargs)
         reader.source = filename
         return reader
     elif ext == 'json':
