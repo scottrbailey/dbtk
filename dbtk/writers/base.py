@@ -54,7 +54,7 @@ class BaseWriter(ABC):
         have columns embedded.
     encoding : str, default 'utf-8'
         File encoding for text-based formats
-    preserve_data_types : bool, default False
+    preserve_types : bool, default False
         If False, converts all values to strings. If True, preserves native Python
         types (useful for formats like JSON that support multiple types).
     **kwargs
@@ -116,7 +116,7 @@ class BaseWriter(ABC):
                  filename: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
-                 preserve_data_types: bool = False,
+                 preserve_types: bool = False,
                  **kwargs):
         """
         Initialize the writer with data and options.
@@ -131,7 +131,7 @@ class BaseWriter(ABC):
             Column names for list-of-lists
         encoding : str, default 'utf-8'
             File encoding
-        preserve_data_types : bool, default False
+        preserve_types : bool, default False
             Keep native types vs convert to strings
         **kwargs
             Format-specific arguments
@@ -139,7 +139,7 @@ class BaseWriter(ABC):
         self.data = data
         self.filename = filename
         self.encoding = encoding
-        self.preserve_data_types = preserve_data_types
+        self.preserve_types = preserve_types
         self._row_num = 0
 
         # Setup data iterator and columns
@@ -297,7 +297,7 @@ class BaseWriter(ABC):
                 # Fallback for objects without __getitem__ that only support attribute access
                 value = getattr(record, col, None)
 
-            if not self.preserve_data_types:
+            if not self.preserve_types:
                 value = self.to_string(value)
             values.append(value)
 

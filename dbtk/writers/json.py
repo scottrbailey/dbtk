@@ -35,7 +35,7 @@ class JSONWriter(BaseWriter):
             **json_kwargs: Additional arguments passed to json.dump
         """
         # Preserve data types for JSON output
-        super().__init__(data, filename, columns, encoding, preserve_data_types=True)
+        super().__init__(data, filename, columns, encoding, preserve_types=True)
         self.indent = indent
         self.json_kwargs = json_kwargs
 

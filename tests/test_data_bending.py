@@ -471,7 +471,7 @@ class TestCompleteDataCycle:
             'state_name': {'field': 'state', 'nullable': False},
             'region_code': {'field': 'region', 'fn': region_lookup},
             'large_state': {'field': 'population', 'fn': mark_large_state},
-            'created_date': {'db_fn': 'date("now")'}
+            'created_date': {'db_expr': 'date("now")'}
         }, cursor=cursor)
 
         # Use DataSurge for bulk loading

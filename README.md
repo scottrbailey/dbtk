@@ -1,7 +1,7 @@
 # DBTK - Data Benders Toolkit
 
 <div style="float: right; padding: 20px">
-    <img src="/docs/assets/databender.png" height="240" />
+    <img src="/docs/assets/databender.png" height="240" align="right" />
 </div>
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
@@ -170,7 +170,7 @@ with dbtk.connect('fire_nation_db') as db:
         'email': {'field': 'contact_email', 'fn': email_clean},
         'enlistment_date': {'field': 'join_date', 'fn': parse_date},
         'missions_completed': {'field': 'mission_count', 'fn': get_int},
-        'status': {'value': 'active'}  # Default value for all
+        'status': {'default': 'active'}  # Default value for all
     }, cursor=cursor)
 
     # Optional specialization table - only insert if specialty data exists
@@ -194,16 +194,15 @@ with dbtk.connect('fire_nation_db') as db:
             # Only insert if requirements met (specialty and master_code not null)
             specialization_table.set_values(record)
             if specialization_table.reqs_met:
-                specialization_table.exec_insert(reqs_checked=True)
-        # print(f"Read {}")
-    # Report results. The Table class will log messages on completion.   
+                specialization_table.exec_insert(reqs_checked=True) 
+        print(f"Inserted {soldier_table.counts["inserts"]} rows into {soldier_table.name}, skips: {soldier_table.counts["incomplete"]}")
     db.commit()
 
 # Check for errors - DBTK automatically logs all database operations and file errors
 error_log_fn = dbtk.errors_logged()
 if error_log_fn:
     print(f"⚠️  Errors occurred - check {error_log_fn}")
-    # send_notification_email(subject="Import errors", attachment=error_log)
+    # send_notification_email(subject="Import errors", attachment=error_log_fn)
 ```
 
 **What makes this easy:**
@@ -272,9 +271,9 @@ with db.transaction():
     # Auto-commit on success, rollback on exception
 ```
 
-**Cursor types matter:**
+**Cursor types:**
 
-Choose the right cursor type for your use case to balance functionality and performance:
+Choose the right cursor return type for your use case to balance functionality and performance:
 
 ```python
 # Record cursor - memory efficient and most flexible (recommended for most use cases)
@@ -432,7 +431,7 @@ reader = dbtk.readers.CSVReader(
     max_records=100,      # Only read first N records (useful for testing/sampling)
     return_type='dict',   # 'record' (default) or 'dict' for OrderedDict
     add_rownum=True,      # Add '_row_num' field to each record (default True)
-    clean_headers=dbtk.readers.Clean.STANDARDIZE  # Header cleaning level
+    clean_headers=dbtk.readers.Clean.LOWER_NOSPACE  # Header cleaning level
 )
 
 # Row numbers track position in source file
@@ -516,8 +515,8 @@ writers.to_json(data, 'output.json')
 Pass `None` as the filename to preview data to stdout - perfect for debugging or quick checks:
 
 ```python
-# Preview first 10 records to console before writing to file
-cursor.execute("SELECT * FROM soldiers LIMIT 10")
+# Preview first 20 records to console before writing to file
+cursor.execute("SELECT * FROM soldiers")
 writers.to_csv(cursor, None)  # Prints to stdout
 
 # Then export the full dataset
@@ -570,7 +569,7 @@ results = cursor.fetchall()
 
 **Prepared statements for repeated execution:**
 
-When you need to execute the same query many times, `prepare_file()`. Does query and parameter transformations like `execute_file`, but returns a PreparedStatement object that can be executed repeatedly and behaves like a cursor.
+When you need to execute the same query many times use `cursor.prepare_file()`. Does query and parameter transformations like `execute_file`, but returns a PreparedStatement object that can be executed repeatedly and behaves like a cursor.
 
 ```python
 # queries/kingdom_report.sql
@@ -631,7 +630,7 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
     'enlistment_date': {'field': 'joined_army', 'fn': transforms.parse_date},
     'combat_name': {'field': 'full_name', 'db_fn': 'generate_fire_nation_callsign(#)'},
     'last_drill': {'db_fn': 'CURRENT_TIMESTAMP'},
-    'conscription_source': {'value': 'Sozin Recruitment Drive'}},
+    'conscription_source': {'default': 'Sozin Recruitment Drive'}},
                                    cursor=cursor)
 
 # Process records with validation and upsert logic
@@ -645,25 +644,25 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
             else:
                 phoenix_king_army.exec_insert(reqs_checked=True)
         else:
-            print(f"Recruit rejected: missing {phoenix_king_army.reqs_missing}")
+            print(f"Recruit {phoenix_king_army.values['name']}({phoenix_king_army.values['soldier_id']}) rejected: missing {phoenix_king_army.reqs_missing}")
+            
 
 print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
 ```
 
 **Column configuration schema:**
 
-Each database column is configured with a dictionary specifying how to source and transform its value:
+Each database column is configured with a dictionary specifying how to source and transform its value.
+Precedence: 
 
 ```python
 {
     'database_column_name': {
-        # DATA SOURCE - specify ONE of these:
-        'field': 'source_field_name',      # Map from input record field
-        'value': 'static_value',           # Use a constant value for all records
-        'db_fn': 'DATABASE_FUNCTION()',    # Call database function (e.g., CURRENT_TIMESTAMP)
-
-        # TRANSFORMATION - optional:
-        'fn': transform_function,          # Python function to transform field value
+        # DATA SOURCE
+        'field': 'source_field_name',      # Map from input record field       
+        'default': 'static_value',           # Use a default value for all records
+        'fn': transform_function,          # Python function to transform field value, no parens!
+        'db_expr': 'DATABASE_FUNCTION(#)',   # Call database function (e.g., CURRENT_TIMESTAMP, UPPER(#))    
 
         # VALIDATION - optional:
         'nullable': False,                 # Require value (default: True allows NULL)
@@ -692,27 +691,27 @@ columns_config = {
     'phone': {'field': 'phone_number', 'fn': lambda x: phone_format(phone_clean(x))},
 
     # Static value for all records
-    'status': {'value': 'active'},
-    'import_date': {'db_fn': 'CURRENT_DATE'},
+    'status': {'default': 'active'},
+    'import_date': {'db_expr': 'CURRENT_DATE'},
 
     # Database function with parameter (# is placeholder for field value)
-    'full_name_upper': {'field': 'name', 'db_fn': 'UPPER(#)'},
+    'full_name_upper': {'field': 'name', 'db_expr': 'UPPER(#)'},
 
     # Computed value using database function
-    'age': {'field': 'birthdate', 'db_fn': 'EXTRACT(YEAR FROM AGE(#))'},
+    'age': {'field': 'birthdate', 'db_expr': 'EXTRACT(YEAR FROM AGE(#))'},
 
     # Primary key that never updates (redundant - primary keys never update)
     'record_id': {'field': 'id', 'primary_key': True, 'no_update': True},
 
     # Field that inserts but never updates (useful for created_at timestamps)
-    'created_at': {'db_fn': 'CURRENT_TIMESTAMP', 'no_update': True},
+    'created_at': {'db_expr': 'CURRENT_TIMESTAMP', 'no_update': True},
 }
 ```
 
 **Key features:**
 - Field mapping and renaming
 - Data type transformations
-- Database function integration (`db_fn` lets you leverage database capabilities)
+- Database function integration (`db_expr` lets you leverage database capabilities)
 - Required field validation with clear error messages
 - Primary key management
 - Automatic UPDATE exclusions
@@ -1284,7 +1283,7 @@ DBTK supports multiple database adapters with automatic detection and fallback:
        stmt.execute(params)
    ```
 
-7. **Let the database do the work** - Use `db_fn` in Table definitions to leverage database functions instead of processing in Python.
+7. **Let the database do the work** - Use `db_expr` in Table definitions to leverage database functions instead of processing in Python.
 
 ## License
 

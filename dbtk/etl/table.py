@@ -42,9 +42,9 @@ class Table:
 
         * **field** (str or list of str):
           Source field name(s) from input records. If list, extracts multiple fields
-          as a list value. If omitted, column is populated via 'value' or 'db_fn'.
+          as a list value. If omitted, column is populated via 'default' or 'db_expr'.
 
-        * **value** (any, optional):
+        * **default** (any, optional):
           Default/constant value to use for this column. Applied when source field
           is missing, empty, or None.
 
@@ -53,7 +53,7 @@ class Table:
           applied in order (pipeline). Function receives field value and returns
           transformed value.
 
-        * **db_fn** (str, optional):
+        * **db_expr** (str, optional):
           Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
           Use '#' as placeholder for the bind parameter. If specified without '#',
           no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
@@ -110,18 +110,18 @@ class Table:
 
                 # Constant value for all records
                 'status': {
-                    'value': 'active'
+                    'default': 'active'
                 },
 
                 # Database-side function with parameter
                 'combat_name': {
                     'field': 'full_name',
-                    'db_fn': 'generate_callsign(#)'
+                    'db_expr': 'generate_callsign(#)'
                 },
 
                 # Database-side function, no parameter
                 'created_at': {
-                    'db_fn': 'CURRENT_TIMESTAMP'
+                    'db_expr': 'CURRENT_TIMESTAMP'
                 },
 
                 # Multiple source fields as list
@@ -174,7 +174,7 @@ class Table:
 
             columns: Dictionary mapping database column names to their configuration.
                 Each column is configured with a dict containing options like 'field',
-                'fn', 'value', 'db_fn', 'primary_key', 'nullable', etc.
+                'fn', 'default', 'db_expr', 'primary_key', 'nullable', etc.
                 See class docstring for complete column configuration options.
 
             cursor: Database cursor instance. Provides connection to database and
@@ -196,7 +196,7 @@ class Table:
             table = Table('users', {
                 'user_id': {'field': 'id', 'primary_key': True},
                 'email': {'field': 'email_address', 'nullable': False},
-                'created': {'db_fn': 'CURRENT_TIMESTAMP'}
+                'created': {'db_expr': 'CURRENT_TIMESTAMP'}
             }, cursor=cursor)
         """
         validate_identifier(name)
@@ -318,23 +318,23 @@ class Table:
         # Remove trailing underscore if present
         return sanitized.rstrip('_')
 
-    def _wrap_db_function(self, col_name: str, db_fn: str = None) -> str:
+    def _wrap_db_expr(self, col_name: str, db_expr: str = None) -> str:
         """Wrap column placeholder with database function if provided."""
-        if db_fn in (None, ''):
+        if db_expr in (None, ''):
             return f':{col_name}'
         # Strip whitespace to be defensive against typos
-        db_fn = db_fn.strip()
-        if not db_fn:
+        db_expr = db_expr.strip()
+        if not db_expr:
             # incase '' or ' ' were passed
             return f':{col_name}'
-        if '#' in db_fn:
-            return db_fn.replace('#', f':{col_name}')
-        if '(' in db_fn and ')' in db_fn:
+        if '#' in db_expr:
+            return db_expr.replace('#', f':{col_name}')
+        if '(' in db_expr and ')' in db_expr:
             # Contains parentheses - assume it's a complete expression
-            return db_fn
-        if db_fn.lower() in ('sysdate', 'systimestamp', 'user', 'current_timestamp', 'current_date', 'current_time'):
-            return db_fn
-        return f'{db_fn}(:{col_name})'
+            return db_expr
+        if db_expr.lower() in ('sysdate', 'systimestamp', 'user', 'current_timestamp', 'current_date', 'current_time'):
+            return db_expr
+        return f'{db_expr}(:{col_name})'
 
     def _finalize_sql(self, operation: str, sql: str) -> None:
         """Process SQL and store results."""
@@ -348,8 +348,8 @@ class Table:
 
         for col in cols:
             bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholders.append(self._wrap_db_function(bind_name, db_fn))
+            db_expr = self.__columns[col].get('db_expr')
+            placeholders.append(self._wrap_db_expr(bind_name, db_expr))
 
         cols_str = ', '.join(quote_identifier(col) for col in cols)
         placeholders_str = ', '.join(placeholders)
@@ -375,8 +375,8 @@ class Table:
             quoted_cols.append(ident)
             bind_name = col_def['bind_name']
             if bind_name in self._key_cols:
-                db_fn = col_def.get('db_fn')
-                placeholder = self._wrap_db_function(bind_name, db_fn)
+                db_expr = col_def.get('db_expr')
+                placeholder = self._wrap_db_expr(bind_name, db_expr)
                 conditions.append(f"{ident} = {placeholder}")
 
         cols_str = ', '.join(quoted_cols)
@@ -402,8 +402,8 @@ class Table:
         for col, col_def in self.__columns.items():
             ident = quote_identifier(col)
             bind_name = col_def['bind_name']
-            db_fn = col_def.get('db_fn')
-            placeholder = self._wrap_db_function(bind_name, db_fn)
+            db_expr = col_def.get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
             if bind_name in self._key_cols:
                 conditions.append(f'{ident} = {placeholder}')
             elif bind_name not in self._update_excludes:
@@ -428,8 +428,8 @@ class Table:
         for col in self._key_cols:
             quoted_col = quote_identifier(col)
             bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholder = self._wrap_db_function(bind_name, db_fn)
+            db_expr = self.__columns[col].get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
             conditions.append(f"{quoted_col} = {placeholder}")
         conditions_str = '\n    AND '.join(conditions)
         sql = f"DELETE FROM {table_name} \nWHERE {conditions_str}"
@@ -455,8 +455,8 @@ class Table:
         # Build INSERT portion with named placeholders
         for col in cols:
             bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholders.append(self._wrap_db_function(bind_name, db_fn))
+            db_expr = self.__columns[col].get('db_expr')
+            placeholders.append(self._wrap_db_expr(bind_name, db_expr))
 
         # Get non-key columns for updates (excluding update_excludes)
         update_cols = []
@@ -478,13 +478,13 @@ class Table:
             for col in update_cols:
                 quoted_col = quote_identifier(col)
                 bind_name = self.__columns[col]['bind_name']
-                db_fn = self.__columns[col].get('db_fn')
+                db_expr = self.__columns[col].get('db_expr')
 
-                if db_fn and '#' in db_fn:
+                if db_expr and '#' in db_expr:
                     # Use alias syntax for MySQL 8.0.19+
-                    assignment = f"{quoted_col} = {db_fn.replace('#', f'new_vals.{quoted_col}')}"
-                elif db_fn:
-                    assignment = f"{quoted_col} = {db_fn}"
+                    assignment = f"{quoted_col} = {db_expr.replace('#', f'new_vals.{quoted_col}')}"
+                elif db_expr:
+                    assignment = f"{quoted_col} = {db_expr}"
                 else:
                     assignment = f"{quoted_col} = new_vals.{quoted_col}"
                 update_assignments.append(assignment)
@@ -512,12 +512,12 @@ class Table:
             for col in update_cols:
                 quoted_col = quote_identifier(col)
                 bind_name = self.__columns[col]['bind_name']
-                db_fn = self.__columns[col].get('db_fn')
+                db_expr = self.__columns[col].get('db_expr')
 
-                if db_fn and '#' in db_fn:
-                    assignment = f"{quoted_col} = {db_fn.replace('#', f'EXCLUDED.{quoted_col}')}"
-                elif db_fn:
-                    assignment = f"{quoted_col} = {db_fn}"
+                if db_expr and '#' in db_expr:
+                    assignment = f"{quoted_col} = {db_expr.replace('#', f'EXCLUDED.{quoted_col}')}"
+                elif db_expr:
+                    assignment = f"{quoted_col} = {db_expr}"
                 else:
                     assignment = f"{quoted_col} = EXCLUDED.{quoted_col}"
                 update_assignments.append(assignment)
@@ -547,8 +547,8 @@ class Table:
         # Build placeholders for source
         for col in cols:
             bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholders.append(self._wrap_db_function(bind_name, db_fn))
+            db_expr = self.__columns[col].get('db_expr')
+            placeholders.append(self._wrap_db_expr(bind_name, db_expr))
 
         # Build key conditions for matching
         key_conditions = []
@@ -752,8 +752,8 @@ class Table:
                 val = None
 
             # Then apply default values for empty/None
-            if val in ('', None) and 'value' in col_def:
-                val = col_def['value']
+            if val in ('', None) and 'default' in col_def:
+                val = col_def['default']
 
             # Apply transforms
             if 'fn' in col_def:

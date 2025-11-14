@@ -92,8 +92,8 @@ def airbender_table(cursor, airbender_schema):
         'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
         'sky_bison': {'field': 'bison_companion'},
         'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
-        'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
-        'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+        'training_date': {'db_expr': 'CURRENT_TIMESTAMP'},
+        'instructor': {'default': 'Monk Gyatso', 'no_update': True}
     }
     return Table('air_nomad_training', columns=col_def, cursor=cursor)
 
@@ -108,7 +108,7 @@ def fire_nation_table(cursor, fire_nation_schema):
         'firebending_skill': {'field': 'flame_intensity', 'fn': lambda x: int(x) if x else 0},
         'home_village': {'field': 'birthplace'},
         'enlistment_date': {'field': 'joined_date', 'fn': lambda x: x},
-        'commanding_officer': {'value': 'Admiral Zhao', 'no_update': True}
+        'commanding_officer': {'default': 'Admiral Zhao', 'no_update': True}
     }
     return Table('fire_nation_army', columns=col_def, cursor=cursor)
 
@@ -122,8 +122,8 @@ def earth_kingdom_table(cursor, earth_kingdom_schema):
         'city': {'field': 'home_city', 'nullable': False},
         'earthbending_skill': {'field': 'boulder_size', 'fn': lambda x: float(x) if x else 0.0},
         'occupation': {'field': 'job_title'},
-        'registration_date': {'db_fn': 'CURRENT_DATE'},
-        'kingdom_loyalty': {'value': 'True Earth Kingdom Citizen'}
+        'registration_date': {'db_expr': 'CURRENT_DATE'},
+        'kingdom_loyalty': {'default': 'True Earth Kingdom Citizen'}
     }
     return Table('earth_kingdom_census', columns=col_def, cursor=cursor)
 
@@ -859,8 +859,8 @@ class TestAutomaticUpdateExcludes:
             'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
             'sky_bison': {'field': 'bison_companion'},
             'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
-            'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
-            'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+            'training_date': {'db_expr': 'CURRENT_TIMESTAMP'},
+            'instructor': {'default': 'Monk Gyatso', 'no_update': True}
         }
         new_table = Table('air_nomad_training', columns=col_def, cursor=cursor)
 
@@ -949,8 +949,8 @@ class TestAutomaticUpdateExcludes:
             'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
             'sky_bison': {'field': 'bison_companion'},
             'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
-            'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
-            'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+            'training_date': {'db_expr': 'CURRENT_TIMESTAMP'},
+            'instructor': {'default': 'Monk Gyatso', 'no_update': True}
         }
         new_table = Table('air_nomad_training', columns=col_def, cursor=cursor)
 

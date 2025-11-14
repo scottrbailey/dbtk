@@ -43,7 +43,7 @@ class XMLWriter(BaseWriter):
             pretty: Whether to format with indentation
         """
         # Preserve data types for XML output
-        super().__init__(data, filename, columns, encoding, preserve_data_types=True)
+        super().__init__(data, filename, columns, encoding, preserve_types=True)
         self.root_element = root_element
         self.record_element = record_element
         self.pretty = pretty

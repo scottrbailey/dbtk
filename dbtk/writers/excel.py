@@ -47,7 +47,7 @@ class ExcelWriter(BaseWriter):
             overwrite_sheet: Whether to overwrite existing sheet
         """
         # Preserve data types for Excel output
-        super().__init__(data, filename, columns, encoding='utf-8', preserve_data_types=True)
+        super().__init__(data, filename, columns, encoding='utf-8', preserve_types=True)
         self.sheet = sheet
         self.include_headers = include_headers
         self.overwrite_sheet = overwrite_sheet

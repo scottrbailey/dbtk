@@ -38,7 +38,7 @@ class FixedWidthWriter(BaseWriter):
             fill_char: Character to use for padding
         """
         # Always convert to text for fixed-width output
-        super().__init__(data, filename, columns, encoding, preserve_data_types=False)
+        super().__init__(data, filename, columns, encoding, preserve_types=False)
 
         self.column_widths = list(column_widths)
         self.right_align_numbers = right_align_numbers
