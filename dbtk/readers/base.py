@@ -8,15 +8,18 @@ header normalization across all reader implementations.
 """
 
 import itertools
+import logging
 import re
 import time
 
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
 from collections import OrderedDict
+from os import path
 from ..record import Record
 from ..defaults import settings
 
+logger = logging.getLogger(__name__)
 
 class Clean:
     """Header cleaning levels for column names."""
@@ -94,6 +97,7 @@ class ReturnType:
     DEFAULT = RECORD
 
 class _Progress:
+    """ Helper class for displaying progress bar. """
     __slots__ = ('tell', 'total')
 
     def __init__(self, obj):
@@ -112,7 +116,12 @@ class _Progress:
             self.tell = obj.tell
         else:
             # Excel: fake byte size from row count
-            rows = getattr(obj, 'max_row', 1_000_000)
+            if hasattr(obj, 'nrows'):
+                #xlrd
+                rows = getattr(obj, 'nrows', 65_000)
+            else:
+                # openpyxl
+                rows = getattr(obj, 'max_row', 1_000_000)
             self.total = rows * 1024
             self.tell = lambda: getattr(obj, '_current_row', 1) * 1024
 
@@ -121,7 +130,7 @@ class _Progress:
             return ""
         pos = self.tell()
         pct = pos / self.total
-        filled = round(20 * pct)  # ← ROUND, NOT INT
+        filled = round(20 * pct)
         bar = "█" * filled + "░" * (20 - filled)
         return f"{bar} {pos // 1024:,}K/{self.total // 1024:,}K"
 
@@ -307,6 +316,7 @@ class Reader(ABC):
             if self._big:
                 print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} ✅")
             print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
+            logger.info(f"Read {self.record_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
             raise  # ← let for-loop end
 
         self.record_num += 1
@@ -316,6 +326,31 @@ class Reader(ABC):
                   f"({self.record_num:,})", end="", flush=True)
 
         return self._create_record(row_data)
+
+    def __repr__(self):
+        source = self._get_source(base_name=True)
+        if source:
+            source = f"'{source}'"
+        return f"{self.__class__.__name__}({source})"
+
+    def _get_source(self, base_name: Optional[bool] = False) -> str:
+        """ Get the source filename for the Reader.
+
+        Args:
+            base_name: If True, return the base filename (no path)
+
+        Returns: filename
+        """
+
+        if hasattr(self, 'fp') and hasattr(self.fp, 'name'):
+            source = self.fp.name
+        elif hasattr(self, 'source'):
+            source = self.source
+        else:
+            source = ''
+        if base_name:
+            source = path.basename(source)
+        return source
 
     @abstractmethod
     def _read_headers(self) -> List[str]:
@@ -338,7 +373,6 @@ class Reader(ABC):
             self._data_iter = itertools.islice(gen, start, stop)
 
         return next(self._data_iter)
-
 
     def _cleanup(self):
         """
