@@ -152,7 +152,7 @@ class Reader(ABC):
     Common Features
     ---------------
     * **Automatic header cleaning** - Standardize messy column names
-    * **Row number tracking** - Automatic rownum field for debugging
+    * **Row number tracking** - Automatic _row_num field for debugging
     * **Record skipping** - Skip header rows or bad data
     * **Record limiting** - Process only first N records
     * **Flexible return types** - Record objects or dictionaries
@@ -162,7 +162,7 @@ class Reader(ABC):
     Parameters
     ----------
     add_rownum : bool, default True
-        Add a 'rownum' field to each record containing the 1-based row number
+        Add a '_row_num' field to each record containing the 1-based row number
     clean_headers : Clean or str, optional
         Header cleaning level. Options: Clean.LOWER_NOSPACE (default), Clean.STANDARDIZE,
         Clean.NONE. Can also pass string like 'lower_nospace'.
@@ -240,7 +240,7 @@ class Reader(ABC):
         Parameters
         ----------
         add_rownum : bool, default True
-            Add a 'rownum' field to each record containing the 1-based row number
+            Add a '_row_num' field to each record containing the 1-based row number
         clean_headers : Clean or str, optional
             Header cleaning level from Clean enum or string. If None, uses
             default_header_clean from settings (default: Clean.LOWER_NOSPACE)
@@ -273,19 +273,20 @@ class Reader(ABC):
         if clean_headers is None:
             clean_headers = settings.get('default_header_clean', Clean.LOWER_NOSPACE)
         self.clean_headers = Clean.from_string(clean_headers)
-        self.record_num = 0
+        self._row_num = 0
         self.skip_records = skip_records
         self.max_records = max_records
         self.return_type = return_type
         self._record_class = None
-        self._raw_headers = headers
+        self._raw_headers: Optional[List[str]] = headers
         self._headers: List[str] = []
-        self._headers_initialized = False
+        self._headers_initialized: bool = False
         self._data_iter: Optional[Iterator[List[Any]]] = None
-        self._trackable = None
-        self._prog = None
-        self._big = False
-        self._start_time = 0 # will get updated when the first record is read
+        self._trackable = None          # used by progress tracker
+        self._prog: _Progress = None    # progress tracker _Progress object
+        self._big: bool = False         # True if source > 5MB (adds progress bar)
+        self._source: str = None        # keep track of source filename for subclasses that use a file pointer directly (Excel)
+        self._start_time: float = 0     # will get updated when the first record is read (time.monotonic())
 
     def __enter__(self):
         """Context manager entry."""
@@ -312,18 +313,18 @@ class Reader(ABC):
             row_data = self._read_next_row()
         except StopIteration:
             took = time.monotonic() - self._start_time
-            rate = self.record_num / took if took else 0
+            rate = self._row_num / took if took else 0
             if self._big:
                 print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} ✅")
             print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
-            logger.info(f"Read {self.record_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
+            logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
             raise  # ← let for-loop end
 
-        self.record_num += 1
+        self._row_num += 1
 
-        if self._big and self.record_num % 50_000 == 0:
+        if self._big and self._row_num % 50_000 == 0:
             print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} "
-                  f"({self.record_num:,})", end="", flush=True)
+                  f"({self._row_num:,})", end="", flush=True)
 
         return self._create_record(row_data)
 
@@ -332,6 +333,22 @@ class Reader(ABC):
         if source:
             source = f"'{source}'"
         return f"{self.__class__.__name__}({source})"
+
+    @property
+    def source(self) -> str:
+        """
+        Get the filename of the source file.
+
+        For the XLSXReader and XLSReader, the source must be set manually because the Workbook objects do not keep
+        a reference to the original file.
+        """
+        if self._source is None:
+            self._source = self._get_source()
+        return self._source
+
+    @source.setter
+    def source(self, value: str):
+        self._source = value
 
     def _get_source(self, base_name: Optional[bool] = False) -> str:
         """ Get the source filename for the Reader.
@@ -351,6 +368,19 @@ class Reader(ABC):
         if base_name:
             source = path.basename(source)
         return source
+
+    @property
+    def row_count(self) -> int:
+        """
+        Returns the number of rows.
+
+        This property provides access to the total number of rows, which
+        is stored in the private attribute `_row_num`.
+
+        Returns:
+            int: The total number of rows.
+        """
+        return self._row_num
 
     @abstractmethod
     def _read_headers(self) -> List[str]:
@@ -392,9 +422,11 @@ class Reader(ABC):
         # Clean headers
         self._headers = [Clean.normalize(h, self.clean_headers) for h in raw_headers]
 
-        # Add rownum if requested and not already present
-        if self.add_rownum and 'rownum' not in self._headers:
-            self._headers.append('rownum')
+        # Add self.add_rownum if requested and not already present
+        if self.add_rownum:
+            if '_row_num' in self._headers:
+                raise ValueError("Header '_row_num' already exists. Remove it or set add_rownum=False.")
+            self._headers.append('_row_num')
 
         # Create Record subclass only if return_type is 'record'
         if self.return_type == ReturnType.RECORD:
@@ -419,14 +451,14 @@ class Reader(ABC):
         # Make a copy to avoid modifying the original
         row_data = list(row_data)
 
-        # Pad with None if row is shorter than expected (excluding rownum)
-        expected_data_cols = len(self._headers) - (1 if self.add_rownum and 'rownum' in self._headers else 0)
+        # Pad with None if row is shorter than expected (excluding _row_num)
+        expected_data_cols = len(self._headers) - (1 if self.add_rownum and '_row_num' in self._headers else 0)
         while len(row_data) < expected_data_cols:
             row_data.append(None)
 
-        # Add rownum if it's in headers (always goes at the end)
-        if self.add_rownum and 'rownum' in self._headers:
-            row_data.append(self.skip_records + self.record_num)
+        # Add _row_num if it's in headers (always goes at the end)
+        if self.add_rownum and '_row_num' in self._headers:
+            row_data.append(self.skip_records + self._row_num)
 
         # Truncate if row is longer than headers
         if len(row_data) > len(self._headers):

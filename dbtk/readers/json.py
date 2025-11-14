@@ -26,7 +26,7 @@ class JSONReader(Reader):
         Flatten nested objects with dot notation. For example, ``{"user": {"name": "Bob"}}``
         becomes ``{"user.name": "Bob"}``. Arrays are preserved as-is.
     add_rownum : bool, default True
-        Add rownum field to each record
+        Add _row_num field to each record
     clean_headers : Clean, default Clean.DEFAULT
         Header cleaning level
     skip_records : int, default 0
@@ -193,7 +193,7 @@ class NDJSONReader(Reader):
 
         Args:
             fp: File pointer to NDJSON file (one JSON object per line)
-            add_rownum: Add rownum to each record
+            add_rownum: Add _row_num to each record
             clean_headers: Header cleaning level
             skip_records: Number of records to skip from the beginning
             max_records: Maximum number of records to read (None = unlimited)

@@ -127,13 +127,13 @@ class ExcelWriter(BaseWriter):
                     cell.value = value
                     cell.style = 'datetime_style'
                     # Update width tracking for datetime format
-                    if self.row_count < width_sample_size:
+                    if self._row_num < width_sample_size:
                         column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)  # "YYYY-MM-DD HH:MM:SS"
                 elif isinstance(value, (date, datetime)):
                     cell.value = value
                     cell.style = 'date_style'
                     # Update width tracking for date format
-                    if self.row_count < width_sample_size:
+                    if self._row_num < width_sample_size:
                         column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)  # "YYYY-MM-DD"
                 elif value is None:
                     cell.value = ''
@@ -141,11 +141,11 @@ class ExcelWriter(BaseWriter):
                 else:
                     cell.value = value
                     # Update column width tracking (only for sample)
-                    if self.row_count < width_sample_size:
+                    if self._row_num < width_sample_size:
                         value_length = len(str(value))
                         column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
 
-            self.row_count += 1
+            self._row_num += 1
 
         # Apply column widths using get_column_letter
         for col_idx, width in enumerate(column_widths, 1):
@@ -160,8 +160,8 @@ class ExcelWriter(BaseWriter):
         """Override to bypass file handle creation and call _write_data directly."""
         try:
             self._write_data(None)  # Pass None since we don't need file_obj
-            logger.info(f"Wrote {self.row_count} rows to {self.filename}")
-            return self.row_count
+            logger.info(f"Wrote {self._row_num} rows to {self.filename}")
+            return self._row_num
         except Exception as e:
             logger.error(f"Error writing Excel data: {e}")
             raise

@@ -109,7 +109,7 @@ class XMLWriter(BaseWriter):
                 elem = etree.SubElement(record_elem, key)
                 elem.text = self._format_xml_value(value)
 
-            self.row_count += 1
+            self._row_num += 1
 
         # Generate XML string using lxml's built-in pretty printing
         xml_str = etree.tostring(root, encoding='unicode', pretty_print=self.pretty)
@@ -141,8 +141,8 @@ class XMLStreamer(XMLWriter):
                                 if value is not None:
                                     xf.write(self._format_xml_value(value))
 
-                    self.row_count += 1
-                    if self.row_count % 1000 == 0:
+                    self._row_num += 1
+                    if self._row_num % 1000 == 0:
                         xf.flush()
 
 

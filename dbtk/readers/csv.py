@@ -35,7 +35,7 @@ class CSVReader(Reader):
         Custom header names to use instead of reading from first row. Useful when
         CSV has no header row or you want to rename columns.
     add_rownum : bool, default True
-        Add 'rownum' field to each record with 1-based row number
+        Add '_row_num' field to each record with 1-based row number
     clean_headers : Clean, default Clean.DEFAULT
         Header cleaning level. See Clean enum for options.
     skip_records : int, default 0
@@ -123,7 +123,7 @@ class CSVReader(Reader):
         headers : List[str], optional
             Custom headers to use instead of reading from file
         add_rownum : bool, default True
-            Add rownum field to records
+            Add _row_num field to records
         clean_headers : Clean, default Clean.DEFAULT
             Header cleaning level
         skip_records : int, default 0

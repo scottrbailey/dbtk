@@ -276,6 +276,11 @@ class Table:
         """List of key/primary key column names."""
         return self._key_cols
 
+    @property
+    def row_count(self) -> int:
+        """Number of rows processed (calls to set_values())."""
+        return self.counts['records']
+
     def get_sql(self, operation: str) -> str:
         """
         Get SQL statement for the specified operation.

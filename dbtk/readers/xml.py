@@ -55,7 +55,7 @@ class XMLReader(Reader):
             record_xpath: XPath expression to find record elements
             columns: List of XMLColumn definitions for custom extraction
             sample_size: Number of records to sample for column discovery
-            add_rownum: Add rownum to each record
+            add_rownum: Add _row_num to each record
             clean_headers: Header cleaning level (default: Clean.DEFAULT)
             skip_records: Number of data records to skip after headers
             max_records: Maximum number of records to read, or None for all

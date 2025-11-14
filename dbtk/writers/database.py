@@ -86,13 +86,13 @@ class DatabaseWriter(BaseWriter):
                     else:
                         self.target_cursor.executemany(self.insert_sql, batch)
 
-                    self.row_count += len(batch)
+                    self._row_num += len(batch)
                     batch = []
 
                     # Commit periodically
-                    if self.row_count % self.commit_frequency == 0:
+                    if self._row_num % self.commit_frequency == 0:
                         self.target_cursor.connection.commit()
-                        logger.info(f"Committed {self.row_count} records")
+                        logger.info(f"Committed {self._row_num} records")
 
             # Execute remaining batch
             if batch:
@@ -100,11 +100,11 @@ class DatabaseWriter(BaseWriter):
                     self.target_cursor.execute(self.insert_sql, batch[0])
                 else:
                     self.target_cursor.executemany(self.insert_sql, batch)
-                self.row_count += len(batch)
+                self._row_num += len(batch)
 
             # Final commit
             self.target_cursor.connection.commit()
-            logger.info(f"Copy completed: {self.row_count} records inserted into {self.target_table}")
+            logger.info(f"Copy completed: {self._row_num} records inserted into {self.target_table}")
 
         except self.target_cursor.connection.interface.DatabaseError as e:
             logger.error(f"Error during copy: {e}")
@@ -115,7 +115,7 @@ class DatabaseWriter(BaseWriter):
         """Override to bypass file handle creation and call _write_data directly."""
         try:
             self._write_data(None)  # Pass None since we don't need file_obj
-            return self.row_count
+            return self._row_num
         except Exception as e:
             logger.error(f"Error writing database data: {e}")
             raise

@@ -64,7 +64,7 @@ class BaseWriter(ABC):
     ----------
     columns : List[str]
         Column names detected from data or provided explicitly
-    row_count : int
+    _row_num : int
         Number of rows written (updated during write operation)
 
     Example
@@ -140,7 +140,7 @@ class BaseWriter(ABC):
         self.filename = filename
         self.encoding = encoding
         self.preserve_data_types = preserve_data_types
-        self.row_count = 0
+        self._row_num = 0
 
         # Setup data iterator and columns
         self.data_iterator, self.columns = self._get_data_iterator(data, columns)
@@ -150,6 +150,11 @@ class BaseWriter(ABC):
         # Limit stdout output to 20 rows
         if filename is None:
             self.data_iterator = itertools.islice(self.data_iterator, 20)
+
+    @property
+    def row_count(self) -> int:
+        """ Returns the number of rows written."""
+        return self._row_num
 
     def _get_file_handle(self, mode='w'):
         """
@@ -318,8 +323,8 @@ class BaseWriter(ABC):
         file_obj, should_close = self._get_file_handle()
         try:
             self._write_data(file_obj)
-            logger.info(f"Wrote {self.row_count} rows to {self.filename or 'stdout'}")
-            return self.row_count
+            logger.info(f"Wrote {self._row_num} rows to {self.filename or 'stdout'}")
+            return self._row_num
         except Exception as e:
             logger.error(f"Error writing data: {e}")
             raise

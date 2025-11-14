@@ -62,7 +62,7 @@ class CSVWriter(BaseWriter):
         for record in self.data_iterator:
             row = self._extract_row_values(record)
             writer.writerow(row)
-            self.row_count += 1
+            self._row_num += 1
 
 
 def to_csv(data,

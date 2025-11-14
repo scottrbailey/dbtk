@@ -94,7 +94,7 @@ class FixedWidthWriter(BaseWriter):
                 line += formatted_value
 
             file_obj.write(line + '\n')
-            self.row_count += 1
+            self._row_num += 1
 
         # Warn if values exceeded column widths
         if self.length_warning and self.truncate_overflow:

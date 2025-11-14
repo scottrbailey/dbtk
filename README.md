@@ -1,5 +1,8 @@
 # DBTK - Data Benders Toolkit
-<img src="/docs/assets/databender.png" height="320" style="float: right; padding-left: 50px"/>
+
+<div style="float: right; padding: 20px">
+    <img src="/docs/assets/databender.png" height="240" />
+</div>
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
 
@@ -192,9 +195,8 @@ with dbtk.connect('fire_nation_db') as db:
             specialization_table.set_values(record)
             if specialization_table.reqs_met:
                 specialization_table.exec_insert(reqs_checked=True)
-
-    # Report results. The Table class will log messages on completion.
-
+        # print(f"Read {}")
+    # Report results. The Table class will log messages on completion.   
     db.commit()
 
 # Check for errors - DBTK automatically logs all database operations and file errors
@@ -302,7 +304,7 @@ cursor.execute("SELECT * FROM firebenders WHERE rank = 'general'").fetchone()
 
 **Record objects - Maximum flexibility:**
 
-The Record cursor type (default) provides the most flexible interface for working with database rows:
+The Record cursor type (default) provides the most flexible interface for working with database and file data:
 
 ```python
 cursor = db.cursor('record')  # or just db.cursor()
@@ -335,6 +337,18 @@ print('email' in row)            # Check if column exists
 # Convert to dict or tuple when needed
 row_dict = dict(row)
 row_tuple = tuple(row)
+
+# Pretty print
+>>> row.pprint()
+trainee_id       : 1
+monk_name        : Master Aang
+home_temple      : Northern Air Temple
+mastery_rank     : 10
+bison_companion  : Lefty
+daily_meditation : 9.93
+birth_date       : 1965-12-16
+last_training    : 2024-12-25 15:51:42
+_row_num         : 1
 ```
 
 If it quacks like a dict, walks like a tuple, and iterates like a list - it's a Record! This duck-typed design gives you the flexibility to access data however makes sense for your code, without sacrificing performance. Records are memory-efficient and fast while providing the most flexible API. They're the recommended default for most use cases.
@@ -417,14 +431,14 @@ reader = dbtk.readers.CSVReader(
     skip_records=10,      # Skip N records after headers (useful for bad data)
     max_records=100,      # Only read first N records (useful for testing/sampling)
     return_type='dict',   # 'record' (default) or 'dict' for OrderedDict
-    add_rownum=True,      # Add 'rownum' field to each record (default True)
+    add_rownum=True,      # Add '_row_num' field to each record (default True)
     clean_headers=dbtk.readers.Clean.STANDARDIZE  # Header cleaning level
 )
 
 # Row numbers track position in source file
 with dbtk.readers.get_reader('data.csv', skip_records=5) as reader:
     for record in reader:
-        print(f"Row {record.rownum}: {record.name}")  # rownum starts at 6 (after skip)
+        print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
 ```
 
 **Header cleaning for messy data:**

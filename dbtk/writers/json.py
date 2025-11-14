@@ -50,7 +50,7 @@ class JSONWriter(BaseWriter):
     def _write_data(self, file_obj) -> None:
         """Write JSON data to file object."""
         records = [self._row_to_dict(record) for record in self.data_iterator]
-        self.row_count = len(records)
+        self._row_num = len(records)
         json.dump(records, file_obj, indent=self.indent, **self.json_kwargs)
 
 
@@ -82,8 +82,8 @@ class NDJSONWriter(JSONWriter):
             record_dict = self._row_to_dict(record)
             json_line = json.dumps(record_dict, **self.json_kwargs)
             file_obj.write(json_line + '\n')
-            self.row_count += 1
-            if self.row_count % 1000 == 0:
+            self._row_num += 1
+            if self._row_num % 1000 == 0:
                 file_obj.flush()
 
 

@@ -42,7 +42,7 @@ class XLSXReader(Reader):
         Args:
             worksheet: openpyxl.Worksheet object to read from.
             headers: Optional list of header names to use instead of reading from row 1.
-            add_rownum: If True, adds a rownum field to each record (default: True).
+            add_rownum: If True, adds a _row_num field to each record (default: True).
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_records: Number of data records to skip after headers (default: 0).
             max_records: Maximum number of records to read, or None for all (default: None).
@@ -113,7 +113,7 @@ class XLSReader(Reader):
         Args:
             worksheet: xlrd.Sheet object to read from.
             headers: Optional list of header names to use instead of reading from row 0.
-            add_rownum: If True, adds a rownum field to each record (default: True).
+            add_rownum: If True, adds a _row_num field to each record (default: True).
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_records: Number of data records to skip after headers (default: 0).
             max_records: Maximum number of records to read, or None for all (default: None).
@@ -131,7 +131,7 @@ class XLSReader(Reader):
         self._trackable = self.ws
         self.datemode = worksheet.book.datemode
         self._headers_read = False
-        self._start_row = 1 if headers is not None else 0  # xlrd 0-based indexing
+        self._start_row = 0 if headers is not None else 1  # xlrd 0-based indexing
 
     def _read_headers(self) -> List[str]:
         """Read the header row from the Excel worksheet (row 0) or use provided headers.
