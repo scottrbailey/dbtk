@@ -745,7 +745,7 @@ class TestUpdateExclusions:
 
 
 class TestSetCursor:
-    """Test set_cursor functionality and cache invalidation."""
+    """Test cursor setter functionality and cache invalidation."""
 
     def test_set_cursor_same_paramstyle(self, airbender_table, sqlite_db):
         """Test switching cursor with same paramstyle doesn't reset cache."""
@@ -755,7 +755,7 @@ class TestSetCursor:
         new_cursor = sqlite_db.cursor()
 
         # Switch cursor
-        airbender_table.set_cursor(new_cursor)
+        airbender_table.cursor = new_cursor
 
         new_sql = airbender_table.get_sql('insert')
 

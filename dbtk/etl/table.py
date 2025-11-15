@@ -202,7 +202,7 @@ class Table:
         validate_identifier(name)
         self._name = name
         self._cursor = cursor
-        self.__paramstyle = cursor.connection.interface.paramstyle
+        self._paramstyle = cursor.connection.interface.paramstyle
 
         # Validate each column and add sanitized bind_name
         validated_columns = {}
@@ -218,7 +218,7 @@ class Table:
             elif bool(col_def.get('nullable', True)) is False or col_def.get('required'):
                 req_cols.append(bind_name)
             validated_columns[col] = col_def
-        self.__columns = validated_columns
+        self._columns = validated_columns
         self.null_values = tuple(null_values)
         # Required columns (nullable=False or required=True)
         self._req_cols = tuple(req_cols)
@@ -254,17 +254,41 @@ class Table:
     @property
     def columns(self) -> dict:
         """Column metadata dictionary with types and constraints."""
-        return self.__columns
+        return self._columns
 
     @property
     def paramstyle(self) -> str:
         """Parameter style for SQL placeholders (from cursor)."""
-        return self.__paramstyle
+        return self._paramstyle
 
     @property
     def cursor(self) -> Cursor:
         """Database cursor for executing SQL operations."""
         return self._cursor
+
+    @cursor.setter
+    def cursor(self, value: Cursor):
+        """
+        Switch to a different cursor (e.g., different database/connection).
+
+        If paramstyle changes, invalidates cached SQL statements; otherwise, only counts are reset.
+
+        Args:
+            cursor: New cursor to use for this table
+        """
+        old_paramstyle = self._paramstyle
+        self._cursor = value
+        self._paramstyle = value.connection.interface.paramstyle
+
+        if old_paramstyle != self._paramstyle:
+            self._reset()
+            logger.info(
+                f"Table {self._name}: paramstyle changed from {old_paramstyle} "
+                f"to {self._paramstyle}, cache reset"
+            )
+        else:
+            self._reset_counts()
+            logger.info(f"Table {self._name}: cursor changed, counts reset")
 
     @property
     def req_cols(self) -> Tuple[str]:
@@ -338,17 +362,17 @@ class Table:
 
     def _finalize_sql(self, operation: str, sql: str) -> None:
         """Process SQL and store results."""
-        self._sql_statements[operation], self._param_config[operation] = process_sql_parameters(sql, self.__paramstyle)
+        self._sql_statements[operation], self._param_config[operation] = process_sql_parameters(sql, self._paramstyle)
 
     def _create_insert(self) -> str:
         """Generate INSERT statement with named parameters."""
         table_name = quote_identifier(self._name)
-        cols = list(self.__columns.keys())
+        cols = list(self._columns.keys())
         placeholders = []
 
         for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            db_expr = self.__columns[col].get('db_expr')
+            bind_name = self._columns[col]['bind_name']
+            db_expr = self._columns[col].get('db_expr')
             placeholders.append(self._wrap_db_expr(bind_name, db_expr))
 
         cols_str = ', '.join(quote_identifier(col) for col in cols)
@@ -370,7 +394,7 @@ class Table:
         quoted_cols = []
         conditions = []
 
-        for col, col_def in self.__columns.items():
+        for col, col_def in self._columns.items():
             ident = quote_identifier(col)
             quoted_cols.append(ident)
             bind_name = col_def['bind_name']
@@ -399,7 +423,7 @@ class Table:
         update_cols = []
         conditions = []
 
-        for col, col_def in self.__columns.items():
+        for col, col_def in self._columns.items():
             ident = quote_identifier(col)
             bind_name = col_def['bind_name']
             db_expr = col_def.get('db_expr')
@@ -427,8 +451,8 @@ class Table:
 
         for col in self._key_cols:
             quoted_col = quote_identifier(col)
-            bind_name = self.__columns[col]['bind_name']
-            db_expr = self.__columns[col].get('db_expr')
+            bind_name = self._columns[col]['bind_name']
+            db_expr = self._columns[col].get('db_expr')
             placeholder = self._wrap_db_expr(bind_name, db_expr)
             conditions.append(f"{quoted_col} = {placeholder}")
         conditions_str = '\n    AND '.join(conditions)
@@ -449,19 +473,19 @@ class Table:
         """Create INSERT ... ON DUPLICATE KEY/CONFLICT statement with named parameters."""
         db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
-        cols = list(self.__columns.keys())
+        cols = list(self._columns.keys())
         placeholders = []
 
         # Build INSERT portion with named placeholders
         for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            db_expr = self.__columns[col].get('db_expr')
+            bind_name = self._columns[col]['bind_name']
+            db_expr = self._columns[col].get('db_expr')
             placeholders.append(self._wrap_db_expr(bind_name, db_expr))
 
         # Get non-key columns for updates (excluding update_excludes)
         update_cols = []
         for col in cols:
-            bind_name = self.__columns[col]['bind_name']
+            bind_name = self._columns[col]['bind_name']
             if bind_name not in self._key_cols and bind_name not in self._update_excludes:
                 update_cols.append(col)
 
@@ -477,8 +501,8 @@ class Table:
             update_assignments = []
             for col in update_cols:
                 quoted_col = quote_identifier(col)
-                bind_name = self.__columns[col]['bind_name']
-                db_expr = self.__columns[col].get('db_expr')
+                bind_name = self._columns[col]['bind_name']
+                db_expr = self._columns[col].get('db_expr')
 
                 if db_expr and '#' in db_expr:
                     # Use alias syntax for MySQL 8.0.19+
@@ -501,7 +525,7 @@ class Table:
         elif db_type in ('postgres', 'sqlite'):
             # PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
             key_cols = []
-            for col, col_def in self.__columns.items():
+            for col, col_def in self._columns.items():
                 bind_name = col_def['bind_name']
                 if bind_name in self._key_cols:
                     key_cols.append(col)
@@ -511,8 +535,8 @@ class Table:
             update_assignments = []
             for col in update_cols:
                 quoted_col = quote_identifier(col)
-                bind_name = self.__columns[col]['bind_name']
-                db_expr = self.__columns[col].get('db_expr')
+                bind_name = self._columns[col]['bind_name']
+                db_expr = self._columns[col].get('db_expr')
 
                 if db_expr and '#' in db_expr:
                     assignment = f"{quoted_col} = {db_expr.replace('#', f'EXCLUDED.{quoted_col}')}"
@@ -541,19 +565,19 @@ class Table:
         """Create traditional MERGE statement with named parameters."""
         db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
-        cols = list(self.__columns.keys())
+        cols = list(self._columns.keys())
         placeholders = []
 
         # Build placeholders for source
         for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            db_expr = self.__columns[col].get('db_expr')
+            bind_name = self._columns[col]['bind_name']
+            db_expr = self._columns[col].get('db_expr')
             placeholders.append(self._wrap_db_expr(bind_name, db_expr))
 
         # Build key conditions for matching
         key_conditions = []
         key_cols = []
-        for col, col_def in self.__columns.items():
+        for col, col_def in self._columns.items():
             bind_name = col_def['bind_name']
             if bind_name in self._key_cols:
                 quoted_col = quote_identifier(col)
@@ -563,7 +587,7 @@ class Table:
         # Get non-key columns for updates (excluding update_excludes)
         update_cols = []
         for col in cols:
-            bind_name = self.__columns[col]['bind_name']
+            bind_name = self._columns[col]['bind_name']
             if bind_name not in self._key_cols and bind_name not in self._update_excludes:
                 update_cols.append(col)
 
@@ -695,10 +719,10 @@ class Table:
 
         param_names = self._param_config[operation]
         if not param_names:
-            return () if self.__paramstyle in ParamStyle.positional_styles() else {}
+            return () if self._paramstyle in ParamStyle.positional_styles() else {}
 
         # Map bind_names back to values using column lookup
-        bind_to_col = {col_def['bind_name']: col for col, col_def in self.__columns.items()}
+        bind_to_col = {col_def['bind_name']: col for col, col_def in self._columns.items()}
         filtered_values = {}
 
         for bind_name in param_names:
@@ -707,7 +731,7 @@ class Table:
                 if col in self.values:
                     filtered_values[bind_name] = self.values[col]
 
-        if self.__paramstyle in ParamStyle.positional_styles():
+        if self._paramstyle in ParamStyle.positional_styles():
             # Return tuple in the order parameters appear in SQL
             return tuple(filtered_values.get(param, None) for param in param_names)
         else:
@@ -766,36 +790,20 @@ class Table:
             values[col] = val
         self.values = values
 
-    def set_cursor(self, cursor: Cursor):
-        """
-        Switch to a different cursor (e.g., different database/connection).
-
-        If paramstyle changes, invalidates cached SQL statements.
-
-        Args:
-            cursor: New cursor to use for this table
-        """
-        old_paramstyle = self.__paramstyle
-        self._cursor = cursor
-        self.__paramstyle = cursor.connection.interface.paramstyle
-
-        if old_paramstyle != self.__paramstyle:
-            self._reset()
-            logger.info(
-                f"Table {self._name}: paramstyle changed from {old_paramstyle} "
-                f"to {self.__paramstyle}, cache reset"
-            )
+    def _reset_counts(self):
+        """ Resets all counts to zero. """
+        self.counts = {op: 0 for op in self.OPERATIONS}
+        self.counts['records'] = 0
+        self.counts['incomplete'] = 0
 
     def _reset(self):
         """Reset all cached state including SQL statements, parameters, counts, and values."""
         self._sql_statements = {op: None for op in self.OPERATIONS}
         self._param_config = {op: () for op in self.OPERATIONS}
-        self.counts = {op: 0 for op in self.OPERATIONS}
-        self.counts['records'] = 0
-        self.counts['incomplete'] = 0
         self._update_excludes = set()
         self._update_excludes_calculated = False
         self._record_fields = set()
+        self._reset_counts()
         self.values = {}
 
     @property
@@ -855,7 +863,7 @@ class Table:
 
         current_excludes = self._update_excludes
         excludes = []
-        for col, col_def in self.__columns.items():
+        for col, col_def in self._columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
             if field and field not in record_fields:

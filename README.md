@@ -167,7 +167,7 @@ with dbtk.connect('fire_nation_db') as db:
         'soldier_id': {'field': 'id', 'primary_key': True},
         'name': {'field': 'full_name', 'nullable': False},
         'rank': {'field': 'officer_rank', 'nullable': False},
-        'email': {'field': 'contact_email', 'fn': email_clean},
+        'email': {'field': 'contact_email', 'default': 'intel@firenation.com', 'fn': email_clean},
         'enlistment_date': {'field': 'join_date', 'fn': parse_date},
         'missions_completed': {'field': 'mission_count', 'fn': get_int},
         'status': {'default': 'active'}  # Default value for all
@@ -628,10 +628,10 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
     'home_village': {'field': 'birthplace', 'nullable': False},
     'firebending_skill': {'field': 'flame_control_level', 'fn': transforms.get_int},
     'enlistment_date': {'field': 'joined_army', 'fn': transforms.parse_date},
-    'combat_name': {'field': 'full_name', 'db_fn': 'generate_fire_nation_callsign(#)'},
-    'last_drill': {'db_fn': 'CURRENT_TIMESTAMP'},
+    'combat_name': {'field': 'full_name', 'db_expr': 'generate_fire_nation_callsign(#)'},
+    'last_drill': {'db_expr': 'CURRENT_TIMESTAMP'},
     'conscription_source': {'default': 'Sozin Recruitment Drive'}},
-                                   cursor=cursor)
+    cursor=cursor)
 
 # Process records with validation and upsert logic
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
@@ -653,7 +653,6 @@ print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts
 **Column configuration schema:**
 
 Each database column is configured with a dictionary specifying how to source and transform its value.
-Precedence: 
 
 ```python
 {
@@ -707,6 +706,34 @@ columns_config = {
     'created_at': {'db_expr': 'CURRENT_TIMESTAMP', 'no_update': True},
 }
 ```
+
+## Value Resolution Process
+
+For each column, `set_values()` processes data in this order:
+
+### 1. Value Sourcing
+- **field**: Extract from source record.  
+- If `field` is a list, value will also be a list.
+
+### 2. Null Conversion
+The value matches any entries in table.null_values it will be set to `None`. 
+This is configurable but the default is: `('', 'NULL', '<null>', '\\N')`
+
+### 3. Default Fallback
+If value is `None` or `''`, apply **default** if defined.
+
+### 4. Transformation
+Apply **fn** if defined. Functions can:
+- Transform existing values
+- Generate new values from scratch
+- If `fn` is a list, execute in order (pipeline).
+
+### 5. Database Expression
+If **db_expr** is defined:
+- **With `#`**: Pass value from steps 1-4 as parameter  
+  Example: `{'field': 'name', 'db_expr': 'UPPER(#)'}`
+- **Without `#`**: Standalone function (ignores steps 1-4)  
+  Example: `{'db_expr': 'CURRENT_TIMESTAMP'}`
 
 **Key features:**
 - Field mapping and renaming
