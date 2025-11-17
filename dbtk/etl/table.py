@@ -473,23 +473,28 @@ class Table:
         """Create INSERT ... ON DUPLICATE KEY/CONFLICT statement with named parameters."""
         db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
-        cols = list(self._columns.keys())
+
+        # Build INSERT portion
+        cols = []
         placeholders = []
-
-        # Build INSERT portion with named placeholders
-        for col in cols:
-            bind_name = self._columns[col]['bind_name']
-            db_expr = self._columns[col].get('db_expr')
-            placeholders.append(self._wrap_db_expr(bind_name, db_expr))
-
-        # Get non-key columns for updates (excluding update_excludes)
+        key_cols = []
         update_cols = []
-        for col in cols:
-            bind_name = self._columns[col]['bind_name']
-            if bind_name not in self._key_cols and bind_name not in self._update_excludes:
-                update_cols.append(col)
 
-        cols_str = ', '.join(quote_identifier(col) for col in cols)
+        for col, col_def in self._columns.items():
+            ident = quote_identifier(col)
+            bind_name = col_def['bind_name']
+            db_expr = col_def.get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
+
+            cols.append(ident)
+            placeholders.append(placeholder)
+
+            if bind_name in self._key_cols:
+                key_cols.append(ident)
+            elif bind_name not in self._update_excludes:
+                update_cols.append((col, ident, bind_name, db_expr))
+
+        cols_str = ', '.join(cols)
         placeholders_str = ', '.join(placeholders)
 
         if len(cols) > 4:
@@ -499,18 +504,14 @@ class Table:
         if db_type == 'mysql':
             # MySQL: INSERT ... ON DUPLICATE KEY UPDATE
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                bind_name = self._columns[col]['bind_name']
-                db_expr = self._columns[col].get('db_expr')
-
+            for col, ident, bind_name, db_expr in update_cols:
                 if db_expr and '#' in db_expr:
                     # Use alias syntax for MySQL 8.0.19+
-                    assignment = f"{quoted_col} = {db_expr.replace('#', f'new_vals.{quoted_col}')}"
+                    assignment = f"{ident} = {db_expr.replace('#', f'new_vals.{ident}')}"
                 elif db_expr:
-                    assignment = f"{quoted_col} = {db_expr}"
+                    assignment = f"{ident} = {db_expr}"
                 else:
-                    assignment = f"{quoted_col} = new_vals.{quoted_col}"
+                    assignment = f"{ident} = new_vals.{ident}"
                 update_assignments.append(assignment)
 
             update_clause = ', '.join(update_assignments)
@@ -523,27 +524,17 @@ class Table:
             ON DUPLICATE KEY UPDATE {update_clause}""")
 
         elif db_type in ('postgres', 'sqlite'):
-            # PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
-            key_cols = []
-            for col, col_def in self._columns.items():
-                bind_name = col_def['bind_name']
-                if bind_name in self._key_cols:
-                    key_cols.append(col)
-
-            conflict_cols = ', '.join(quote_identifier(col) for col in key_cols)
+            # PostgreSQL/SQLite: INSERT ... ON CONFLICT DO UPDATE
+            conflict_cols = ', '.join(key_cols)
 
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                bind_name = self._columns[col]['bind_name']
-                db_expr = self._columns[col].get('db_expr')
-
+            for col, ident, bind_name, db_expr in update_cols:
                 if db_expr and '#' in db_expr:
-                    assignment = f"{quoted_col} = {db_expr.replace('#', f'EXCLUDED.{quoted_col}')}"
+                    assignment = f"{ident} = {db_expr.replace('#', f'EXCLUDED.{ident}')}"
                 elif db_expr:
-                    assignment = f"{quoted_col} = {db_expr}"
+                    assignment = f"{ident} = {db_expr}"
                 else:
-                    assignment = f"{quoted_col} = EXCLUDED.{quoted_col}"
+                    assignment = f"{ident} = EXCLUDED.{ident}"
                 update_assignments.append(assignment)
 
             update_clause = ', '.join(update_assignments)
@@ -565,76 +556,67 @@ class Table:
         """Create traditional MERGE statement with named parameters."""
         db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
-        cols = list(self._columns.keys())
+
+        # Build column lists and placeholders
+        all_cols = []
         placeholders = []
-
-        # Build placeholders for source
-        for col in cols:
-            bind_name = self._columns[col]['bind_name']
-            db_expr = self._columns[col].get('db_expr')
-            placeholders.append(self._wrap_db_expr(bind_name, db_expr))
-
-        # Build key conditions for matching
         key_conditions = []
-        key_cols = []
-        for col, col_def in self._columns.items():
-            bind_name = col_def['bind_name']
-            if bind_name in self._key_cols:
-                quoted_col = quote_identifier(col)
-                key_conditions.append(f"t.{quoted_col} = s.{quoted_col}")
-                key_cols.append(col)
-
-        # Get non-key columns for updates (excluding update_excludes)
         update_cols = []
-        for col in cols:
-            bind_name = self._columns[col]['bind_name']
-            if bind_name not in self._key_cols and bind_name not in self._update_excludes:
-                update_cols.append(col)
+
+        for col, col_def in self._columns.items():
+            ident = quote_identifier(col)
+            bind_name = col_def['bind_name']
+            db_expr = col_def.get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
+
+            all_cols.append((col, ident, placeholder))
+            placeholders.append(placeholder)
+
+            if bind_name in self._key_cols:
+                key_conditions.append(f"t.{ident} = s.{ident}")
+            elif bind_name not in self._update_excludes:
+                update_cols.append((col, ident))
 
         # Database-specific MERGE templates
         if db_type == 'oracle':
             # Oracle MERGE with dual table
             source_items = []
-            for col, placeholder in zip(cols, placeholders):
-                quoted_col = quote_identifier(col)
-                source_items.append(f"{placeholder} AS {quoted_col}")
+            for col, ident, placeholder in all_cols:
+                source_items.append(f"{placeholder} AS {ident}")
 
             source_cols = ', '.join(source_items)
-            if len(cols) > 4:
+            if len(all_cols) > 4:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols} FROM dual"
             table_alias = "AS s"
 
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                update_assignments.append(f"t.{quoted_col} = s.{quoted_col}")
+            for col, ident in update_cols:
+                update_assignments.append(f"t.{ident} = s.{ident}")
 
-            insert_cols = ', '.join(quote_identifier(col) for col in cols)
-            insert_values = ', '.join(f"s.{quote_identifier(col)}" for col in cols)
+            insert_cols = ', '.join(ident for _, ident, _ in all_cols)
+            insert_values = ', '.join(f"s.{ident}" for _, ident, _ in all_cols)
 
         elif db_type == 'sqlserver':
             # SQL Server MERGE
             source_items = []
-            for col, placeholder in zip(cols, placeholders):
-                quoted_col = quote_identifier(col)
-                source_items.append(f"{placeholder} AS {quoted_col}")
+            for col, ident, placeholder in all_cols:
+                source_items.append(f"{placeholder} AS {ident}")
 
             source_cols = ', '.join(source_items)
-            if len(cols) > 4:
+            if len(all_cols) > 4:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols}"
             table_alias = "AS s"
 
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                update_assignments.append(f"t.{quoted_col} = s.{quoted_col}")
+            for col, ident in update_cols:
+                update_assignments.append(f"t.{ident} = s.{ident}")
 
-            insert_cols = ', '.join(quote_identifier(col) for col in cols)
-            insert_values = ', '.join(f"s.{quote_identifier(col)}" for col in cols)
+            insert_cols = ', '.join(ident for _, ident, _ in all_cols)
+            insert_values = ', '.join(f"s.{ident}" for _, ident, _ in all_cols)
 
         else:
             raise NotImplementedError(f"MERGE not supported for database: {db_type}")
@@ -644,7 +626,7 @@ class Table:
         if len(update_assignments) > 4:
             update_set = wrap_at_comma(update_set)
 
-        if len(cols) > 4:
+        if len(all_cols) > 4:
             insert_cols = wrap_at_comma(insert_cols)
             insert_values = wrap_at_comma(insert_values)
 
@@ -874,7 +856,8 @@ class Table:
             elif col_def.get('no_update'):
                 excludes.append(bind_name)
         if excludes:
-            logger.debug(f"Columns excluded from update/merge because source field is missing or no_update attribute set:\n{excludes}")
+            logger.debug(
+                f"Columns excluded from update/merge because source field is missing or no_update attribute set:\n{excludes}")
         self._update_excludes = set(excludes)
         self._update_excludes_calculated = True
         if current_excludes != self._update_excludes:
