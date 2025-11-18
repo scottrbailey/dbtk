@@ -846,6 +846,37 @@ tx.email_clean("  TOPH@BEIFONG.EARTHKINGDOM ")      # -> "toph@beifong.earthking
 tx.coalesce([None, "", "Jasmine Tea", "Ginseng Tea"])  # -> "Jasmine Tea"
 tx.indicator("Firebender", true_val="Fire Nation Citizen")  # Conditional values
 tx.get_int("123.45 gold pieces")  # -> 123
+
+```
+
+### Database Lookups and Validation
+
+TableLookup is a fast, cache-aware transform that turns any database table or view into a reusable lookup function.  It uses PrepareStatement, so it is portable across databases. Use the high-level Lookup() and Validate() factories directly in your Table column definitions to resolve codes, enrich records, or enforce referential integrity with almost no code.
+
+```python
+import dbtk
+from dbtk.etl.transforms import TableLookup, Lookup, Validate
+db = dbtk.connect('states_db') 
+cur = db.cursor()
+
+# TableLookup requires an active cursor
+state_lookup = TableLookup(cursor=cur, table='states', key_cols='state', return_cols='abbrev', 
+                           cache=TableLookup.CACHE_PRELOAD)
+state_lookup({'state': 'Pennsylvania'}) # -> 'PA'
+
+# Multiple return_cols return type will be based on cursor type (record, dict, namedtuple, list) 
+state_details = TableLookup(cursor=cur, table='states', key_cols='code', return_cols=['state', 'capital', 'region'])
+state_details({'code': 'CA'}) # -> Record('California', 'Sacramento', 'West')
+
+# Lookup and Validate defer cursor binding until Table is initialized
+recruit_table = dbtk.etl.Table('recruit', columns={
+    'id': {'field': 'soldier_id', 'key': True},
+    'name': {'field': 'name', 'nullable': False},
+    'state_code1': {'field': 'state_name', 'fn': Lookup('states', 'state', 'code', cache=TableLookup.CACHE_LAZY)}, # lookup code from state name
+    'state_code2': {'field': 'state_name', 'fn': 'lookup:states:state:code:1'}, # string shortcut for lookup above
+    'region1': {'field': 'region', 'fn': Validate('valid_regions','region_name', cache=TableLookup.CACHE_PRELOAD)}, 
+    'region': {'field': 'region', 'fn': 'validate:valid_regions:region_name:2'}}, # short cut for validation above
+    cursor=cur)
 ```
 
 **Custom transformations:**

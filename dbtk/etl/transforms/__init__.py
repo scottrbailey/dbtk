@@ -51,10 +51,11 @@ from .core import (
     numbersOnlyPattern,
 )
 
-from .datetime import parse_date, parse_datetime
 from .phone import phone_validate, phone_clean
 from .email import email_validate, email_clean
 from .address import validate_us_address, standardize_address
+from .datetime import parse_date, parse_datetime
+from .database import TableLookup, Lookup, Validate
 
 __all__ = [
     # Core text utilities
@@ -95,5 +96,10 @@ __all__ = [
 
     # Phone number
     'phone_validate',
-    'phone_clean'
+    'phone_clean',
+
+    # Database
+    'TableLookup',
+    'Lookup',
+    'Validate'
 ]

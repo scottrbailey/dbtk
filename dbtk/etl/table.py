@@ -15,6 +15,7 @@ from typing import Union, Tuple, Optional, Set, Dict, Any
 from ..cursors import Cursor
 from ..database import ParamStyle
 from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier
+from .transforms.database import Lookup, Validate, _DeferredTransform
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +246,45 @@ class Table:
         # Only require params that are actually used in this operation's SQL
         self._req_cols = tuple(col for col in self._req_cols
                                if col in self._param_config['insert'])
+        # Some transforms require a cursor (Lookup & Validator), we defer binding the cursors until now
+        for col_name, col_def in self._columns.items():
+            fn = col_def.get('fn')
+            if fn is None:
+                continue
+
+            # 1. Handle string shorthand: 'lookup:table:key:return' or 'validate:table:key'
+            if isinstance(fn, str):
+                s = fn.strip()
+                if s.startswith('lookup:'):
+                    parts = [p.strip() for p in s.split(':', 3)]
+                    if len(parts) != 4:
+                        raise ValueError(f"Invalid lookup shorthand for {col_name}: {fn} "
+                                         "(expected 'lookup:table:key_col:return_col')")
+                    col_def['fn'] = Lookup(parts[1], parts[2], parts[3])
+
+                elif s.startswith('validate:'):
+                    parts = [p.strip() for p in s.split(':', 2)]
+                    if len(parts) != 3:
+                        raise ValueError(f"Invalid validate shorthand for {col_name}: {fn} "
+                                         "(expected 'validate:table:key_col')")
+                    col_def['fn'] = Validate(parts[1], parts[2])
+
+                else:
+                    # Not a shorthand string → leave as-is (could be a real callable passed as string accidentally)
+                    continue
+
+            # 2. Now bind any deferred transforms (from Lookup/Validate factories)
+            new_fn = col_def['fn']
+            if isinstance(new_fn, _DeferredTransform):
+                col_def['fn'] = new_fn.bind(self._cursor)
+            elif isinstance(new_fn, (list, tuple)):
+                bound = []
+                for f in new_fn:
+                    if isinstance(f, _DeferredTransform):
+                        bound.append(f.bind(self._cursor))
+                    else:
+                        bound.append(f)
+                col_def['fn'] = bound
 
     @property
     def name(self) -> str:

@@ -55,21 +55,28 @@ class PreparedStatement:
     so it can be used in the same way as a regular cursor (fetchone(), fetchmany(), etc.).
     """
 
-    def __init__(self, cursor, filename: str, encoding: str = 'utf-8'):
+    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8'):
         """
         Create a prepared statement from a SQL file. It
 
         Args:
             cursor: The cursor that will execute this statement
+            query: SQL query string (optional)
             filename: Path to SQL file (relative to CWD)
             encoding: File encoding (default: utf-8)
         """
         self.cursor = cursor
-        self.filename = filename
 
-        # Read SQL from file
-        with open(filename, encoding=encoding) as f:
-            original_sql = f.read()
+        if filename:
+            self.filename = filename
+            # Read SQL from file
+            with open(filename, encoding=encoding) as f:
+                original_sql = f.read()
+        elif query is not None:
+            self.filename = None
+            original_sql = query
+        else:
+            raise ValueError('Must provide either query or filename')
 
         # Transform SQL for cursor's paramstyle
         self.sql, self.param_names = process_sql_parameters(
@@ -428,7 +435,7 @@ class Cursor:
             for user in users:
                 stmt.execute({'user_id': user.id, 'name': user.name})
         """
-        return PreparedStatement(self, filename, encoding)
+        return PreparedStatement(self, filename=filename, encoding=encoding)
 
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:
         """Execute a query against multiple parameter sets."""
