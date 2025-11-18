@@ -215,7 +215,7 @@ class ConfigManager:
     --------
     dbtk.connect : Connect to database using config
     generate_encryption_key : Create encryption key for passwords
-    encrypt_config_file_cli : Encrypt passwords in config file
+    encrypt_config_file : Encrypt passwords in config file
 
     Notes
     -----
@@ -653,7 +653,7 @@ def generate_encryption_key() -> str:
     return Fernet.generate_key().decode()
 
 
-def store_key_cli(key: Optional[str] = None, force: bool = False) -> None:
+def store_key(key: Optional[str] = None, force: bool = False) -> None:
     """CLI utility to store encryption key in system keyring."""
     if not HAS_CRYPTO:
         raise ValueError("Encryption not available. Install cryptography package to enable encryption.")
@@ -820,7 +820,7 @@ def get_setting(key: str, default: Any = None, config_file: Optional[str] = None
     return config_mgr.get_setting(key, default)
 
 
-def encrypt_password_cli(password: str = None, encryption_key: str = None) -> str:
+def encrypt_password(password: str = None, encryption_key: str = None) -> str:
     """
     CLI utility function to encrypt a password.
 
@@ -849,7 +849,7 @@ def encrypt_password_cli(password: str = None, encryption_key: str = None) -> st
     return encrypted
 
 
-def encrypt_config_file_cli(filename: str) -> None:
+def encrypt_config_file(filename: str) -> None:
     """CLI Utility to encrypt all passwords in a config file."""
     temp_config = ConfigManager.__new__(ConfigManager)
     temp_config._fernet = None
@@ -890,7 +890,7 @@ def encrypt_config_file_cli(filename: str) -> None:
             print(f"No passwords to encrypt in {filename}")
 
 
-def migrate_config_cli(source_file: str, target_file: str, new_encryption_key: str) -> None:
+def migrate_config(source_file: str, target_file: str, new_encryption_key: str) -> None:
     """Migrate config file with new encryption key."""
     from copy import deepcopy
     source_config_mgr = ConfigManager(source_file)
@@ -900,12 +900,12 @@ def migrate_config_cli(source_file: str, target_file: str, new_encryption_key: s
     for conn_name, conn_config in new_config.get('connections', {}).items():
         if 'encrypted_password' in conn_config:
             password = source_config_mgr.decrypt_password(conn_config['encrypted_password'])
-            conn_config['encrypted_password'] = encrypt_password_cli(password, new_encryption_key)
+            conn_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
 
     for pwd_name, pwd_config in new_config.get('passwords', {}).items():
         if 'encrypted_password' in pwd_config:
             password = source_config_mgr.decrypt_password(pwd_config['encrypted_password'])
-            pwd_config['encrypted_password'] = encrypt_password_cli(password, new_encryption_key)
+            pwd_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
 
     with open(target_file, 'w') as f:
         yaml.safe_dump(new_config, f, default_flow_style=False)

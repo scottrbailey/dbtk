@@ -1162,18 +1162,18 @@ import dbtk
 key = dbtk.config.generate_encryption_key()
 
 # Encrypt all passwords in configuration file
-dbtk.config.encrypt_config_file_cli('fire_nation_secrets.yml')
+dbtk.config.encrypt_config_file('fire_nation_secrets.yml')
 
 # Retrieve encrypted password
 sozin_secret = dbtk.config.get_password('phoenix_king_battle_plans')
 
 # Manually encrypt a single password
-encrypted = dbtk.config.encrypt_password_cli('only_azula_knows_this')
+encrypted = dbtk.config.encrypt_password('only_azula_knows_this')
 
 # Migrate configuration with new encryption key
 new_key = dbtk.config.generate_encryption_key()
-dbtk.config.migrate_config_cli('old_regime.yml', 'phoenix_king_era.yml',
-                                new_encryption_key=new_key)
+dbtk.config.migrate_config('old_regime.yml', 'phoenix_king_era.yml',
+                           new_encryption_key=new_key)
 ```
 
 ### Command Line Tools
@@ -1318,15 +1318,16 @@ DBTK supports multiple database adapters with automatic detection and fallback:
 3. **Materialize results when needed** - Don't fetch twice:
    ```python
    data = cursor.fetchall()  # Fetch once
-   writers.to_csv(data, 'output.csv')
-   writers.to_excel(data, 'output.xlsx')
+   dbtk.writers.to_csv(data, 'output.csv')
+   dbtk.writers.to_excel(data, 'output.xlsx')
    ```
 
 4. **Use transactions for bulk operations** - Commit once for many inserts:
    ```python
    with db.transaction():
        for record in records:
-           table.exec_insert(cursor)
+           table.set_values(record) 
+           table.exec_insert()
    ```
 
 5. **Use DataSurge for bulk operations** - Much faster than row-by-row:

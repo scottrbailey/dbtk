@@ -143,13 +143,13 @@ def main():
     elif args.command == 'generate-key':
         return config.generate_encryption_key()
     elif args.command == 'store-key':
-        return config.store_key_cli(args.key)
+        return config.store_key(args.key)
     elif args.command == 'encrypt-config':
-        return config.encrypt_config_file_cli(args.config_file)
+        return config.encrypt_config_file(args.config_file)
     elif args.command == 'encrypt-password':
-        return config.encrypt_password_cli(args.password)
+        return config.encrypt_password(args.password)
     elif args.command == 'migrate-config':
-        return config.migrate_config_cli(args.old_file, args.new_file, args.new_key)
+        return config.migrate_config(args.old_file, args.new_file, args.new_key)
 
 
 if __name__ == '__main__':

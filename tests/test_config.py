@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 from dbtk.config import (
     ConfigManager, connect, get_password, get_setting,
-    generate_encryption_key, encrypt_password_cli
+    generate_encryption_key, encrypt_password
 )
 
 
@@ -126,7 +126,7 @@ class TestEncryption:
         mock_instance.encrypt.return_value = b'encrypted_data'
         mock_fernet.return_value = mock_instance
 
-        result = encrypt_password_cli('test_password', 'test_key')
+        result = encrypt_password('test_password', 'test_key')
         assert result == 'encrypted_data'
 
     def test_decrypt_encrypted_connection_password(self, config_manager):
