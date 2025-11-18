@@ -254,23 +254,12 @@ class Table:
 
             # 1. Handle string shorthand: 'lookup:table:key:return' or 'validate:table:key'
             if isinstance(fn, str):
-                s = fn.strip()
-                if s.startswith('lookup:'):
-                    parts = [p.strip() for p in s.split(':', 3)]
-                    if len(parts) != 4:
-                        raise ValueError(f"Invalid lookup shorthand for {col_name}: {fn} "
-                                         "(expected 'lookup:table:key_col:return_col')")
-                    col_def['fn'] = Lookup(parts[1], parts[2], parts[3])
-
-                elif s.startswith('validate:'):
-                    parts = [p.strip() for p in s.split(':', 2)]
-                    if len(parts) != 3:
-                        raise ValueError(f"Invalid validate shorthand for {col_name}: {fn} "
-                                         "(expected 'validate:table:key_col')")
-                    col_def['fn'] = Validate(parts[1], parts[2])
-
-                else:
-                    # Not a shorthand string → leave as-is (could be a real callable passed as string accidentally)
+                try:
+                    col_def['fn'] = _DeferredTransform.from_string(fn)
+                except ValueError as e:
+                    # Not a valid shorthand - might be a callable name stored as string
+                    # Let it continue, will fail later if actually invalid
+                    logger.debug(f"Column {col_name}: {e}")
                     continue
 
             # 2. Now bind any deferred transforms (from Lookup/Validate factories)

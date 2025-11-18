@@ -360,6 +360,84 @@ class _DeferredTransform:
             extra={'on_fail': on_fail, 'validator': True}
         )
 
+    @classmethod
+    def from_string(cls, spec: str):
+        """
+        Parse string shorthand for Lookup/Validate transforms.
+
+        Formats:
+            'lookup:table:key_col:return_col[:cache]'
+            'validate:table:key_col[:cache]'
+
+        Cache can be:
+            - 0 or 'no_cache'  → CACHE_NONE
+            - 1 or 'lazy'      → CACHE_LAZY (default)
+            - 2 or 'pre_cache' → CACHE_PRELOAD
+
+        Examples:
+            'lookup:states:code:state'
+            'lookup:states:code:state:2'
+            'lookup:states:code:state:preload'
+            'lookup:customers:person_id,store_id:customer_id'
+            'validate:regions:name'
+            'validate:regions:name:no_cache'
+        """
+        parts = [p.strip() for p in spec.split(':')]
+
+        if len(parts) < 2 or len(parts) > 5:
+            raise ValueError(f"Invalid transform spec: '{spec}'")
+
+        transform_type = parts[0].lower()
+
+        # Parse cache option helper
+        def parse_cache(cache_str: str) -> int:
+            """Convert cache string/int to TableLookup constant."""
+            cache_lower = cache_str.lower()
+            if cache_lower in ('0', 'no_cache', 'none'):
+                return TableLookup.CACHE_NONE
+            elif cache_lower in ('1', 'lazy'):
+                return TableLookup.CACHE_LAZY
+            elif cache_lower in ('2', 'pre_cache', 'preload', 'precache'):
+                return TableLookup.CACHE_PRELOAD
+            else:
+                raise ValueError(
+                    f"Invalid cache value: '{cache_str}'. "
+                    f"Use 0/'no_cache', 1/'lazy', or 2/'pre_cache'"
+                )
+
+        if transform_type == 'lookup':
+            if len(parts) < 4:
+                raise ValueError(
+                    f"Invalid lookup spec: '{spec}'. "
+                    "Expected 'lookup:table:key_col:return_col[:cache]'"
+                )
+
+            table = parts[1]
+            key_col = parts[2].split(',') if ',' in parts[2] else parts[2]
+            return_col = parts[3].split(',') if ',' in parts[3] else parts[3]
+            cache = parse_cache(parts[4]) if len(parts) > 4 else TableLookup.CACHE_LAZY
+
+            return cls.create_lookup(table, key_col, return_col, cache=cache)
+
+        elif transform_type == 'validate':
+            if len(parts) < 3:
+                raise ValueError(
+                    f"Invalid validate spec: '{spec}'. "
+                    "Expected 'validate:table:key_col[:cache]'"
+                )
+
+            table = parts[1]
+            key_col = parts[2].split(',') if ',' in parts[2] else parts[2]
+            cache = parse_cache(parts[3]) if len(parts) > 3 else TableLookup.CACHE_LAZY
+
+            return cls.create_validator(table, key_col, cache=cache)
+
+        else:
+            raise ValueError(
+                f"Unknown transform type: '{transform_type}'. "
+                "Must be 'lookup' or 'validate'"
+            )
+
     def bind(self, cursor) -> Callable[[Any], Any]:
         if self._bound_fn is not None:
             return self._bound_fn

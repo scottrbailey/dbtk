@@ -872,10 +872,11 @@ state_details({'code': 'CA'}) # -> Record('California', 'Sacramento', 'West')
 recruit_table = dbtk.etl.Table('recruit', columns={
     'id': {'field': 'soldier_id', 'key': True},
     'name': {'field': 'name', 'nullable': False},
-    'state_code1': {'field': 'state_name', 'fn': Lookup('states', 'state', 'code', cache=TableLookup.CACHE_LAZY)}, # lookup code from state name
-    'state_code2': {'field': 'state_name', 'fn': 'lookup:states:state:code:1'}, # string shortcut for lookup above
-    'region1': {'field': 'region', 'fn': Validate('valid_regions','region_name', cache=TableLookup.CACHE_PRELOAD)}, 
-    'region': {'field': 'region', 'fn': 'validate:valid_regions:region_name:2'}}, # short cut for validation above
+    'state_code1': {'field': 'state_name', 'fn': Lookup('states', 'state', 'code', cache=TableLookup.CACHE_PRELOAD)}, # lookup code from state name
+    'state_code2': {'field': 'state_name', 'fn': 'lookup:states:state:code:preload'}, # string shortcut for lookup above
+    'capital': {'field': 'state_name', 'fn': 'lookup:states:state:capital'},
+    'region1': {'field': 'region', 'fn': Validate('valid_regions','region_name')}, 
+    'region2': {'field': 'region', 'fn': 'validate:valid_regions:region_name'}}, # short cut for validation above
     cursor=cur)
 ```
 
