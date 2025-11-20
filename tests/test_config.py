@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 from dbtk.config import (
     ConfigManager, connect, get_password, get_setting,
-    generate_encryption_key, encrypt_password
+    _generate_encryption_key, encrypt_password
 )
 
 
@@ -114,7 +114,7 @@ class TestEncryption:
     @patch('dbtk.config.HAS_CRYPTO', True)
     def test_generate_encryption_key(self):
         """Test encryption key generation."""
-        key = generate_encryption_key()
+        key = _generate_encryption_key()
         assert key is not None
         assert len(key) > 20  # Fernet keys are base64 encoded, should be longer
 

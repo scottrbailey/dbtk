@@ -1159,7 +1159,7 @@ Secure your credentials with encryption:
 import dbtk
 
 # Generate encryption key (store in DBTK_ENCRYPTION_KEY environment variable)
-key = dbtk.config.generate_encryption_key()
+key = dbtk.config._generate_encryption_key()
 
 # Encrypt all passwords in configuration file
 dbtk.config.encrypt_config_file('fire_nation_secrets.yml')
@@ -1171,7 +1171,7 @@ sozin_secret = dbtk.config.get_password('phoenix_king_battle_plans')
 encrypted = dbtk.config.encrypt_password('only_azula_knows_this')
 
 # Migrate configuration with new encryption key
-new_key = dbtk.config.generate_encryption_key()
+new_key = dbtk.config._generate_encryption_key()
 dbtk.config.migrate_config('old_regime.yml', 'phoenix_king_era.yml',
                            new_encryption_key=new_key)
 ```

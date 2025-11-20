@@ -637,22 +637,6 @@ class ConfigManager:
 _config_manager: Optional[ConfigManager] = None
 
 
-def generate_encryption_key() -> str:
-    """
-    Generate a random encryption key.
-
-    This function generates a random encryption key that can be used to encrypt
-    and decrypt data securely. The key is returned as a string and should be
-    stored in the DBTK_ENCRYPTION_KEY environment variable
-    or on keyring by calling `dbtk store-key [your key]`
-
-
-    Returns:
-        str: A randomly generated encryption key.
-    """
-    return Fernet.generate_key().decode()
-
-
 def store_key(key: Optional[str] = None, force: bool = False) -> None:
     """CLI utility to store encryption key in system keyring."""
     if not HAS_CRYPTO:
@@ -679,7 +663,7 @@ def store_key(key: Optional[str] = None, force: bool = False) -> None:
             return
 
     if key is None:
-        key = generate_encryption_key()
+        key = _generate_encryption_key()
     else:
         # make sure passed in key is valid
         if not _valid_fernet(key):
@@ -697,20 +681,31 @@ def store_key(key: Optional[str] = None, force: bool = False) -> None:
         raise ValueError(msg)
 
 
-def generate_encryption_key_cli() -> str:
-    """CLI utility to generate and store print encryption key."""
-    key = generate_encryption_key()
+def _generate_encryption_key() -> str:
+    """
+
+    """
+    return Fernet.generate_key().decode()
+
+
+def generate_encryption_key() -> str:
+    """
+    Generate a random encryption key.
+
+    This function generates a random encryption key that can be used to encrypt
+    and decrypt data securely. The key is returned as a string and should be
+    stored in the DBTK_ENCRYPTION_KEY environment variable
+    or on keyring by calling `dbtk store-key [your key]`
+
+
+    Returns:
+        str: A randomly generated encryption key."""
+    key = _generate_encryption_key()
     if HAS_KEYRING:
-        try:
-            keyring.set_password("dbtk", "encryption_key", key)
-            msg = "Generated and stored new encryption key in system keyring"
-            logger.info(msg)
-            print(msg)
-            return
-        except Exception:
-            logger.error("Failed to store encryption key in system keyring")
-    print(key)
-    print("Store this key in DBTK_ENCRYPTION_KEY environment variable")
+        msg = "Key generated.  Store in system keyring with `dbtk store-key [your key]`"
+    else:
+        msg = "Key generated.  Store in DBTK_ENCRYPTION_KEY environment variable"
+    print(msg)
     return key
 
 
