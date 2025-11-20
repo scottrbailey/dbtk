@@ -8,8 +8,6 @@ settings = {
     'default_db_type': 'postgres',
     'default_header_clean': 2,  # Clean.LOWER_NOSPACE as int
     'default_timezone': 'UTC',
-    'lookup_preload_threshold': 500,
-    'validator_preload_threshold': 1000,
 
     'logging': {
         'directory': './logs',

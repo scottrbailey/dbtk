@@ -258,7 +258,7 @@ def _get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str
         if driver_name in _user_drivers:
             priority -= 0.5
         return priority
-    available_drivers.sort(key=lambda d: DRIVERS[d]['priority'])
+    available_drivers.sort(key=sort_key)
     return available_drivers
 
 
@@ -344,8 +344,10 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
                 break
 
     if not required_satisfied:
-        print(params)
-        raise ValueError(f"Missing required parameters. Need one of: {driver_info['required_params']}")
+        msg = f"Missing required parameters. Need one of: {driver_info['required_params']}"
+        logger.error(msg)
+        logger.error(f"Current params: {params}")
+        raise ValueError(msg)
 
     # Apply parameter mapping and filter valid params
     param_map = driver_info.get('param_map', {})

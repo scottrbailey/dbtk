@@ -159,9 +159,11 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
         new_sql = re.sub(r':(\w+)', r'%(\1)s', sql)
         return new_sql, param_names
     elif paramstyle == ParamStyle.QMARK:
+        # Convert :param to ?
         new_sql = re.sub(r':(\w+)', r'?', sql)
         return new_sql, param_names
     elif paramstyle == ParamStyle.FORMAT:
+        # Convert :param to %s
         new_sql = re.sub(r':(\w+)', r'%s', sql)
         return new_sql, param_names
     elif paramstyle == ParamStyle.NUMERIC:

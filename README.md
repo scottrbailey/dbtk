@@ -658,17 +658,20 @@ Each database column is configured with a dictionary specifying how to source an
 {
     'database_column_name': {
         # DATA SOURCE
-        'field': 'source_field_name',      # Map from input record field       
-        'default': 'static_value',           # Use a default value for all records
-        'fn': transform_function,          # Python function to transform field value, no parens!
-        'db_expr': 'DATABASE_FUNCTION(#)',   # Call database function (e.g., CURRENT_TIMESTAMP, UPPER(#))    
+        'field': 'source_field_name',       # Map from input record field       
+        'default': 'static_value',          # Use a default value for all records
+        'fn': transform_function,           # Python function to transform field value, no parens!
+        'db_expr': 'DATABASE_FUNCTION(#)',  # Call database function (e.g., CURRENT_TIMESTAMP, UPPER(#))    
 
         # VALIDATION - optional:
-        'nullable': False,                 # Require value (default: True allows NULL)
-        'primary_key': True,               # Mark as primary key (implies nullable=False)
+        'nullable': False,                  # Column cannot be NULL
+        'required': True,                   # Column is required (inverse of nullable)
+        
+        'primary_key': True,                # Mark as primary key  
+        'key': True,                        # Mark as key column (synonym for primary_key)
 
         # UPDATE CONTROL - optional:
-        'no_update': True,                 # Exclude from UPDATE operations (default: False)
+        'no_update': True,                  # Exclude from UPDATE operations (default: False)
     }
 }
 ```

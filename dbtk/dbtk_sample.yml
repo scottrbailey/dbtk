@@ -7,8 +7,6 @@ settings:
   default_cursor_type: record
   default_header_clean: 2  # Clean.LOWER_NOSPACE
   default_timezone: UTC
-  lookup_preload_threshold: 500  # if table size > threshold, preload all values for transforms.CodeLookup
-  validator_preload_threshold: 1000 # if table size > threshold, preload all values for transforms.CodeValidator
 
   # Logging configuration for integration scripts
   logging:

@@ -15,10 +15,12 @@ from typing import Union, Tuple, Optional, Set, Dict, Any
 from ..cursors import Cursor
 from ..database import ParamStyle
 from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier
-from .transforms.database import Lookup, Validate, _DeferredTransform
+from .transforms.database import _DeferredTransform
 
 logger = logging.getLogger(__name__)
 
+# SQL expressions that need no parameters or parentheses
+DB_CONSTANTS = frozenset(['sysdate', 'systimestamp', 'user', 'current_timestamp', 'current_date', 'current_time'])
 
 class Table:
     """
@@ -385,7 +387,8 @@ class Table:
         if '(' in db_expr and ')' in db_expr:
             # Contains parentheses - assume it's a complete expression
             return db_expr
-        if db_expr.lower() in ('sysdate', 'systimestamp', 'user', 'current_timestamp', 'current_date', 'current_time'):
+        if db_expr.lower() in DB_CONSTANTS:
+            # No parens (or whining about them) required.
             return db_expr
         return f'{db_expr}(:{col_name})'
 
@@ -878,7 +881,7 @@ class Table:
             bind_name = col_def['bind_name']
             field = col_def.get('field')
             if field and field not in record_fields:
-                if field in self.key_cols:
+                if bind_name in self.key_cols:
                     raise ValueError(f"A key column {col} is sourced from {field}, but is missing from source.")
                 else:
                     excludes.append(bind_name)
