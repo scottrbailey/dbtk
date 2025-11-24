@@ -11,7 +11,7 @@ from typing import List, Any, Optional, Iterator
 from collections import namedtuple, OrderedDict
 
 from .record import Record
-from .utils import ParamStyle, process_sql_parameters
+from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
@@ -186,11 +186,15 @@ class Cursor:
     _local_attrs = [
         'connection', 'column_case', 'debug', 'logger', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', '_cursor',
-        '_validate_row_factory'
+        '_row_factory_invalid', '_statement', '_bind_vars'
     ]
 
-    def __init__(self, connection, column_case: str = None,
-                 debug: bool = False, return_cursor: bool = False, logger=None, **kwargs):
+    def __init__(self,
+                 connection,
+                 column_case: Optional[str] = None,
+                 debug: Optional[bool] = False,
+                 return_cursor: Optional[bool] = False,
+                 **kwargs):
         """
         Initialize a cursor for database operations.
 
@@ -204,8 +208,6 @@ class Cursor:
             Enable debug output showing queries and bind variables
         return_cursor : bool, default False
             If True, execute() returns the cursor for method chaining
-        logger : callable, optional
-            Custom logger function for debug output
         **kwargs
             Additional arguments passed to the underlying database cursor
 
@@ -225,10 +227,11 @@ class Cursor:
         """
         self.connection = connection
         self.debug = debug
-        self.logger = logger
         self.record_factory = None
-        self._validate_row_factory = True
+        self._row_factory_invalid = True
         self.return_cursor = return_cursor
+        self._statement = None
+        self._bind_vars = None
         if column_case is None:
             column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
         self.column_case = column_case
@@ -283,27 +286,13 @@ class Cursor:
         else:
             raise StopIteration
 
-    def _create_row_factory(self) -> None:
+    def _create_record_factory(self) -> None:
         """Create the function to process each row. Override in subclasses."""
 
         def factory(*args):
             return list(args)
 
         self.record_factory = factory
-
-    def _sanitize_column_name(self, col_name: str, idx: int) -> str:
-        """Clean up column names to be valid Python identifiers."""
-        if col_name is None or col_name == '':
-            return f'column_{idx + 1}'
-
-        # Replace non-word characters with underscore
-        col_name = re.sub(r'\W+', '_', col_name)
-
-        # Handle Python keywords
-        if iskeyword(col_name):
-            col_name = col_name.upper()
-
-        return col_name
 
     def columns(self, case: Optional[str] = None) -> List[str]:
         """Return list of column names."""
@@ -324,7 +313,8 @@ class Cursor:
             cols = [c[0] for c in self.description]
 
         # Sanitize column names
-        return [self._sanitize_column_name(cols[i], i) for i in range(len(cols))]
+        return [sanitize_identifier(cols[i], i) for i in range(len(cols))]
+        #return [self._sanitize_column_name(cols[i], i) for i in range(len(cols))]
 
     def _is_ready(self) -> bool:
         """Check if cursor is ready to fetch results."""
@@ -332,31 +322,24 @@ class Cursor:
             raise Exception('Query has not been run or did not succeed.')
 
         if self.record_factory is None:
-            self._create_row_factory()
+            self._create_record_factory()
 
         return True
 
-    def _debug_info(self, query: str, bind_vars: tuple = ()) -> None:
-        """Print debug information."""
-        print(f'Query:\n{query}')
-        if bind_vars:
-            print(f'Bind vars:\n{bind_vars}')
-
     def execute(self, query: str, bind_vars: tuple = ()) -> None:
         """Execute a database query."""
-        self._validate_row_factory = True
+        self._row_factory_invalid = True
 
         if self.debug:
-            self._debug_info(query, bind_vars)
-
+            logger.debug(f'Query:\n{query}')
+            logger.debug(f'Bind vars:\n{bind_vars}')
+        """
         # Store query info if adapter doesn't
         if not hasattr(self._cursor, 'statement'):
             self.__dict__['statement'] = query
         if not hasattr(self._cursor, 'bind_vars'):
             self.__dict__['bind_vars'] = bind_vars
-
-        if self.logger:
-            self.logger(str(self.connection), query, bind_vars)
+        """
 
         # some adapters return a cursor instead of the Database API specified None
         _ = self._cursor.execute(query, bind_vars)
@@ -439,22 +422,18 @@ class Cursor:
 
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:
         """Execute a query against multiple parameter sets."""
-        self._validate_row_factory = True
+        self._row_factory_invalid = True
 
         if self.debug:
-            self._debug_info(query, bind_vars)
+            logger.debug(f'Executemany - Query:\n{query}')
+            logger.debug(f'Bind vars (first row):\n{bind_vars[0]}')
 
+        """
         if not hasattr(self._cursor, 'statement'):
             self.__dict__['statement'] = f'--executemany\n{query}'
         if not hasattr(self._cursor, 'bind_vars'):
             self.__dict__['bind_vars'] = bind_vars[0] if bind_vars else ()
-
-        if self.logger:
-            self.logger(
-                str(self.connection),
-                query,
-                bind_vars[0] if bind_vars else ()
-            )
+        """
 
         return self._cursor.executemany(query, bind_vars)
 
@@ -501,20 +480,6 @@ class Cursor:
             ]
         return []
 
-    def show_statement(self) -> str:
-        """Return the last executed statement with parameters."""
-        if hasattr(self, 'statement'):
-            statement = self.statement
-        elif hasattr(self._cursor, 'query'):
-            statement = self._cursor.query
-        else:
-            statement = 'No statement available'
-
-        if hasattr(self, 'bind_vars') and self.bind_vars:
-            statement += f'\nParams:\n{self.bind_vars!r}'
-
-        return statement
-
 
 class RecordCursor(Cursor):
     """Cursor that returns Record objects with attribute and dict-like access."""
@@ -524,21 +489,21 @@ class RecordCursor(Cursor):
         if self._cursor.description is None:
             raise Exception('Query has not been run or did not succeed.')
         elif self.record_factory is None:
-            self._create_row_factory()
-        elif self._validate_row_factory:
+            self._create_record_factory()
+        elif self._row_factory_invalid:
             # Check if columns have changed since last query
             if hasattr(self.record_factory, '_fields'):
                 if self.record_factory._fields != self.columns():
-                    self._create_row_factory()
+                    self._create_record_factory()
                 else:
-                    self._validate_row_factory = False
+                    self._row_factory_invalid = False
             else:
-                self._create_row_factory()
+                self._create_record_factory()
         return True
 
-    def _create_row_factory(self) -> None:
+    def _create_record_factory(self) -> None:
         """Create Record subclass with current columns."""
-        self._validate_row_factory = False
+        self._row_factory_invalid = False
         columns = self.columns()
 
         # Create dynamic Record subclass
@@ -557,28 +522,28 @@ class TupleCursor(Cursor):
         if self._cursor.description is None:
             raise Exception('Query has not been run or did not succeed.')
         elif self.record_factory is None:
-            self._create_row_factory()
-        elif self._validate_row_factory:
+            self._create_record_factory()
+        elif self._row_factory_invalid:
             # Check if columns have changed
             if hasattr(self.record_factory, '_fields'):
                 if self.record_factory._fields != tuple(self.columns()):
-                    self._create_row_factory()
+                    self._create_record_factory()
                 else:
-                    self._validate_row_factory = False
+                    self._row_factory_invalid = False
             else:
-                self._create_row_factory()
+                self._create_record_factory()
         return True
 
-    def _create_row_factory(self) -> None:
+    def _create_record_factory(self) -> None:
         """Create namedtuple factory with current columns."""
-        self._validate_row_factory = False
+        self._row_factory_invalid = False
         self.record_factory = namedtuple('TupleRecord', self.columns())
 
 
 class DictCursor(Cursor):
     """Cursor that returns OrderedDict objects."""
 
-    def _create_row_factory(self) -> None:
+    def _create_record_factory(self) -> None:
         """Create factory that returns OrderedDict."""
         columns = self.columns()
 

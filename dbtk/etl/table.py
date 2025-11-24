@@ -8,13 +8,12 @@ parameterized SQL statements for common operations.
 """
 
 import logging
-import re
 from textwrap import dedent
 from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
 from ..database import ParamStyle
-from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier
+from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier
 from .transforms.database import _DeferredTransform
 
 logger = logging.getLogger(__name__)
@@ -213,7 +212,7 @@ class Table:
         key_cols = []
         for col, col_def in columns.items():
             validate_identifier(col)
-            bind_name = self._sanitize_for_bind_param(col)
+            bind_name = sanitize_identifier(col)
             col_def['bind_name'] = bind_name
             if col_def.get('primary_key') or col_def.get('key'):
                 key_cols.append(bind_name)
@@ -360,18 +359,6 @@ class Table:
     def __repr__(self) -> str:
         """String representation for debugging."""
         return f"Table('{self.name}', {len(self.columns)} columns, {self.paramstyle})"
-
-    def _sanitize_for_bind_param(self, name: str) -> str:
-        """Convert a column name to a valid bind parameter name."""
-        # Replace non-alphanumeric chars with underscore, collapse multiple underscores
-        sanitized = re.sub(r'[^a-z0-9_]+', '_', name.lower())
-
-        # Ensure it starts with a letter
-        if not sanitized[0].isalpha():
-            sanitized = 'col_' + sanitized
-
-        # Remove trailing underscore if present
-        return sanitized.rstrip('_')
 
     def _wrap_db_expr(self, col_name: str, db_expr: str = None) -> str:
         """Wrap column placeholder with database function if provided."""

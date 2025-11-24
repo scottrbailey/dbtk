@@ -223,6 +223,21 @@ def quote_identifier(identifier: str) -> str:
     else:
         return identifier
 
+def sanitize_identifier(name: str, idx: int = 0) -> str:
+    """Sanitize an identifier/column name."""
+    if name is None or name == '':
+        return f'col_{idx + 1}'
+
+    # Replace non-alphanumeric chars with underscore, collapse multiple underscores
+    sanitized = re.sub(r'[^a-z0-9_]+', '_', name.lower())
+
+    # Ensure it starts with a letter
+    if not sanitized[0].isalpha():
+        sanitized = 'col_' + sanitized
+
+    # Remove trailing underscore if present
+    return sanitized.rstrip('_')
+
 
 def batch_iterable(iterable: Iterable[Any], batch_size: int) -> Iterable[List[Any]]:
     """
