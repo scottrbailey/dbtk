@@ -5,7 +5,6 @@ All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
 import logging
-
 from typing import List, Any, Optional, Iterator
 from collections import namedtuple, OrderedDict
 
@@ -54,7 +53,7 @@ class PreparedStatement:
     so it can be used in the same way as a regular cursor (fetchone(), fetchmany(), etc.).
     """
 
-    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8'):
+    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8-sig'):
         """
         Create a prepared statement from a SQL file. It
 
@@ -62,7 +61,7 @@ class PreparedStatement:
             cursor: The cursor that will execute this statement
             query: SQL query string (optional)
             filename: Path to SQL file (relative to CWD)
-            encoding: File encoding (default: utf-8)
+            encoding: File encoding (default: utf-8-sig)
         """
         self.cursor = cursor
 
@@ -183,7 +182,7 @@ class Cursor:
     """
 
     _local_attrs = [
-        'connection', 'column_case', 'debug', 'logger', 'return_cursor',
+        'connection', 'column_case', 'debug', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', '_cursor',
         '_row_factory_invalid', '_statement', '_bind_vars'
     ]
@@ -317,7 +316,6 @@ class Cursor:
 
         # Sanitize column names
         return [sanitize_identifier(cols[i], i) for i in range(len(cols))]
-        #return [self._sanitize_column_name(cols[i], i) for i in range(len(cols))]
 
     def _is_ready(self) -> bool:
         """Check if cursor is ready to fetch results."""
@@ -361,7 +359,7 @@ class Cursor:
             filename: Path to SQL file (relative to CWD)
             bind_vars: Dictionary of named parameters
             **kwargs:
-                encoding: File encoding (default: utf-8)
+                encoding: File encoding (default: utf-8-sig)
 
         Returns:
             Cursor if return_cursor=True, else None
@@ -392,9 +390,10 @@ class Cursor:
             return self.execute(transformed_sql, params)
 
         except Exception as e:
+            statement = locals().get('transformed_sql', 'N/A')
             logger.error(
                 f"Error executing SQL file: {filename}\n"
-                f"Transformed SQL: {transformed_sql}\n"
+                f"Transformed SQL: {statement}\n"
                 f"Parameters: {bind_vars}"
             )
             raise
