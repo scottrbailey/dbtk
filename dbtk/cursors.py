@@ -4,9 +4,8 @@ Cursor classes that wrap database cursors and provide different return types.
 All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
-import re
 import logging
-from keyword import iskeyword
+
 from typing import List, Any, Optional, Iterator
 from collections import namedtuple, OrderedDict
 
@@ -256,6 +255,10 @@ class Cursor:
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying cursor."""
+        if key == 'statement' and not hasattr(self._cursor, 'statement'):
+            return self._statement
+        if key == 'bind_vars' and not hasattr(self._cursor, 'bind_vars'):
+            return self._bind_vars
         return getattr(self._cursor, key)
 
     def __setattr__(self, key: str, value: Any) -> None:
@@ -333,13 +336,12 @@ class Cursor:
         if self.debug:
             logger.debug(f'Query:\n{query}')
             logger.debug(f'Bind vars:\n{bind_vars}')
-        """
-        # Store query info if adapter doesn't
+
+        # Store statement and bind_vars locally if the adapter doesn't
         if not hasattr(self._cursor, 'statement'):
-            self.__dict__['statement'] = query
+            self.__dict__['_statement'] = query
         if not hasattr(self._cursor, 'bind_vars'):
-            self.__dict__['bind_vars'] = bind_vars
-        """
+            self.__dict__['_bind_vars'] = bind_vars
 
         # some adapters return a cursor instead of the Database API specified None
         _ = self._cursor.execute(query, bind_vars)
@@ -367,7 +369,7 @@ class Cursor:
         Example:
             cursor.execute_file('queries/get_user.sql', {'user_id': 123})
         """
-        encoding = kwargs.get('encoding', 'utf-8')
+        encoding = kwargs.get('encoding', 'utf-8-sig')
 
         try:
             # Read SQL from file
@@ -392,11 +394,12 @@ class Cursor:
         except Exception as e:
             logger.error(
                 f"Error executing SQL file: {filename}\n"
+                f"Transformed SQL: {transformed_sql}\n"
                 f"Parameters: {bind_vars}"
             )
             raise
 
-    def prepare_file(self, filename: str, encoding: str = 'utf-8') -> PreparedStatement:
+    def prepare_file(self, filename: str, encoding: str = 'utf-8-sig') -> PreparedStatement:
         """
         Prepare a SQL statement from a file for repeated execution.
 
@@ -405,7 +408,7 @@ class Cursor:
 
         Args:
             filename: Path to SQL file (relative to CWD)
-            encoding: File encoding (default: utf-8)
+            encoding: File encoding (default: utf-8-sig)
 
         Returns:
             PreparedStatement object
@@ -428,14 +431,17 @@ class Cursor:
             logger.debug(f'Executemany - Query:\n{query}')
             logger.debug(f'Bind vars (first row):\n{bind_vars[0]}')
 
-        """
+        # Store statement and bind_vars (first row only) locally if the adapter doesn't
         if not hasattr(self._cursor, 'statement'):
-            self.__dict__['statement'] = f'--executemany\n{query}'
+            self.__dict__['_statement'] = query
         if not hasattr(self._cursor, 'bind_vars'):
-            self.__dict__['bind_vars'] = bind_vars[0] if bind_vars else ()
-        """
+            self.__dict__['_bind_vars'] = bind_vars[0]
 
-        return self._cursor.executemany(query, bind_vars)
+        _ = self._cursor.executemany(query, bind_vars)
+        if self.return_cursor:
+            return self
+        else:
+            return None
 
     def selectinto(self, query: str, bind_vars: tuple = ()) -> Any:
         """Execute query that must return exactly one row."""

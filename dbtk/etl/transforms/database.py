@@ -183,7 +183,7 @@ class TableLookup:
 
         # Complete SQL
         query = f"SELECT {select_clause} FROM {self._table} WHERE {where_clause}"
-
+        logger.debug(f"TableLookup query: {query}")
         # Create PreparedStatement
         self._stmt = PreparedStatement(self._cursor, query=query)
 
@@ -264,10 +264,20 @@ class TableLookup:
             If multiple return columns (type depends on cursor)
         None
             If no match found
+
+        Raises
+        ------
+        ValueError
+            If required key columns are missing from bind_vars
         """
-        # Check for None/empty values in keys
+        # Check that all required keys are present in bind_vars
+        missing_keys = [k for k in self._key_col_names if k not in bind_vars]
+        if missing_keys:
+            raise ValueError(f"TableLookup for '{self._table}' missing required keys: {missing_keys}.")
+
+        # Check for None/empty values in keys (data quality issue, not an error)
         for key_name in self._key_col_names:
-            if bind_vars.get(key_name) in (None, ''):
+            if bind_vars[key_name] in (None, ''):
                 return False if self._validator_mode else None
 
         # No caching - always query
