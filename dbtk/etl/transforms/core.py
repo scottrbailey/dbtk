@@ -399,3 +399,140 @@ def get_list_item(val: str, index: int, delimiter: str = ',') -> Optional[str]:
         if index < len(values):
             return values[index].strip()
     return None
+
+
+def fn_resolver(shorthand: str):
+    """
+    Convert a concise string shorthand into a real transformation function.
+
+    This is the heart of dbtk's zero-lambda column definitions.
+
+    Used automatically by Table when ``fn`` is a string that does *not* start
+    with ``lookup:`` or ``validate:``.
+
+    Supported shorthands
+    --------------------
+    Basic type conversion
+        'int'            → get_int (None → None)
+        'int:0'          → get_int, but ''/None → 0
+        'float'          → get_float
+        'bool'           → get_bool
+        'digits'         → get_digits
+        'number'         → to_number
+
+    String manipulation
+        'lower', 'upper', 'strip' → str.lower / upper / strip
+        'maxlen:50'      → truncate to 50 characters
+        'maxlen:255'     → (most common in your life)
+
+    List / delimited strings
+        'split:,'        → split on comma (default)
+        'split:\t'       → split on tab
+        'split:|'        → split on pipe
+        'nth:0'          → first item
+        'nth:1'          → second item
+        'nth:-1'         → last item
+        'nth:2:\t'       → third tab-delimited field
+
+    Boolean indicators
+        'indicator'      → True → 'Y', False/None → None
+        'indicator:inv'  → False → 'Y', True → None  (the classic "active flag" case)
+        'indicator:Y/N'  → True → 'Y', False → 'N'
+        'indicator:1/0'  → True → '1', False → '0'
+
+    Examples
+    --------
+    ::
+    >>> from dbtk.etl.transforms.core import fn_resolver
+    >>> fn_resolver('int:0')('123')
+    123
+    >>> fn_resolver('int:0')('')
+    0
+    >>> fn_resolver('nth:0')('action,comedy,drama')
+    'action'
+    >>> fn_resolver('maxlen:10')('supercalifragilistic')
+    'supercalif'
+    >>> fn_resolver('indicator:inv')(False)
+    'Y'
+
+    Returns
+    -------
+    callable
+        A function that takes a single value and returns the transformed result.
+
+    Raises
+    ------
+    ValueError
+        If the shorthand is not recognized.
+
+    Note
+    ----
+    This function is deliberately small, fast, and pure. It knows nothing about
+    databases — that's what ``lookup:`` and ``validate:`` are for.
+    """
+    shorthand = shorthand.strip()
+
+    # Direct mappings
+    direct = {
+        'int': get_int,
+        'float': get_float,
+        'bool': get_bool,
+        'digits': get_digits,
+        'number': to_number,
+        'lower': str.lower,
+        'upper': str.upper,
+        'strip': str.strip,
+        'indicator': indicator,
+    }
+    if shorthand in direct:
+        return direct[shorthand]
+
+    # Special cases
+    if shorthand == 'int:0':
+        return lambda x: get_int(x) or 0
+
+    if shorthand == 'indicator:inv':
+        return lambda x: indicator(x, None, 'Y')
+
+    # indicator:true/false
+    if shorthand.startswith('indicator:'):
+        rest = shorthand[10:]
+        if rest == 'inv':
+            return lambda x: indicator(x, None, 'Y')
+        parts = rest.split('/', 1)
+        true_val = parts[0] or 'Y'
+        false_val = parts[1] if len(parts) > 1 else None
+        return lambda x: indicator(x, true_val, false_val)
+
+    # split:delimiter
+    if shorthand.startswith('split:'):
+        delim = shorthand[6:] or ','
+        return lambda x: parse_list(x, delimiter=delim) if x not in ('', None) else []
+
+    # nth:index[:delimiter]
+    if shorthand.startswith('nth:'):
+        rest = shorthand[4:]
+        delim = ','
+        if ':' in rest:
+            idx_part, delim = rest.split(':', 1)
+        else:
+            idx_part = rest
+        try:
+            idx = int(idx_part)
+        except ValueError:
+            raise ValueError(f"Invalid index in 'nth:' shorthand: {shorthand}")
+        return lambda x, i=idx, d=delim: get_list_item(x, i, delimiter=d)
+
+    # maxlen:n or trunc:n
+    if shorthand.startswith(('maxlen:', 'trunc:')):
+        prefix = 'maxlen:' if shorthand.startswith('maxlen:') else 'trunc:'
+        try:
+            n = int(shorthand[len(prefix):])
+            if n < 0:
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"Invalid length in {shorthand}")
+        return lambda x, n=n: str(x or '')[:n]
+
+    raise ValueError(f"Unrecognized fn shorthand: '{shorthand}'. "
+                     f"See dbtk.etl.transforms.core.fn() docstring for valid options.")

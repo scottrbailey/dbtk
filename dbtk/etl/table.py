@@ -15,6 +15,7 @@ from typing import Union, Tuple, Optional, Set, Dict, Any
 from ..cursors import Cursor
 from ..database import ParamStyle
 from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier
+from .transforms.core import fn_resolver
 from .transforms.database import _DeferredTransform
 
 logger = logging.getLogger(__name__)
@@ -51,10 +52,14 @@ class Table:
           Default/constant value to use for this column. Applied when source field
           is missing, empty, or None.
 
-        * **fn** (callable or list of callables, optional):
-          Transform function(s) applied to field value. If list, functions are
-          applied in order (pipeline). Function receives field value and returns
-          transformed value.
+        * **fn** (callable | list[callable] | str, optional):
+          Transformation function(s) to apply to the source value.
+          - callable → applied directly
+          - list → functions applied in order (pipeline)
+          - str → magic shorthand:
+              • Pure Python: 'int', 'int:0', 'maxlen:255', 'nth:0', 'indicator:inv', 'split:\t'
+              • Database:   'lookup:states:name:abbrev', 'validate:countries:code'
+          See ``dbtk.etl.transforms.core.fn_resolver()`` for full shorthand reference.
 
         * **db_expr** (str, optional):
           Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
@@ -257,7 +262,11 @@ class Table:
             # 1. Handle string shorthand: 'lookup:table:key:return' or 'validate:table:key'
             if isinstance(fn, str):
                 try:
-                    col_def['fn'] = _DeferredTransform.from_string(fn)
+                    fn_def = fn.strip()
+                    if fn_def.startswith(('lookup:', 'validate:')):
+                        col_def['fn'] = _DeferredTransform.from_string(fn_def)
+                    else:
+                        col_def['fn'] = fn_resolver(fn_def)
                 except ValueError as e:
                     # Not a valid shorthand - might be a callable name stored as string
                     # Let it continue, will fail later if actually invalid
@@ -269,13 +278,15 @@ class Table:
             if isinstance(new_fn, _DeferredTransform):
                 col_def['fn'] = new_fn.bind(self._cursor)
             elif isinstance(new_fn, (list, tuple)):
-                bound = []
+                pipeline = []
                 for f in new_fn:
                     if isinstance(f, _DeferredTransform):
-                        bound.append(f.bind(self._cursor))
+                        pipeline.append(f.bind(self._cursor))
+                    elif isinstance(f, str):
+                        pipeline.append(fn_resolver(f))
                     else:
-                        bound.append(f)
-                col_def['fn'] = bound
+                        pipeline.append(f)
+                col_def['fn'] = pipeline
 
     @property
     def name(self) -> str:
