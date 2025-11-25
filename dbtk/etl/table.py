@@ -8,6 +8,7 @@ parameterized SQL statements for common operations.
 """
 
 import logging
+
 from textwrap import dedent
 from typing import Union, Tuple, Optional, Set, Dict, Any
 
@@ -867,20 +868,45 @@ class Table:
         for col, col_def in self._columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
-            if field and field not in record_fields:
-                if bind_name in self.key_cols:
-                    raise ValueError(f"A key column {col} is sourced from {field}, but is missing from source.")
-                else:
-                    excludes.append(bind_name)
-            elif col_def.get('no_update'):
+
+            # Check if column is marked no_update
+            if col_def.get('no_update'):
                 excludes.append(bind_name)
+                continue
+
+            # Check if source fields are missing
+            if field:
+                # Handle list of fields
+                if isinstance(field, list):
+                    missing_fields = [f for f in field if f not in record_fields]
+                    if missing_fields:
+                        if bind_name in self.key_cols:
+                            raise ValueError(
+                                f"A key column {col} is sourced from {field}, "
+                                f"but {missing_fields} are missing from source."
+                            )
+                        else:
+                            excludes.append(bind_name)
+                # Handle single field
+                else:
+                    if field not in record_fields:
+                        if bind_name in self.key_cols:
+                            raise ValueError(
+                                f"A key column {col} is sourced from {field}, "
+                                f"but is missing from source."
+                            )
+                        else:
+                            excludes.append(bind_name)
+
         if excludes:
             logger.debug(
-                f"Columns excluded from update/merge because source field is missing or no_update attribute set:\n{excludes}")
+                f"Columns excluded from update/merge because source field is missing "
+                f"or no_update attribute set:\n{excludes}"
+            )
         self._update_excludes = set(excludes)
         self._update_excludes_calculated = True
         if current_excludes != self._update_excludes:
-            # Excluded columns have changed, invalidate the SQL statements so they are regenerated
+            # Excluded columns have changed, invalidate the SQL statements
             self._sql_statements['update'] = None
             self._sql_statements['merge'] = None
 
