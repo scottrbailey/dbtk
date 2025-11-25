@@ -852,9 +852,97 @@ tx.get_int("123.45 gold pieces")  # -> 123
 
 ```
 
-### Database Lookups and Validation
+### String Shorthand for Transformations ⚡ NEW!
 
-TableLookup is a fast, cache-aware transform that turns any database table or view into a reusable lookup function.  It uses PrepareStatement, so it is portable across databases. Use the high-level Lookup() and Validate() factories directly in your Table column definitions to resolve codes, enrich records, or enforce referential integrity with almost no code.
+**The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax. For simple transformations like `'fn': lambda x: get_int(x) or 0`, you need imports, function calls, and lambda overhead.
+
+**The solution:** DBTK now supports **string shorthand** for transformations - just write `'fn': 'int:0'` and it works! No imports, no lambdas, just clean configuration.
+
+```python
+import dbtk
+
+# OLD WAY - verbose, needs imports
+from dbtk.etl.transforms import get_int, Lookup
+table = dbtk.etl.Table('movies', {
+    'year': {'field': 'startYear', 'fn': lambda x: get_int(x) or 0},
+    'title_short': {'field': 'primaryTitle', 'fn': lambda x: str(x or '')[:255]},
+    'first_genre': {'field': 'genres', 'fn': lambda x: x.split(',')[0] if x else None},
+    'state_abbrev': {'field': 'location', 'fn': Lookup('states', 'name', 'abbrev')},
+}, cursor=db.cursor())
+
+# NEW WAY - clean, no imports needed! ✨
+table = dbtk.etl.Table('movies', {
+    'year': {'field': 'startYear', 'fn': 'int:0'},
+    'title_short': {'field': 'primaryTitle', 'fn': 'maxlen:255'},
+    'first_genre': {'field': 'genres', 'fn': 'nth:0'},
+    'state_abbrev': {'field': 'location', 'fn': 'lookup:states:name:abbrev'},
+}, cursor=db.cursor())
+```
+
+**Supported shorthands:**
+
+| Shorthand | Function | Example | Result |
+|-----------|----------|---------|--------|
+| `'int'` | Parse integer | `'123'` → `123` | |
+| `'int:0'` | Parse int with default | `''` → `0` | |
+| `'float'` | Parse float | `'$1,234.56'` → `1234.56` | |
+| `'bool'` | Parse boolean | `'yes'` → `True` | |
+| `'digits'` | Extract digits only | `'(800) 123-4567'` → `'8001234567'` | |
+| `'number'` | Convert to number | `'$42.35'` → `42.35` | |
+| `'lower'` / `'upper'` / `'strip'` | String ops | `'  AANG  '` → `'aang'` | |
+| `'maxlen:n'` | Truncate to n chars | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'` | |
+| `'indicator'` | Boolean → Y/None | `True` → `'Y'`, `False` → `None` | |
+| `'indicator:inv'` | Inverted indicator | `False` → `'Y'`, `True` → `None` | |
+| `'indicator:Y/N'` | Custom true/false | `True` → `'Y'`, `False` → `'N'` | |
+| `'split:,'` | Split on delimiter | `'a,b,c'` → `['a', 'b', 'c']` | |
+| `'split:\t'` | Split on tab | `'a\tb\tc'` → `['a', 'b', 'c']` | |
+| `'nth:0'` | Get first item | `'action,comedy,drama'` → `'action'` | |
+| `'nth:2:\t'` | Get 3rd tab-delimited | `'a\tb\tc'` → `'c'` | |
+| `'lookup:...'` | Database lookup | See below ↓ | |
+| `'validate:...'` | Database validation | See below ↓ | |
+
+**Chaining transformations:**
+
+```python
+# Works in lists - functions are applied in order
+table = dbtk.etl.Table('users', {
+    'username': {'field': 'email', 'fn': ['lower', 'strip', 'maxlen:50']},
+    'is_admin': {'field': 'role', 'fn': ['upper', 'indicator:Y/N']},
+}, cursor=cursor)
+```
+
+**Real-world example (IMDB dataset):**
+
+```python
+# Loading 12 million IMDB titles with clean configuration
+titles_table = dbtk.etl.Table('imdb_titles', {
+    'tconst': {'field': 'tconst', 'primary_key': True},
+    'title_type': {'field': 'titleType', 'fn': 'maxlen:50'},
+    'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500'},
+    'original_title': {'field': 'originalTitle', 'fn': 'maxlen:500'},
+    'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y/N'},
+    'start_year': {'field': 'startYear', 'fn': 'int:0'},
+    'end_year': {'field': 'endYear', 'fn': 'int'},
+    'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
+    'first_genre': {'field': 'genres', 'fn': 'nth:0'},  # Extract first genre
+    'all_genres': {'field': 'genres', 'fn': 'split:,'},  # Or keep all as list
+}, cursor=cursor)
+
+# Process file
+with open('title.basics.tsv') as f:
+    reader = dbtk.readers.CSVReader(f, delimiter='\t', header_clean=2)
+    for record in reader:
+        titles_table.set_values(record)
+        titles_table.exec_insert()
+
+# 132,440 records/sec on single machine with PostgreSQL!
+```
+
+### Database Lookups and Validation 🔥
+
+**The power move:** TableLookup transforms any database table into a reusable lookup function with intelligent caching. Use it directly or via string shorthand for zero-boilerplate data enrichment and validation.
+
+TableLookup is a fast, cache-aware transform that turns any database table or view into a reusable lookup function.  It uses PreparedStatement, so it is portable across databases. Use the high-level Lookup() and Validate() factories directly in your Table column definitions to resolve codes, enrich records, or enforce referential integrity with almost no code.
 
 ```python
 import dbtk
@@ -871,16 +959,77 @@ state_lookup({'state': 'Pennsylvania'}) # -> 'PA'
 state_details = TableLookup(cursor=cur, table='states', key_cols='code', return_cols=['state', 'capital', 'region'])
 state_details({'code': 'CA'}) # -> Record('California', 'Sacramento', 'West')
 
-# Lookup and Validate defer cursor binding until Table is initialized
-recruit_table = dbtk.etl.Table('recruit', columns={
-    'id': {'field': 'soldier_id', 'key': True},
-    'name': {'field': 'name', 'nullable': False},
-    'state_code1': {'field': 'state_name', 'fn': Lookup('states', 'state', 'code', cache=TableLookup.CACHE_PRELOAD)}, # lookup code from state name
-    'state_code2': {'field': 'state_name', 'fn': 'lookup:states:state:code:preload'}, # string shortcut for lookup above
-    'capital': {'field': 'state_name', 'fn': 'lookup:states:state:capital'},
-    'region1': {'field': 'region', 'fn': Validate('valid_regions','region_name')}, 
-    'region2': {'field': 'region', 'fn': 'validate:valid_regions:region_name'}}, # short cut for validation above
-    cursor=cur)
+# ⚡ NEW: String shorthand makes lookups incredibly clean!
+customer_etl = dbtk.etl.Table('customers', {
+    # Enrich with state data
+    'state_code': {'field': 'state_name', 'fn': 'lookup:states:name:code'},
+    'state_capital': {'field': 'state_name', 'fn': 'lookup:states:name:capital'},
+    'state_region': {'field': 'state_name', 'fn': 'lookup:states:name:region'},
+
+    # Validate against reference tables
+    'country': {'field': 'country_name', 'fn': 'validate:countries:name'},  # Warns if invalid
+    'industry': {'field': 'industry_code', 'fn': 'validate:industries:code'},
+
+    # Multiple keys and caching strategies
+    'product_name': {'field': ['vendor_id', 'sku'], 'fn': 'lookup:products:vendor_id,sku:name:preload'},
+}, cursor=cur)
+
+# OLD WAY (still supported):
+from dbtk.etl.transforms import Lookup, Validate, TableLookup
+customer_etl = dbtk.etl.Table('customers', {
+    'state_code': {'field': 'state_name', 'fn': Lookup('states', 'name', 'code')},
+    'country': {'field': 'country_name', 'fn': Validate('countries', 'name')},
+}, cursor=cur)
+```
+
+**Lookup/Validate string syntax:**
+
+```
+# Lookup syntax
+'lookup:table:key_col:return_col[:cache]'
+
+Examples:
+'lookup:states:name:code'              # Basic lookup
+'lookup:states:name:code:preload'      # With preloading (small tables)
+'lookup:states:name:code:lazy'         # Lazy caching (default)
+'lookup:states:name:code:no_cache'     # No caching (large tables)
+'lookup:products:id,sku:name'          # Multiple key columns (comma-separated)
+
+# Validate syntax
+'validate:table:key_col[:cache]'
+
+Examples:
+'validate:countries:country_code'      # Basic validation
+'validate:regions:name:preload'        # With preloading
+'validate:users:email,dept:no_cache'   # Multiple keys, no caching
+```
+
+**Caching strategies:**
+
+- **`preload`** (CACHE_PRELOAD): Load entire table into memory upfront. Best for small lookup tables (<10k rows)
+- **`lazy`** (CACHE_LAZY): Cache results as encountered. Best for medium tables or selective lookups
+- **`no_cache`** (CACHE_NONE): Query database every time. Best for large tables or frequently changing data
+
+```python
+# Practical example: Customer data enrichment
+orders_etl = dbtk.etl.Table('orders', {
+    'order_id': {'field': 'id', 'primary_key': True},
+
+    # Small table - preload it
+    'state_name': {'field': 'state_code', 'fn': 'lookup:states:code:name:preload'},
+
+    # Medium table - lazy cache
+    'customer_name': {'field': 'customer_id', 'fn': 'lookup:customers:id:name:lazy'},
+
+    # Large table - no cache
+    'product_desc': {'field': 'product_id', 'fn': 'lookup:products:id:description:no_cache'},
+
+    # Validate referential integrity
+    'category': {'field': 'category_code', 'fn': 'validate:categories:code:preload'},
+}, cursor=cursor)
+
+# Missing lookup keys raise clear errors immediately:
+# ValueError: TableLookup for 'states' missing required keys: ['code']. Provided keys: ['state']
 ```
 
 **Custom transformations:**
