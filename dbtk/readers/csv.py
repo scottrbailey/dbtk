@@ -4,7 +4,7 @@
 
 import csv
 from typing import TextIO, List, Any, Iterator, Optional
-from .base import Reader, Clean, ReturnType
+from .base import Reader, Clean, ReturnType, logger
 
 
 class CSVReader(Reader):
@@ -142,6 +142,9 @@ class CSVReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          headers=headers, return_type=return_type)
         self.fp = fp
+        if hasattr(fp, 'encoding') and fp.encoding == 'utf-8':
+            # Using the standard utf-8 encoding can cause issues with BOM headers in column names
+            logger.warning("utf-8 encoding detected. Consider using 'utf-8-sig' encoding instead.")
         self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
         self._rdr = csv.reader(fp, dialect=dialect, **kwargs)
         self._headers_read = False

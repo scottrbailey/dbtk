@@ -233,9 +233,23 @@ def get_sheet_by_index(wb, index: int):
         TypeError: If workbook type is not supported.
     """
     if wb.__class__.__name__ == 'Workbook':
+        # openpyxl
         return wb.worksheets[index]
     elif wb.__class__.__name__ == 'Book':
+        # xlrd
         return wb.sheet_by_index(index)
+    else:
+        raise TypeError(f"Unknown workbook type: {wb.__class__.__name__}")
+
+
+def get_sheet_by_name(wb, sheet_name: str):
+    """Get a worksheet from a workbook by name."""
+    if wb.__class__.__name__ == 'Workbook':
+        # openpyxl
+        return wb[sheet_name]
+    elif wb.__class__.__name__ == 'Book':
+        # xlrd
+        return wb.sheet_by_name(sheet_name)
     else:
         raise TypeError(f"Unknown workbook type: {wb.__class__.__name__}")
 

@@ -370,8 +370,8 @@ See [Database Support](#database-support) for detailed driver information.
 ```python
 from dbtk import readers
 
-# CSV files
-with readers.CSVReader(open('northern_water_tribe_census.csv')) as reader:
+# CSV files - Use utf-8-sig instead of utf-8 to avoid BOM issues (corrupted column names)
+with readers.CSVReader(open('northern_water_tribe_census.csv', encoding='utf-8-sig')) as reader:
     for waterbender in reader:
         print(f"Waterbender: {waterbender.name}, Village: {waterbender.village}")
 
@@ -426,7 +426,7 @@ All readers support these parameters for controlling input processing:
 ```python
 # Skip first 10 data rows, read only 100 records, return dicts instead of Records
 reader = dbtk.readers.CSVReader(
-    open('data.csv'),
+    open('data.csv', encoding='utf-8-sig'), # Use 'utf-8-sig' instead of 'utf-8' to avoid BOM issues
     skip_records=10,      # Skip N records after headers (useful for bad data)
     max_records=100,      # Only read first N records (useful for testing/sampling)
     return_type='dict',   # 'record' (default) or 'dict' for OrderedDict
