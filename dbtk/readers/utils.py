@@ -257,6 +257,7 @@ def get_reader(filename: str,
     # Extract file format, handling compression extensions
     parts = filename.lower().split('.')
     compression_exts = {'gz', 'bz2', 'xz', 'zip'}
+    known_formats = {'csv', 'tsv', 'json', 'ndjson', 'xml', 'xls', 'xlsx', 'txt'}
 
     # Remove compression extensions from the end
     format_parts = [p for p in parts if p not in compression_exts]
@@ -279,6 +280,48 @@ def get_reader(filename: str,
             ext = parts[-1]  # Fallback to last extension
     else:
         ext = format_parts[-1]
+
+    # If format is unknown and file is a ZIP, peek at member to get format
+    if ext not in known_formats and filename.lower().endswith('.zip'):
+        import zipfile
+        try:
+            zf = zipfile.ZipFile(filename, 'r')
+            members = zf.namelist()
+
+            # Determine which member will be selected (use same logic as open_file)
+            zip_member_param = kwargs.get('zip_member')
+            if zip_member_param:
+                selected = zip_member_param
+            elif len(members) == 1:
+                selected = members[0]
+            else:
+                # Try to match archive name
+                archive_base = os.path.basename(filename)
+                archive_name = archive_base.split('.')[0]
+                candidates = [m for m in members if os.path.basename(m).startswith(archive_name)]
+
+                if len(candidates) == 1:
+                    selected = candidates[0]
+                elif len(candidates) > 1:
+                    exact = [m for m in candidates if os.path.basename(m).split('.')[0] == archive_name]
+                    if len(exact) == 1:
+                        selected = exact[0]
+                    else:
+                        selected = None
+                else:
+                    selected = None
+
+            zf.close()
+
+            # Extract format from selected member
+            if selected:
+                member_parts = selected.lower().split('.')
+                # Get the format (skip compression extensions)
+                member_format_parts = [p for p in member_parts if p not in compression_exts]
+                if member_format_parts:
+                    ext = member_format_parts[-1]
+        except (zipfile.BadZipFile, FileNotFoundError, OSError):
+            pass  # Keep original ext if ZIP inspection fails
 
     effective_encoding = ('utf-8-sig' if encoding is None or str(encoding).lower() in ('utf-8', 'utf8') else encoding)
 
