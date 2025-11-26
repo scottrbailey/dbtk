@@ -8,6 +8,7 @@ settings = {
     'default_db_type': 'postgres',
     'default_header_clean': 2,  # Clean.LOWER_NOSPACE as int
     'default_timezone': 'UTC',
+    'compressed_file_buffer_size': 1024 * 1024,  # 1MB buffer for .gz/.bz2/.xz files
 
     'logging': {
         'directory': './logs',

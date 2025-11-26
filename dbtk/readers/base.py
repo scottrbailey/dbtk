@@ -101,7 +101,17 @@ class _Progress:
     __slots__ = ('tell', 'total')
 
     def __init__(self, obj):
-        if hasattr(obj, 'buffer'):
+        # Check if object has precomputed uncompressed size (from compressed files)
+        if hasattr(obj, '_uncompressed_size'):
+            if obj._uncompressed_size is not None:
+                # Use the precomputed size from file metadata (GZIP, ZIP)
+                self.total = obj._uncompressed_size
+                self.tell = obj.tell
+            else:
+                # Compressed format without size metadata (BZ2, XZ) - disable progress
+                self.total = 0
+                self.tell = lambda: 0
+        elif hasattr(obj, 'buffer'):
             buf = obj.buffer
             pos = buf.tell()
             buf.seek(0, 2)
