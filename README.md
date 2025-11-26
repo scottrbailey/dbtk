@@ -39,6 +39,7 @@ validated along the way.
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
 - **Portable SQL Queries** - Write SQL once with named parameters, run on any database regardless of parameter style
 - **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
+- **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
 - **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
 - **Bulk Operations** - DataSurge class for high-performance batch INSERT/UPDATE/DELETE/MERGE operations
@@ -418,6 +419,74 @@ with dbtk.readers.get_reader('data.xlsx') as reader:
     for record in reader:
         process(record)
 ```
+
+**Compressed files - Automatic decompression:**
+
+DBTK transparently handles compressed files (`.gz`, `.bz2`, `.xz`, `.zip`) with zero configuration. Just pass the compressed filename - decompression happens automatically:
+
+```python
+# GZIP compressed CSV - automatically decompressed
+with dbtk.readers.get_reader('census_data.csv.gz') as reader:
+    for record in reader:
+        process(record)
+
+# BZ2 compressed JSON
+with dbtk.readers.get_reader('api_response.json.bz2') as reader:
+    for record in reader:
+        process(record)
+
+# XZ compressed TSV
+with dbtk.readers.get_reader('large_dataset.tsv.xz') as reader:
+    for record in reader:
+        process(record)
+```
+
+**ZIP archives - Smart member selection:**
+
+For ZIP files, DBTK automatically selects the right file to read:
+
+```python
+# Single file in ZIP - automatically selected
+with dbtk.readers.get_reader('data.csv.zip') as reader:
+    for record in reader:
+        process(record)
+
+# Archive name matches member name - automatically selected
+# name.subset.zip containing name.subset.tsv
+with dbtk.readers.get_reader('name.subset.zip') as reader:
+    for record in reader:
+        process(record)
+
+# Multiple files - specify which one to read
+with dbtk.readers.get_reader('archive.zip', zip_member='data.csv') as reader:
+    for record in reader:
+        process(record)
+
+# Works with TSV delimiter too
+with dbtk.readers.get_reader('names.zip', delimiter='\t') as reader:
+    for record in reader:
+        process(record)
+```
+
+**Performance characteristics:**
+
+- **Large buffer (1MB default)** - Optimized for fast decompression of large files
+- **Progress tracking** - GZIP and ZIP files show accurate progress bars without decompressing entire file
+- **Memory efficient** - Streaming decompression, constant memory usage regardless of file size
+- **Real-world speed** - 500k+ records/sec reading compressed IMDB dataset (14.7M rows) with full transforms
+
+```python
+# Configure buffer size if needed (default is 1MB)
+from dbtk.defaults import settings
+settings['compressed_file_buffer_size'] = 2 * 1024 * 1024  # 2MB buffer
+```
+
+**Why compress?**
+
+- **Storage savings** - 80-90% smaller files (5-10x compression ratio)
+- **Transfer speed** - Much faster to download/transfer compressed files
+- **Processing speed** - Decompression overhead is negligible on modern CPUs
+- **Standard practice** - Large datasets are typically distributed as `.csv.gz` or `.tsv.gz`
 
 **Common reader parameters:**
 
