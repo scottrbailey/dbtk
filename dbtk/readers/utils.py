@@ -51,6 +51,7 @@ def open_file(filename: str,
         try:
             import gzip
             import io
+            import struct
         except ImportError:
             raise ImportError(
                 "gzip support requires the 'gzip' module (usually included in Python standard library). "
@@ -60,7 +61,19 @@ def open_file(filename: str,
         if 't' in mode:
             binary_fp = gzip.open(filename, 'rb')
             buffered = io.BufferedReader(binary_fp, buffer_size)
-            return io.TextIOWrapper(buffered, encoding=effective_encoding, newline='')
+            text_fp = io.TextIOWrapper(buffered, encoding=effective_encoding, newline='')
+
+            # Extract uncompressed size from GZIP footer (last 4 bytes, mod 2^32)
+            try:
+                with open(filename, 'rb') as f:
+                    f.seek(-4, 2)  # Seek to last 4 bytes
+                    uncompressed_size = struct.unpack('<I', f.read(4))[0]
+                    text_fp._uncompressed_size = uncompressed_size
+            except (OSError, struct.error):
+                # If we can't read the size, set to None (progress will be disabled)
+                text_fp._uncompressed_size = None
+
+            return text_fp
         else:
             return gzip.open(filename, mode)
 
@@ -77,7 +90,12 @@ def open_file(filename: str,
         if 't' in mode:
             binary_fp = bz2.open(filename, 'rb')
             buffered = io.BufferedReader(binary_fp, buffer_size)
-            return io.TextIOWrapper(buffered, encoding=effective_encoding, newline='')
+            text_fp = io.TextIOWrapper(buffered, encoding=effective_encoding, newline='')
+
+            # BZ2 format does not store uncompressed size - disable progress
+            text_fp._uncompressed_size = None
+
+            return text_fp
         else:
             return bz2.open(filename, mode)
 
@@ -94,7 +112,13 @@ def open_file(filename: str,
         if 't' in mode:
             binary_fp = lzma.open(filename, 'rb')
             buffered = io.BufferedReader(binary_fp, buffer_size)
-            return io.TextIOWrapper(buffered, encoding=effective_encoding, newline='')
+            text_fp = io.TextIOWrapper(buffered, encoding=effective_encoding, newline='')
+
+            # XZ/LZMA can optionally store uncompressed size, but parsing is complex
+            # For simplicity, disable progress for XZ files
+            text_fp._uncompressed_size = None
+
+            return text_fp
         else:
             return lzma.open(filename, mode)
 
@@ -153,7 +177,13 @@ def open_file(filename: str,
         # Extract and wrap in TextIOWrapper for text mode
         binary_fp = zf.open(selected, 'r')
         if 't' in mode:
-            return io.TextIOWrapper(binary_fp, encoding=effective_encoding, newline='')
+            text_fp = io.TextIOWrapper(binary_fp, encoding=effective_encoding, newline='')
+
+            # ZIP stores uncompressed size in the central directory
+            info = zf.getinfo(selected)
+            text_fp._uncompressed_size = info.file_size
+
+            return text_fp
         else:
             return binary_fp
 
