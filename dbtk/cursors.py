@@ -5,7 +5,7 @@ All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
 import logging
-from typing import List, Any, Optional, Iterator
+from typing import List, Any, Optional, Iterator, Callable
 from collections import namedtuple, OrderedDict
 
 from .record import Record
@@ -289,17 +289,18 @@ class Cursor:
         else:
             raise StopIteration
 
-    def _detect_bulk_method(self) -> None:
+    def _detect_bulk_method(self) -> Callable:
         """
         Detect and return the fastest bulk execution method for this cursor.
 
         Called once per cursor, on first executemany(). Stores in self._bulk_method.
         """
-        if self.connection.interface.__name__ ==  'psycopg2':
+        if self.connection.interface.__name__ == 'psycopg2':
             try:
                 from psycopg2.extras import execute_batch
                 # Return a bound dispatcher: execute_batch(cur, sql, argslist, page_size)
-                def psycopg_batch(cur, sql, argslist, page_size=getattr(self, 'arraysize', 1000)):
+                def psycopg_batch(cur, sql, argslist):
+                    page_size=getattr(self, 'arraysize', 1000)
                     return execute_batch(cur, sql, argslist, page_size=page_size)
 
                 logger.debug("Cursor upgraded: executemany → psycopg2.extras.execute_batch")
