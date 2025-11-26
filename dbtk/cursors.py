@@ -104,8 +104,9 @@ class PreparedStatement:
             params = self._prepare_params(bind_vars)
             return self.cursor.execute(self.sql, params)
         except Exception as e:
+            source = self.filename or '<query>'
             logger.error(
-                f"Error executing prepared statement from {self.filename}\n"
+                f"Error executing prepared statement from {source}\n"
                 f"Transformed SQL: {self.sql}\n"
                 f"Parameters: {bind_vars}"
             )
