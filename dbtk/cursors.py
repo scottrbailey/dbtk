@@ -184,7 +184,7 @@ class Cursor:
     _local_attrs = [
         'connection', 'column_case', 'debug', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', '_cursor',
-        '_row_factory_invalid', '_statement', '_bind_vars'
+        '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
 
     def __init__(self,
@@ -228,11 +228,12 @@ class Cursor:
         self.record_factory = None
         self._row_factory_invalid = True
         self.return_cursor = return_cursor
-        self._statement = None
-        self._bind_vars = None
         if column_case is None:
             column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
         self.column_case = column_case
+        self._statement = None              # Stores statement locally if adapter doesn't
+        self._bind_vars = None              # Stores bind vars locally if adapter doesn't
+        self._bulk_method = None            # Allows us to override executemany if needed
 
         # Create underlying cursor
         try:
@@ -287,6 +288,28 @@ class Cursor:
             return row
         else:
             raise StopIteration
+
+    def _detect_bulk_method(self) -> None:
+        """
+        Detect and return the fastest bulk execution method for this cursor.
+
+        Called once per cursor, on first executemany(). Stores in self._bulk_method.
+        """
+        if self.connection.interface.__name__ ==  'psycopg2':
+            try:
+                from psycopg2.extras import execute_batch
+                # Return a bound dispatcher: execute_batch(cur, sql, argslist, page_size)
+                def psycopg_batch(cur, sql, argslist, page_size=getattr(self, 'arraysize', 1000)):
+                    return execute_batch(cur, sql, argslist, page_size=page_size)
+
+                logger.debug("Cursor upgraded: executemany → psycopg2.extras.execute_batch")
+                return psycopg_batch
+            except ImportError:
+                logger.debug("psycopg2.extras not available — using native executemany")
+
+        # Fallback for everything else (SQLite, MySQL, etc.)
+        logger.debug("Using native cursor.executemany")
+        return lambda cur, sql, argslist: cur.executemany(sql, argslist)
 
     def _create_record_factory(self) -> None:
         """Create the function to process each row. Override in subclasses."""
@@ -436,7 +459,11 @@ class Cursor:
         if not hasattr(self._cursor, 'bind_vars'):
             self.__dict__['_bind_vars'] = bind_vars[0]
 
-        _ = self._cursor.executemany(query, bind_vars)
+        if self._bulk_method is None:
+            # Detect and cache the fastest bulk execution method
+            self._bulk_method = self._detect_bulk_method()
+
+        _ = self._bulk_method(self._cursor, query, bind_vars)
         if self.return_cursor:
             return self
         else:
