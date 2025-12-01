@@ -332,7 +332,7 @@ class Reader(ABC):
 
         self._row_num += 1
 
-        if self._big and self._row_num % 50_000 == 0:
+        if self._big and (self._row_num == 500 or self._row_num % 50_000 == 0):
             print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} "
                   f"({self._row_num:,})", end="", flush=True)
 
