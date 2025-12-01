@@ -37,18 +37,19 @@ Optional Dependencies:
 from .core import (
     capitalize,
     coalesce,
-    indicator,
-    get_int,
-    get_float,
-    get_list_item,
-    get_digits,
-    to_number,
-    get_bool,
-    normalize_whitespace,
+    fn_resolver,
     format_number,
-    parse_list,
+    get_bool,
+    get_digits,
+    get_float,
+    get_int,
+    get_list_item,
+    indicator,
     intsOnlyPattern,
+    normalize_whitespace,
     numbersOnlyPattern,
+    parse_list,
+    to_number,
 )
 
 from .phone import phone_validate, phone_clean
@@ -61,6 +62,7 @@ __all__ = [
     # Core text utilities
     'capitalize',
     'normalize_whitespace',
+    'fn_resolver',
 
     # Logic helpers
     'coalesce',

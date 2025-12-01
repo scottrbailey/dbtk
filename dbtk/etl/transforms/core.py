@@ -470,7 +470,7 @@ def fn_resolver(shorthand: str):
     This function is deliberately small, fast, and pure. It knows nothing about
     databases — that's what ``lookup:`` and ``validate:`` are for.
     """
-    shorthand = shorthand.strip()
+    shorthand = shorthand.lstrip()  # using strip will remove some delimiters (\t for instance)
 
     # Direct mappings
     direct = {

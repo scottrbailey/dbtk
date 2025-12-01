@@ -650,11 +650,11 @@ class TestFnResolver:
         assert fn('Aang,Katara') is None
 
     def test_nth_negative_index(self):
-        """Test nth doesn't support negative indices (gets last + offset)."""
+        """Test nth supports negative indices (gets last + offset)."""
         fn = fn_resolver('nth:-1')
         result = fn('Aang,Katara,Sokka')
-        # -1 is treated as index -1 by get_list_item, which returns None
-        assert result is None
+        # -1 is treated as index -1 by get_list_item, which returns last item
+        assert result == 'Sokka'
 
     # ======== Error Handling ========
 
@@ -693,11 +693,11 @@ class TestFnResolver:
 
     def test_title_truncation(self):
         """Test truncating long movie titles."""
-        fn = fn_resolver('maxlen:255')
+        fn = fn_resolver('maxlen:100')
         long_title = 'The Lord of the Rings: The Fellowship of the Ring: Extended Edition: Special Features: Behind the Scenes: Making of the Epic Journey to Middle Earth and Beyond with Cast and Crew Interviews and Commentary'
         result = fn(long_title)
-        assert len(result) == 255
-        assert result.endswith('to Middle Earth and Beyond with Cast and Crew Interviews and Comm')
+        assert len(result) == 100
+        assert result.endswith('Special Features: Behind the Sc')
 
     def test_genre_extraction(self):
         """Test extracting first genre from comma-separated list."""
