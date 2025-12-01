@@ -401,6 +401,31 @@ def get_list_item(val: str, index: int, delimiter: str = ',') -> Optional[str]:
     return None
 
 
+def _decode_delimiter(delim: str) -> str:
+    """
+    Decode common escape sequences in delimiter strings.
+
+    Args:
+        delim: Delimiter string that may contain escape sequences
+
+    Returns:
+        Delimiter with escape sequences decoded
+
+    Examples:
+        _decode_delimiter('\\t')  # returns '\t' (actual tab)
+        _decode_delimiter('\\n')  # returns '\n' (actual newline)
+        _decode_delimiter('|')    # returns '|' (unchanged)
+    """
+    # Map of escape sequences to their actual characters
+    escape_map = {
+        '\\t': '\t',
+        '\\n': '\n',
+        '\\r': '\r',
+        '\\\\': '\\',
+    }
+    return escape_map.get(delim, delim)
+
+
 def fn_resolver(shorthand: str):
     """
     Convert a concise string shorthand into a real transformation function.
@@ -507,6 +532,7 @@ def fn_resolver(shorthand: str):
     # split:delimiter
     if shorthand.startswith('split:'):
         delim = shorthand[6:] or ','
+        delim = _decode_delimiter(delim)
         return lambda x: parse_list(x, delimiter=delim) if x not in ('', None) else []
 
     # nth:index[:delimiter]
@@ -515,6 +541,7 @@ def fn_resolver(shorthand: str):
         delim = ','
         if ':' in rest:
             idx_part, delim = rest.split(':', 1)
+            delim = _decode_delimiter(delim)
         else:
             idx_part = rest
         try:

@@ -656,6 +656,32 @@ class TestFnResolver:
         # -1 is treated as index -1 by get_list_item, which returns None
         assert result is None
 
+    def test_escape_sequence_decoding(self):
+        """Test that escape sequences in delimiters are properly decoded."""
+        # Test split with raw string containing \t (as from config file)
+        fn = fn_resolver(r'split:\t')
+        assert fn('One\tTwo\tThree') == ['One', 'Two', 'Three']
+
+        # Test split with raw string containing \n
+        fn = fn_resolver(r'split:\n')
+        assert fn('One\nTwo\nThree') == ['One', 'Two', 'Three']
+
+        # Test split with raw string containing \r
+        fn = fn_resolver(r'split:\r')
+        assert fn('One\rTwo\rThree') == ['One', 'Two', 'Three']
+
+        # Test split with escaped backslash
+        fn = fn_resolver(r'split:\\')
+        assert fn('One\\Two\\Three') == ['One', 'Two', 'Three']
+
+        # Test nth with tab delimiter from raw string
+        fn = fn_resolver(r'nth:1:\t')
+        assert fn('One\tTwo\tThree') == 'Two'
+
+        # Test nth with newline delimiter from raw string
+        fn = fn_resolver(r'nth:0:\n')
+        assert fn('One\nTwo\nThree') == 'One'
+
     # ======== Error Handling ========
 
     def test_invalid_shorthand_error(self):
