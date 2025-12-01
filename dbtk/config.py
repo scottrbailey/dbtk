@@ -745,17 +745,21 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     config = config_mgr.get_connection_config(name)
     if password:
         config['password'] = password
+    info = {key:val for key, val in config.items() if key != 'password'}
+    logger.debug(f"Connecting to database {name} with config: {info}")
 
     # Extract database type
     db_type = config.pop('type', None)
     if not db_type:
         db_type = config.pop('database_type', 'postgres')
+    # Extract driver if specified
+    driver = config.pop('driver', None)
 
     allowed_params = _get_params_for_database(db_type)
     config = {key: val for key, val in config.items() if key in allowed_params}
 
     # Create database connection
-    return Database.create(db_type, **config)
+    return Database.create(db_type, driver=driver, **config)
 
 
 def get_password(name: str, config_file: Optional[str] = None) -> str:

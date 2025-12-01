@@ -12,7 +12,7 @@ import re
 import time
 from .table import Table
 
-from typing import Iterable
+from typing import Iterable, Optional
 
 try:
     from typing import Mapping
@@ -40,18 +40,24 @@ class DataSurge:
         errors = surge.insert(records, raise_error=False)
     """
 
-    def __init__(self, table: Table, batch_size: int = 1000, use_transaction: bool = False):
+    def __init__(self, table: Table, batch_size: Optional[int] = None, use_transaction: bool = False):
         """
             Initialize DataSurge for bulk operations.
 
             Args:
                 table: Table instance with schema metadata
-                batch_size: Number of records per batch (default: 1000)
+                batch_size: Number of records per batch
                 use_transaction: Use transaction for all operations (default: False)
             """
         self.table = table
         self.cursor = table.cursor
-        self.batch_size = batch_size
+        if batch_size is not None:
+            self.cursor.batch_size = batch_size
+            self.batch_size = batch_size
+        else:
+            self.batch_size = table.cursor.batch_size
+        if self.batch_size < 500:
+            logger.warning(f"Batch size for {self.table.name} is {self.batch_size}. This may be needed for wide tables or large records.")
         self.use_transaction = use_transaction
         self.skips = 0
         self._sql_statements = {}  # Only for modified SQL
@@ -137,7 +143,7 @@ class DataSurge:
             process_batches()
 
         logger.info(
-            f"Successfully {operation}d {self.table.counts[operation]} records for {self.table.name} with {errors} errors, {skipped} skipped")
+            f"Batched `{self.table.name}` <{operation}s: {self.table.counts[operation]:,}; errors: {errors:,}; skips: {skipped:,}>")
         self.skips += skipped
         return errors
 

@@ -184,8 +184,8 @@ class Cursor:
 
     _local_attrs = [
         'connection', 'column_case', 'debug', 'return_cursor',
-        'placeholder', 'paramstyle', 'record_factory', '_cursor',
-        '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
+        'placeholder', 'paramstyle', 'record_factory', 'batch_size',
+        '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
 
     def __init__(self,
@@ -232,6 +232,10 @@ class Cursor:
         if column_case is None:
             column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
         self.column_case = column_case
+        batch_size = kwargs.pop('batch_size', None)
+        if batch_size is None:
+            batch_size = settings.get('default_batch_size', 1000)
+        self.batch_size = batch_size
         self._statement = None              # Stores statement locally if adapter doesn't
         self._bind_vars = None              # Stores bind vars locally if adapter doesn't
         self._bulk_method = None            # Allows us to override executemany if needed
@@ -252,7 +256,7 @@ class Cursor:
 
         # Ensure arraysize exists (some adapters don't have it)
         if not hasattr(self._cursor, 'arraysize'):
-            self.__dict__['arraysize'] = 1
+            self.__dict__['arraysize'] = 1000
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying cursor."""
@@ -301,7 +305,7 @@ class Cursor:
                 from psycopg2.extras import execute_batch
                 # Return a bound dispatcher: execute_batch(cur, sql, argslist, page_size)
                 def psycopg_batch(cur, sql, argslist):
-                    page_size=getattr(self, 'arraysize', 1000)
+                    page_size=getattr(self, 'batch_size', 1000)
                     return execute_batch(cur, sql, argslist, page_size=page_size)
 
                 logger.debug("Cursor upgraded: executemany → psycopg2.extras.execute_batch")

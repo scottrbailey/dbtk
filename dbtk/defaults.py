@@ -2,6 +2,7 @@
 """Default settings - no imports to avoid circular dependencies."""
 
 settings = {
+    'default_batch_size': 1000,
     'default_column_case': 'lower',
     'default_country': 'US',
     'default_cursor_type': 'record',
