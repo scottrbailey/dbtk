@@ -181,16 +181,19 @@ class Cursor:
     TupleCursor : Returns namedtuples
     DictCursor : Returns OrderedDict objects
     """
-
+    # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [
         'connection', 'column_case', 'debug', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', 'batch_size',
         '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
+    # Attributes that are allowed to be passed in from the connection/configuration layer
+    WRAPPER_SETTINGS = ('batch_size', 'column_case', 'debug', 'return_cursor', 'type')
 
     def __init__(self,
                  connection,
                  column_case: Optional[str] = None,
+                 batch_size: Optional[int] = None,
                  debug: Optional[bool] = False,
                  return_cursor: Optional[bool] = False,
                  **kwargs):
@@ -203,6 +206,8 @@ class Cursor:
             Database connection object
         column_case : str, optional
             How to handle column name casing: 'lower', 'upper', 'title', or None (default)
+        batch_size: int, optional
+            How many rows to process at a time when using executemany() or bulk operations in DataSurge
         debug : bool, default False
             Enable debug output showing queries and bind variables
         return_cursor : bool, default False
@@ -232,20 +237,20 @@ class Cursor:
         if column_case is None:
             column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
         self.column_case = column_case
-        batch_size = kwargs.pop('batch_size', None)
         if batch_size is None:
             batch_size = settings.get('default_batch_size', 1000)
         self.batch_size = batch_size
         self._statement = None              # Stores statement locally if adapter doesn't
         self._bind_vars = None              # Stores bind vars locally if adapter doesn't
         self._bulk_method = None            # Allows us to override executemany if needed
-
+        # remove any kwargs not intended for the underlying cursor
+        filtered_kwargs = {key: val for key, val in kwargs.items() if key not in self.WRAPPER_SETTINGS}
         # Create underlying cursor
         try:
             if hasattr(self.connection, '_connection'):
-                self._cursor = self.connection._connection.cursor(**kwargs)
+                self._cursor = self.connection._connection.cursor(**filtered_kwargs)
             else:
-                self._cursor = self.connection.cursor(**kwargs)
+                self._cursor = self.connection.cursor(**filtered_kwargs)
         except Exception as e:
             raise TypeError(f'First argument must be a database connection object: {e}')
 

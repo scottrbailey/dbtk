@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 # users can define their own drivers in the config file
 _user_drivers = {}
 
+def _hide_password(kwargs):
+    """Replace password with '********' to be printable"""
+    parms = kwargs.copy()
+    for key, val in parms.items():
+        if key in ('password', 'PWD', 'passwd'):
+            parms[key] = '********'
+    return parms
 
 class CursorType:
     """
@@ -151,7 +158,7 @@ DRIVERS = {
         'database_type': 'sqlserver',
         'priority': 11,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
-        'required_params': [{'host', 'database', 'user'}],
+        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
         'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 17 for SQL Server',
@@ -172,10 +179,10 @@ DRIVERS = {
         'database_type': 'postgres',
         'priority': 14,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
-        'required_params': [{'host', 'database', 'user'}],
+        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
         'optional_params': {'password', 'port'},
         'connection_method': 'odbc_string',
-        'odbc_driver_name': 'PostgreSQL UNICODE',
+        'odbc_driver_name': 'PostgreSQL Unicode',
         'default_port': 5432
     },
     'pyodbc_mysql': {
@@ -372,14 +379,26 @@ def _get_connection_string(**kwargs) -> str:
 
 def _get_odbc_connection_string(**kwargs) -> str:
     """ Get connection string for ODBC from keyword arguments."""
-    odbc_driver_name = kwargs.pop('odbc_driver_name', None)
-    server = '%s,%s'.format(kwargs.pop('host', 'localhost'), kwargs.pop('port'))
-    params = {key.upper(): value for key, value in kwargs}
-    params['SERVER'] = server
-    if odbc_driver_name:
-        return f"DRIVER={{{odbc_driver_name}}};" + ";".join([f"{key}={value}" for key, value in params.items()])
+    # logger.debug(f'Generating ODBC connection string from: {_hide_password(kwargs)}')
+    if 'dsn' in kwargs and kwargs['dsn']:
+        # DSN only send DSN and password if present
+        conn_str = f"DSN={kwargs['dsn']}"
+        printable_conn_str = conn_str
+        if 'PWD' in kwargs:
+            conn_str += f";PWD={kwargs['PWD']}"
+            printable_conn_str += f";PWD=******"
     else:
-        return ";".join([f"{key}={value}" for key, value in params.items()])
+        odbc_driver_name = kwargs.pop('odbc_driver_name', None)
+        server = '{},{}'.format(kwargs.pop('host', 'localhost'), kwargs.pop('port'))
+        params = {key.upper(): value for key, value in kwargs.items()}
+        params['SERVER'] = server
+        conn_str = ";".join([f"{key}={value}" for key, value in params.items()])
+        printable_conn_str = ";".join([f"{key}={value}" for key, value in _hide_password(params).items()])
+        if odbc_driver_name:
+            conn_str = f"DRIVER={{{odbc_driver_name}}};" + conn_str
+            printable_conn_str = f"DRIVER={{{odbc_driver_name}}};" + printable_conn_str
+    logger.debug(f"ODBC connection string: {printable_conn_str}")
+    return conn_str
 
 
 def _password_prompt(prompt: str = 'Enter password: ') -> str:
@@ -462,7 +481,7 @@ class Database:
     # Attributes stored locally, others delegated to _connection
     _local_attrs = [
         '_connection', 'database_type', 'database_name', 'interface',
-        'name', 'placeholder'
+        'name', 'placeholder', '_cursor_settings'
     ]
 
     # Cursor type mapping
@@ -473,7 +492,9 @@ class Database:
         CursorType.LIST: Cursor
     }
 
-    def __init__(self, connection, interface, database_name: Optional[str] = None):
+    def __init__(self, connection, interface,
+                 database_name: Optional[str] = None,
+                 cursor_settings: Optional[dict] = None):
         """
         Initialize Database wrapper around an existing connection.
 
@@ -488,6 +509,8 @@ class Database:
             Database adapter module (psycopg2, oracledb, mysqlclient, etc.)
         database_name : str, optional
             Name of the database. If None, attempts to extract from connection.
+        cursor_settings : dict, optional
+            Values passed to the cursor constructor. e.g. {'type': 'dict', 'batch_size': 2000}
 
         Example
         -------
@@ -523,6 +546,12 @@ class Database:
         else:
             self.database_type = 'unknown'
 
+        logger.debug(f"Cursor Database.__init__ cursor_settings: {cursor_settings}")
+        if cursor_settings:
+            self._cursor_settings = {key: val for key, val in cursor_settings.items()
+                                     if key in Cursor.WRAPPER_SETTINGS}
+        else:
+            self._cursor_settings = dict()
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying connection."""
@@ -567,7 +596,8 @@ class Database:
         """Context manager exit - close connection."""
         self.close()
 
-    def cursor(self, cursor_type: Union[str, Type] = None, **kwargs) -> Cursor:
+    def cursor(self, cursor_type: Union[str, Type] = None,
+               **kwargs) -> Cursor:
         """
         Create a cursor for executing database queries.
 
@@ -628,8 +658,9 @@ class Database:
         TupleCursor : Lightweight cursor returning namedtuples
         DictCursor : Dictionary-based cursor
         """
+        # cursor_type precedence: explicit arg > self._cursor_settings['type'] > settings['default_cursor_type'] > CursorType.RECORD
         if cursor_type is None:
-            cursor_type = settings.get('default_cursor_type', CursorType.RECORD)
+            cursor_type = self._cursor_settings.get('type') or settings.get('default_cursor_type', CursorType.RECORD)
         if isinstance(cursor_type, str):
             if cursor_type not in CursorType.values():
                 raise ValueError(
@@ -642,7 +673,14 @@ class Database:
         else:
             raise ValueError(f"Invalid cursor type: {cursor_type}")
 
-        return cursor_class(self, **kwargs)
+        # only pass through allowed kwargs
+        filtered_kwargs = dict()
+        for key in Cursor.WRAPPER_SETTINGS:
+            if key in kwargs and key != 'type':
+                filtered_kwargs[key] = kwargs.pop(key)
+            elif key in self._cursor_settings:
+                filtered_kwargs[key] = self._cursor_settings[key]
+        return cursor_class(self, **filtered_kwargs)
 
     @contextmanager
     def transaction(self):
@@ -708,12 +746,14 @@ class Database:
             print(r'"SELECT * FROM people WHERE name = %(name)s AND age > %(age)s", {"name": "Smith", "age": 30}')
 
     @classmethod
-    def create(cls, db_type: str, driver: str  = None, **kwargs) -> 'Database':
+    def create(cls, db_type: str, driver: Optional[str] = None,
+               cursor_settings: Optional[dict] = None, **kwargs) -> 'Database':
         """
         Factory method to create database connections.
 
         Args:
             db_type: Database type ('postgres', 'oracle', 'mysql', etc.)
+            cursor_settings: Defaults to use when creating cursors.
             **kwargs: Connection parameters
 
         Returns:
@@ -726,7 +766,8 @@ class Database:
             if DRIVERS[driver]['database_type'] != db_type:
                 raise ValueError(f"Driver '{driver}' is not compatible with database type '{db_type}'")
             try:
-                db_driver = importlib.import_module(driver)
+                adapter = driver if not driver.startswith('pyodbc') else 'pyodbc'
+                db_driver = importlib.import_module(adapter)
                 driver_name = driver
             except ImportError:
                 logger.warning(f"Driver '{driver}' not available, falling back to default")
@@ -754,15 +795,19 @@ class Database:
         elif driver_conf['connection_method'] == 'dsn':
             if hasattr(db_driver, 'makedsn') and 'dsn' not in params:
                 host = params.pop('host', 'localhost')
-                port = params.pop('port', 5432)
+                port = params.pop('port', driver_conf.get('default_port', 5432))
                 service_name = params.pop('service_name', None)
                 params['dsn'] = db_driver.makedsn(host, port, service_name=service_name)
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'odbc_string':
+            params['odbc_driver_name'] = driver_conf.get('odbc_driver_name', None)
             connection = db_driver.connect(_get_odbc_connection_string(**params))
+        else:
+            raise ValueError(f"Unknown connection method ({driver_conf['connection_method']}) for driver '{driver_name}'")
 
         if connection:
-            return cls(connection, db_driver, kwargs.get('database'))
+            db = cls(connection, db_driver, kwargs.get('database'), cursor_settings=cursor_settings)
+            return db
 
 
 def postgres(user: str, password: Optional[str] = None, database: str = 'postgres',

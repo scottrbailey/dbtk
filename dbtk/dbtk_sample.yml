@@ -2,6 +2,7 @@
 # Copy to ~/.config/dbtk.yml and customize
 
 settings:
+  default_batch_size: 1000
   default_column_case: lower
   default_country: US
   default_cursor_type: record
@@ -24,12 +25,18 @@ settings:
 connections:
   # Example connection configurations
   dev_postgres:
-    driver: pgdb    # Optional, psycopg2 has the highest priority, this will ensure pgdb is used if both are installed
-    type: postgres  # type is optional IF you specify a driver
+    driver: psycopg    # Optional, psycopg2 has the highest priority, this will ensure psycopg(3) is used if both are installed
+    type: postgres     # type is optional IF you specify a driver
     host: localhost
     port: 5432
     database: myapp_dev
     user: developer
+    cursor:                 # These settings will be passed down when creating a cursor
+      type: dict
+      batch_size: 4000
+      column_case: preserve
+      debug: False
+      return_cursor: True
     # password: prompt  # Will prompt for password
     # encrypted_password: gAAAAABh...  # Or use encrypted
 
@@ -41,6 +48,19 @@ connections:
     user: app_user
     encrypted_password: gAAAAABh...
 
+  imdb_odbc_dsn:
+    driver: pyodbc_postgres
+    dsn: IMDB_PG  # user or system DSN
+    password: '${IMDB_USER_PASS}'    # Pull from environment variable
+
+  imdb_odbc:
+    driver: pyodbc_postgres
+    host: localhost
+    port: 5432
+    database: imdb
+    user: imdb_user
+    encrypted_password: gAAAAABh...
+
 # Encrypted passwords (optional)
 passwords:
   openai_key:
@@ -49,11 +69,11 @@ passwords:
 
 # Custom driver definitions (optional)
 drivers:
-  my_custom_driver:
-    database_type: postgres
+  firbird.driver:
+    database_type: firebird
     priority: 1
     param_map: { }
     required_params: [ { 'host', 'database', 'user' } ]
     optional_params: { 'port', 'password' }
     connection_method: kwargs
-    default_port: 5432
+    default_port: 3050

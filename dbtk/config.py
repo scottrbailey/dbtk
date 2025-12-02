@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List, Tuple
 
 from .defaults import settings # noqa: F401
 from .database import Database, _get_params_for_database
+
 try:
     import yaml
 except ImportError:
@@ -311,8 +312,8 @@ class ConfigManager:
             # Validate connections section if it exists
             if 'connections' in config:
                 for name, conn in config.get('connections', {}).items():
-                    if not isinstance(conn, dict) or 'type' not in conn:
-                        raise ValueError(f"Invalid connection '{name}' in {self.config_file}: 'type' is required")
+                    if not isinstance(conn, dict) or ('type' not in conn and 'driver' not in conn):
+                        raise ValueError(f"Invalid connection '{name}' in {self.config_file}: 'type' or 'driver' is required")
 
             # Validate passwords section if it exists
             if 'passwords' in config:
@@ -754,12 +755,14 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
         db_type = config.pop('database_type', 'postgres')
     # Extract driver if specified
     driver = config.pop('driver', None)
+    cursor_settings = config.pop('cursor', None)
 
+    # remove any params that are not allowed for the database type
     allowed_params = _get_params_for_database(db_type)
     config = {key: val for key, val in config.items() if key in allowed_params}
 
     # Create database connection
-    return Database.create(db_type, driver=driver, **config)
+    return Database.create(db_type, driver=driver, cursor_settings=cursor_settings, **config)
 
 
 def get_password(name: str, config_file: Optional[str] = None) -> str:
