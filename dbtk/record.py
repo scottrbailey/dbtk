@@ -6,18 +6,15 @@ Record classes for database result sets.
 from typing import List, Any, Iterator, Tuple, Union
 from datetime import date as _date
 
-
 class Record(list):
     """
-    Flexible row object supporting multiple access patterns.
+    Flexible/lightweight row object supporting that behaves like a dict, list, and object.
 
     Record extends list to provide a rich interface for accessing query result rows.
     It supports attribute access, dictionary-style key access, integer indexing, and
-    slicing - all on the same object. This makes it the most flexible cursor type,
-    ideal when you need different access patterns in different parts of your code.
-
-    The Record class is dynamically subclassed for each query to set column names
-    as class attributes, enabling attribute access while maintaining list semantics.
+    slicing - all on the same object. This makes it the most flexible return type
+    for both cursors and readers. Ideal when you need different access patterns in
+    different parts of your code.
 
     Access Patterns
     ---------------
@@ -82,174 +79,181 @@ class Record(list):
     DictCursor : Dictionary-only alternative
     """
 
-    __slots__ = ('_deleted_fields',)
+    __slots__ = ("_added", "_deleted_fields")
     _fields: List[str] = []
 
-    def __init__(self, *args):
-        super().__init__()
-        self[:] = args
-        self._deleted_fields = set()  # Track deleted fields per instance
+    def __init__(self, *values: Any) -> None:
+        # Fast path: initialize list directly in C code — no __setitem__ calls
+        super().__init__(values)
+
+        # Lazy attributes — only allocated only when needed
+        object.__setattr__(self, "_deleted_fields", set())
+        object.__setattr__(self, "_added", None)
+
+    # ------------------------------------------------------------------ #
+    # Core access methods
+    # ------------------------------------------------------------------ #
+
+    def __getitem__(self, key: Union[int, str, slice]) -> Any:
+        if isinstance(key, str):
+            # 1. Runtime-added fields
+            if self._added and key in self._added:
+                return self._added[key]
+            # 2. Deleted fields
+            if key in self._deleted_fields:
+                raise KeyError(f"Column '{key}' has been deleted")
+            # 3. Original columns
+            try:
+                return super().__getitem__(self._fields.index(key))
+            except ValueError:
+                raise KeyError(f"Column '{key}' not found")
+        return super().__getitem__(key)
+
+    def __setitem__(self, key: Union[int, str, slice], value: Any) -> None:
+        if isinstance(key, str):
+            if key in self._fields:
+                # Existing column — revive if deleted
+                self._deleted_fields.discard(key)
+                super().__setitem__(self._fields.index(key), value)
+            else:
+                # New column — store in _added
+                if self._added is None:
+                    object.__setattr__(self, "_added", {})
+                self._added[key] = value
+        else:
+            super().__setitem__(key, value)
+
+    def __delitem__(self, key: Union[int, str]) -> None:
+        if not isinstance(key, str):
+            raise TypeError("Record supports deletion only by column name (string)")
+        # Delegate to pop() — it has all the logic
+        self.pop(key)
+
+    def __getattr__(self, name: str) -> Any:
+        # Called only when normal attribute lookup fails
+        if self._added and name in self._added:
+            return self._added[name]
+        if name in self._fields and name not in self._deleted_fields:
+            return self[name]
+        raise AttributeError(f"'Record' object has no attribute '{name}'")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # Allow setting row.new_field = value
+        self[name] = value
+
+    def __delattr__(self, name: str) -> None:
+        try:
+            del self[name]
+        except KeyError:
+            raise AttributeError(name)
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        return (key in self._fields and key not in self._deleted_fields) or \
+            (self._added and key in self._added)
 
     @classmethod
     def set_columns(cls, columns: List[str]) -> None:
         """Set the column names for this Record class."""
         cls._fields = columns
 
-    def __getattr__(self, attr: str) -> Any:
-        """Allow attribute access to columns."""
-        if attr in self._fields and attr not in self._deleted_fields:
-            return self[self._fields.index(attr)]
-        raise AttributeError(f"'Record' object has no attribute '{attr}'")
+    # ------------------------------------------------------------------ #
+    # Dict-like interface
+    # ------------------------------------------------------------------ #
 
-    def __getitem__(self, item: Union[int, str, slice]) -> Any:
-        """Allow access by column name, index, or slice."""
-        if isinstance(item, str):
-            if item in self._deleted_fields:
-                raise KeyError(f"Column '{item}' has been deleted")
-            try:
-                return super().__getitem__(self._fields.index(item))
-            except ValueError:
-                raise KeyError(f"Column '{item}' not found")
-        return super().__getitem__(item)
+    def keys(self) -> List[str]:
+        base = [f for f in self._fields if f not in self._deleted_fields]
+        if self._added:
+            base.extend(self._added.keys())
+        return base
 
-    def __setitem__(self, item: Union[int, str, slice], val: Any) -> None:
-        """Allow setting by column name, index, or slice."""
-        if isinstance(item, str):
-            # If we're setting a deleted field, bring it back to life
-            if item in self._deleted_fields:
-                self._deleted_fields.remove(item)
-            try:
-                super().__setitem__(self._fields.index(item), val)
-            except ValueError:
-                raise KeyError(f"Column '{item}' not found")
-        else:
-            super().__setitem__(item, val)
-
-    def __delitem__(self, item: Union[int, str]) -> None:
-        """Allow deletion by column name or index."""
-        if isinstance(item, str):
-            if item not in self._fields:
-                raise KeyError(f"Column '{item}' not found")
-            if item in self._deleted_fields:
-                raise KeyError(f"Column '{item}' already deleted")
-            self._deleted_fields.add(item)
-        else:
-            # For numeric index deletion, we'd need to track by position
-            # which gets complex with the current design. Could implement if needed.
-            raise TypeError("Cannot delete by numeric index")
-
-    def __dir__(self) -> List[str]:
-        """Return list of available attributes."""
-        active_fields = [f for f in self._fields if f not in self._deleted_fields]
-        return active_fields + ['copy', 'get', 'items', 'keys', 'values', 'pprint', 'pop', 'update']
-
-    def __str__(self) -> str:
-        """String representation as key-value pairs."""
-        return (
-                self.__class__.__name__ + '{' +
-                ', '.join(f"'{k}': {v!r}" for k, v in self.items()) +
-                '}'
-        )
-
-    def __repr__(self) -> str:
-        """Representation showing values only."""
-        return (
-                self.__class__.__name__ + '(' +
-                ', '.join(f"{v!r}" for v in self.values()) +
-                ')'
-        )
-
-    def __contains__(self, key: str) -> bool:
-        """Support 'in' operator for key checking."""
-        return key in self._fields and key not in self._deleted_fields
-
-    def __len__(self) -> int:
-        """Return number of active fields."""
-        return len([f for f in self._fields if f not in self._deleted_fields])
-
-    def __iter__(self) -> Iterator[str]:
-        """Iterate over active keys (field names)."""
-        return iter(f for f in self._fields if f not in self._deleted_fields)
+    def values(self) -> Tuple[Any, ...]:
+        return tuple(self[k] for k in self.keys())
 
     def items(self) -> Iterator[Tuple[str, Any]]:
-        """Return iterator of (key, value) pairs for active fields."""
         for field in self._fields:
             if field not in self._deleted_fields:
                 yield field, self[field]
-
-    def keys(self) -> List[str]:
-        """Return list of active column names."""
-        return [f for f in self._fields if f not in self._deleted_fields]
-
-    def values(self) -> Tuple[Any, ...]:
-        """Return tuple of values for active fields."""
-        return tuple(self[field] for field in self._fields if field not in self._deleted_fields)
+        if self._added:
+            yield from self._added.items()
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Get value by key with optional default."""
         try:
             return self[key]
         except KeyError:
             return default
 
-    def pop(self, key: str, *args) -> Any:
-        """Remove and return value for key, with optional default."""
-        if len(args) > 1:
-            raise TypeError(f"pop expected at most 2 arguments, got {1 + len(args)}")
+    def pop(self, key: str, default: object = object()) -> Any:
+        if not isinstance(key, str):
+            raise TypeError("pop() key must be str")
 
-        try:
-            if key in self._deleted_fields:
-                raise KeyError(f"Column '{key}' already deleted")
-            value = self[key]  # Get current value
+        # 1. Runtime-added field?
+        if self._added and key in self._added:
+            return self._added.pop(key)
+
+        # 2. Already deleted original field?
+        if key in self._deleted_fields:
+            raise KeyError(key)
+
+        # 3. Original field — delete and return
+        if key in self._fields:
+            value = self[key]
             self._deleted_fields.add(key)
             return value
-        except KeyError:
-            if args:
-                return args[0]
-            raise
+
+        # 4. Not found
+        if default is not object():
+            return default
+        raise KeyError(key)
 
     def update(self, other=None, **kwargs) -> None:
-        """Update record with key-value pairs from dict or kwargs."""
-        if other:
-            if hasattr(other, 'items'):
-                for key, value in other.items():
-                    self[key] = value
+        if other is not None:
+            if hasattr(other, "items"):
+                for k, v in other.items():
+                    self[k] = v
             else:
-                for key, value in other:
-                    self[key] = value
-
-        for key, value in kwargs.items():
-            self[key] = value
-
-    def setdefault(self, key: str, default: Any = None) -> Any:
-        """Get key value or set and return default if key doesn't exist."""
-        try:
-            return self[key]
-        except KeyError:
-            # Can't add new columns to Record, so just return default
-            return default
+                for k, v in other:
+                    self[k] = v
+        for k, v in kwargs.items():
+            self[k] = v
 
     def to_dict(self) -> dict:
-        """Return dictionary representation of active fields."""
         return dict(self.items())
 
-    def copy(self) -> dict:
-        """Return dictionary representation of active fields. The name is a bit misleading, but is needed for dict compatibility."""
-        return self.to_dict()
+    # ------------------------------------------------------------------ #
+    # Utilities
+    # ------------------------------------------------------------------ #
+
+    def __len__(self) -> int:
+        return len(self.keys())
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.keys())
+
+    def __str__(self) -> str:
+        items = ", ".join(f"{k!r}: {v!r}" for k, v in self.items())
+        return f"{self.__class__.__name__}({items})"
+
+    def __repr__(self) -> str:
+        values = ", ".join(repr(v) for v in super().__iter__())  # original order
+        return f"{self.__class__.__name__}({values})"
+
+    def __dir__(self) -> List[str]:
+        return sorted(set(super().__dir__()) | set(self.keys()))
 
     def pprint(self) -> None:
-        """Pretty print the record."""
-        active_fields = self.keys()
-        if not active_fields:
-            print("Empty record")
+        """Pretty-print the record with aligned columns."""
+        if not self.keys():
+            print("<Empty Record>")
             return
 
-        col_width = max(len(field) for field in active_fields)
-        template = f"{{0:<{col_width}}} : {{1}}"
+        width = max(len(k) for k in self.keys())
+        template = f"{{:<{width}}} : {{}}"
 
-        for field in active_fields:
-            value = self[field]
-            print(template.format(field, _format_value(value)))
+        for key in self.keys():
+            value = self[key]
+            print(template.format(key, _format_value(value)))
 
 
 def _format_value(obj: Any) -> str:
