@@ -9,6 +9,11 @@ from .database import _get_all_drivers
 from . import config
 from .config import diagnose_config
 
+
+def _name_cleanup(name):
+    """Cleanup module names for search and display"""
+    return name.lower().replace('-', '_')
+
 def _load_toml():
     if sys.version_info >= (3, 11):
         import tomllib
@@ -23,11 +28,11 @@ def _load_toml():
 
 def _is_installed(pkg: str) -> bool:
     """find_spec fails on tomli → this never does."""
-    pkg = pkg.replace('-', '_')
+    pkg = _name_cleanup(pkg)
     return (
         importlib.util.find_spec(pkg) is not None
         or pkg in sys.modules
-        or pkg in {d.name.lower().replace('-', '_') for d in importlib.metadata.distributions()}
+        or pkg in {_name_cleanup(d.name) for d in importlib.metadata.distributions()}
     )
 
 def checkup():
@@ -58,8 +63,7 @@ def checkup():
                 continue
             deps.append(dep.split('>=')[0].split('==')[0].split('<')[0].strip())
 
-    installed = {d.name.lower().replace('-', '_'): d.version
-                 for d in importlib.metadata.distributions()}
+    installed = {_name_cleanup(d.name): d.version for d in importlib.metadata.distributions()}
 
     print(f"{'Package':<20} {'Status':<8} {'Version'}")
     print("-" * 40)
@@ -79,22 +83,36 @@ def checkup():
         db_type = info['database_type']
         by_type.setdefault(db_type, []).append((info['priority'], name, info))
 
+    if _is_installed('pyodbc'):
+        import pyodbc
+        odbc_drivers = pyodbc.drivers()
+    else:
+        odbc_drivers = []
+
     for db_type in sorted(by_type):
         drivers = sorted(by_type[db_type], key=lambda x: x[0])
-        print(f"\n{db_type}")  # ← bold header
+        print(f"{db_type}")  # ← bold header
         for pri, name, info in drivers:
             # ── 2-space indent for hierarchy
             display_name = f"  {name}"  # ← indented
 
-            # ── pyodbc_* checks 'pyodbc' only
-            check_name = 'pyodbc' if name.startswith('pyodbc_') else name
-            spec = importlib.util.find_spec(check_name)
-            version = installed.get(check_name.lower().replace('-', '_'), '-')
-            status = "✓" if spec else "✗"
+            try:
+                # see if driver has 'module' attribute to use instead of name
+                module_name = info.get('module', name)
+                spec = importlib.util.find_spec(module_name)
+                version = installed.get(_name_cleanup(module_name), '--')
+                status = "✓" if spec else "✗"
+            except ModuleNotFoundError:
+                version = '--'
+                status = "✗"
+            odbc_driver_name = info.get("odbc_driver_name")
+            if odbc_driver_name:
+                odbc_status = "✓" if odbc_driver_name in odbc_drivers else "✗"
+                note = f'({odbc_status} {odbc_driver_name})'
+            else:
+                note = ''
 
-            note = f'({info.get("odbc_driver_name")})' if info.get('odbc_driver_name') else ''
-
-            print(f"{display_name:<20} {pri:<8} {status:<8} {version} {note}")
+            print(f"{display_name:<20} {pri:<9} {status:<8} {version} {note}")
 
     print("\n* Lower priority = preferred")
 
