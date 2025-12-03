@@ -382,6 +382,16 @@ def _get_connection_string(**kwargs) -> str:
     return " ".join([f"{key}={value}" for key, value in kwargs.items()])
 
 
+def _get_odbc_string(**kwargs) -> str:
+    """Build ODBC connection string"""
+    port = kwargs.pop('port', None)
+    if port and 'SERVER' in kwargs and '\\' not in kwargs['SERVER']:
+        kwargs['SERVER'] += f',{port}'
+    printable = ';'.join([f"{key.upper()}={value}" for key, value in _hide_password(kwargs).items()])
+    logger.debug(f'ODBC connection string: {printable}')
+    return ';'.join([f"{key.upper()}={value}" for key, value in kwargs.items()])
+
+
 def _get_odbc_connection_string(**kwargs) -> str:
     """ Get connection string for ODBC from keyword arguments."""
     # logger.debug(f'Generating ODBC connection string from: {_hide_password(kwargs)}')
@@ -394,9 +404,9 @@ def _get_odbc_connection_string(**kwargs) -> str:
             printable_conn_str += f";PWD=******"
     else:
         odbc_driver_name = kwargs.pop('odbc_driver_name', None)
-        server = '{},{}'.format(kwargs.pop('host', 'localhost'), kwargs.pop('port'))
+        if 'port' in kwargs:
+            kwargs['SERVER'] += f',{kwargs.pop("port")}'
         params = {key.upper(): value for key, value in kwargs.items()}
-        params['SERVER'] = server
         conn_str = ";".join([f"{key}={value}" for key, value in params.items()])
         printable_conn_str = ";".join([f"{key}={value}" for key, value in _hide_password(params).items()])
         if odbc_driver_name:
@@ -790,8 +800,9 @@ class Database:
 
         if db_driver is None:
             raise ImportError(f"No database driver found for database type '{db_type}'")
-
+        logger.debug(f'parms before _validate: {kwargs}')
         params = _validate_connection_params(driver_name, **kwargs)
+        logger.debug(f'parms after _validate: {params}')
         if not params:
             raise ValueError("The connection parameters were not valid.")
 
@@ -803,13 +814,13 @@ class Database:
         elif driver_conf['connection_method'] == 'dsn':
             if hasattr(db_driver, 'makedsn') and 'dsn' not in params:
                 host = params.pop('host', 'localhost')
-                port = params.pop('port', driver_conf.get('default_port', 5432))
+                port = params.pop('port', None)
                 service_name = params.pop('service_name', None)
                 params['dsn'] = db_driver.makedsn(host, port, service_name=service_name)
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'odbc_string':
-            params['odbc_driver_name'] = driver_conf.get('odbc_driver_name', None)
-            connection = db_driver.connect(_get_odbc_connection_string(**params))
+            cx_string = _get_odbc_string(DRIVER=driver_conf.get('odbc_driver_name', None), **params)
+            connection = db_driver.connect(cx_string)
         else:
             raise ValueError(f"Unknown connection method ({driver_conf['connection_method']}) for driver '{driver_name}'")
 
