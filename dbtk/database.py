@@ -156,6 +156,7 @@ DRIVERS = {
     # SQL Server Drivers
     'pyodbc_sqlserver': {
         'database_type': 'sqlserver',
+        'module': 'pyodbc',
         'priority': 11,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}, {'dsn'}],
@@ -177,6 +178,7 @@ DRIVERS = {
     # ODBC Drivers for other databases
     'pyodbc_postgres': {
         'database_type': 'postgres',
+        'module': 'pyodbc',
         'priority': 14,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}, {'dsn'}],
@@ -187,6 +189,7 @@ DRIVERS = {
     },
     'pyodbc_mysql': {
         'database_type': 'mysql',
+        'module': 'pyodbc',
         'priority': 15,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}],
@@ -197,6 +200,7 @@ DRIVERS = {
     },
     'pyodbc_oracle': {
         'database_type': 'oracle',
+        'module': 'pyodbc',
         'priority': 13,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}],
@@ -253,7 +257,8 @@ def _get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str
         if info['database_type'] == db_type:
             if valid_only:
                 # only add if the driver is available (importable)
-                spec = importlib.util.find_spec(driver_name)
+                module_name = info.get('module', driver_name)
+                spec = importlib.util.find_spec(module_name)
                 if spec:
                     available_drivers.append(driver_name)
             else:
@@ -760,22 +765,25 @@ class Database:
             Database instance
         """
         db_driver = None
+        all_drivers = _get_all_drivers()
         if driver:
-            if driver not in DRIVERS:
+            if driver not in all_drivers:
                 raise ValueError(f"Unknown driver: {driver}")
-            if DRIVERS[driver]['database_type'] != db_type:
+            if all_drivers[driver]['database_type'] != db_type:
                 raise ValueError(f"Driver '{driver}' is not compatible with database type '{db_type}'")
             try:
-                adapter = driver if not driver.startswith('pyodbc') else 'pyodbc'
-                db_driver = importlib.import_module(adapter)
+                module_name = all_drivers[driver].get('module', driver)
+                db_driver = importlib.import_module(module_name)
                 driver_name = driver
             except ImportError:
                 logger.warning(f"Driver '{driver}' not available, falling back to default")
 
         if db_driver is None:
-            for driver_name in _get_drivers_for_database(db_type):
+            drivers_for_db = _get_drivers_for_database(db_type)
+            for driver_name in drivers_for_db:
                 try:
-                    db_driver = importlib.import_module(driver_name)
+                    module_name = all_drivers[driver_name].get('module', driver_name)
+                    db_driver = importlib.import_module(module_name)
                     break
                 except ImportError:
                     pass
@@ -787,7 +795,7 @@ class Database:
         if not params:
             raise ValueError("The connection parameters were not valid.")
 
-        driver_conf = DRIVERS[driver_name]
+        driver_conf = all_drivers[driver_name]
         if driver_conf['connection_method'] == 'kwargs':
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'connection_string':

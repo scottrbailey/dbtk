@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List, Tuple
 
 from .defaults import settings # noqa: F401
 from .database import Database, _get_params_for_database
+from .cursors import Cursor
 
 try:
     import yaml
@@ -756,6 +757,10 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     # Extract driver if specified
     driver = config.pop('driver', None)
     cursor_settings = config.pop('cursor', None)
+    if cursor_settings is not None:
+        unknown = set(cursor_settings.keys()) - set(Cursor.WRAPPER_SETTINGS)
+        if unknown:
+            logger.warning(f"Unknown cursor settings (ignored): {unknown}")
 
     # remove any params that are not allowed for the database type
     allowed_params = _get_params_for_database(db_type)

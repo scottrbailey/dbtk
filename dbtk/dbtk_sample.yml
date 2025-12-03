@@ -69,11 +69,12 @@ passwords:
 
 # Custom driver definitions (optional)
 drivers:
-  firbird.driver:
+  firbird:
     database_type: firebird
+    module: firebird.driver # only required if name (firbird) does not mactch module (import) name
     priority: 1
-    param_map: { }
-    required_params: [ { 'host', 'database', 'user' } ]
+    param_map: { }  # if driver does not use standard names (user, password, host, port, database) map them here
+    required_params: [ { 'host', 'database', 'user' }, { 'dsn' } ]
     optional_params: { 'port', 'password' }
     connection_method: kwargs
     default_port: 3050
