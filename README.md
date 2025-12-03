@@ -1335,6 +1335,10 @@ connections:
     database: northern_water_tribe
     user: waterbender_admin
     encrypted_password: gAAAAABh...
+    cursor:
+      type: dict
+      column_case: preserve
+      return_cursor: True
 
   # Oracle with environment variable
   earth_kingdom_prod:
@@ -1527,7 +1531,13 @@ DBTK supports multiple database adapters with automatic detection and fallback:
 
 1. **Use appropriate batch sizes** - Larger batches are faster but use more memory:
    ```python
-   bulk_writer.insert(cursor, records, batch_size=5000)  # Tune based on your data
+    import dbtk
+    db = dbtk.connect('fire_nation_archive')
+    cur = db.cursor()
+    ...
+    table = dbtk.etl.Table('intel', intel_cols, cursor=cur)
+    bulk_writer = dbtk.etl.DataSurge(table, batch_size=5000) # Tune based on your data
+    bulk_writer.insert(reader)
    ```
 
 2. **Choose the right cursor type** - Records offer the best balance of functionality and performance:
@@ -1554,7 +1564,7 @@ DBTK supports multiple database adapters with automatic detection and fallback:
 5. **Use DataSurge for bulk operations** - Much faster than row-by-row:
    ```python
    bulk_writer = DataSurge(table)
-   bulk_writer.insert(cursor, records, batch_size=2000)
+   bulk_writer.insert(records)
    ```
 
 6. **Use prepared statements for repeated queries** - Read and parse SQL once:
