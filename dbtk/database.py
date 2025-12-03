@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 # users can define their own drivers in the config file
 _user_drivers = {}
 
+def _hide_password(kwargs):
+    """Replace password with '********' to be printable"""
+    parms = kwargs.copy()
+    for key, val in parms.items():
+        if key in ('password', 'PWD', 'passwd'):
+            parms[key] = '********'
+    return parms
 
 class CursorType:
     """
@@ -30,7 +37,9 @@ class CursorType:
     - DICT: Returns OrderedDict objects (dictionary interface)
     - LIST: Returns plain lists (index access only)
 
-    Example:
+    Example
+    -------
+    ::
         >>> cursor = db.cursor(CursorType.RECORD)  # or just 'record'
         >>> cursor = db.cursor('tuple')
     """
@@ -147,9 +156,10 @@ DRIVERS = {
     # SQL Server Drivers
     'pyodbc_sqlserver': {
         'database_type': 'sqlserver',
+        'module': 'pyodbc',
         'priority': 11,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
-        'required_params': [{'host', 'database', 'user'}],
+        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
         'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 17 for SQL Server',
@@ -168,16 +178,18 @@ DRIVERS = {
     # ODBC Drivers for other databases
     'pyodbc_postgres': {
         'database_type': 'postgres',
+        'module': 'pyodbc',
         'priority': 14,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
-        'required_params': [{'host', 'database', 'user'}],
+        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
         'optional_params': {'password', 'port'},
         'connection_method': 'odbc_string',
-        'odbc_driver_name': 'PostgreSQL UNICODE',
+        'odbc_driver_name': 'PostgreSQL Unicode',
         'default_port': 5432
     },
     'pyodbc_mysql': {
         'database_type': 'mysql',
+        'module': 'pyodbc',
         'priority': 15,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}],
@@ -188,6 +200,7 @@ DRIVERS = {
     },
     'pyodbc_oracle': {
         'database_type': 'oracle',
+        'module': 'pyodbc',
         'priority': 13,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}],
@@ -244,7 +257,8 @@ def _get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str
         if info['database_type'] == db_type:
             if valid_only:
                 # only add if the driver is available (importable)
-                spec = importlib.util.find_spec(driver_name)
+                module_name = info.get('module', driver_name)
+                spec = importlib.util.find_spec(module_name)
                 if spec:
                     available_drivers.append(driver_name)
             else:
@@ -256,7 +270,7 @@ def _get_drivers_for_database(db_type: str, valid_only: bool = True) -> List[str
         if driver_name in _user_drivers:
             priority -= 0.5
         return priority
-    available_drivers.sort(key=lambda d: DRIVERS[d]['priority'])
+    available_drivers.sort(key=sort_key)
     return available_drivers
 
 
@@ -342,8 +356,10 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
                 break
 
     if not required_satisfied:
-        print(params)
-        raise ValueError(f"Missing required parameters. Need one of: {driver_info['required_params']}")
+        msg = f"Missing required parameters. Need one of: {driver_info['required_params']}"
+        logger.error(msg)
+        logger.error(f"Current params: {params}")
+        raise ValueError(msg)
 
     # Apply parameter mapping and filter valid params
     param_map = driver_info.get('param_map', {})
@@ -366,16 +382,38 @@ def _get_connection_string(**kwargs) -> str:
     return " ".join([f"{key}={value}" for key, value in kwargs.items()])
 
 
+def _get_odbc_string(**kwargs) -> str:
+    """Build ODBC connection string"""
+    port = kwargs.pop('port', None)
+    if port and 'SERVER' in kwargs and '\\' not in kwargs['SERVER']:
+        kwargs['SERVER'] += f',{port}'
+    printable = ';'.join([f"{key.upper()}={value}" for key, value in _hide_password(kwargs).items()])
+    logger.debug(f'ODBC connection string: {printable}')
+    return ';'.join([f"{key.upper()}={value}" for key, value in kwargs.items()])
+
+
 def _get_odbc_connection_string(**kwargs) -> str:
     """ Get connection string for ODBC from keyword arguments."""
-    odbc_driver_name = kwargs.pop('odbc_driver_name', None)
-    server = '%s,%s'.format(kwargs.pop('host', 'localhost'), kwargs.pop('port'))
-    params = {key.upper(): value for key, value in kwargs}
-    params['SERVER'] = server
-    if odbc_driver_name:
-        return f"DRIVER={{{odbc_driver_name}}};" + ";".join([f"{key}={value}" for key, value in params.items()])
+    # logger.debug(f'Generating ODBC connection string from: {_hide_password(kwargs)}')
+    if 'dsn' in kwargs and kwargs['dsn']:
+        # DSN only send DSN and password if present
+        conn_str = f"DSN={kwargs['dsn']}"
+        printable_conn_str = conn_str
+        if 'PWD' in kwargs:
+            conn_str += f";PWD={kwargs['PWD']}"
+            printable_conn_str += f";PWD=******"
     else:
-        return ";".join([f"{key}={value}" for key, value in params.items()])
+        odbc_driver_name = kwargs.pop('odbc_driver_name', None)
+        if 'port' in kwargs:
+            kwargs['SERVER'] += f',{kwargs.pop("port")}'
+        params = {key.upper(): value for key, value in kwargs.items()}
+        conn_str = ";".join([f"{key}={value}" for key, value in params.items()])
+        printable_conn_str = ";".join([f"{key}={value}" for key, value in _hide_password(params).items()])
+        if odbc_driver_name:
+            conn_str = f"DRIVER={{{odbc_driver_name}}};" + conn_str
+            printable_conn_str = f"DRIVER={{{odbc_driver_name}}};" + printable_conn_str
+    logger.debug(f"ODBC connection string: {printable_conn_str}")
+    return conn_str
 
 
 def _password_prompt(prompt: str = 'Enter password: ') -> str:
@@ -397,14 +435,68 @@ def _password_prompt(prompt: str = 'Enter password: ') -> str:
 
 class Database:
     """
-    Database connection wrapper that provides uniform interface
-    across different database adapters.
+    Database connection wrapper providing a uniform interface across database adapters.
+
+    The Database class wraps database-specific connection objects and provides a consistent
+    API regardless of which database driver is being used (psycopg2, oracledb, mysqlclient,
+    etc.). It handles parameter style conversions, manages cursors, and delegates attribute
+    access to the underlying connection for driver-specific functionality.
+
+    Key features:
+
+    * **Unified interface** - Same API for PostgreSQL, Oracle, MySQL, SQL Server, SQLite
+    * **Cursor factory** - Create different cursor types (Record, tuple, dict, list)
+    * **Transaction management** - Context managers for safe transactions
+    * **Attribute delegation** - Access underlying driver features when needed
+    * **Parameter style abstraction** - Automatic handling of different bind parameter formats
+
+    Attributes
+    ----------
+    interface
+        The database adapter module (e.g., psycopg2, oracledb)
+    database_type : str
+        Database type: 'postgres', 'oracle', 'mysql', 'sqlserver', or 'sqlite'
+    database_name : str
+        Name of the connected database
+    placeholder : str
+        Parameter placeholder for this database's parameter style
+
+    Example
+    -------
+    ::
+
+        import dbtk
+
+        # Create connection
+        db = dbtk.database.postgres(user='admin', password='secret', database='mydb')
+
+        # Or from configuration
+        db = dbtk.connect('production_db')
+
+        # Use as context manager
+        with db:
+            cursor = db.cursor()
+            cursor.execute("SELECT * FROM users WHERE status = :status", {'status': 'active'})
+            users = cursor.fetchall()
+
+        # Manual connection management
+        db = dbtk.connect('production_db')
+        cursor = db.cursor('dict')  # Dictionary cursor
+        cursor.execute("SELECT * FROM orders")
+        db.commit()
+        db.close()
+
+    See Also
+    --------
+    dbtk.connect : Connect to database from configuration
+    Database.cursor : Create a cursor for executing queries
+    Database.transaction : Context manager for transactions
     """
 
     # Attributes stored locally, others delegated to _connection
     _local_attrs = [
-        '_connection', 'server_type', 'database_name', 'interface',
-        'name', 'placeholder'
+        '_connection', 'database_type', 'database_name', 'interface',
+        'name', 'placeholder', '_cursor_settings'
     ]
 
     # Cursor type mapping
@@ -415,14 +507,39 @@ class Database:
         CursorType.LIST: Cursor
     }
 
-    def __init__(self, connection, interface, database_name: Optional[str] = None):
+    def __init__(self, connection, interface,
+                 database_name: Optional[str] = None,
+                 cursor_settings: Optional[dict] = None):
         """
-        Initialize Database wrapper.
+        Initialize Database wrapper around an existing connection.
 
-        Args:
-            connection: Underlying database connection object
-            interface: Database adapter module (psycopg2, cx_Oracle, etc.)
-            database_name: Name of the database
+        This is typically called by connection factory functions rather than directly.
+        Use ``dbtk.database.postgres()``, ``dbtk.connect()``, etc. instead.
+
+        Parameters
+        ----------
+        connection
+            Underlying database connection object from the adapter
+        interface
+            Database adapter module (psycopg2, oracledb, mysqlclient, etc.)
+        database_name : str, optional
+            Name of the database. If None, attempts to extract from connection.
+        cursor_settings : dict, optional
+            Values passed to the cursor constructor. e.g. {'type': 'dict', 'batch_size': 2000}
+
+        Example
+        -------
+        ::
+
+            import psycopg2
+            from dbtk.database import Database
+
+            # Direct instantiation (not typical)
+            conn = psycopg2.connect(dbname='mydb', user='admin', password='secret')
+            db = Database(conn, psycopg2, 'mydb')
+
+            # Typical usage via factory functions
+            db = dbtk.database.postgres(user='admin', password='secret', database='mydb')
         """
         self._connection = connection
         self.interface = interface
@@ -440,10 +557,16 @@ class Database:
 
         # Determine server type from interface name
         if interface.__name__ in DRIVERS:
-            self.server_type = DRIVERS[interface.__name__]['database_type']
+            self.database_type = DRIVERS[interface.__name__]['database_type']
         else:
-            self.server_type = 'unknown'
+            self.database_type = 'unknown'
 
+        logger.debug(f"Cursor Database.__init__ cursor_settings: {cursor_settings}")
+        if cursor_settings:
+            self._cursor_settings = {key: val for key, val in cursor_settings.items()
+                                     if key in Cursor.WRAPPER_SETTINGS}
+        else:
+            self._cursor_settings = dict()
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying connection."""
@@ -470,15 +593,15 @@ class Database:
     def __str__(self) -> str:
         """String representation of the database connection."""
         if self.database_name:
-            return f'Database({self.database_name}:{self.server_type})'
+            return f'Database({self.database_name}:{self.database_type})'
         else:
-            return f'Database({self.server_type})'
+            return f'Database({self.database_type})'
 
     def __repr__(self) -> str:
         if self.database_name:
-            return f"Database('{self.database_name}', server_type='{self.server_type}')"
+            return f"Database('{self.database_name}', database_type='{self.database_type}')"
         else:
-            return f"Database(server_type='{self.server_type}')"
+            return f"Database(database_type='{self.database_type}')"
 
     def __enter__(self):
         """Context manager entry."""
@@ -488,25 +611,71 @@ class Database:
         """Context manager exit - close connection."""
         self.close()
 
-    def cursor(self, cursor_type: Union[str, Type] = None, **kwargs) -> Cursor:
+    def cursor(self, cursor_type: Union[str, Type] = None,
+               **kwargs) -> Cursor:
         """
-        Create a cursor of the specified type.
+        Create a cursor for executing database queries.
 
-        Args:
-            cursor_type: Type of cursor ('record', 'tuple', 'dict', 'list')
-                        or cursor class
-            **kwargs: Additional arguments passed to cursor
+        Creates a cursor with the specified type, determining how query results are returned.
+        Different cursor types provide different access patterns optimized for various use cases.
 
-        Returns:
-            Cursor instance
+        Parameters
+        ----------
+        cursor_type : str or type, optional
+            Type of cursor to create. Can be:
 
-        Examples:
-            cursor = db.cursor()  # RecordCursor by default
-            cursor = db.cursor('tuple')  # TupleCursor
-            cursor = db.cursor(RecordCursor)  # Explicit class
+            * ``'record'`` (default) - Record objects with attribute, key, and index access
+            * ``'tuple'`` - namedtuples with attribute and index access
+            * ``'dict'`` - OrderedDict objects with dictionary interface
+            * ``'list'`` - Plain lists with index access only
+            * Cursor class - Explicit cursor class to instantiate
+
+        **kwargs
+            Additional arguments passed to the underlying cursor constructor
+
+        Returns
+        -------
+        Cursor
+            Cursor instance of the requested type
+
+        Raises
+        ------
+        ValueError
+            If cursor_type is invalid
+
+        Example
+        -------
+        ::
+
+            # Default Record cursor - most flexible
+            cursor = db.cursor()
+            row = cursor.fetchone()
+            print(row['name'], row.name, row[0])  # All work!
+
+            # Tuple cursor - lightweight namedtuple
+            cursor = db.cursor('tuple')
+            row = cursor.fetchone()
+            print(row.name, row[0])  # Attribute and index access
+
+            # Dict cursor - dictionary-only access
+            cursor = db.cursor('dict')
+            row = cursor.fetchone()
+            print(row['name'], row.get('email', 'N/A'))
+
+            # List cursor - minimal overhead
+            cursor = db.cursor('list')
+            row = cursor.fetchone()
+            print(row[0], row[1])  # Index access only
+
+        See Also
+        --------
+        RecordCursor : Flexible cursor returning Record objects
+        TupleCursor : Lightweight cursor returning namedtuples
+        DictCursor : Dictionary-based cursor
         """
+        # cursor_type precedence: explicit arg > self._cursor_settings['type'] > settings['default_cursor_type'] > CursorType.RECORD
         if cursor_type is None:
-            cursor_type = settings.get('default_cursor_type', CursorType.RECORD)
+            cursor_type = self._cursor_settings.get('type') or settings.get('default_cursor_type', CursorType.RECORD)
         if isinstance(cursor_type, str):
             if cursor_type not in CursorType.values():
                 raise ValueError(
@@ -519,19 +688,60 @@ class Database:
         else:
             raise ValueError(f"Invalid cursor type: {cursor_type}")
 
-        return cursor_class(self, **kwargs)
+        # only pass through allowed kwargs
+        filtered_kwargs = dict()
+        for key in Cursor.WRAPPER_SETTINGS:
+            if key in kwargs and key != 'type':
+                filtered_kwargs[key] = kwargs.pop(key)
+            elif key in self._cursor_settings:
+                filtered_kwargs[key] = self._cursor_settings[key]
+        return cursor_class(self, **filtered_kwargs)
 
     @contextmanager
     def transaction(self):
         """
-        Context manager for database transactions.
+        Context manager for safe database transactions.
 
-        Example:
+        Automatically commits the transaction on successful completion or rolls back
+        if an exception occurs. This ensures transactions are properly cleaned up
+        even if errors occur.
+
+        Yields
+        ------
+        Database
+            This database connection instance
+
+        Raises
+        ------
+        Exception
+            Re-raises any exception that occurs within the transaction block
+            after rolling back the transaction
+
+        Example
+        -------
+        ::
+
             with db.transaction():
                 cursor = db.cursor()
-                cursor.execute("INSERT ...")
-                cursor.execute("UPDATE ...")
-                # Auto-commit on success, rollback on exception
+                cursor.execute("INSERT INTO orders (customer, amount) VALUES (:c, :a)",
+                             {'c': 'Aang', 'a': 100})
+                cursor.execute("UPDATE inventory SET stock = stock - 1 WHERE item_id = :id",
+                             {'id': 42})
+                # Automatically commits on success
+
+            # If exception occurs, transaction is automatically rolled back
+            try:
+                with db.transaction():
+                    cursor = db.cursor()
+                    cursor.execute("INSERT INTO invalid_table ...")  # Raises error
+                    # Rollback happens automatically
+            except Exception as e:
+                logger.error(f"Transaction failed: {e}")
+
+        See Also
+        --------
+        Database.commit : Manually commit a transaction
+        Database.rollback : Manually roll back a transaction
         """
         try:
             yield self
@@ -551,45 +761,52 @@ class Database:
             print(r'"SELECT * FROM people WHERE name = %(name)s AND age > %(age)s", {"name": "Smith", "age": 30}')
 
     @classmethod
-    def create(cls, db_type: str, driver: str  = None, **kwargs) -> 'Database':
+    def create(cls, db_type: str, driver: Optional[str] = None,
+               cursor_settings: Optional[dict] = None, **kwargs) -> 'Database':
         """
         Factory method to create database connections.
 
         Args:
             db_type: Database type ('postgres', 'oracle', 'mysql', etc.)
+            cursor_settings: Defaults to use when creating cursors.
             **kwargs: Connection parameters
 
         Returns:
             Database instance
         """
         db_driver = None
+        all_drivers = _get_all_drivers()
         if driver:
-            if driver not in DRIVERS:
+            if driver not in all_drivers:
                 raise ValueError(f"Unknown driver: {driver}")
-            if DRIVERS[driver]['database_type'] != db_type:
+            if all_drivers[driver]['database_type'] != db_type:
                 raise ValueError(f"Driver '{driver}' is not compatible with database type '{db_type}'")
             try:
-                db_driver = importlib.import_module(driver)
+                module_name = all_drivers[driver].get('module', driver)
+                db_driver = importlib.import_module(module_name)
                 driver_name = driver
             except ImportError:
                 logger.warning(f"Driver '{driver}' not available, falling back to default")
 
         if db_driver is None:
-            for driver_name in _get_drivers_for_database(db_type):
+            drivers_for_db = _get_drivers_for_database(db_type)
+            for driver_name in drivers_for_db:
                 try:
-                    db_driver = importlib.import_module(driver_name)
+                    module_name = all_drivers[driver_name].get('module', driver_name)
+                    db_driver = importlib.import_module(module_name)
                     break
                 except ImportError:
                     pass
 
         if db_driver is None:
             raise ImportError(f"No database driver found for database type '{db_type}'")
-
+        logger.debug(f'parms before _validate: {kwargs}')
         params = _validate_connection_params(driver_name, **kwargs)
+        logger.debug(f'parms after _validate: {params}')
         if not params:
             raise ValueError("The connection parameters were not valid.")
 
-        driver_conf = DRIVERS[driver_name]
+        driver_conf = all_drivers[driver_name]
         if driver_conf['connection_method'] == 'kwargs':
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'connection_string':
@@ -597,15 +814,19 @@ class Database:
         elif driver_conf['connection_method'] == 'dsn':
             if hasattr(db_driver, 'makedsn') and 'dsn' not in params:
                 host = params.pop('host', 'localhost')
-                port = params.pop('port', 5432)
+                port = params.pop('port', None)
                 service_name = params.pop('service_name', None)
                 params['dsn'] = db_driver.makedsn(host, port, service_name=service_name)
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'odbc_string':
-            connection = db_driver.connect(_get_odbc_connection_string(**params))
+            cx_string = _get_odbc_string(DRIVER=driver_conf.get('odbc_driver_name', None), **params)
+            connection = db_driver.connect(cx_string)
+        else:
+            raise ValueError(f"Unknown connection method ({driver_conf['connection_method']}) for driver '{driver_name}'")
 
         if connection:
-            return cls(connection, db_driver, kwargs.get('database'))
+            db = cls(connection, db_driver, kwargs.get('database'), cursor_settings=cursor_settings)
+            return db
 
 
 def postgres(user: str, password: Optional[str] = None, database: str = 'postgres',
@@ -628,7 +849,9 @@ def postgres(user: str, password: Optional[str] = None, database: str = 'postgre
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import postgres
         >>> with postgres(user='user', password='pass', database='mydb') as db:
         ...     cursor = db.cursor()
@@ -661,7 +884,9 @@ def oracle(user: str, password: Optional[str] = None, database: str = None,
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import oracle
         >>> # Using service name
         >>> db = oracle(user='scott', password='tiger',
@@ -698,7 +923,9 @@ def mysql(user: str, password: Optional[str] = None, database: str = 'mysql',
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import mysql
         >>> with mysql(user='root', password='pass', database='myapp') as db:
         ...     cursor = db.cursor()
@@ -729,7 +956,9 @@ def sqlserver(user: str, password: Optional[str] = None, database: str = None,
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import sqlserver
         >>> db = sqlserver(user='sa', password='pass',
         ...                database='AdventureWorks', host='sqlserver.local')
@@ -759,7 +988,9 @@ def sqlite(database: str, **kwargs) -> Database:
     Returns:
         Database connection object with context manager support
 
-    Example:
+    Example
+    -------
+    ::
         >>> from dbtk.database import sqlite
         >>> # File-based database
         >>> with sqlite('app.db') as db:

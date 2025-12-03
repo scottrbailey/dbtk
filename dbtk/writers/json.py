@@ -35,7 +35,7 @@ class JSONWriter(BaseWriter):
             **json_kwargs: Additional arguments passed to json.dump
         """
         # Preserve data types for JSON output
-        super().__init__(data, filename, columns, encoding, preserve_data_types=True)
+        super().__init__(data, filename, columns, encoding, preserve_types=True)
         self.indent = indent
         self.json_kwargs = json_kwargs
 
@@ -50,7 +50,7 @@ class JSONWriter(BaseWriter):
     def _write_data(self, file_obj) -> None:
         """Write JSON data to file object."""
         records = [self._row_to_dict(record) for record in self.data_iterator]
-        self.row_count = len(records)
+        self._row_num = len(records)
         json.dump(records, file_obj, indent=self.indent, **self.json_kwargs)
 
 
@@ -82,8 +82,8 @@ class NDJSONWriter(JSONWriter):
             record_dict = self._row_to_dict(record)
             json_line = json.dumps(record_dict, **self.json_kwargs)
             file_obj.write(json_line + '\n')
-            self.row_count += 1
-            if self.row_count % 1000 == 0:
+            self._row_num += 1
+            if self._row_num % 1000 == 0:
                 file_obj.flush()
 
 
@@ -102,7 +102,7 @@ def to_json(data,
         indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
         **json_kwargs: Additional arguments passed to json.dump
 
-    Examples:
+    Example:
         # Write to file as JSON array
         to_json(cursor, 'users.json')
 
@@ -135,7 +135,7 @@ def to_ndjson(data,
         encoding: File encoding
         **json_kwargs: Additional arguments passed to json.dumps
 
-    Examples:
+    Example:
         # Write to file as NDJSON
         to_ndjson(cursor, 'users.ndjson')
 

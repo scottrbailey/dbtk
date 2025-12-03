@@ -41,12 +41,12 @@ def excel_file(fixtures_dir):
 def sample_records(excel_file):
     """Load first 10 records from sample_data.xlsx as Records with types preserved."""
     from dbtk.readers.excel import open_workbook, get_sheet_by_index
-    from dbtk.readers import XLSXReader, XLReader
+    from dbtk.readers import XLSXReader, XLSReader
 
     wb = open_workbook(str(excel_file))
     ws = get_sheet_by_index(wb, 0)
 
-    reader_class = XLSXReader if ws.__class__.__name__ == 'Worksheet' else XLReader
+    reader_class = XLSXReader if ws.__class__.__name__ == 'Worksheet' else XLSReader
 
     with reader_class(ws, add_rownum=False) as reader:
         records = []

@@ -5,13 +5,15 @@ Supports YAML configuration files with optional password encryption and global s
 """
 
 import os
-import sys
+from textwrap import dedent
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 
 from .defaults import settings # noqa: F401
 from .database import Database, _get_params_for_database
+from .cursors import Cursor
+
 try:
     import yaml
 except ImportError:
@@ -47,6 +49,7 @@ def _ensure_sample_config():
     # Find sample config in package
     package_dir = Path(__file__).parent
     sample_config = package_dir / 'dbtk_sample.yml'
+    sample_target = user_config_dir / 'dbtk_sample.yml'
 
     if not sample_config.exists():
         return  # No sample to copy
@@ -56,27 +59,208 @@ def _ensure_sample_config():
         user_config_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy sample config
-        shutil.copy(sample_config, user_config_file)
-        logger.info(f"Created sample config at {user_config_file}")
+        shutil.copy(sample_config, sample_target)
+        logger.info(f"Created sample config at {sample_target}")
         import sys
-        print(f"Created sample DBTK config at {user_config_file}", file=sys.stderr)
+        print(f"Created sample DBTK config at {sample_target}", file=sys.stderr)
 
     except Exception as e:
         logger.debug(f"Could not create sample config: {e}")
         # Don't fail - just continue without config
 
 
+def diagnose_config(config_file: Optional[str] = None) -> List[Tuple[str, str]]:
+    """Full config health check using a real ConfigManager instance."""
+    results = []
+
+    # 1. Spin up a REAL manager — handles path, sample creation, everything
+    try:
+        mgr = ConfigManager(config_file)
+        results.append(('✓', f"Config loaded: {mgr.config_file}"))
+    except Exception as e:
+        results.append(('✗', f"Config failed: {e}"))
+        return results
+
+    # 2. Deps
+    results.append(('✓', "cryptography ready") if HAS_CRYPTO else ('✗', "cryptography missing"))
+    results.append(('✓', "keyring ready") if HAS_KEYRING else ('?', "keyring optional"))
+
+    # 3. Keys — safe peek, no decrypt
+    env_key = os.getenv('DBTK_ENCRYPTION_KEY')
+    keyring_key = keyring.get_password('dbtk', 'encryption_key') if HAS_KEYRING else None
+
+    if env_key:
+        results.append(('✓', "DBTK_ENCRYPTION_KEY set"))
+        results.append(('✓', "Env key valid") if _valid_fernet(env_key) else ('✗', "Env key invalid"))
+    else:
+        results.append(('?', "No env key"))
+
+    if keyring_key:
+        results.append(('✓', "Keyring key set"))
+        results.append(('✓', "Keyring key valid") if _valid_fernet(keyring_key) else ('✗', "Keyring key invalid"))
+    elif HAS_KEYRING:
+        results.append(('?', "Keyring empty"))
+
+    if env_key and keyring_key:
+        results.append(('✓', "Keys match") if env_key == keyring_key else ('✗', "KEYS MISMATCH"))
+
+    # 4. Encrypted passwords? — ask the manager, not the file
+    enc_count = sum(
+        1 for c in mgr.config.get('connections', {}).values()
+        if 'encrypted_password' in c
+    ) + sum(
+        1 for p in mgr.config.get('passwords', {}).values()
+        if 'encrypted_password' in p
+    )
+
+    results.append(('✓', f"{enc_count} encrypted passwords") if enc_count else ('✓', "No encrypted passwords"))
+
+    # 5. Unencrypted passwords
+    uenc_count = sum(
+        1 for c in mgr.config.get('connections', {}).values()
+        if 'password' in c and not(c.get('password', '').startswith('${'))
+    ) + sum(
+        1 for p in mgr.config.get('passwords', {}).values()
+        if 'password' in p and not(p.get('password', '').startswith('${'))
+    )
+    results.append(("✗", f"{uenc_count} unencrypted passwords!") if uenc_count else ('✓', "No unencrypted passwords"))
+    return results
+
+
+def _valid_fernet(key: str) -> bool:
+    try:
+        Fernet(key.encode())
+        return True
+    except Exception:
+        return False
+
+
 class ConfigManager:
-    """Manages database configuration from YAML files."""
+    """
+    Manage DBTK configuration from YAML files.
+
+    ConfigManager handles loading and parsing YAML configuration files that define
+    database connections, encrypted passwords, and global settings. It searches for
+    configuration files in standard locations, validates the structure, and provides
+    methods for accessing connections and passwords.
+
+    The manager supports encrypted passwords using Fernet symmetric encryption,
+    environment variable substitution, and automatic sample config generation for
+    new users.
+
+    Configuration File Structure
+    ----------------------------
+    ::
+
+        # dbtk.yml
+        settings:
+          default_timezone: UTC
+          default_country: US
+          default_paramstyle: named
+
+        connections:
+          my_db:
+            type: postgres
+            host: localhost
+            database: myapp
+            user: admin
+            encrypted_password: gAAAAABh...
+
+        passwords:
+          api_key:
+            encrypted_password: gAAAAABh...
+            description: API key for external service
+
+    Configuration Locations
+    -----------------------
+    ConfigManager searches for configuration files in this order:
+
+    1. File specified in config_file parameter
+    2. ``./dbtk.yml`` (current directory)
+    3. ``./dbtk.yaml`` (current directory)
+    4. ``~/.config/dbtk.yml`` (user config directory)
+    5. ``~/.config/dbtk.yaml`` (user config directory)
+
+    If no config is found, creates a sample config at ``~/.config/dbtk.yml``.
+
+    Parameters
+    ----------
+    config_file : str or Path, optional
+        Path to YAML config file. If None, searches standard locations.
+
+    Attributes
+    ----------
+    config_file : Path
+        Path to the loaded configuration file
+    config : dict
+        Parsed configuration dictionary
+
+    Example
+    -------
+    ::
+
+        from dbtk.config import ConfigManager
+
+        # Load from default location
+        config_mgr = ConfigManager()
+
+        # Access connection settings
+        conn_params = config_mgr.get_connection('production_db')
+
+        # Get encrypted password
+        api_key = config_mgr.get_password('external_api')
+
+        # Load specific config file
+        config_mgr = ConfigManager('/path/to/custom.yml')
+
+    See Also
+    --------
+    dbtk.connect : Connect to database using config
+    generate_encryption_key : Create encryption key for passwords
+    encrypt_config_file : Encrypt passwords in config file
+
+    Notes
+    -----
+    * YAML files must have .yml or .yaml extension
+    * Connections require 'type' field (postgres, oracle, mysql, etc.)
+    * Encrypted passwords require DBTK_ENCRYPTION_KEY environment variable
+    * Environment variables can be used with ${VAR_NAME} syntax
+    * Sample config is created at ~/.config/dbtk.yml on first run if no config exists
+    """
 
     def __init__(self, config_file: Optional[str] = None):
         """
-        Initialize config manager.
+        Initialize config manager and load configuration.
 
-        Args:
-            config_file: Path to YAML config file. If None, looks for:
-                        - dbtk.yml in current directory
-                        - ~/.config/dbtk.yml
+        Parameters
+        ----------
+        config_file : str or Path, optional
+            Path to YAML config file. If None, searches for:
+
+            * ``dbtk.yml`` in current directory
+            * ``dbtk.yaml`` in current directory
+            * ``~/.config/dbtk.yml``
+            * ``~/.config/dbtk.yaml``
+
+        Raises
+        ------
+        FileNotFoundError
+            If no config file found in any search location
+        ValueError
+            If config file is invalid or malformed
+
+        Example
+        -------
+        ::
+
+            # Use default config location
+            config = ConfigManager()
+
+            # Use specific config file
+            config = ConfigManager('/etc/dbtk/production.yml')
+
+            # Config auto-creates sample if none exists
+            config = ConfigManager()  # Creates ~/.config/dbtk.yml if needed
         """
         self.config_file = self._find_config_file(config_file)
         self.config = self._load_config()
@@ -129,8 +313,8 @@ class ConfigManager:
             # Validate connections section if it exists
             if 'connections' in config:
                 for name, conn in config.get('connections', {}).items():
-                    if not isinstance(conn, dict) or 'type' not in conn:
-                        raise ValueError(f"Invalid connection '{name}' in {self.config_file}: 'type' is required")
+                    if not isinstance(conn, dict) or ('type' not in conn and 'driver' not in conn):
+                        raise ValueError(f"Invalid connection '{name}' in {self.config_file}: 'type' or 'driver' is required")
 
             # Validate passwords section if it exists
             if 'passwords' in config:
@@ -182,7 +366,7 @@ class ConfigManager:
         Returns:
             Setting value or default
 
-        Examples:
+        Example:
             timeout = config.get_setting('database.timeout', 30)
             tz = config.get_setting('default_timezone', 'UTC')
         """
@@ -227,31 +411,37 @@ class ConfigManager:
         """Get encryption key from keyring or environment variable."""
         # environment variable takes precedence
         key_str = os.environ.get('DBTK_ENCRYPTION_KEY')
+        if key_str:
+            logger.debug("Using DBTK_ENCRYPTION_KEY from environment")
+            return key_str.encode()
 
-        if not key_str and HAS_KEYRING:
+        if HAS_KEYRING:
             try:
                 key_str = keyring.get_password('dbtk', 'encryption_key')
                 if key_str:
+                    logger.debug("Using encryption key from keyring")
                     return key_str.encode()
+                else:
+                    raise ValueError("Keyring entry exists but is empty")
             except Exception as e:
-                # we'll handle later
-                pass
-        # fall back to environment variable
-
-        if key_str:
-            return key_str.encode()
-
-        if HAS_KEYRING and HAS_CRYPTO:
-            try:
-                import keyring
-                new_key = Fernet.generate_key().decode()
-                keyring.set_password("dbtk", "encryption_key", new_key)
-                logger.info("Generated and stored new encryption key in system keyring")
-                return new_key.encode()
-            except Exception:
-                raise ValueError("No encryption key available and unable to generate one")
-        elif HAS_CRYPTO:
-            raise ValueError("No encryption key. Generate config.generate_encryption_key() and store in DBTK_ENCRYPTION_KEY environment variable")
+                logger.warning(f"Keyring access failed: {e}")
+                raise ValueError(
+                    "Encryption key not found in keyring and DBTK_ENCRYPTION_KEY not set.\n"
+                    "Run: python -c \"import dbtk.config as c, keyring; "
+                    "keyring.set_password('dbtk', 'encryption_key', c.generate_encryption_key())\""
+                )
+        if HAS_CRYPTO:
+            if HAS_KEYRING:
+                msg = dedent("""\
+                Encryption key not found in environment or keyring.
+                Run: `dbtk store-key` to generate and store a new encryption key in the keyring.
+                """)
+            else:
+                msg = dedent("""\
+                Encryption key not found in environment or keyring.
+                Run `dbtk generate-key` to generate and a new encryption key
+                then in the DBTK_ENCRYPTION_KEY environment variable.""")
+            raise ValueError(msg)
         else:
             raise ValueError("Encryption not available. Install cryptography package to enable encryption.")
 
@@ -449,25 +639,75 @@ class ConfigManager:
 _config_manager: Optional[ConfigManager] = None
 
 
+def store_key(key: Optional[str] = None, force: bool = False) -> None:
+    """CLI utility to store encryption key in system keyring."""
+    if not HAS_CRYPTO:
+        raise ValueError("Encryption not available. Install cryptography package to enable encryption.")
+
+    if not HAS_KEYRING:
+        raise ValueError("Keyring not available. Install keyring package to store key in system keyring.")
+
+    try:
+        # check if we have a current key
+        current_key = keyring.get_password("dbtk", "encryption_key")
+    except Exception:
+        current_key = None
+
+    if current_key:
+        if force:
+            msg = "Encryption key already stored in system keyring. Overwriting!"
+            logger.warning(msg)
+            print(msg)
+        else:
+            msg = "Encryption key already stored in system keyring. Use --force to overwrite."
+            logger.warning(msg)
+            print(msg)
+            return
+
+    if key is None:
+        key = _generate_encryption_key()
+    else:
+        # make sure passed in key is valid
+        if not _valid_fernet(key):
+           raise ValueError("Invalid encryption key. Must be 32 url-safe base64-encoded bytes.")
+
+    try:
+        keyring.set_password("dbtk", "encryption_key", key)
+        msg = "Stored encryption key in system keyring"
+        logger.info(msg)
+        print(msg)
+        return
+    except Exception as e:
+        msg = f"Failed to store encryption key in system keyring: {e}"
+        logger.error(msg)
+        raise ValueError(msg)
+
+
+def _generate_encryption_key() -> str:
+    """
+
+    """
+    return Fernet.generate_key().decode()
+
+
 def generate_encryption_key() -> str:
     """
     Generate a random encryption key.
 
     This function generates a random encryption key that can be used to encrypt
     and decrypt data securely. The key is returned as a string and should be
-    stored in the DBTK_ENCRYPTION_KEY environment variable.
+    stored in the DBTK_ENCRYPTION_KEY environment variable
+    or on keyring by calling `dbtk store-key [your key]`
+
 
     Returns:
-        str: A randomly generated encryption key.
-    """
-    return Fernet.generate_key().decode()
-
-
-def generate_encryption_key_cli() -> str:
-    """CLI utility to generate and print encryption key."""
-    key = generate_encryption_key()
-    print(key)
-    print("Store this key in DBTK_ENCRYPTION_KEY environment variable", file=sys.stderr)
+        str: A randomly generated encryption key."""
+    key = _generate_encryption_key()
+    if HAS_KEYRING:
+        msg = "Key generated.  Store in system keyring with `dbtk store-key [your key]`"
+    else:
+        msg = "Key generated.  Store in DBTK_ENCRYPTION_KEY environment variable"
+    print(msg)
     return key
 
 
@@ -507,17 +747,27 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     config = config_mgr.get_connection_config(name)
     if password:
         config['password'] = password
+    info = {key:val for key, val in config.items() if key != 'password'}
+    logger.debug(f"Connecting to database {name} with config: {info}")
 
     # Extract database type
     db_type = config.pop('type', None)
     if not db_type:
-        db_type = config.pop('server_type', 'postgres')
+        db_type = config.pop('database_type', 'postgres')
+    # Extract driver if specified
+    driver = config.pop('driver', None)
+    cursor_settings = config.pop('cursor', None)
+    if cursor_settings is not None:
+        unknown = set(cursor_settings.keys()) - set(Cursor.WRAPPER_SETTINGS)
+        if unknown:
+            logger.warning(f"Unknown cursor settings (ignored): {unknown}")
 
+    # remove any params that are not allowed for the database type
     allowed_params = _get_params_for_database(db_type)
     config = {key: val for key, val in config.items() if key in allowed_params}
 
     # Create database connection
-    return Database.create(db_type, **config)
+    return Database.create(db_type, driver=driver, cursor_settings=cursor_settings, **config)
 
 
 def get_password(name: str, config_file: Optional[str] = None) -> str:
@@ -577,7 +827,7 @@ def get_setting(key: str, default: Any = None, config_file: Optional[str] = None
     return config_mgr.get_setting(key, default)
 
 
-def encrypt_password_cli(password: str = None, encryption_key: str = None) -> str:
+def encrypt_password(password: str = None, encryption_key: str = None) -> str:
     """
     CLI utility function to encrypt a password.
 
@@ -606,7 +856,7 @@ def encrypt_password_cli(password: str = None, encryption_key: str = None) -> st
     return encrypted
 
 
-def encrypt_config_file_cli(filename: str) -> None:
+def encrypt_config_file(filename: str) -> None:
     """CLI Utility to encrypt all passwords in a config file."""
     temp_config = ConfigManager.__new__(ConfigManager)
     temp_config._fernet = None
@@ -647,7 +897,7 @@ def encrypt_config_file_cli(filename: str) -> None:
             print(f"No passwords to encrypt in {filename}")
 
 
-def migrate_config_cli(source_file: str, target_file: str, new_encryption_key: str) -> None:
+def migrate_config(source_file: str, target_file: str, new_encryption_key: str) -> None:
     """Migrate config file with new encryption key."""
     from copy import deepcopy
     source_config_mgr = ConfigManager(source_file)
@@ -657,12 +907,12 @@ def migrate_config_cli(source_file: str, target_file: str, new_encryption_key: s
     for conn_name, conn_config in new_config.get('connections', {}).items():
         if 'encrypted_password' in conn_config:
             password = source_config_mgr.decrypt_password(conn_config['encrypted_password'])
-            conn_config['encrypted_password'] = encrypt_password_cli(password, new_encryption_key)
+            conn_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
 
     for pwd_name, pwd_config in new_config.get('passwords', {}).items():
         if 'encrypted_password' in pwd_config:
             password = source_config_mgr.decrypt_password(pwd_config['encrypted_password'])
-            pwd_config['encrypted_password'] = encrypt_password_cli(password, new_encryption_key)
+            pwd_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
 
     with open(target_file, 'w') as f:
         yaml.safe_dump(new_config, f, default_flow_style=False)

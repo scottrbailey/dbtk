@@ -8,14 +8,18 @@ header normalization across all reader implementations.
 """
 
 import itertools
+import logging
 import re
+import time
 
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
 from collections import OrderedDict
+from os import path
 from ..record import Record
 from ..defaults import settings
 
+logger = logging.getLogger(__name__)
 
 class Clean:
     """Header cleaning levels for column names."""
@@ -92,13 +96,144 @@ class ReturnType:
     DICT = 'dict'
     DEFAULT = RECORD
 
+class _Progress:
+    """ Helper class for displaying progress bar. """
+    __slots__ = ('tell', 'total')
+
+    def __init__(self, obj):
+        # Check if object has precomputed uncompressed size (from compressed files)
+        if hasattr(obj, '_uncompressed_size'):
+            if obj._uncompressed_size is not None:
+                # Use the precomputed size from file metadata (GZIP, ZIP)
+                self.total = obj._uncompressed_size
+                self.tell = obj.tell
+            else:
+                # Compressed format without size metadata (BZ2, XZ) - disable progress
+                self.total = 0
+                self.tell = lambda: 0
+        elif hasattr(obj, 'buffer'):
+            buf = obj.buffer
+            pos = buf.tell()
+            buf.seek(0, 2)
+            self.total = buf.tell()
+            buf.seek(pos)
+            self.tell = buf.tell
+        elif hasattr(obj, 'tell'):
+            pos = obj.tell()
+            obj.seek(0, 2)
+            self.total = obj.tell()
+            obj.seek(pos)
+            self.tell = obj.tell
+        else:
+            # Excel: fake byte size from row count
+            if hasattr(obj, 'nrows'):
+                #xlrd
+                rows = getattr(obj, 'nrows', 65_000)
+            else:
+                # openpyxl
+                rows = getattr(obj, 'max_row', 1_000_000)
+            self.total = rows * 1024
+            self.tell = lambda: getattr(obj, '_current_row', 1) * 1024
+
+    def update(self):
+        if not self.total:
+            return ""
+        pos = self.tell()
+        pct = pos / self.total
+        filled = round(20 * pct)
+        bar = "█" * filled + "░" * (20 - filled)
+        return f"{bar} {pos // 1024:,}K/{self.total // 1024:,}K"
+
 
 class Reader(ABC):
     """
-    Abstract base class for all file readers.
+    Abstract base class for all file readers in DBTK.
 
-    Provides common functionality for CSV, Excel, and fixed-width file readers.
-    Can return either Record objects or dict objects based on return_type parameter.
+    Provides unified interface and common functionality for reading various file formats
+    (CSV, Excel, JSON, XML, fixed-width). All readers support the same features regardless
+    of file format: header cleaning, record skipping, row number tracking, and flexible
+    return types.
+
+    Readers are designed to work as context managers and iterators, making them ideal
+    for memory-efficient processing of large files. They automatically handle resource
+    cleanup and support both Record objects (with multiple access patterns) and plain
+    dictionaries as return types.
+
+    Common Features
+    ---------------
+    * **Automatic header cleaning** - Standardize messy column names
+    * **Row number tracking** - Automatic _row_num field for debugging
+    * **Record skipping** - Skip header rows or bad data
+    * **Record limiting** - Process only first N records
+    * **Flexible return types** - Record objects or dictionaries
+    * **Context manager** - Automatic resource cleanup
+    * **Iterator protocol** - Memory-efficient streaming
+
+    Parameters
+    ----------
+    add_rownum : bool, default True
+        Add a '_row_num' field to each record containing the 1-based row number
+    clean_headers : Clean or str, optional
+        Header cleaning level. Options: Clean.LOWER_NOSPACE (default), Clean.STANDARDIZE,
+        Clean.NONE. Can also pass string like 'lower_nospace'.
+    skip_records : int, default 0
+        Number of data records to skip after headers (useful for skipping footer rows
+        or known bad data at start of file)
+    max_records : int, optional
+        Maximum number of records to read. None (default) reads all records.
+    return_type : str, default 'record'
+        Return type for records: 'record' for Record objects, 'dict' for OrderedDict
+
+    Example
+    -------
+    ::
+
+        # Subclasses implement specific file formats
+        from dbtk import readers
+
+        # CSV with default settings
+        with readers.CSVReader(open('data.csv')) as reader:
+            for record in reader:
+                print(record.name, record.email)
+
+        # Skip first 5 records, read only 100, return dicts
+        with readers.CSVReader(open('data.csv'),
+                              skip_records=5,
+                              max_records=100,
+                              return_type='dict') as reader:
+            for row in reader:
+                print(row['name'])
+
+        # Standardize messy headers
+        with readers.CSVReader(open('messy.csv'),
+                              clean_headers=readers.Clean.STANDARDIZE) as reader:
+            # Headers like "ID #", "Student Name" become "id", "studentname"
+            for record in reader:
+                print(record.id, record.studentname)
+
+    See Also
+    --------
+    CSVReader : Read CSV files
+    JSONReader : Read JSON files
+    XLSXReader : Read Excel .xlsx files
+    XMLReader : Read XML files
+    FixedReader : Read fixed-width text files
+    Clean : Header cleaning options
+    Record : Flexible row objects with multiple access patterns
+
+    Notes
+    -----
+    This is an abstract base class. Use one of the concrete implementations
+    (CSVReader, JSONReader, etc.) for actual file reading.
+
+    Subclasses must implement:
+
+    * ``_read_headers()`` - Return list of raw column names from file
+    * ``_generate_rows()`` - Yield raw data rows as lists
+
+    Optionally override:
+
+    * ``_cleanup()`` - Release resources (file handles, etc.)
     """
 
     def __init__(self,
@@ -106,30 +241,62 @@ class Reader(ABC):
                  clean_headers: Clean = None,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
+                 headers: Optional[List[str]] = None,
                  return_type: str = ReturnType.DEFAULT
                  ):
         """
-        Initialize the reader.
+        Initialize the reader with common options.
 
-        Args:
-            add_rownum: Add a 'rownum' field to each record
-            clean_headers: Header cleaning level from Clean
-            skip_records: Number of data records to skip after headers
-            max_records: Maximum number of records to read, or None for all
-            return_type: Either 'record' for Record objects or 'dict' for OrderedDict
+        Parameters
+        ----------
+        add_rownum : bool, default True
+            Add a '_row_num' field to each record containing the 1-based row number
+        clean_headers : Clean or str, optional
+            Header cleaning level from Clean enum or string. If None, uses
+            default_header_clean from settings (default: Clean.LOWER_NOSPACE)
+        skip_records : int, default 0
+            Number of data records to skip after headers
+        max_records : int, optional
+            Maximum number of records to read, or None for all records
+        headers: Optional list of header names to use instead of reading from row 0
+        return_type : str, default 'record'
+            Either 'record' for Record objects or 'dict' for OrderedDict
+
+        Example
+        -------
+        ::
+
+            # In subclass implementation
+            class MyReader(Reader):
+                def __init__(self, file_path, **kwargs):
+                    super().__init__(**kwargs)
+                    self.file = open(file_path)
+
+                def _read_headers(self):
+                    return ['id', 'name', 'email']
+
+                def _generate_rows(self):
+                    for line in self.file:
+                        yield line.strip().split(',')
         """
         self.add_rownum = add_rownum
         if clean_headers is None:
             clean_headers = settings.get('default_header_clean', Clean.LOWER_NOSPACE)
         self.clean_headers = Clean.from_string(clean_headers)
-        self.record_num = 0
+        self._row_num = 0
         self.skip_records = skip_records
         self.max_records = max_records
         self.return_type = return_type
         self._record_class = None
+        self._raw_headers: Optional[List[str]] = headers
         self._headers: List[str] = []
-        self._headers_initialized = False
+        self._headers_initialized: bool = False
         self._data_iter: Optional[Iterator[List[Any]]] = None
+        self._trackable = None          # used by progress tracker
+        self._prog: _Progress = None    # progress tracker _Progress object
+        self._big: bool = False         # True if source > 5MB (adds progress bar)
+        self._source: str = None        # keep track of source filename for subclasses that use a file pointer directly (Excel)
+        self._start_time: float = 0     # will get updated when the first record is read (time.monotonic())
 
     def __enter__(self):
         """Context manager entry."""
@@ -143,12 +310,87 @@ class Reader(ABC):
         """Make reader iterable."""
         return self
 
-    def __next__(self) -> Union[Record, OrderedDict]:
+    def __next__(self):
         if not self._headers_initialized:
             self._setup_record_class()
-        row_data = self._read_next_row()
-        self.record_num += 1  # Starts at 1 for first yielded record
+        if not self._start_time:
+            self._start_time = time.monotonic()
+        if self._prog is None and self._trackable is not None:
+            self._prog = _Progress(self._trackable)
+            self._big = self._prog.total > 5_242_880
+
+        try:
+            row_data = self._read_next_row()
+        except StopIteration:
+            took = time.monotonic() - self._start_time
+            rate = self._row_num / took if took else 0
+            if self._big:
+                print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} ✅")
+            print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
+            logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
+            raise  # ← let for-loop end
+
+        self._row_num += 1
+
+        if self._big and (self._row_num == 500 or self._row_num % 50_000 == 0):
+            print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} "
+                  f"({self._row_num:,})", end="", flush=True)
+
         return self._create_record(row_data)
+
+    def __repr__(self):
+        source = self._get_source(base_name=True)
+        if source:
+            source = f"'{source}'"
+        return f"{self.__class__.__name__}({source})"
+
+    @property
+    def source(self) -> str:
+        """
+        Get the filename of the source file.
+
+        For the XLSXReader and XLSReader, the source must be set manually because the Workbook objects do not keep
+        a reference to the original file.
+        """
+        if self._source is None:
+            self._source = self._get_source()
+        return self._source
+
+    @source.setter
+    def source(self, value: str):
+        self._source = value
+
+    def _get_source(self, base_name: Optional[bool] = False) -> str:
+        """ Get the source filename for the Reader.
+
+        Args:
+            base_name: If True, return the base filename (no path)
+
+        Returns: filename
+        """
+
+        if hasattr(self, 'fp') and hasattr(self.fp, 'name'):
+            source = self.fp.name
+        elif hasattr(self, 'source'):
+            source = self.source
+        else:
+            source = ''
+        if base_name:
+            source = path.basename(source)
+        return source
+
+    @property
+    def row_count(self) -> int:
+        """
+        Returns the number of rows.
+
+        This property provides access to the total number of rows, which
+        is stored in the private attribute `_row_num`.
+
+        Returns:
+            int: The total number of rows.
+        """
+        return self._row_num
 
     @abstractmethod
     def _read_headers(self) -> List[str]:
@@ -169,6 +411,7 @@ class Reader(ABC):
             start = self.skip_records
             stop = start + self.max_records if self.max_records is not None else None
             self._data_iter = itertools.islice(gen, start, stop)
+
         return next(self._data_iter)
 
     def _cleanup(self):
@@ -189,9 +432,11 @@ class Reader(ABC):
         # Clean headers
         self._headers = [Clean.normalize(h, self.clean_headers) for h in raw_headers]
 
-        # Add rownum if requested and not already present
-        if self.add_rownum and 'rownum' not in self._headers:
-            self._headers.append('rownum')
+        # Add self.add_rownum if requested and not already present
+        if self.add_rownum:
+            if '_row_num' in self._headers:
+                raise ValueError("Header '_row_num' already exists. Remove it or set add_rownum=False.")
+            self._headers.append('_row_num')
 
         # Create Record subclass only if return_type is 'record'
         if self.return_type == ReturnType.RECORD:
@@ -216,14 +461,14 @@ class Reader(ABC):
         # Make a copy to avoid modifying the original
         row_data = list(row_data)
 
-        # Pad with None if row is shorter than expected (excluding rownum)
-        expected_data_cols = len(self._headers) - (1 if self.add_rownum and 'rownum' in self._headers else 0)
+        # Pad with None if row is shorter than expected (excluding _row_num)
+        expected_data_cols = len(self._headers) - (1 if self.add_rownum and '_row_num' in self._headers else 0)
         while len(row_data) < expected_data_cols:
             row_data.append(None)
 
-        # Add rownum if it's in headers (always goes at the end)
-        if self.add_rownum and 'rownum' in self._headers:
-            row_data.append(self.skip_records + self.record_num)
+        # Add _row_num if it's in headers (always goes at the end)
+        if self.add_rownum and '_row_num' in self._headers:
+            row_data.append(self.skip_records + self._row_num)
 
         # Truncate if row is longer than headers
         if len(row_data) > len(self._headers):

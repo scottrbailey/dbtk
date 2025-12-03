@@ -38,7 +38,7 @@ class FixedWidthWriter(BaseWriter):
             fill_char: Character to use for padding
         """
         # Always convert to text for fixed-width output
-        super().__init__(data, filename, columns, encoding, preserve_data_types=False)
+        super().__init__(data, filename, columns, encoding, preserve_types=False)
 
         self.column_widths = list(column_widths)
         self.right_align_numbers = right_align_numbers
@@ -94,7 +94,7 @@ class FixedWidthWriter(BaseWriter):
                 line += formatted_value
 
             file_obj.write(line + '\n')
-            self.row_count += 1
+            self._row_num += 1
 
         # Warn if values exceeded column widths
         if self.length_warning and self.truncate_overflow:
@@ -152,7 +152,7 @@ def to_fixed_width(data,
         truncate_overflow: Whether to truncate values that exceed column width
         fill_char: Character to use for padding
 
-    Examples:
+    Example:
         # Define column widths
         widths = [10, 25, 15, 8]
         to_fixed_width(cursor, widths, 'report.txt')

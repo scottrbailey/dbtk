@@ -8,16 +8,20 @@ parameterized SQL statements for common operations.
 """
 
 import logging
-import re
+
 from textwrap import dedent
 from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
 from ..database import ParamStyle
-from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier
+from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier
+from .transforms.core import fn_resolver
+from .transforms.database import _DeferredTransform
 
 logger = logging.getLogger(__name__)
 
+# SQL expressions that need no parameters or parentheses
+DB_CONSTANTS = frozenset(['sysdate', 'systimestamp', 'user', 'current_timestamp', 'current_date', 'current_time'])
 
 class Table:
     """
@@ -42,18 +46,22 @@ class Table:
 
         * **field** (str or list of str):
           Source field name(s) from input records. If list, extracts multiple fields
-          as a list value. If omitted, column is populated via 'value' or 'db_fn'.
+          as a list value. If omitted, column is populated via 'default' or 'db_expr'.
 
-        * **value** (any, optional):
+        * **default** (any, optional):
           Default/constant value to use for this column. Applied when source field
           is missing, empty, or None.
 
-        * **fn** (callable or list of callables, optional):
-          Transform function(s) applied to field value. If list, functions are
-          applied in order (pipeline). Function receives field value and returns
-          transformed value.
+        * **fn** (callable | list[callable] | str, optional):
+          Transformation function(s) to apply to the source value.
+          - callable → applied directly
+          - list → functions applied in order (pipeline)
+          - str → magic shorthand:
+              • Pure Python: 'int', 'int:0', 'maxlen:255', 'nth:0', 'indicator:inv', 'split:\t'
+              • Database:   'lookup:states:name:abbrev', 'validate:countries:code'
+          See ``dbtk.etl.transforms.core.fn_resolver()`` for full shorthand reference.
 
-        * **db_fn** (str, optional):
+        * **db_expr** (str, optional):
           Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
           Use '#' as placeholder for the bind parameter. If specified without '#',
           no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
@@ -110,18 +118,18 @@ class Table:
 
                 # Constant value for all records
                 'status': {
-                    'value': 'active'
+                    'default': 'active'
                 },
 
                 # Database-side function with parameter
                 'combat_name': {
                     'field': 'full_name',
-                    'db_fn': 'generate_callsign(#)'
+                    'db_expr': 'generate_callsign(#)'
                 },
 
                 # Database-side function, no parameter
                 'created_at': {
-                    'db_fn': 'CURRENT_TIMESTAMP'
+                    'db_expr': 'CURRENT_TIMESTAMP'
                 },
 
                 # Multiple source fields as list
@@ -174,7 +182,7 @@ class Table:
 
             columns: Dictionary mapping database column names to their configuration.
                 Each column is configured with a dict containing options like 'field',
-                'fn', 'value', 'db_fn', 'primary_key', 'nullable', etc.
+                'fn', 'default', 'db_expr', 'primary_key', 'nullable', etc.
                 See class docstring for complete column configuration options.
 
             cursor: Database cursor instance. Provides connection to database and
@@ -196,13 +204,13 @@ class Table:
             table = Table('users', {
                 'user_id': {'field': 'id', 'primary_key': True},
                 'email': {'field': 'email_address', 'nullable': False},
-                'created': {'db_fn': 'CURRENT_TIMESTAMP'}
+                'created': {'db_expr': 'CURRENT_TIMESTAMP'}
             }, cursor=cursor)
         """
         validate_identifier(name)
         self._name = name
         self._cursor = cursor
-        self.__paramstyle = cursor.connection.interface.paramstyle
+        self._paramstyle = cursor.connection.interface.paramstyle
 
         # Validate each column and add sanitized bind_name
         validated_columns = {}
@@ -210,7 +218,7 @@ class Table:
         key_cols = []
         for col, col_def in columns.items():
             validate_identifier(col)
-            bind_name = self._sanitize_for_bind_param(col)
+            bind_name = sanitize_identifier(col)
             col_def['bind_name'] = bind_name
             if col_def.get('primary_key') or col_def.get('key'):
                 key_cols.append(bind_name)
@@ -218,7 +226,7 @@ class Table:
             elif bool(col_def.get('nullable', True)) is False or col_def.get('required'):
                 req_cols.append(bind_name)
             validated_columns[col] = col_def
-        self.__columns = validated_columns
+        self._columns = validated_columns
         self.null_values = tuple(null_values)
         # Required columns (nullable=False or required=True)
         self._req_cols = tuple(req_cols)
@@ -245,6 +253,40 @@ class Table:
         # Only require params that are actually used in this operation's SQL
         self._req_cols = tuple(col for col in self._req_cols
                                if col in self._param_config['insert'])
+        # Some transforms require a cursor (Lookup & Validator), we defer binding the cursors until now
+        for col_name, col_def in self._columns.items():
+            fn = col_def.get('fn')
+            if fn is None:
+                continue
+
+            # 1. Handle string shorthand: 'lookup:table:key:return' or 'validate:table:key'
+            if isinstance(fn, str):
+                try:
+                    fn_def = fn.strip()
+                    if fn_def.startswith(('lookup:', 'validate:')):
+                        col_def['fn'] = _DeferredTransform.from_string(fn_def)
+                    else:
+                        col_def['fn'] = fn_resolver(fn_def)
+                except ValueError as e:
+                    # Not a valid shorthand - might be a callable name stored as string
+                    # Let it continue, will fail later if actually invalid
+                    logger.debug(f"Column {col_name}: {e}")
+                    continue
+
+            # 2. Now bind any deferred transforms (from Lookup/Validate factories)
+            new_fn = col_def['fn']
+            if isinstance(new_fn, _DeferredTransform):
+                col_def['fn'] = new_fn.bind(self._cursor)
+            elif isinstance(new_fn, (list, tuple)):
+                pipeline = []
+                for f in new_fn:
+                    if isinstance(f, _DeferredTransform):
+                        pipeline.append(f.bind(self._cursor))
+                    elif isinstance(f, str):
+                        pipeline.append(fn_resolver(f))
+                    else:
+                        pipeline.append(f)
+                col_def['fn'] = pipeline
 
     @property
     def name(self) -> str:
@@ -254,17 +296,41 @@ class Table:
     @property
     def columns(self) -> dict:
         """Column metadata dictionary with types and constraints."""
-        return self.__columns
+        return self._columns
 
     @property
     def paramstyle(self) -> str:
         """Parameter style for SQL placeholders (from cursor)."""
-        return self.__paramstyle
+        return self._paramstyle
 
     @property
     def cursor(self) -> Cursor:
         """Database cursor for executing SQL operations."""
         return self._cursor
+
+    @cursor.setter
+    def cursor(self, value: Cursor):
+        """
+        Switch to a different cursor (e.g., different database/connection).
+
+        If paramstyle changes, invalidates cached SQL statements; otherwise, only counts are reset.
+
+        Args:
+            cursor: New cursor to use for this table
+        """
+        old_paramstyle = self._paramstyle
+        self._cursor = value
+        self._paramstyle = value.connection.interface.paramstyle
+
+        if old_paramstyle != self._paramstyle:
+            self._reset()
+            logger.info(
+                f"Table {self._name}: paramstyle changed from {old_paramstyle} "
+                f"to {self._paramstyle}, cache reset"
+            )
+        else:
+            self._reset_counts()
+            logger.info(f"Table {self._name}: cursor changed, counts reset")
 
     @property
     def req_cols(self) -> Tuple[str]:
@@ -275,6 +341,11 @@ class Table:
     def key_cols(self) -> Tuple[str]:
         """List of key/primary key column names."""
         return self._key_cols
+
+    @property
+    def row_count(self) -> int:
+        """Number of rows processed (calls to set_values())."""
+        return self.counts['records']
 
     def get_sql(self, operation: str) -> str:
         """
@@ -301,50 +372,39 @@ class Table:
         """String representation for debugging."""
         return f"Table('{self.name}', {len(self.columns)} columns, {self.paramstyle})"
 
-    def _sanitize_for_bind_param(self, name: str) -> str:
-        """Convert a column name to a valid bind parameter name."""
-        # Replace non-alphanumeric chars with underscore, collapse multiple underscores
-        sanitized = re.sub(r'[^a-z0-9_]+', '_', name.lower())
-
-        # Ensure it starts with a letter
-        if not sanitized[0].isalpha():
-            sanitized = 'col_' + sanitized
-
-        # Remove trailing underscore if present
-        return sanitized.rstrip('_')
-
-    def _wrap_db_function(self, col_name: str, db_fn: str = None) -> str:
+    def _wrap_db_expr(self, col_name: str, db_expr: str = None) -> str:
         """Wrap column placeholder with database function if provided."""
-        if db_fn in (None, ''):
+        if db_expr in (None, ''):
             return f':{col_name}'
         # Strip whitespace to be defensive against typos
-        db_fn = db_fn.strip()
-        if not db_fn:
+        db_expr = db_expr.strip()
+        if not db_expr:
             # incase '' or ' ' were passed
             return f':{col_name}'
-        if '#' in db_fn:
-            return db_fn.replace('#', f':{col_name}')
-        if '(' in db_fn and ')' in db_fn:
+        if '#' in db_expr:
+            return db_expr.replace('#', f':{col_name}')
+        if '(' in db_expr and ')' in db_expr:
             # Contains parentheses - assume it's a complete expression
-            return db_fn
-        if db_fn.lower() in ('sysdate', 'systimestamp', 'user', 'current_timestamp', 'current_date', 'current_time'):
-            return db_fn
-        return f'{db_fn}(:{col_name})'
+            return db_expr
+        if db_expr.lower() in DB_CONSTANTS:
+            # No parens (or whining about them) required.
+            return db_expr
+        return f'{db_expr}(:{col_name})'
 
     def _finalize_sql(self, operation: str, sql: str) -> None:
         """Process SQL and store results."""
-        self._sql_statements[operation], self._param_config[operation] = process_sql_parameters(sql, self.__paramstyle)
+        self._sql_statements[operation], self._param_config[operation] = process_sql_parameters(sql, self._paramstyle)
 
     def _create_insert(self) -> str:
         """Generate INSERT statement with named parameters."""
         table_name = quote_identifier(self._name)
-        cols = list(self.__columns.keys())
+        cols = list(self._columns.keys())
         placeholders = []
 
         for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholders.append(self._wrap_db_function(bind_name, db_fn))
+            bind_name = self._columns[col]['bind_name']
+            db_expr = self._columns[col].get('db_expr')
+            placeholders.append(self._wrap_db_expr(bind_name, db_expr))
 
         cols_str = ', '.join(quote_identifier(col) for col in cols)
         placeholders_str = ', '.join(placeholders)
@@ -365,13 +425,13 @@ class Table:
         quoted_cols = []
         conditions = []
 
-        for col, col_def in self.__columns.items():
+        for col, col_def in self._columns.items():
             ident = quote_identifier(col)
             quoted_cols.append(ident)
             bind_name = col_def['bind_name']
             if bind_name in self._key_cols:
-                db_fn = col_def.get('db_fn')
-                placeholder = self._wrap_db_function(bind_name, db_fn)
+                db_expr = col_def.get('db_expr')
+                placeholder = self._wrap_db_expr(bind_name, db_expr)
                 conditions.append(f"{ident} = {placeholder}")
 
         cols_str = ', '.join(quoted_cols)
@@ -394,11 +454,11 @@ class Table:
         update_cols = []
         conditions = []
 
-        for col, col_def in self.__columns.items():
+        for col, col_def in self._columns.items():
             ident = quote_identifier(col)
             bind_name = col_def['bind_name']
-            db_fn = col_def.get('db_fn')
-            placeholder = self._wrap_db_function(bind_name, db_fn)
+            db_expr = col_def.get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
             if bind_name in self._key_cols:
                 conditions.append(f'{ident} = {placeholder}')
             elif bind_name not in self._update_excludes:
@@ -422,9 +482,9 @@ class Table:
 
         for col in self._key_cols:
             quoted_col = quote_identifier(col)
-            bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholder = self._wrap_db_function(bind_name, db_fn)
+            bind_name = self._columns[col]['bind_name']
+            db_expr = self._columns[col].get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
             conditions.append(f"{quoted_col} = {placeholder}")
         conditions_str = '\n    AND '.join(conditions)
         sql = f"DELETE FROM {table_name} \nWHERE {conditions_str}"
@@ -433,7 +493,7 @@ class Table:
 
     def _should_use_upsert(self) -> bool:
         """Determine whether to use upsert syntax vs MERGE statement."""
-        db_type = self._cursor.connection.server_type
+        db_type = self._cursor.connection.database_type
 
         if db_type in ('mysql', 'postgres', 'sqlite'):
             return True
@@ -442,25 +502,30 @@ class Table:
 
     def _create_upsert(self) -> str:
         """Create INSERT ... ON DUPLICATE KEY/CONFLICT statement with named parameters."""
-        db_type = self._cursor.connection.server_type
+        db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
-        cols = list(self.__columns.keys())
+
+        # Build INSERT portion
+        cols = []
         placeholders = []
-
-        # Build INSERT portion with named placeholders
-        for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholders.append(self._wrap_db_function(bind_name, db_fn))
-
-        # Get non-key columns for updates (excluding update_excludes)
+        key_cols = []
         update_cols = []
-        for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            if bind_name not in self._key_cols and bind_name not in self._update_excludes:
-                update_cols.append(col)
 
-        cols_str = ', '.join(quote_identifier(col) for col in cols)
+        for col, col_def in self._columns.items():
+            ident = quote_identifier(col)
+            bind_name = col_def['bind_name']
+            db_expr = col_def.get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
+
+            cols.append(ident)
+            placeholders.append(placeholder)
+
+            if bind_name in self._key_cols:
+                key_cols.append(ident)
+            elif bind_name not in self._update_excludes:
+                update_cols.append((col, ident, bind_name, db_expr))
+
+        cols_str = ', '.join(cols)
         placeholders_str = ', '.join(placeholders)
 
         if len(cols) > 4:
@@ -470,18 +535,14 @@ class Table:
         if db_type == 'mysql':
             # MySQL: INSERT ... ON DUPLICATE KEY UPDATE
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                bind_name = self.__columns[col]['bind_name']
-                db_fn = self.__columns[col].get('db_fn')
-
-                if db_fn and '#' in db_fn:
+            for col, ident, bind_name, db_expr in update_cols:
+                if db_expr and '#' in db_expr:
                     # Use alias syntax for MySQL 8.0.19+
-                    assignment = f"{quoted_col} = {db_fn.replace('#', f'new_vals.{quoted_col}')}"
-                elif db_fn:
-                    assignment = f"{quoted_col} = {db_fn}"
+                    assignment = f"{ident} = {db_expr.replace('#', f'new_vals.{ident}')}"
+                elif db_expr:
+                    assignment = f"{ident} = {db_expr}"
                 else:
-                    assignment = f"{quoted_col} = new_vals.{quoted_col}"
+                    assignment = f"{ident} = new_vals.{ident}"
                 update_assignments.append(assignment)
 
             update_clause = ', '.join(update_assignments)
@@ -494,27 +555,17 @@ class Table:
             ON DUPLICATE KEY UPDATE {update_clause}""")
 
         elif db_type in ('postgres', 'sqlite'):
-            # PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
-            key_cols = []
-            for col, col_def in self.__columns.items():
-                bind_name = col_def['bind_name']
-                if bind_name in self._key_cols:
-                    key_cols.append(col)
-
-            conflict_cols = ', '.join(quote_identifier(col) for col in key_cols)
+            # PostgreSQL/SQLite: INSERT ... ON CONFLICT DO UPDATE
+            conflict_cols = ', '.join(key_cols)
 
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                bind_name = self.__columns[col]['bind_name']
-                db_fn = self.__columns[col].get('db_fn')
-
-                if db_fn and '#' in db_fn:
-                    assignment = f"{quoted_col} = {db_fn.replace('#', f'EXCLUDED.{quoted_col}')}"
-                elif db_fn:
-                    assignment = f"{quoted_col} = {db_fn}"
+            for col, ident, bind_name, db_expr in update_cols:
+                if db_expr and '#' in db_expr:
+                    assignment = f"{ident} = {db_expr.replace('#', f'EXCLUDED.{ident}')}"
+                elif db_expr:
+                    assignment = f"{ident} = {db_expr}"
                 else:
-                    assignment = f"{quoted_col} = EXCLUDED.{quoted_col}"
+                    assignment = f"{ident} = EXCLUDED.{ident}"
                 update_assignments.append(assignment)
 
             update_clause = ', '.join(update_assignments)
@@ -534,78 +585,69 @@ class Table:
 
     def _create_merge_statement(self) -> str:
         """Create traditional MERGE statement with named parameters."""
-        db_type = self._cursor.connection.server_type
+        db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
-        cols = list(self.__columns.keys())
+
+        # Build column lists and placeholders
+        all_cols = []
         placeholders = []
-
-        # Build placeholders for source
-        for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            db_fn = self.__columns[col].get('db_fn')
-            placeholders.append(self._wrap_db_function(bind_name, db_fn))
-
-        # Build key conditions for matching
         key_conditions = []
-        key_cols = []
-        for col, col_def in self.__columns.items():
-            bind_name = col_def['bind_name']
-            if bind_name in self._key_cols:
-                quoted_col = quote_identifier(col)
-                key_conditions.append(f"t.{quoted_col} = s.{quoted_col}")
-                key_cols.append(col)
-
-        # Get non-key columns for updates (excluding update_excludes)
         update_cols = []
-        for col in cols:
-            bind_name = self.__columns[col]['bind_name']
-            if bind_name not in self._key_cols and bind_name not in self._update_excludes:
-                update_cols.append(col)
+
+        for col, col_def in self._columns.items():
+            ident = quote_identifier(col)
+            bind_name = col_def['bind_name']
+            db_expr = col_def.get('db_expr')
+            placeholder = self._wrap_db_expr(bind_name, db_expr)
+
+            all_cols.append((col, ident, placeholder))
+            placeholders.append(placeholder)
+
+            if bind_name in self._key_cols:
+                key_conditions.append(f"t.{ident} = s.{ident}")
+            elif bind_name not in self._update_excludes:
+                update_cols.append((col, ident))
 
         # Database-specific MERGE templates
         if db_type == 'oracle':
             # Oracle MERGE with dual table
             source_items = []
-            for col, placeholder in zip(cols, placeholders):
-                quoted_col = quote_identifier(col)
-                source_items.append(f"{placeholder} AS {quoted_col}")
+            for col, ident, placeholder in all_cols:
+                source_items.append(f"{placeholder} AS {ident}")
 
             source_cols = ', '.join(source_items)
-            if len(cols) > 4:
+            if len(all_cols) > 4:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols} FROM dual"
             table_alias = "AS s"
 
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                update_assignments.append(f"t.{quoted_col} = s.{quoted_col}")
+            for col, ident in update_cols:
+                update_assignments.append(f"t.{ident} = s.{ident}")
 
-            insert_cols = ', '.join(quote_identifier(col) for col in cols)
-            insert_values = ', '.join(f"s.{quote_identifier(col)}" for col in cols)
+            insert_cols = ', '.join(ident for _, ident, _ in all_cols)
+            insert_values = ', '.join(f"s.{ident}" for _, ident, _ in all_cols)
 
         elif db_type == 'sqlserver':
             # SQL Server MERGE
             source_items = []
-            for col, placeholder in zip(cols, placeholders):
-                quoted_col = quote_identifier(col)
-                source_items.append(f"{placeholder} AS {quoted_col}")
+            for col, ident, placeholder in all_cols:
+                source_items.append(f"{placeholder} AS {ident}")
 
             source_cols = ', '.join(source_items)
-            if len(cols) > 4:
+            if len(all_cols) > 4:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols}"
             table_alias = "AS s"
 
             update_assignments = []
-            for col in update_cols:
-                quoted_col = quote_identifier(col)
-                update_assignments.append(f"t.{quoted_col} = s.{quoted_col}")
+            for col, ident in update_cols:
+                update_assignments.append(f"t.{ident} = s.{ident}")
 
-            insert_cols = ', '.join(quote_identifier(col) for col in cols)
-            insert_values = ', '.join(f"s.{quote_identifier(col)}" for col in cols)
+            insert_cols = ', '.join(ident for _, ident, _ in all_cols)
+            insert_values = ', '.join(f"s.{ident}" for _, ident, _ in all_cols)
 
         else:
             raise NotImplementedError(f"MERGE not supported for database: {db_type}")
@@ -615,7 +657,7 @@ class Table:
         if len(update_assignments) > 4:
             update_set = wrap_at_comma(update_set)
 
-        if len(cols) > 4:
+        if len(all_cols) > 4:
             insert_cols = wrap_at_comma(insert_cols)
             insert_values = wrap_at_comma(insert_values)
 
@@ -690,10 +732,10 @@ class Table:
 
         param_names = self._param_config[operation]
         if not param_names:
-            return () if self.__paramstyle in ParamStyle.positional_styles() else {}
+            return () if self._paramstyle in ParamStyle.positional_styles() else {}
 
         # Map bind_names back to values using column lookup
-        bind_to_col = {col_def['bind_name']: col for col, col_def in self.__columns.items()}
+        bind_to_col = {col_def['bind_name']: col for col, col_def in self._columns.items()}
         filtered_values = {}
 
         for bind_name in param_names:
@@ -702,7 +744,7 @@ class Table:
                 if col in self.values:
                     filtered_values[bind_name] = self.values[col]
 
-        if self.__paramstyle in ParamStyle.positional_styles():
+        if self._paramstyle in ParamStyle.positional_styles():
             # Return tuple in the order parameters appear in SQL
             return tuple(filtered_values.get(param, None) for param in param_names)
         else:
@@ -747,8 +789,8 @@ class Table:
                 val = None
 
             # Then apply default values for empty/None
-            if val in ('', None) and 'value' in col_def:
-                val = col_def['value']
+            if val in ('', None) and 'default' in col_def:
+                val = col_def['default']
 
             # Apply transforms
             if 'fn' in col_def:
@@ -761,36 +803,20 @@ class Table:
             values[col] = val
         self.values = values
 
-    def set_cursor(self, cursor: Cursor):
-        """
-        Switch to a different cursor (e.g., different database/connection).
-
-        If paramstyle changes, invalidates cached SQL statements.
-
-        Args:
-            cursor: New cursor to use for this table
-        """
-        old_paramstyle = self.__paramstyle
-        self._cursor = cursor
-        self.__paramstyle = cursor.connection.interface.paramstyle
-
-        if old_paramstyle != self.__paramstyle:
-            self._reset()
-            logger.info(
-                f"Table {self._name}: paramstyle changed from {old_paramstyle} "
-                f"to {self.__paramstyle}, cache reset"
-            )
+    def _reset_counts(self):
+        """ Resets all counts to zero. """
+        self.counts = {op: 0 for op in self.OPERATIONS}
+        self.counts['records'] = 0
+        self.counts['incomplete'] = 0
 
     def _reset(self):
         """Reset all cached state including SQL statements, parameters, counts, and values."""
         self._sql_statements = {op: None for op in self.OPERATIONS}
         self._param_config = {op: () for op in self.OPERATIONS}
-        self.counts = {op: 0 for op in self.OPERATIONS}
-        self.counts['records'] = 0
-        self.counts['incomplete'] = 0
         self._update_excludes = set()
         self._update_excludes_calculated = False
         self._record_fields = set()
+        self._reset_counts()
         self.values = {}
 
     @property
@@ -828,6 +854,12 @@ class Table:
         This method is called automatically by exec_update() and exec_merge() using fields cached from
         set_values(). You can also call it manually with an explicit set of record fields.
 
+        **Effects:**
+
+        * Updates ``self.update_excludes`` with the set of columns to exclude from UPDATE/MERGE operations
+        * Clears cached UPDATE and MERGE SQL statements if exclusions changed (forces regeneration on next use)
+        * Validates that all key columns have their source fields present in record_fields
+
         Args:
             record_fields: Set of field names present in source records. If None, uses fields
                 cached from the first call to set_values(). Pass explicitly to override.
@@ -844,22 +876,48 @@ class Table:
 
         current_excludes = self._update_excludes
         excludes = []
-        for col, col_def in self.__columns.items():
+        for col, col_def in self._columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
-            if field and field not in record_fields:
-                if field in self.key_cols:
-                    raise ValueError(f"A key column {col} is sourced from {field}, but is missing from source.")
-                else:
-                    excludes.append(bind_name)
-            elif col_def.get('no_update'):
+
+            # Check if column is marked no_update
+            if col_def.get('no_update'):
                 excludes.append(bind_name)
+                continue
+
+            # Check if source fields are missing
+            if field:
+                # Handle list of fields
+                if isinstance(field, list):
+                    missing_fields = [f for f in field if f not in record_fields]
+                    if missing_fields:
+                        if bind_name in self.key_cols:
+                            raise ValueError(
+                                f"A key column {col} is sourced from {field}, "
+                                f"but {missing_fields} are missing from source."
+                            )
+                        else:
+                            excludes.append(bind_name)
+                # Handle single field
+                else:
+                    if field not in record_fields:
+                        if bind_name in self.key_cols:
+                            raise ValueError(
+                                f"A key column {col} is sourced from {field}, "
+                                f"but is missing from source."
+                            )
+                        else:
+                            excludes.append(bind_name)
+
         if excludes:
-            logger.debug(f"Columns excluded from update/merge because source field is missing or no_update attribute set:\n{excludes}")
+            logger.debug(
+                f"Columns excluded from update/merge because source field is missing "
+                f"or no_update attribute set:\n{excludes}"
+            )
         self._update_excludes = set(excludes)
         self._update_excludes_calculated = True
         if current_excludes != self._update_excludes:
-            # Excluded columns have changed, invalidate the SQL statements so they are regenerated
+            # Excluded columns have changed, invalidate the SQL statements
             self._sql_statements['update'] = None
             self._sql_statements['merge'] = None
 

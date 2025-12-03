@@ -42,7 +42,7 @@ class XLSXReader(Reader):
         Args:
             worksheet: openpyxl.Worksheet object to read from.
             headers: Optional list of header names to use instead of reading from row 1.
-            add_rownum: If True, adds a rownum field to each record (default: True).
+            add_rownum: If True, adds a _row_num field to each record (default: True).
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_records: Number of data records to skip after headers (default: 0).
             max_records: Maximum number of records to read, or None for all (default: None).
@@ -57,6 +57,7 @@ class XLSXReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.ws = worksheet
+        self._trackable = self.ws
         self._headers_read = False
         self._raw_headers = headers  # Use provided headers if given
         self._start_row = 1 if headers else 2  # openpyxl 1-based indexing
@@ -96,7 +97,7 @@ class XLSXReader(Reader):
         pass
 
 
-class XLReader(Reader):
+class XLSReader(Reader):
     """Class to iterate over an Excel Spreadsheet using xlrd."""
 
     def __init__(self,
@@ -112,7 +113,7 @@ class XLReader(Reader):
         Args:
             worksheet: xlrd.Sheet object to read from.
             headers: Optional list of header names to use instead of reading from row 0.
-            add_rownum: If True, adds a rownum field to each record (default: True).
+            add_rownum: If True, adds a _row_num field to each record (default: True).
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_records: Number of data records to skip after headers (default: 0).
             max_records: Maximum number of records to read, or None for all (default: None).
@@ -125,12 +126,12 @@ class XLReader(Reader):
             raise TypeError('worksheet must be of type xlrd.Sheet or use XLSXReader')
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
+                         headers=headers, return_type=return_type)
         self.ws = worksheet
+        self._trackable = self.ws
         self.datemode = worksheet.book.datemode
         self._headers_read = False
-        self._raw_headers = headers  # Use provided headers if given
-        self._start_row = 1 if headers is not None else 0  # xlrd 0-based indexing
+        self._start_row = 0 if headers is not None else 1  # xlrd 0-based indexing
 
     def _read_headers(self) -> List[str]:
         """Read the header row from the Excel worksheet (row 0) or use provided headers.
@@ -232,9 +233,23 @@ def get_sheet_by_index(wb, index: int):
         TypeError: If workbook type is not supported.
     """
     if wb.__class__.__name__ == 'Workbook':
+        # openpyxl
         return wb.worksheets[index]
     elif wb.__class__.__name__ == 'Book':
+        # xlrd
         return wb.sheet_by_index(index)
+    else:
+        raise TypeError(f"Unknown workbook type: {wb.__class__.__name__}")
+
+
+def get_sheet_by_name(wb, sheet_name: str):
+    """Get a worksheet from a workbook by name."""
+    if wb.__class__.__name__ == 'Workbook':
+        # openpyxl
+        return wb[sheet_name]
+    elif wb.__class__.__name__ == 'Book':
+        # xlrd
+        return wb.sheet_by_name(sheet_name)
     else:
         raise TypeError(f"Unknown workbook type: {wb.__class__.__name__}")
 

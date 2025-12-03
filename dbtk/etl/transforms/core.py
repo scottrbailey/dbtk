@@ -23,7 +23,7 @@ def capitalize(val: Any) -> Any:
     Returns:
         Title-cased string if applicable, otherwise original value
 
-    Examples:
+    Example:
         capitalize("HELLO WORLD")  # "Hello World"
         capitalize("hello world")  # "Hello World"
         capitalize("Hello World")  # "Hello World" (unchanged)
@@ -44,7 +44,7 @@ def coalesce(vals: Union[List[Any], tuple]) -> Any:
     Returns:
         First non-empty, non-None value, or the original input if not a list/tuple
 
-    Examples:
+    Example:
         coalesce([None, '', 'first', 'second'])  # "first"
         coalesce([0, 1, 2])                      # 0
         coalesce([None, None])                   # None
@@ -69,7 +69,7 @@ def get_bool(val: Any) -> Optional[bool]:
     Falsy: False, 'F', 'FALSE', 'NO', 'N', '0', 0, 0.0, empty string
     None: None
 
-    Examples:
+    Example:
         get_bool(True)           # True
         get_bool('yes')          # True
         get_bool('Y')            # True
@@ -117,7 +117,7 @@ def indicator(val: Any, true_val: str = 'Y', false_val: Any = None) -> Any:
     Returns:
         true_val if val is truthy, false_val otherwise, or None if val is None
 
-    Examples:
+    Example:
         indicator(True)           # "Y"
         indicator('yes')          # "Y"
         indicator(1)              # "Y"
@@ -144,7 +144,7 @@ def get_digits(val: Any) -> str:
     Returns:
         String containing only digits (and possibly leading +/-), or empty string if no value
 
-    Examples:
+    Example:
         get_digits("(800) 123-4567")   # "8001234567"
         get_digits("012-34-5678")      # "012345678"
         get_digits("$-42.35")          # "4235"
@@ -173,7 +173,7 @@ def to_number(val: Any) -> Optional[float]:
     Returns:
         Float value or None if no valid number can be extracted
 
-    Examples:
+    Example:
         to_number("$42.35")       # 42.35
         to_number("$-42.35")      # -42.35
         to_number("1,234.56")     # 1234.56
@@ -213,7 +213,7 @@ def get_int(val: Any) -> Optional[int]:
     Returns:
         Integer value or None if val is falsy or cannot be converted
 
-    Examples:
+    Example:
         get_int("123")       # 123
         get_int("123.45")    # 123
         get_int("$123.45")   # 123
@@ -238,7 +238,7 @@ def get_float(val: Any) -> Optional[float]:
     Returns:
         Float value or None if val is falsy or cannot be converted
 
-    Examples:
+    Example:
         get_float("123.45")   # 123.45
         get_float("$123.45")  # 123.45
         get_float("123")      # 123.0
@@ -260,7 +260,7 @@ def normalize_whitespace(val: Any) -> str:
     Returns:
         String with normalized whitespace, or empty string if no value
 
-    Examples:
+    Example:
         normalize_whitespace("  hello   world  ")     # "hello world"
         normalize_whitespace("hello\\n\\nworld")      # "hello world"
         normalize_whitespace("hello\\t\\tworld")      # "hello world"
@@ -288,7 +288,7 @@ def format_number(val: Any, pattern: str) -> str:
     Returns:
         Formatted string if digit count matches, otherwise original string
 
-    Examples:
+    Example:
         format_number('8001234567', '(###) ###-####')     # "(800) 123-4567"
         format_number('012345678', '###-##-####')         # "012-34-5678"
         format_number('(800) 123-4567', '###.###.####')   # "800.123.4567"
@@ -340,7 +340,7 @@ def parse_list(val: Any, delimiter: Optional[str] = None) -> List[str]:
     Raises:
         ValueError: If auto-detection finds multiple delimiter types
 
-    Examples:
+    Example:
         parse_list("a,b,c")           # ["a", "b", "c"]
         parse_list("a|b|c", "|")      # ["a", "b", "c"]
         parse_list("a\\tb\\tc")       # ["a", "b", "c"]
@@ -389,7 +389,7 @@ def get_list_item(val: str, index: int, delimiter: str = ',') -> Optional[str]:
     Returns:
         Item at specified index (stripped), or None if index out of range
 
-    Examples:
+    Example:
         get_list_item("a,b,c", 1)       # "b"
         get_list_item("a|b|c", 0, "|")  # "a"
         get_list_item("a,b", 5)         # None
@@ -399,3 +399,140 @@ def get_list_item(val: str, index: int, delimiter: str = ',') -> Optional[str]:
         if index < len(values):
             return values[index].strip()
     return None
+
+
+def fn_resolver(shorthand: str):
+    """
+    Convert a concise string shorthand into a real transformation function.
+
+    This is the heart of dbtk's zero-lambda column definitions.
+
+    Used automatically by Table when ``fn`` is a string that does *not* start
+    with ``lookup:`` or ``validate:``.
+
+    Supported shorthands
+    --------------------
+    Basic type conversion
+        'int'            → get_int (None → None)
+        'int:0'          → get_int, but ''/None → 0
+        'float'          → get_float
+        'bool'           → get_bool
+        'digits'         → get_digits
+        'number'         → to_number
+
+    String manipulation
+        'lower', 'upper', 'strip' → str.lower / upper / strip
+        'maxlen:50'      → truncate to 50 characters
+        'maxlen:255'     → (most common in your life)
+
+    List / delimited strings
+        'split:,'        → split on comma (default)
+        'split:\t'       → split on tab
+        'split:|'        → split on pipe
+        'nth:0'          → first item
+        'nth:1'          → second item
+        'nth:-1'         → last item
+        'nth:2:\t'       → third tab-delimited field
+
+    Boolean indicators
+        'indicator'      → True → 'Y', False/None → None
+        'indicator:inv'  → False → 'Y', True → None  (the classic "active flag" case)
+        'indicator:Y/N'  → True → 'Y', False → 'N'
+        'indicator:1/0'  → True → '1', False → '0'
+
+    Examples
+    --------
+    ::
+    >>> from dbtk.etl.transforms.core import fn_resolver
+    >>> fn_resolver('int:0')('123')
+    123
+    >>> fn_resolver('int:0')('')
+    0
+    >>> fn_resolver('nth:0')('action,comedy,drama')
+    'action'
+    >>> fn_resolver('maxlen:10')('supercalifragilistic')
+    'supercalif'
+    >>> fn_resolver('indicator:inv')(False)
+    'Y'
+
+    Returns
+    -------
+    callable
+        A function that takes a single value and returns the transformed result.
+
+    Raises
+    ------
+    ValueError
+        If the shorthand is not recognized.
+
+    Note
+    ----
+    This function is deliberately small, fast, and pure. It knows nothing about
+    databases — that's what ``lookup:`` and ``validate:`` are for.
+    """
+    shorthand = shorthand.lstrip()  # using strip will remove some delimiters (\t for instance)
+
+    # Direct mappings
+    direct = {
+        'int': get_int,
+        'float': get_float,
+        'bool': get_bool,
+        'digits': get_digits,
+        'number': to_number,
+        'lower': str.lower,
+        'upper': str.upper,
+        'strip': str.strip,
+        'indicator': indicator,
+    }
+    if shorthand in direct:
+        return direct[shorthand]
+
+    # Special cases
+    if shorthand == 'int:0':
+        return lambda x: get_int(x) or 0
+
+    if shorthand == 'indicator:inv':
+        return lambda x: indicator(x, None, 'Y')
+
+    # indicator:true/false
+    if shorthand.startswith('indicator:'):
+        rest = shorthand[10:]
+        if rest == 'inv':
+            return lambda x: indicator(x, None, 'Y')
+        parts = rest.split('/', 1)
+        true_val = parts[0] or 'Y'
+        false_val = parts[1] if len(parts) > 1 else None
+        return lambda x: indicator(x, true_val, false_val)
+
+    # split:delimiter
+    if shorthand.startswith('split:'):
+        delim = shorthand[6:] or ','
+        return lambda x: parse_list(x, delimiter=delim) if x not in ('', None) else []
+
+    # nth:index[:delimiter]
+    if shorthand.startswith('nth:'):
+        rest = shorthand[4:]
+        delim = ','
+        if ':' in rest:
+            idx_part, delim = rest.split(':', 1)
+        else:
+            idx_part = rest
+        try:
+            idx = int(idx_part)
+        except ValueError:
+            raise ValueError(f"Invalid index in 'nth:' shorthand: {shorthand}")
+        return lambda x, i=idx, d=delim: get_list_item(x, i, delimiter=d)
+
+    # maxlen:n or trunc:n
+    if shorthand.startswith(('maxlen:', 'trunc:')):
+        prefix = 'maxlen:' if shorthand.startswith('maxlen:') else 'trunc:'
+        try:
+            n = int(shorthand[len(prefix):])
+            if n < 0:
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"Invalid length in {shorthand}")
+        return lambda x, n=n: str(x or '')[:n]
+
+    raise ValueError(f"Unrecognized fn shorthand: '{shorthand}'. "
+                     f"See dbtk.etl.transforms.core.fn() docstring for valid options.")

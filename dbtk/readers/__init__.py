@@ -9,17 +9,17 @@ consistent interface and automatic format detection.
 """
 
 from .base import Reader, Clean
-from .utils import get_reader
+from .utils import get_reader, open_file
 from .csv import CSVReader
 from .json import JSONReader, NDJSONReader
-from .excel import XLReader, XLSXReader, open_workbook, get_sheet_by_index, check_dependencies
+from .excel import XLSReader, XLSXReader, open_workbook, get_sheet_by_index, check_dependencies
 from .fixed_width import FixedReader, FixedColumn
 from .xml import XMLReader, XMLColumn
 
 
 # Re-export everything
 __all__ = [
-    'Reader', 'Clean', 'get_reader',
-    'CSVReader', 'FixedColumn',  'FixedReader', 'JSONReader', 'NDJSONReader', 'XLReader', 'XLSXReader',
+    'Reader', 'Clean', 'get_reader', 'open_file',
+    'CSVReader', 'FixedColumn',  'FixedReader', 'JSONReader', 'NDJSONReader', 'XLSReader', 'XLSXReader',
     'XMLColumn', 'XMLReader', 'open_workbook', 'get_sheet_by_index'
 ]

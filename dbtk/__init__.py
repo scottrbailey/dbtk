@@ -36,13 +36,13 @@ from .database import Database
 from .config import connect, set_config_file
 from .cursors import Cursor, RecordCursor, TupleCursor, DictCursor
 from .logging_utils import setup_logging, cleanup_old_logs, errors_logged
+from . import etl
 from . import readers
 from . import writers
 
 # Simple, clean exports
 __all__ = [
     'connect',
-    'config',
     'Database',
     'Cursor',
     'RecordCursor',

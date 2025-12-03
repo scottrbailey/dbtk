@@ -10,7 +10,7 @@ from datetime import date, datetime
 from collections import OrderedDict
 
 from dbtk.readers import (
-    CSVReader, XLReader, XLSXReader, JSONReader, NDJSONReader,
+    CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
     XMLReader, FixedReader, FixedColumn, Clean, get_reader
 )
 from dbtk.record import Record
@@ -124,7 +124,7 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
         if ws.__class__.__name__ == 'Worksheet':
             return XLSXReader(ws, **kwargs)
         else:
-            return XLReader(ws, **kwargs)
+            return XLSReader(ws, **kwargs)
     elif reader_type == 'json':
         return JSONReader(open(json_file, encoding='utf-8'), **kwargs)
     elif reader_type == 'ndjson':
@@ -192,7 +192,7 @@ class TestReaderBase:
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns) as reader:
             headers = reader.headers
-            assert len(headers) == 9, f"{reader_type} should have 9 columns (8 data + rownum)"
+            assert len(headers) == 9, f"{reader_type} should have 9 columns (8 data + _row_num)"
 
             # XML and JSON sort headers alphabetically, others preserve order
             if reader_type in ('xml', 'json', 'ndjson'):
@@ -203,7 +203,7 @@ class TestReaderBase:
                 # CSV, Excel, Fixed maintain original order
                 assert headers[:8] == expected_columns, f"{reader_type} column names don't match"
 
-            assert headers[-1] == 'rownum', f"{reader_type} should add rownum at the end"
+            assert headers[-1] == '_row_num', f"{reader_type} should add _row_num at the end"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
     def test_skip_records(self, reader_type, csv_file, excel_file, json_file,
@@ -252,28 +252,28 @@ class TestReaderBase:
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
     def test_add_rownum_true(self, reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test add_rownum=True adds rownum field."""
+        """Test add_rownum=True adds _row_num field."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
                              add_rownum=True) as reader:
             records = list(reader)
             first = records[0]
-            assert 'rownum' in first, f"{reader_type} should have rownum field"
-            assert first['rownum'] == 1, f"{reader_type} first rownum should be 0"
+            assert '_row_num' in first, f"{reader_type} should have _row_num field"
+            assert first['_row_num'] == 1, f"{reader_type} first _row_num should be 1"
 
             last = records[-1]
-            assert last['rownum'] == 100, f"{reader_type} last rownum should be 99"
+            assert last['_row_num'] == 100, f"{reader_type} last _row_num should be 99"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
     def test_add_rownum_false(self, reader_type, csv_file, excel_file, json_file,
                               ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test add_rownum=False excludes rownum field."""
+        """Test add_rownum=False excludes _row_num field."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
                              add_rownum=False) as reader:
             headers = reader.headers
-            assert 'rownum' not in headers, f"{reader_type} should not have rownum in headers"
-            assert len(headers) == 8, f"{reader_type} should have 8 columns without rownum"
+            assert '_row_num' not in headers, f"{reader_type} should not have _row_num in headers"
+            assert len(headers) == 8, f"{reader_type} should have 8 columns without _row_num"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
     def test_return_type_record(self, reader_type, csv_file, excel_file, json_file,
@@ -308,7 +308,7 @@ class TestReaderBase:
                              ndjson_file, xml_file, fixed_file, fixed_columns,
                              clean_headers=Clean.NOOP) as reader:
             headers = reader.headers
-            # Original headers should be preserved (except rownum)
+            # Original headers should be preserved (except _row_num)
             assert 'trainee_id' in headers or 'Trainee_Id' in headers or 'trainee_ID' in headers
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
@@ -319,7 +319,7 @@ class TestReaderBase:
                              ndjson_file, xml_file, fixed_file, fixed_columns,
                              clean_headers=Clean.LOWER) as reader:
             headers = reader.headers
-            assert all(h == h.lower() for h in headers if h != 'rownum'), \
+            assert all(h == h.lower() for h in headers if h != '_row_num'), \
                 f"{reader_type} headers should be lowercase"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
@@ -330,7 +330,7 @@ class TestReaderBase:
                              ndjson_file, xml_file, fixed_file, fixed_columns,
                              clean_headers=Clean.LOWER_NOSPACE) as reader:
             headers = reader.headers
-            assert all(h == h.lower() for h in headers if h != 'rownum'), \
+            assert all(h == h.lower() for h in headers if h != '_row_num'), \
                 f"{reader_type} headers should be lowercase"
             assert all(' ' not in h for h in headers), \
                 f"{reader_type} headers should not contain spaces"
@@ -462,7 +462,7 @@ class TestGetReader:
     def test_get_reader_excel(self, excel_file):
         """Test get_reader with Excel file."""
         with get_reader(str(excel_file)) as reader:
-            assert isinstance(reader, (XLReader, XLSXReader))
+            assert isinstance(reader, (XLSReader, XLSXReader))
             records = list(reader)
             assert len(records) == 100
 

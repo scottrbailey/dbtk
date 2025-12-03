@@ -21,7 +21,8 @@ from dbtk.etl.transforms.core import (
     parse_list,
     get_list_item,
     intsOnlyPattern,
-    numbersOnlyPattern
+    numbersOnlyPattern,
+    fn_resolver
 )
 
 
@@ -490,3 +491,250 @@ class TestEdgeCases:
         assert isinstance(get_float("123.45"), float)
         assert isinstance(parse_list("a,b,c"), list)
         assert isinstance(get_digits("123"), str)
+
+
+class TestFnResolver:
+    """Test fn_resolver string shorthand to function conversion."""
+
+    # ======== Direct Mappings ========
+
+    def test_int_shorthand(self):
+        """Test 'int' shorthand resolves to get_int."""
+        fn = fn_resolver('int')
+        assert fn('123') == 123
+        assert fn('456.78') == 456
+        assert fn(None) is None
+
+    def test_int_with_default_shorthand(self):
+        """Test 'int:0' shorthand with default value."""
+        fn = fn_resolver('int:0')
+        assert fn('123') == 123
+        assert fn('') == 0
+        assert fn(None) == 0
+
+    def test_float_shorthand(self):
+        """Test 'float' shorthand resolves to get_float."""
+        fn = fn_resolver('float')
+        assert fn('123.45') == 123.45
+        assert fn('$1,000.50') == 1000.50
+        assert fn(None) is None
+
+    def test_bool_shorthand(self):
+        """Test 'bool' shorthand resolves to get_bool."""
+        fn = fn_resolver('bool')
+        assert fn('yes') is True
+        assert fn('no') is False
+        assert fn(None) is None
+
+    def test_digits_shorthand(self):
+        """Test 'digits' shorthand resolves to get_digits."""
+        fn = fn_resolver('digits')
+        assert fn('(800) 123-4567') == '8001234567'
+        assert fn('abc-123-def') == '123'
+
+    def test_number_shorthand(self):
+        """Test 'number' shorthand resolves to to_number."""
+        fn = fn_resolver('number')
+        assert fn('$42.35') == 42.35
+        assert fn('1,234.56') == 1234.56
+
+    def test_lower_shorthand(self):
+        """Test 'lower' shorthand resolves to str.lower."""
+        fn = fn_resolver('lower')
+        assert fn('AANG') == 'aang'
+        assert fn('Fire Nation') == 'fire nation'
+
+    def test_upper_shorthand(self):
+        """Test 'upper' shorthand resolves to str.upper."""
+        fn = fn_resolver('upper')
+        assert fn('aang') == 'AANG'
+        assert fn('Water Tribe') == 'WATER TRIBE'
+
+    def test_strip_shorthand(self):
+        """Test 'strip' shorthand resolves to str.strip."""
+        fn = fn_resolver('strip')
+        assert fn('  Aang  ') == 'Aang'
+        assert fn('\tKatara\n') == 'Katara'
+
+    def test_indicator_shorthand(self):
+        """Test 'indicator' shorthand with default Y/None values."""
+        fn = fn_resolver('indicator')
+        assert fn(True) == 'Y'
+        assert fn('yes') == 'Y'
+        assert fn(False) is None
+        assert fn(None) is None
+
+    # ======== Indicator Variations ========
+
+    def test_indicator_inv_shorthand(self):
+        """Test 'indicator:inv' shorthand for inverted logic."""
+        fn = fn_resolver('indicator:inv')
+        assert fn(False) == 'Y'
+        assert fn(True) is None
+
+    def test_indicator_custom_values(self):
+        """Test 'indicator:true/false' shorthand with custom values."""
+        fn = fn_resolver('indicator:Y/N')
+        assert fn(True) == 'Y'
+        assert fn(False) == 'N'
+
+        fn = fn_resolver('indicator:1/0')
+        assert fn(True) == '1'
+        assert fn(False) == '0'
+
+        fn = fn_resolver('indicator:Active/Inactive')
+        assert fn(True) == 'Active'
+        assert fn(False) == 'Inactive'
+
+    # ======== String Manipulation ========
+
+    def test_maxlen_shorthand(self):
+        """Test 'maxlen:n' shorthand for truncation."""
+        fn = fn_resolver('maxlen:10')
+        assert fn('Avatar Aang') == 'Avatar Aan'
+        assert fn('Short') == 'Short'
+        assert fn(None) == ''
+
+        fn = fn_resolver('maxlen:255')
+        long_str = 'a' * 300
+        assert len(fn(long_str)) == 255
+
+    def test_trunc_shorthand(self):
+        """Test 'trunc:n' shorthand (alias for maxlen)."""
+        fn = fn_resolver('trunc:5')
+        assert fn('Fire Nation') == 'Fire '
+        assert fn('Air') == 'Air'
+
+    # ======== List Operations ========
+
+    def test_split_default_shorthand(self):
+        """Test 'split:' shorthand with default comma delimiter."""
+        fn = fn_resolver('split:,')
+        assert fn('Aang,Katara,Sokka') == ['Aang', 'Katara', 'Sokka']
+        assert fn('Fire,Water,Earth,Air') == ['Fire', 'Water', 'Earth', 'Air']
+        assert fn(None) == []
+
+    def test_split_tab_shorthand(self):
+        """Test 'split:\\t' shorthand with tab delimiter."""
+        fn = fn_resolver('split:\t')
+        result = fn('Aang\tKatara\tSokka')
+        assert result == ['Aang', 'Katara', 'Sokka']
+
+    def test_split_pipe_shorthand(self):
+        """Test 'split:|' shorthand with pipe delimiter."""
+        fn = fn_resolver('split:|')
+        assert fn('Fire|Water|Earth|Air') == ['Fire', 'Water', 'Earth', 'Air']
+
+    def test_nth_default_delimiter(self):
+        """Test 'nth:index' shorthand with default comma delimiter."""
+        fn = fn_resolver('nth:0')
+        assert fn('Aang,Katara,Sokka') == 'Aang'
+
+        fn = fn_resolver('nth:1')
+        assert fn('Aang,Katara,Sokka') == 'Katara'
+
+        fn = fn_resolver('nth:2')
+        assert fn('Aang,Katara,Sokka') == 'Sokka'
+
+    def test_nth_custom_delimiter(self):
+        """Test 'nth:index:delimiter' shorthand with custom delimiter."""
+        fn = fn_resolver('nth:0:|')
+        assert fn('Fire|Water|Earth') == 'Fire'
+
+        fn = fn_resolver('nth:1:\t')
+        assert fn('Aang\tKatara\tSokka') == 'Katara'
+
+    def test_nth_out_of_range(self):
+        """Test nth with out of range index returns None."""
+        fn = fn_resolver('nth:10')
+        assert fn('Aang,Katara') is None
+
+    def test_nth_negative_index(self):
+        """Test nth supports negative indices (gets last + offset)."""
+        fn = fn_resolver('nth:-1')
+        result = fn('Aang,Katara,Sokka')
+        # -1 is treated as index -1 by get_list_item, which returns last item
+        assert result == 'Sokka'
+
+    # ======== Error Handling ========
+
+    def test_invalid_shorthand_error(self):
+        """Test that invalid shorthand raises ValueError."""
+        with pytest.raises(ValueError, match="Unrecognized fn shorthand"):
+            fn_resolver('invalid_func')
+
+        with pytest.raises(ValueError, match="Unrecognized fn shorthand"):
+            fn_resolver('notafunction')
+
+    def test_invalid_maxlen_error(self):
+        """Test that invalid maxlen value raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid length"):
+            fn_resolver('maxlen:abc')
+
+        with pytest.raises(ValueError, match="Invalid length"):
+            fn_resolver('maxlen:-5')
+
+    def test_invalid_nth_index_error(self):
+        """Test that invalid nth index raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid index"):
+            fn_resolver('nth:abc')
+
+        with pytest.raises(ValueError, match="Invalid index"):
+            fn_resolver('nth:')
+
+    # ======== Real-World Use Cases ========
+
+    def test_imdb_year_extraction(self):
+        """Test IMDB-style year extraction from string."""
+        fn = fn_resolver('int:0')
+        assert fn('1999') == 1999
+        assert fn('') == 0
+        assert fn(None) == 0
+
+    def test_title_truncation(self):
+        """Test truncating long movie titles."""
+        fn = fn_resolver('maxlen:100')
+        long_title = 'The Lord of the Rings: The Fellowship of the Ring: Extended Edition: Special Features: Behind the Scenes: Making of the Epic Journey to Middle Earth and Beyond with Cast and Crew Interviews and Commentary'
+        result = fn(long_title)
+        assert len(result) == 100
+        assert result.endswith('Special Features: Behind the Sc')
+
+    def test_genre_extraction(self):
+        """Test extracting first genre from comma-separated list."""
+        fn = fn_resolver('nth:0')
+        assert fn('Action,Adventure,Sci-Fi') == 'Action'
+        assert fn('Drama,Romance') == 'Drama'
+        assert fn('Comedy') == 'Comedy'
+
+    def test_active_flag_conversion(self):
+        """Test converting boolean to Y/N active flag."""
+        fn = fn_resolver('indicator:Y/N')
+        assert fn(True) == 'Y'
+        assert fn(False) == 'N'
+        assert fn(1) == 'Y'
+        assert fn(0) == 'N'
+
+    def test_phone_number_cleanup(self):
+        """Test extracting just digits from phone number."""
+        fn = fn_resolver('digits')
+        assert fn('(555) 123-4567') == '5551234567'
+        assert fn('555.123.4567') == '5551234567'
+        assert fn('+1-800-FIRE') == '1800'
+
+    def test_whitespace_normalization(self):
+        """Test strip and lower for name normalization."""
+        # Using strip
+        fn_strip = fn_resolver('strip')
+        assert fn_strip('  Avatar Aang  ') == 'Avatar Aang'
+
+        # Using lower
+        fn_lower = fn_resolver('lower')
+        assert fn_lower('AVATAR AANG') == 'avatar aang'
+
+    def test_currency_to_number(self):
+        """Test converting currency strings to numbers."""
+        fn_int = fn_resolver('int:0')
+        assert fn_int('$1,234.56') == 1234
+
+        fn_float = fn_resolver('float')
+        assert fn_float('$1,234.56') == 1234.56

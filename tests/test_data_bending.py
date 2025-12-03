@@ -10,112 +10,11 @@ we demonstrate complete control over the flow of data.
 import pytest
 from pathlib import Path
 
-from dbtk.database import Database
-from dbtk.readers import CSVReader
 from dbtk.etl import Table, DataSurge
-from dbtk.etl.transforms.database import CodeValidator, CodeLookup
+from dbtk.etl.transforms.database import TableLookup, Lookup, Validate
 
-# Test database and data paths
-TEST_DB_PATH = Path(__file__).parent / 'test_states.db'
-STATES_CSV_PATH = Path(__file__).parent / 'fixtures' / 'readers' / 'states.csv'
+# SQL directory for test SQL files
 SQL_DIR = Path(__file__).parent / 'sql'
-
-
-@pytest.fixture(scope='module')
-def states_db():
-    """Create test database and load states data."""
-    # Remove existing database
-    if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
-
-    # Create new database
-    db = Database.create('sqlite', database=str(TEST_DB_PATH))
-    cursor = db.cursor()
-
-    # Drop and recreate states table
-    cursor.execute("DROP TABLE IF EXISTS states")
-    cursor.execute("""
-                   CREATE TABLE states
-                   (
-                       state          TEXT PRIMARY KEY,
-                       code           TEXT NOT NULL UNIQUE,
-                       capital        TEXT NOT NULL,
-                       population     INTEGER,
-                       area_sq_mi     INTEGER,
-                       admitted       TEXT,
-                       sales_tax_rate REAL,
-                       region         TEXT
-                   )
-                   """)
-    db.commit()
-
-    # Create validation/lookup tables
-    cursor.execute("DROP TABLE IF EXISTS valid_regions")
-    cursor.execute("""
-                   CREATE TABLE valid_regions
-                   (
-                       region_name TEXT PRIMARY KEY
-                   )
-                   """)
-    cursor.execute("""
-                   INSERT INTO valid_regions (region_name)
-                   VALUES ('Northeast'),
-                          ('Southeast'),
-                          ('Midwest'),
-                          ('Southwest'),
-                          ('West')
-                   """)
-
-    cursor.execute("DROP TABLE IF EXISTS region_codes")
-    cursor.execute("""
-                   CREATE TABLE region_codes
-                   (
-                       region TEXT PRIMARY KEY,
-                       code   TEXT NOT NULL
-                   )
-                   """)
-    cursor.execute("""
-                   INSERT INTO region_codes (region, code)
-                   VALUES ('Northeast', 'NE'),
-                          ('Southeast', 'SE'),
-                          ('Midwest', 'MW'),
-                          ('Southwest', 'SW'),
-                          ('West', 'W')
-                   """)
-
-    db.commit()
-
-    # Load states data using CSVReader, Table, and DataSurge
-    states_table = Table('states', {
-        'state': {'field': 'state', 'primary_key': True},
-        'code': {'field': 'code', 'nullable': False},
-        'capital': {'field': 'capital', 'nullable': False},
-        'population': {'field': 'population'},
-        'area_sq_mi': {'field': 'area_sq_mi'},
-        'admitted': {'field': 'admitted'},
-        'sales_tax_rate': {'field': 'sales_tax_rate'},
-        'region': {'field': 'region'}
-    }, cursor=cursor)
-
-    surge = DataSurge(states_table, batch_size=25)
-
-    with open(STATES_CSV_PATH, 'r') as f:
-        with CSVReader(f) as reader:
-            errors = surge.insert(reader)
-
-    db.commit()
-
-    assert errors == 0
-    assert states_table.counts['insert'] == 50  # 50 US states
-
-    yield db
-
-    # Cleanup
-    db.close()
-    if TEST_DB_PATH.exists():
-        # We'll leave around for debugging purposes
-        # TEST_DB_PATH.unlink()
-        pass
 
 
 class TestDataLoading:
@@ -156,99 +55,134 @@ class TestDataLoading:
         assert va['admitted'] is None
 
 
-class TestCodeValidator:
-    """Test CodeValidator class with real database."""
+class TestTableLookup:
+    """Test TableLookup class with real database."""
 
-    def test_validator_preloads_small_table(self, states_db):
-        """Test that validator preloads when row count is small."""
+    def test_validator_mode_preloads_small_table(self, states_db):
+        """Test that validator mode with preload works on small tables."""
         cursor = states_db.cursor()
-        validator = CodeValidator(cursor, 'valid_regions', 'region_name')
+        validator = TableLookup(
+            cursor, 'valid_regions',
+            key_cols='region_name',
+            cache=TableLookup.CACHE_PRELOAD
+        )
 
         # Should be preloaded (only 5 regions)
         assert validator._preloaded is True
-        assert 'NORTHEAST' in validator._valid_codes  # Case insensitive by default
-        assert 'SOUTHEAST' in validator._valid_codes
+        assert len(validator._cache) == 5
 
-    def test_validator_validates_correctly(self, states_db):
-        """Test that validator correctly validates values."""
+    def test_validator_mode_validates_correctly(self, states_db):
+        """Test that validator mode correctly validates values."""
         cursor = states_db.cursor()
-        validator = CodeValidator(cursor, 'valid_regions', 'region_name')
+        validator = TableLookup(cursor, 'valid_regions', key_cols='region_name')
 
-        # Valid regions
-        assert validator('Northeast') == 'Northeast'
-        assert validator('West') == 'West'
-        assert validator('SOUTHEAST') == 'SOUTHEAST'
+        # Valid regions return True (case handling depends on database)
+        assert validator({'region_name': 'Northeast'}) is True
+        assert validator({'region_name': 'West'}) is True
+        assert validator({'region_name': 'Southeast'}) is True
 
-        # Invalid regions return None
-        assert validator('Antarctica') is None
-        assert validator('Middle Earth') is None
+        # Invalid regions return False
+        assert validator({'region_name': 'Antarctica'}) is False
+        assert validator({'region_name': 'Middle Earth'}) is False
 
-    def test_validator_handles_null_empty(self, states_db):
-        """Test that validator passes through None and empty strings."""
+    def test_validator_mode_handles_null_empty(self, states_db):
+        """Test that validator mode returns False for None and empty strings."""
         cursor = states_db.cursor()
-        validator = CodeValidator(cursor, 'valid_regions', 'region_name')
+        validator = TableLookup(cursor, 'valid_regions', key_cols='region_name')
 
-        assert validator(None) is None
-        assert validator('') == ''
-
-    def test_validator_case_sensitivity(self, states_db):
-        """Test case-sensitive validation."""
-        cursor = states_db.cursor()
-
-        # Case insensitive (default)
-        validator_insensitive = CodeValidator(cursor, 'valid_regions', 'region_name', case_sensitive=False)
-        assert validator_insensitive('northeast') == 'northeast'
-        assert validator_insensitive('NORTHEAST') == 'NORTHEAST'
-
-        # Case sensitive
-        validator_sensitive = CodeValidator(cursor, 'valid_regions', 'region_name', case_sensitive=True)
-        # Actual values in DB are 'Northeast', 'Southeast', etc.
-        assert validator_sensitive('Northeast') == 'Northeast'
-        assert validator_sensitive('northeast') is None  # Wrong case
-
-
-class TestCodeLookup:
-    """Test CodeLookup class with real database."""
+        assert validator({'region_name': None}) is False
+        assert validator({'region_name': ''}) is False
 
     def test_lookup_preloads_small_table(self, states_db):
-        """Test that lookup preloads when row count is small."""
+        """Test that lookup with preload works on small tables."""
         cursor = states_db.cursor()
-        lookup = CodeLookup(cursor, 'region_codes', 'region', 'code')
+        lookup = TableLookup(
+            cursor, 'region_codes',
+            key_cols='region',
+            return_cols='code',
+            cache=TableLookup.CACHE_PRELOAD
+        )
 
         # Should be preloaded (only 5 regions)
         assert lookup._preloaded is True
-        assert 'NORTHEAST' in lookup._cache  # Case insensitive by default
+        assert len(lookup._cache) == 5
 
     def test_lookup_translates_correctly(self, states_db):
         """Test that lookup correctly translates values."""
         cursor = states_db.cursor()
-        lookup = CodeLookup(cursor, 'region_codes', 'region', 'code')
+        lookup = TableLookup(
+            cursor, 'region_codes',
+            key_cols='region',
+            return_cols='code'
+        )
 
-        assert lookup('Northeast') == 'NE'
-        assert lookup('Southeast') == 'SE'
-        assert lookup('Midwest') == 'MW'
-        assert lookup('Southwest') == 'SW'
-        assert lookup('West') == 'W'
+        assert lookup({'region': 'Northeast'}) == 'NE'
+        assert lookup({'region': 'Southeast'}) == 'SE'
+        assert lookup({'region': 'Midwest'}) == 'MW'
+        assert lookup({'region': 'Southwest'}) == 'SW'
+        assert lookup({'region': 'West'}) == 'W'
 
     def test_lookup_handles_missing_values(self, states_db):
-        """Test lookup with missing values returns default."""
+        """Test lookup with missing values returns None."""
         cursor = states_db.cursor()
-        lookup = CodeLookup(cursor, 'region_codes', 'region', 'code', default='XX')
+        lookup = TableLookup(
+            cursor, 'region_codes',
+            key_cols='region',
+            return_cols='code'
+        )
 
-        assert lookup('Invalid Region') == 'XX'
-        assert lookup('') == 'XX'
-        assert lookup(None) == 'XX'
+        assert lookup({'region': 'Invalid Region'}) is None
+        assert lookup({'region': ''}) is None
+        assert lookup({'region': None}) is None
 
     def test_lookup_reverse_mapping(self, states_db):
         """Test lookup in reverse direction (code to region)."""
         cursor = states_db.cursor()
-        lookup = CodeLookup(cursor, 'region_codes', 'code', 'region')
+        lookup = TableLookup(
+            cursor, 'region_codes',
+            key_cols='code',
+            return_cols='region'
+        )
 
-        assert lookup('NE') == 'Northeast'
-        assert lookup('SE') == 'Southeast'
-        assert lookup('MW') == 'Midwest'
-        assert lookup('SW') == 'Southwest'
-        assert lookup('W') == 'West'
+        assert lookup({'code': 'NE'}) == 'Northeast'
+        assert lookup({'code': 'SE'}) == 'Southeast'
+        assert lookup({'code': 'MW'}) == 'Midwest'
+        assert lookup({'code': 'SW'}) == 'Southwest'
+        assert lookup({'code': 'W'}) == 'West'
+
+    def test_cache_strategies(self, states_db):
+        """Test different cache strategies."""
+        cursor = states_db.cursor()
+
+        # No cache
+        lookup_none = TableLookup(
+            cursor, 'region_codes',
+            key_cols='region',
+            return_cols='code',
+            cache=TableLookup.CACHE_NONE
+        )
+        assert lookup_none({'region': 'West'}) == 'W'
+        assert len(lookup_none._cache) == 0
+
+        # Lazy cache (default)
+        lookup_lazy = TableLookup(
+            cursor, 'region_codes',
+            key_cols='region',
+            return_cols='code',
+            cache=TableLookup.CACHE_LAZY
+        )
+        assert lookup_lazy({'region': 'West'}) == 'W'
+        assert len(lookup_lazy._cache) == 1  # Only cached one lookup
+
+        # Preload
+        lookup_preload = TableLookup(
+            cursor, 'region_codes',
+            key_cols='region',
+            return_cols='code',
+            cache=TableLookup.CACHE_PRELOAD
+        )
+        assert len(lookup_preload._cache) == 5  # All preloaded
+        assert lookup_preload({'region': 'West'}) == 'W'
 
 
 class TestSQLFileExecution:
@@ -476,10 +410,14 @@ class TestETLTransformations:
     """Test ETL transformations using Table class."""
 
     def test_table_with_validator(self, states_db):
-        """Test Table with CodeValidator transformation."""
+        """Test Table with TableLookup in validator mode."""
         cursor = states_db.cursor()
 
-        region_validator = CodeValidator(cursor, 'valid_regions', 'region_name')
+        # Use Lookup with return_cols to return validated value
+        region_validator = Lookup('valid_regions',
+            key_cols='region_name',
+            return_cols='region_name'
+        )
 
         # Create temporary test table
         cursor.execute("DROP TABLE IF EXISTS test_cities")
@@ -509,10 +447,10 @@ class TestETLTransformations:
         assert 'region' in city_table.reqs_missing
 
     def test_table_with_lookup(self, states_db):
-        """Test Table with CodeLookup transformation."""
+        """Test Table with TableLookup transformation."""
         cursor = states_db.cursor()
 
-        region_to_code = CodeLookup(cursor, 'region_codes', 'region', 'code')
+        region_to_code = Lookup('region_codes', 'region', 'code')
 
         # Create temporary test table
         cursor.execute("DROP TABLE IF EXISTS test_locations")
@@ -558,7 +496,7 @@ class TestCompleteDataCycle:
                        """)
 
         # Set up transformations
-        region_lookup = CodeLookup(cursor, 'region_codes', 'region', 'code')
+        region_lookup = Lookup('region_codes', key_cols='region', return_cols='code')
 
         def mark_large_state(population):
             """Mark states with >10M population as large."""
@@ -572,7 +510,7 @@ class TestCompleteDataCycle:
             'state_name': {'field': 'state', 'nullable': False},
             'region_code': {'field': 'region', 'fn': region_lookup},
             'large_state': {'field': 'population', 'fn': mark_large_state},
-            'created_date': {'db_fn': 'date("now")'}
+            'created_date': {'db_expr': 'date("now")'}
         }, cursor=cursor)
 
         # Use DataSurge for bulk loading

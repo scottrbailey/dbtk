@@ -1,7 +1,7 @@
 state,code,capital,population,area_sq_mi,admitted,sales_tax_rate,region
 Alabama,AL,Montgomery,5024279,50645,1819-12-14,0.04,Southeast
-Alaska,AK,Juneau,733391,570641,1/3/1959,0,West
-Arizona,AZ,Phoenix,7151502,113594,2/14/1912,0.056,Southwest
+Alaska,AK,Juneau,733391,570641,1959-01-03,0,West
+Arizona,AZ,Phoenix,7151502,113594,1912-02-14,0.056,Southwest
 Arkansas,AR,Little Rock,3011524,52035,1836-06-15,0.065,Southeast
 California,CA,Sacramento,39538223,155779,1850-09-09,0.0725,West
 Colorado,CO,Denver,5773714,103642,1876-08-01,0.029,West
@@ -9,7 +9,7 @@ Connecticut,CT,Hartford,3605944,,,0.0635,Northeast
 Delaware,DE,Dover,989948,1949,,0,Northeast
 Florida,FL,Tallahassee,21538187,53625,1845-03-03,0.06,Southeast
 Georgia,GA,Atlanta,10711908,57513,,0.04,Southeast
-Hawaii,HI,Honolulu,1455271,6423,8/21/1959,0.04,West
+Hawaii,HI,Honolulu,1455271,6423,1959-08-21,0.04,West
 Idaho,ID,Boise,1839106,82643,1890-07-03,0.06,West
 Illinois,IL,Springfield,12812508,55519,1818-12-03,0.0625,Midwest
 Indiana,IN,Indianapolis,6785528,35826,1816-12-11,0.07,Midwest
@@ -29,12 +29,12 @@ Nebraska,NE,Lincoln,1961504,76824,1867-03-01,0.055,Midwest
 Nevada,NV,Carson City,3104614,109781,1864-10-31,0.0685,West
 New Hampshire,NH,Concord,1377529,8953,,0,Northeast
 New Jersey,NJ,Trenton,9288994,7354,,0.06625,Northeast
-New Mexico,NM,Santa Fe,2117522,121298,1/6/1912,0.05125,Southwest
+New Mexico,NM,Santa Fe,2117522,121298,1912-01-06,0.05125,Southwest
 New York,NY,Albany,20201249,47126,,0.04,Northeast
 North Carolina,NC,Raleigh,10439388,48618,,0.0475,Southeast
 North Dakota,ND,Bismarck,779094,69001,1889-11-02,0.05,Midwest
 Ohio,OH,Columbus,11799448,40861,1803-03-01,0.0575,Midwest
-Oklahoma,OK,Oklahoma City,3959353,68595,11/16/1907,0.045,Southwest
+Oklahoma,OK,Oklahoma City,3959353,68595,1907-11-16,0.045,Southwest
 Oregon,OR,Salem,4237256,95988,1859-02-14,0,West
 Pennsylvania,PA,Harrisburg,13002700,44743,,0.06,Northeast
 Rhode Island,RI,Providence,1097379,1034,,0.07,Northeast

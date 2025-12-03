@@ -8,7 +8,9 @@ This module provides tools for managing database tables and performing bulk oper
 - DataSurge: High-performance bulk INSERT, UPDATE, DELETE, and MERGE operations
 - generate_table_config: Generate table configuration from database schema
 
-Example::
+Example
+-------
+::
 
     from dbtk.etl import Table, DataSurge
 

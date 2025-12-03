@@ -2,14 +2,14 @@
 """Default settings - no imports to avoid circular dependencies."""
 
 settings = {
+    'default_batch_size': 1000,
     'default_column_case': 'lower',
     'default_country': 'US',
     'default_cursor_type': 'record',
     'default_db_type': 'postgres',
     'default_header_clean': 2,  # Clean.LOWER_NOSPACE as int
     'default_timezone': 'UTC',
-    'lookup_preload_threshold': 500,
-    'validator_preload_threshold': 1000,
+    'compressed_file_buffer_size': 1024 * 1024,  # 1MB buffer for .gz/.bz2/.xz files
 
     'logging': {
         'directory': './logs',

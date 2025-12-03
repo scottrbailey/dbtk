@@ -17,31 +17,130 @@ MIDNIGHT = dt.time(0, 0, 0)
 
 
 class BaseWriter(ABC):
-    """Base class for data writers with common file handling and iteration patterns."""
+    """
+    Abstract base class for all data writers in DBTK.
+
+    Provides common functionality for writing data to various formats (CSV, JSON, Excel, XML,
+    etc.). Writers accept data from multiple sources - cursors, lists of Records, lists of
+    dicts, or lists of lists - and handle the conversion to the target format automatically.
+
+    All writers share common features like automatic column detection, stdout support for
+    quick previews, configurable encodings, and optional type preservation. Writers are
+    designed to work seamlessly with DBTK cursors and readers.
+
+    Common Features
+    ---------------
+    * **Multiple data sources** - Cursors, Records, dicts, lists
+    * **Automatic column detection** - From cursors, Record objects, or dict keys
+    * **Stdout preview** - Write to console with automatic row limiting
+    * **Configurable encoding** - UTF-8, Latin-1, etc.
+    * **Type preservation** - Optionally keep native types vs converting to strings
+    * **Consistent API** - Same interface regardless of output format
+
+    Parameters
+    ----------
+    data
+        Data to write. Accepts:
+
+        * Cursor objects (from database queries)
+        * List of Record objects (from readers)
+        * List of dictionaries
+        * List of lists (requires columns parameter)
+
+    filename : str or Path, optional
+        Output filename. If None, writes to stdout (limited to 20 rows for preview).
+    columns : List[str], optional
+        Column names for list-of-lists data. Ignored for other data types which
+        have columns embedded.
+    encoding : str, default 'utf-8'
+        File encoding for text-based formats
+    preserve_types : bool, default False
+        If False, converts all values to strings. If True, preserves native Python
+        types (useful for formats like JSON that support multiple types).
+    **kwargs
+        Additional format-specific arguments (passed to subclasses)
+
+    Attributes
+    ----------
+    columns : List[str]
+        Column names detected from data or provided explicitly
+    _row_num : int
+        Number of rows written (updated during write operation)
+
+    Example
+    -------
+    ::
+
+        # Subclasses implement specific formats
+        from dbtk import writers
+
+        # Write cursor results to CSV
+        cursor.execute("SELECT * FROM users")
+        writers.to_csv(cursor, 'users.csv')
+
+        # Write list of records to JSON
+        with readers.CSVReader(open('input.csv')) as reader:
+            records = list(reader)
+        writers.to_json(records, 'output.json')
+
+        # Preview to stdout (shows first 20 rows)
+        cursor.execute("SELECT * FROM large_table")
+        writers.to_csv(cursor, None)  # Prints to console
+
+        # Write with type preservation
+        writers.to_json(cursor, 'data.json', preserve_data_types=True)
+
+    See Also
+    --------
+    to_csv : Write CSV files
+    to_json : Write JSON files
+    to_excel : Write Excel files
+    to_xml : Write XML files
+    cursor_to_cursor : Database-to-database transfer
+
+    Notes
+    -----
+    This is an abstract base class. Use one of the concrete implementations
+    (CSVWriter, JSONWriter, etc.) or the convenience functions (to_csv, to_json, etc.).
+
+    Subclasses must implement:
+
+    * ``_write()`` - Perform the actual write operation
+
+    When filename is None (stdout mode), output is automatically limited to 20 rows
+    to prevent accidentally printing huge result sets to the console.
+    """
 
     def __init__(self,
                  data,
                  filename: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
-                 preserve_data_types: bool = False,
+                 preserve_types: bool = False,
                  **kwargs):
         """
-        Initialize the base writer.
+        Initialize the writer with data and options.
 
-        Args:
-            data: Cursor object or list of records
-            filename: Output filename. If None, writes to stdout
-            columns: Column names for list-of-lists data (ignored for other types)
-            encoding: File encoding
-            preserve_data_types: If False, convert all values to strings
-            **kwargs: Additional arguments for subclass writers
+        Parameters
+        ----------
+        data
+            Data source (cursor, list of records, etc.)
+        filename : str or Path, optional
+            Output file. None writes to stdout.
+        columns : List[str], optional
+            Column names for list-of-lists
+        encoding : str, default 'utf-8'
+            File encoding
+        preserve_types : bool, default False
+            Keep native types vs convert to strings
+        **kwargs
+            Format-specific arguments
         """
         self.data = data
         self.filename = filename
         self.encoding = encoding
-        self.preserve_data_types = preserve_data_types
-        self.row_count = 0
+        self.preserve_types = preserve_types
+        self._row_num = 0
 
         # Setup data iterator and columns
         self.data_iterator, self.columns = self._get_data_iterator(data, columns)
@@ -51,6 +150,11 @@ class BaseWriter(ABC):
         # Limit stdout output to 20 rows
         if filename is None:
             self.data_iterator = itertools.islice(self.data_iterator, 20)
+
+    @property
+    def row_count(self) -> int:
+        """ Returns the number of rows written."""
+        return self._row_num
 
     def _get_file_handle(self, mode='w'):
         """
@@ -193,7 +297,7 @@ class BaseWriter(ABC):
                 # Fallback for objects without __getitem__ that only support attribute access
                 value = getattr(record, col, None)
 
-            if not self.preserve_data_types:
+            if not self.preserve_types:
                 value = self.to_string(value)
             values.append(value)
 
@@ -219,8 +323,8 @@ class BaseWriter(ABC):
         file_obj, should_close = self._get_file_handle()
         try:
             self._write_data(file_obj)
-            logger.info(f"Wrote {self.row_count} rows to {self.filename or 'stdout'}")
-            return self.row_count
+            logger.info(f"Wrote {self._row_num} rows to {self.filename or 'stdout'}")
+            return self._row_num
         except Exception as e:
             logger.error(f"Error writing data: {e}")
             raise

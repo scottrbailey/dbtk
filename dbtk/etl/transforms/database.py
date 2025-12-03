@@ -1,156 +1,121 @@
 # dbtk/etl/transforms/database.py
-"""
-Database-backed validation and lookup classes.
 
-These classes require a database cursor and interact with database
-tables for validation and code translation operations.
+"""
+Database table lookup and validation using PreparedStatement.
 """
 
-from typing import Any
+import logging
+from typing import Any, Union, List, Optional, Callable
 
-from ...defaults import settings
-from ...utils import ParamStyle, quote_identifier, validate_identifier
-from ...cursors import DictCursor
+from ...utils import quote_identifier, validate_identifier
+from ...cursors import PreparedStatement, DictCursor
+
+logger = logging.getLogger(__name__)
 
 
-class CodeValidator:
+class TableLookup:
     """
-    CodeValidator is a class designed to validate input values against a specified column in a database table.
+    Database table lookup with configurable caching for ETL transformations.
 
-    This class provides efficient methods for validating values by querying the database or using preloaded
-    valid codes, depending on the size of the dataset. It supports optional case sensitivity and uses
-    a configurable threshold to determine if the codes should be preloaded into memory. The validation logic
-    is handled dynamically based on the database's paramstyle.
+    Performs lookups against database tables or views using PreparedStatement for
+    efficient repeated queries. Supports three caching strategies:
 
-    Examples:
-        temple_validator = CodeValidator(cursor, table='temples', column='temple_id', case_sensitive=False)
+    - CACHE_NONE (0): No caching, always query database
+    - CACHE_LAZY (1): Cache results as encountered (default)
+    - CACHE_PRELOAD (2): Preload entire table into memory upfront
 
-        air_bender_table = Table('air_benders', {
-                                'temple': {'field': 'home_temple', 'nullable': False, 'fn': temple_validator}},
-                                cursor=cursor)
-    """
+    Can operate in three modes:
+    - Validator: No return_cols specified, returns bool indicating existence
+    - Single lookup: One return column, returns scalar value
+    - Multi lookup: Multiple return columns, returns row object (type depends on cursor)
 
-    PRELOAD_THRESHOLD = 1000
+    Examples
+    --------
+    Validator mode::
 
-    def __init__(self, cursor, table: str, column: str,
-                 case_sensitive: bool = False):
-        """
-        Initializes a new instance of the validator class by setting up required table and column names,
-        and optionally enabling case sensitivity. Automatically determines whether to preload all valid
-        codes based on the size of the table and a configurable threshold.
+        temple_validator = TableLookup(cursor, 'temples', key_cols='temple_id')
+        is_valid = temple_validator({'temple_id': 'eastern_air_temple'})  # True/False
 
-        Parameters:
-            cursor (cursor): A database cursor instance used to execute queries.
-            table (str): The name of the table to validate against.
-            column (str): The name of the column to validate against.
-            case_sensitive (bool): Whether the validation is case-sensitive.
-        """
-        if isinstance(cursor, DictCursor):
-            self._cursor = cursor.connection.cursor()
-        else:
-            self._cursor = cursor
-        validate_identifier(table)
-        validate_identifier(column)
-        self.table = quote_identifier(table)
-        self.column = quote_identifier(column)
-        self.case_sensitive = case_sensitive
-        self.threshold = settings.get('validator_preload_threshold', self.PRELOAD_THRESHOLD)
-        self._valid_codes = set()
-        self._preloaded = False
+    Single value lookup::
 
-        # Get paramstyle from connection
-        self._paramstyle = self._cursor.connection.interface.paramstyle
-        self._placeholder = ParamStyle.get_placeholder(self._paramstyle)
+        state_lookup = TableLookup(cursor, 'states',
+                                   key_cols='name',
+                                   return_cols='abbreviation',
+                                   cache=TableLookup.CACHE_PRELOAD)  # Small table, preload it
+        abbrev = state_lookup({'name': 'California'})  # 'CA'
 
-        # Auto-decide whether to preload based on table size
-        row_count = self._get_row_count()
-        if row_count <= self.threshold:
-            self._load_all_codes()
-            self._preloaded = True
+    Multi-value lookup::
 
-    def _get_row_count(self) -> int:
-        """Get count of distinct values in validation column."""
-        sql = f"SELECT COUNT(DISTINCT {self.column}) FROM {self.table}"
-        self._cursor.execute(sql)
-        return self._cursor.fetchone()[0]
+        address_lookup = TableLookup(cursor, 'addresses',
+                                     key_cols='address_id',
+                                     return_cols=['street', 'city', 'state', 'zip'])
+        address = address_lookup({'address_id': 123})  # Record/dict/namedtuple
 
-    def _load_all_codes(self):
-        """Preload all valid codes into memory."""
-        sql = f"SELECT DISTINCT {self.column} FROM {self.table}"
-        self._cursor.execute(sql)
-        # Filter out None and empty strings, handle case sensitivity
-        codes = {row[0] for row in self._cursor.fetchall()
-                 if row[0] not in (None, '')}
-        self._valid_codes = {c if self.case_sensitive else str(c).upper() for c in codes}
+    Multi-key lookup::
 
-    def _is_valid(self, value) -> bool:
-        """Check if value is valid."""
-        check_val = value if self.case_sensitive else str(value).upper()
+        person_lookup = TableLookup(cursor, 'people',
+                                    key_cols=['first_name', 'last_name'],
+                                    return_cols='person_id',
+                                    cache=TableLookup.CACHE_NONE)  # Large table, don't cache
+        person_id = person_lookup({'first_name': 'Aang', 'last_name': 'Avatar'})
 
-        if self._preloaded:
-            return check_val in self._valid_codes
+    Use in Table config::
 
-        if check_val in self._valid_codes:
-            return True
-
-        # Query database using correct paramstyle
-        sql = f"SELECT {self.column} FROM {self.table} WHERE {self.column} = {self._placeholder}"
-
-        if self._paramstyle in ParamStyle.positional_styles():
-            self._cursor.execute(sql, (value,))
-        else:
-            self._cursor.execute(sql, {'val': value})
-
-        if self._cursor.fetchone():
-            self._valid_codes.add(check_val)
-            return True
-
-        return False
-
-    def __call__(self, value):
-        """Validate value against database table."""
-        if value is None or value == '':
-            return value
-        return value if self._is_valid(value) else None
-
-
-class CodeLookup:
-    """
-    Lookup/translate codes using a database reference table.
-
-    Automatically decides whether to preload based on table size.
-
-    Examples:
-        # State abbreviation to full name
-        state_lookup = CodeLookup(cursor, 'states', 'abbrev', 'full_name')
-        state_lookup('CA')  # -> 'California'
-
-        # Country code to name
-        country_lookup = CodeLookup(cursor, 'countries', 'iso_code', 'name')
-
-        # Use in table config
         table = Table('citizens', {
-            'state_name': {'field': 'state_code', 'fn': state_lookup}
+            'state_abbrev': {'field': 'state_name', 'fn': state_lookup}
         }, cursor=cursor)
     """
 
-    PRELOAD_THRESHOLD = 500
+    # Cache strategy constants
+    CACHE_NONE = 0  # No caching
+    CACHE_LAZY = 1  # Cache as encountered (default)
+    CACHE_PRELOAD = 2  # Preload entire table
 
-    def __init__(self, cursor, table: str, from_column: str, to_column: str,
-                 case_sensitive: bool = False, default: Any = None):
+    def __init__(self,
+                 cursor,
+                 table: str,
+                 key_cols: Union[str, List[str]],
+                 return_cols: Optional[Union[str, List[str]]] = None,
+                 cache: int = 1):  # Default to lazy caching
         """
-        Initializes an instance of a lookup system which maps values from one column to another
-        within a specific database table, using a provided database cursor for operation.
+        Initialize TableLookup with table schema and caching strategy.
 
-        Parameters:
-            cursor: A database cursor instance used to execute queries.
-            table (str): The name of the database table being accessed.
-            from_column (str): The source column being used as the key.
-            to_column (str): The target column being used to retrieve mapped values.
-            case_sensitive (bool): Optional; specifies if the lookup is case-sensitive. Defaults to False.
-            default (Any): Optional; the default value returned if no match is located in the table.
+        Parameters
+        ----------
+        cursor : Cursor
+            Database cursor for executing queries
+        table : str
+            Table or view name to query
+        key_cols : str or list of str
+            Column name(s) to use in WHERE clause. Cannot be empty.
+        return_cols : str, list of str, or None
+            Column(s) to return. If None, operates as validator (returns bool)
+        cache : int, default 1 (CACHE_LAZY)
+            Caching strategy:
+            - 0 (CACHE_NONE): No caching, always query database
+            - 1 (CACHE_LAZY): Cache results as encountered
+            - 2 (CACHE_PRELOAD): Preload entire table into memory
+
+        Raises
+        ------
+        ValueError
+            If key_cols is empty or cache value is invalid
+
+        Note
+        ----
+        Case sensitivity is determined by the database. If your database is
+        case-sensitive (e.g., PostgreSQL), lookups must match the exact case
+        in the database. If case-insensitive (e.g., SQLite by default), the
+        database will handle case matching.
         """
-        # Create new RecordCursor if passed a DictCursor
+        # Validate cache strategy
+        if cache not in (self.CACHE_NONE, self.CACHE_LAZY, self.CACHE_PRELOAD):
+            raise ValueError(
+                f"Invalid cache value: {cache}. "
+                f"Use TableLookup.CACHE_NONE (0), TableLookup.CACHE_LAZY (1), or TableLookup.CACHE_PRELOAD (2)"
+            )
+
+        # Handle DictCursor by getting a regular cursor
         if isinstance(cursor, DictCursor):
             self._cursor = cursor.connection.cursor()
         else:
@@ -158,69 +123,384 @@ class CodeLookup:
 
         # Validate and quote identifiers
         validate_identifier(table)
-        validate_identifier(from_column)
-        validate_identifier(to_column)
-        self.table = quote_identifier(table)
-        self.from_column = quote_identifier(from_column)
-        self.to_column = quote_identifier(to_column)
-        self.case_sensitive = case_sensitive
-        self.default = default
+        self._table = quote_identifier(table)
+
+        # Normalize key_cols to list and validate
+        if isinstance(key_cols, str):
+            key_cols = [key_cols]
+        if not key_cols:
+            raise ValueError("key_cols cannot be empty")
+        for col in key_cols:
+            validate_identifier(col)
+        self._key_cols = [quote_identifier(col) for col in key_cols]
+        self._key_col_names = key_cols  # Store unquoted for bind params
+
+        # Normalize return_cols to list or None
+        if return_cols is None:
+            self._return_cols = None
+            self._validator_mode = True
+        else:
+            if isinstance(return_cols, str):
+                return_cols = [return_cols]
+            for col in return_cols:
+                validate_identifier(col)
+            self._return_cols = [quote_identifier(col) for col in return_cols]
+            self._validator_mode = False
+
+        self._cache_strategy = cache
         self._cache = {}
         self._preloaded = False
 
-        # Get paramstyle from connection
-        self._paramstyle = self._cursor.connection.interface.paramstyle
-        self._placeholder = ParamStyle.get_placeholder(self._paramstyle)
+        # Build SQL
+        self._build_sql()
 
-        # Get threshold from settings or use default
-        threshold = settings.get('lookup_preload_threshold', self.PRELOAD_THRESHOLD)
-
-        # Auto-decide whether to preload
-        row_count = self._get_row_count()
-        if row_count <= threshold:
-            self._load_all()
+        # Apply caching strategy
+        if cache == self.CACHE_NONE:
+            # No caching at all
+            pass
+        elif cache == self.CACHE_LAZY:
+            # Lazy cache - enabled but don't preload
+            pass  # Cache dict already initialized
+        elif cache == self.CACHE_PRELOAD:
+            # Preload entire table - user's responsibility to know table size
+            self._preload_all()
             self._preloaded = True
 
-    def _get_row_count(self) -> int:
-        """Get count of rows in lookup table."""
-        sql = f"SELECT COUNT(*) FROM {self.table}"
-        self._cursor.execute(sql)
-        return self._cursor.fetchone()[0]
-
-    def _load_all(self):
-        """Preload entire lookup table into cache."""
-        sql = f"SELECT {self.from_column}, {self.to_column} FROM {self.table}"
-        self._cursor.execute(sql)
-        for row in self._cursor.fetchall():
-            key = row[0]
-            # Skip rows with null/empty keys
-            if key in (None, ''):
-                continue
-            if not self.case_sensitive:
-                key = str(key).upper()
-            self._cache[key] = row[1]
-
-    def _lookup(self, value):
-        """Lookup value in database."""
-        sql = f"SELECT {self.to_column} FROM {self.table} WHERE {self.from_column} = {self._placeholder}"
-
-        if self._paramstyle in ParamStyle.positional_styles():
-            self._cursor.execute(sql, (value,))
+    def _build_sql(self):
+        """Build the SELECT and PreparedStatement."""
+        # Build SELECT clause
+        if self._validator_mode:
+            # For validation, just select one of the key columns
+            select_clause = self._key_cols[0]
         else:
-            self._cursor.execute(sql, {'val': value})
+            select_clause = ', '.join(self._return_cols)
 
-        row = self._cursor.fetchone()
-        return row[0] if row else None
+        # Build WHERE clause with named parameters
+        where_conditions = []
+        for col, param_name in zip(self._key_cols, self._key_col_names):
+            where_conditions.append(f"{col} = :{param_name}")
+        where_clause = ' AND '.join(where_conditions)
+
+        # Complete SQL
+        query = f"SELECT {select_clause} FROM {self._table} WHERE {where_clause}"
+        logger.debug(f"TableLookup query: {query}")
+        # Create PreparedStatement
+        self._stmt = PreparedStatement(self._cursor, query=query)
+
+    def _preload_all(self):
+        """Preload entire lookup table into cache."""
+        # Build SELECT for all data
+        if self._validator_mode:
+            # Just need the keys
+            select_cols = ', '.join(self._key_cols)
+        else:
+            # Need keys + return columns
+            select_cols = ', '.join(self._key_cols + self._return_cols)
+
+        query = f"SELECT {select_cols} FROM {self._table}"
+        self._cursor.execute(query)
+
+        num_keys = len(self._key_cols)
+
+        for row in self._cursor.fetchall():
+            # Extract key values (first N columns)
+            key_values = row[:num_keys]
+
+            # Skip rows with null/empty keys
+            if any(k in (None, '') for k in key_values):
+                continue
+
+            # Build cache key (tuple, preserving original case)
+            cache_key = tuple(key_values)
+
+            # Store appropriate value
+            if self._validator_mode:
+                self._cache[cache_key] = True
+            elif len(self._return_cols) == 1:
+                # Single return column - store scalar
+                self._cache[cache_key] = row[num_keys]
+            else:
+                # Multiple return columns - store the return portion of row
+                # This will be a list slice - cursor type doesn't matter for preload
+                self._cache[cache_key] = row[num_keys:]
+
+    def _make_cache_key(self, bind_vars: dict) -> tuple:
+        """Create cache key from bind variables."""
+        return tuple(bind_vars[name] for name in self._key_col_names)
+
+    def _lookup(self, bind_vars: dict) -> Any:
+        """Perform database lookup."""
+        self._stmt.execute(bind_vars)
+        row = self._stmt.fetchone()
+
+        if not row:
+            return None
+
+        if self._validator_mode:
+            return True
+        elif len(self._return_cols) == 1:
+            # Single column - return scalar at position 0
+            return row[0]
+        else:
+            # Multiple columns - return whole row
+            return row
+
+    def __call__(self, bind_vars: dict) -> Any:
+        """
+        Perform lookup with given key values.
+
+        Parameters
+        ----------
+        bind_vars : dict
+            Dictionary with key column names and their values
+
+        Returns
+        -------
+        bool
+            If in validator mode (no return_cols)
+        scalar
+            If single return column
+        row object
+            If multiple return columns (type depends on cursor)
+        None
+            If no match found
+
+        Raises
+        ------
+        ValueError
+            If required key columns are missing from bind_vars
+        """
+        # Check that all required keys are present in bind_vars
+        missing_keys = [k for k in self._key_col_names if k not in bind_vars]
+        if missing_keys:
+            raise ValueError(f"TableLookup for '{self._table}' missing required keys: {missing_keys}.")
+
+        # Check for None/empty values in keys (data quality issue, not an error)
+        for key_name in self._key_col_names:
+            if bind_vars[key_name] in (None, ''):
+                return False if self._validator_mode else None
+
+        # No caching - always query
+        if self._cache_strategy == self.CACHE_NONE:
+            result = self._lookup(bind_vars)
+            if result is None:
+                return False if self._validator_mode else None
+            return result
+
+        # With caching - check cache first
+        cache_key = self._make_cache_key(bind_vars)
+
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        # Not in cache - perform lookup
+        result = self._lookup(bind_vars)
+
+        # Cache result
+        if result is not None:
+            self._cache[cache_key] = result
+        else:
+            result = False if self._validator_mode else None
+            if not self._preloaded:
+                # Only cache misses if not preloaded (preloaded means we know all valid keys)
+                self._cache[cache_key] = result
+
+        return result
+
+
+def Lookup(table: str,
+           key_cols: Union[str, List[str]],
+           return_cols: Union[str, List[str]],
+           *,
+           cache: int = TableLookup.CACHE_LAZY,
+           missing: Any = None) -> Callable[[Any], Any]:
+    """
+    One-liner database lookup for Table column configs.
+    """
+    return _DeferredTransform.create_lookup(
+        table=table,
+        key_cols=key_cols,
+        return_cols=return_cols,
+        cache=cache,
+        missing=missing
+    )
+
+
+def Validate(table: str,
+             key_cols: Union[str, List[str]],
+             *,
+             cache: int = TableLookup.CACHE_LAZY,
+             on_fail: str = 'warn') -> Callable[[Any], Any]:
+    """
+    One-liner validation — returns original value if key exists in table.
+    """
+    return _DeferredTransform.create_validator(
+        table=table,
+        key_cols=key_cols,
+        cache=cache,
+        on_fail=on_fail
+    )
+
+
+# ——————————————————— Internal Implementation ———————————————————
+
+class _DeferredTransform:
+    __slots__ = ('_args', '_kwargs', '_extra', '_bound_fn')
+
+    def __init__(self, args, kwargs, extra=None):
+        self._args = args
+        self._kwargs = kwargs
+        self._extra = extra or {}
+        self._bound_fn = None
+
+    @classmethod
+    def create_lookup(cls, table, key_cols, return_cols, *, cache=TableLookup.CACHE_LAZY, missing=None):
+        # Only pass valid TableLookup args
+        return cls(
+            args=(table, key_cols, return_cols),
+            kwargs={'cache': cache},  # ← only this goes to TableLookup
+            extra={'missing': missing}  # ← our wrapper-specific option
+        )
+
+    @classmethod
+    def create_validator(cls, table, key_cols, *, cache=TableLookup.CACHE_LAZY, on_fail='warn'):
+        return cls(
+            args=(table, key_cols),
+            kwargs={'cache': cache},
+            extra={'on_fail': on_fail, 'validator': True}
+        )
+
+    @classmethod
+    def from_string(cls, spec: str):
+        """
+        Parse string shorthand for Lookup/Validate transforms.
+
+        Formats:
+            'lookup:table:key_col:return_col[:cache]'
+            'validate:table:key_col[:cache]'
+
+        Cache can be:
+            - 0 or 'no_cache'  → CACHE_NONE
+            - 1 or 'lazy'      → CACHE_LAZY (default)
+            - 2 or 'pre_cache' → CACHE_PRELOAD
+
+        Examples:
+            'lookup:states:code:state'
+            'lookup:states:code:state:2'
+            'lookup:states:code:state:preload'
+            'lookup:customers:person_id,store_id:customer_id'
+            'validate:regions:name'
+            'validate:regions:name:no_cache'
+        """
+        parts = [p.strip() for p in spec.split(':')]
+
+        if len(parts) < 2 or len(parts) > 5:
+            raise ValueError(f"Invalid transform spec: '{spec}'")
+
+        transform_type = parts[0].lower()
+
+        # Parse cache option helper
+        def parse_cache(cache_str: str) -> int:
+            """Convert cache string/int to TableLookup constant."""
+            cache_lower = cache_str.lower()
+            if cache_lower in ('0', 'no_cache', 'none'):
+                return TableLookup.CACHE_NONE
+            elif cache_lower in ('1', 'lazy'):
+                return TableLookup.CACHE_LAZY
+            elif cache_lower in ('2', 'pre_cache', 'preload', 'precache'):
+                return TableLookup.CACHE_PRELOAD
+            else:
+                raise ValueError(
+                    f"Invalid cache value: '{cache_str}'. "
+                    f"Use 0/'no_cache', 1/'lazy', or 2/'pre_cache'"
+                )
+
+        if transform_type == 'lookup':
+            if len(parts) < 4:
+                raise ValueError(
+                    f"Invalid lookup spec: '{spec}'. "
+                    "Expected 'lookup:table:key_col:return_col[:cache]'"
+                )
+
+            table = parts[1]
+            key_col = parts[2].split(',') if ',' in parts[2] else parts[2]
+            return_col = parts[3].split(',') if ',' in parts[3] else parts[3]
+            cache = parse_cache(parts[4]) if len(parts) > 4 else TableLookup.CACHE_LAZY
+
+            return cls.create_lookup(table, key_col, return_col, cache=cache)
+
+        elif transform_type == 'validate':
+            if len(parts) < 3:
+                raise ValueError(
+                    f"Invalid validate spec: '{spec}'. "
+                    "Expected 'validate:table:key_col[:cache]'"
+                )
+
+            table = parts[1]
+            key_col = parts[2].split(',') if ',' in parts[2] else parts[2]
+            cache = parse_cache(parts[3]) if len(parts) > 3 else TableLookup.CACHE_LAZY
+
+            return cls.create_validator(table, key_col, cache=cache)
+
+        else:
+            raise ValueError(
+                f"Unknown transform type: '{transform_type}'. "
+                "Must be 'lookup' or 'validate'"
+            )
+
+    def bind(self, cursor) -> Callable[[Any], Any]:
+        if self._bound_fn is not None:
+            return self._bound_fn
+
+        is_validator = self._extra.get('validator', False)
+        lookup = TableLookup(cursor, *self._args, **self._kwargs)  # ← clean, no junk
+
+        key_cols = self._args[1]
+
+        if is_validator:
+            on_fail = self._extra.get('on_fail', 'warn')
+
+            def validate(value):
+                if value is None:
+                    return value
+                bind_vars = _make_bind_vars(key_cols, value)
+                if not lookup(bind_vars):
+                    msg = f"Validation failed: {bind_vars} not found in table {self._args[0]}"
+                    if on_fail == 'raise':
+                        raise ValueError(msg)
+                    elif on_fail == 'warn':
+                        logger.warning(msg)
+                return value
+
+            self._bound_fn = validate
+
+        else:
+            missing = self._extra.get('missing')
+
+            def transform(value):
+                if value is None:
+                    return missing
+                bind_vars = _make_bind_vars(key_cols, value)
+                result = lookup(bind_vars)
+                return result if result is not None else missing
+
+            self._bound_fn = transform
+
+        return self._bound_fn
 
     def __call__(self, value):
-        """Lookup value in reference table."""
-        if value is None or value == '':
-            return self.default
+        if self._bound_fn is None:
+            raise RuntimeError("Lookup/Validate used before Table cursor was bound")
+        return self._bound_fn(value)
 
-        lookup_key = value if self.case_sensitive else str(value).upper()
 
-        if lookup_key not in self._cache:
-            result = self._lookup(value)
-            self._cache[lookup_key] = result if result is not None else self.default
-
-        return self._cache[lookup_key]
+def _make_bind_vars(key_cols_spec: Union[str, List[str]], value: Any) -> dict:
+    if isinstance(key_cols_spec, str):
+        return {key_cols_spec: value}
+    # key_cols_spec is list/tuple
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, '__iter__') and not isinstance(value, str):
+        return dict(zip(key_cols_spec, value))
+    # Fallback: single value, multiple keys → use first key
+    return {key_cols_spec[0]: value}

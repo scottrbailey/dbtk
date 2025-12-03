@@ -39,7 +39,7 @@ class CSVWriter(BaseWriter):
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, filename, columns, encoding, preserve_data_types=False)
+        super().__init__(data, filename, columns, encoding, preserve_types=False)
         self.include_headers = include_headers
         self.delimiter = delimiter
         self.quotechar = quotechar
@@ -62,7 +62,7 @@ class CSVWriter(BaseWriter):
         for record in self.data_iterator:
             row = self._extract_row_values(record)
             writer.writerow(row)
-            self.row_count += 1
+            self._row_num += 1
 
 
 def to_csv(data,
@@ -84,7 +84,7 @@ def to_csv(data,
         quotechar: CSV quote character
         **csv_kwargs: Additional arguments passed to csv.writer
 
-    Examples:
+    Example:
         # Write to file
         to_csv(cursor, 'users.csv')
 

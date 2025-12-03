@@ -55,7 +55,7 @@ class XMLReader(Reader):
             record_xpath: XPath expression to find record elements
             columns: List of XMLColumn definitions for custom extraction
             sample_size: Number of records to sample for column discovery
-            add_rownum: Add rownum to each record
+            add_rownum: Add _row_num to each record
             clean_headers: Header cleaning level (default: Clean.DEFAULT)
             skip_records: Number of data records to skip after headers
             max_records: Maximum number of records to read, or None for all
@@ -65,6 +65,7 @@ class XMLReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.fp = fp
+        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
         self.record_xpath = record_xpath
         self.custom_columns = columns or []
         self.sample_size = sample_size
@@ -222,7 +223,9 @@ def open_xml(filename: str, **kwargs) -> XMLReader:
     Returns:
         XMLReader instance
 
-    Example:
+    Example
+    -------
+    ::
         with open_xml('data.xml', record_xpath='//user') as reader:
             for record in reader:
                 print(record.name)

@@ -37,29 +37,32 @@ Optional Dependencies:
 from .core import (
     capitalize,
     coalesce,
-    indicator,
-    get_int,
-    get_float,
-    get_list_item,
-    get_digits,
-    to_number,
-    get_bool,
-    normalize_whitespace,
+    fn_resolver,
     format_number,
-    parse_list,
+    get_bool,
+    get_digits,
+    get_float,
+    get_int,
+    get_list_item,
+    indicator,
     intsOnlyPattern,
+    normalize_whitespace,
     numbersOnlyPattern,
+    parse_list,
+    to_number,
 )
 
-from .datetime import parse_date, parse_datetime
 from .phone import phone_validate, phone_clean
 from .email import email_validate, email_clean
 from .address import validate_us_address, standardize_address
+from .datetime import parse_date, parse_datetime
+from .database import TableLookup, Lookup, Validate
 
 __all__ = [
     # Core text utilities
     'capitalize',
     'normalize_whitespace',
+    'fn_resolver',
 
     # Logic helpers
     'coalesce',
@@ -95,5 +98,10 @@ __all__ = [
 
     # Phone number
     'phone_validate',
-    'phone_clean'
+    'phone_clean',
+
+    # Database
+    'TableLookup',
+    'Lookup',
+    'Validate'
 ]

@@ -92,8 +92,8 @@ def airbender_table(cursor, airbender_schema):
         'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
         'sky_bison': {'field': 'bison_companion'},
         'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
-        'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
-        'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+        'training_date': {'db_expr': 'CURRENT_TIMESTAMP'},
+        'instructor': {'default': 'Monk Gyatso', 'no_update': True}
     }
     return Table('air_nomad_training', columns=col_def, cursor=cursor)
 
@@ -108,7 +108,7 @@ def fire_nation_table(cursor, fire_nation_schema):
         'firebending_skill': {'field': 'flame_intensity', 'fn': lambda x: int(x) if x else 0},
         'home_village': {'field': 'birthplace'},
         'enlistment_date': {'field': 'joined_date', 'fn': lambda x: x},
-        'commanding_officer': {'value': 'Admiral Zhao', 'no_update': True}
+        'commanding_officer': {'default': 'Admiral Zhao', 'no_update': True}
     }
     return Table('fire_nation_army', columns=col_def, cursor=cursor)
 
@@ -122,8 +122,8 @@ def earth_kingdom_table(cursor, earth_kingdom_schema):
         'city': {'field': 'home_city', 'nullable': False},
         'earthbending_skill': {'field': 'boulder_size', 'fn': lambda x: float(x) if x else 0.0},
         'occupation': {'field': 'job_title'},
-        'registration_date': {'db_fn': 'CURRENT_DATE'},
-        'kingdom_loyalty': {'value': 'True Earth Kingdom Citizen'}
+        'registration_date': {'db_expr': 'CURRENT_DATE'},
+        'kingdom_loyalty': {'default': 'True Earth Kingdom Citizen'}
     }
     return Table('earth_kingdom_census', columns=col_def, cursor=cursor)
 
@@ -745,7 +745,7 @@ class TestUpdateExclusions:
 
 
 class TestSetCursor:
-    """Test set_cursor functionality and cache invalidation."""
+    """Test cursor setter functionality and cache invalidation."""
 
     def test_set_cursor_same_paramstyle(self, airbender_table, sqlite_db):
         """Test switching cursor with same paramstyle doesn't reset cache."""
@@ -755,7 +755,7 @@ class TestSetCursor:
         new_cursor = sqlite_db.cursor()
 
         # Switch cursor
-        airbender_table.set_cursor(new_cursor)
+        airbender_table.cursor = new_cursor
 
         new_sql = airbender_table.get_sql('insert')
 
@@ -859,8 +859,8 @@ class TestAutomaticUpdateExcludes:
             'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
             'sky_bison': {'field': 'bison_companion'},
             'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
-            'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
-            'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+            'training_date': {'db_expr': 'CURRENT_TIMESTAMP'},
+            'instructor': {'default': 'Monk Gyatso', 'no_update': True}
         }
         new_table = Table('air_nomad_training', columns=col_def, cursor=cursor)
 
@@ -949,8 +949,8 @@ class TestAutomaticUpdateExcludes:
             'airbending_level': {'field': 'mastery_rank', 'fn': lambda x: int(x) if x else 0},
             'sky_bison': {'field': 'bison_companion'},
             'meditation_score': {'field': 'daily_meditation', 'fn': lambda x: float(x) if x else 0.0},
-            'training_date': {'db_fn': 'CURRENT_TIMESTAMP'},
-            'instructor': {'value': 'Monk Gyatso', 'no_update': True}
+            'training_date': {'db_expr': 'CURRENT_TIMESTAMP'},
+            'instructor': {'default': 'Monk Gyatso', 'no_update': True}
         }
         new_table = Table('air_nomad_training', columns=col_def, cursor=cursor)
 
@@ -1008,6 +1008,127 @@ class TestAutomaticUpdateExcludes:
 
         # SQL should be different (excludes birthplace fields)
         assert new_sql != initial_sql
+
+
+class TestSpecialColumnNames:
+    """Test handling of column names that require bind_name sanitization."""
+
+    @pytest.fixture
+    def special_chars_schema(self, cursor):
+        """Create table with special character column names."""
+        cursor.execute("""
+                       CREATE TABLE spirit_world_records
+                       (
+                           "spirit-id"   TEXT PRIMARY KEY,
+                           "spirit name" TEXT NOT NULL,
+                           "power$level" INTEGER,
+                           "realm#"      TEXT,
+                           "last-seen"   TEXT
+                       )
+                       """)
+        cursor.connection.commit()
+        return 'spirit_world_records'
+
+    @pytest.fixture
+    def special_chars_table(self, cursor, special_chars_schema):
+        """Table with special character column names."""
+        col_def = {
+            'spirit-id': {'field': 'id', 'primary_key': True},
+            'spirit name': {'field': 'name', 'nullable': False},
+            'power$level': {'field': 'power', 'fn': lambda x: int(x) if x else 0},
+            'realm#': {'field': 'realm'},
+            'last-seen': {'field': 'last_encounter'}
+        }
+        return Table('spirit_world_records', columns=col_def, cursor=cursor)
+
+    def test_bind_name_sanitization(self, special_chars_table):
+        """Test that special characters in column names are sanitized for bind parameters."""
+        # Check bind_name sanitization
+        assert special_chars_table.columns['spirit-id']['bind_name'] == 'spirit_id'
+        assert special_chars_table.columns['spirit name']['bind_name'] == 'spirit_name'
+        assert special_chars_table.columns['power$level']['bind_name'] == 'power_level'
+        assert special_chars_table.columns['realm#']['bind_name'] == 'realm'
+        assert special_chars_table.columns['last-seen']['bind_name'] == 'last_seen'
+
+    def test_insert_with_special_column_names(self, special_chars_table, cursor):
+        """Test INSERT with special column names uses sanitized bind parameters."""
+        special_chars_table.set_values({
+            'id': 'SPIRIT001',
+            'name': 'Wan Shi Tong',
+            'power': '10',
+            'realm': 'Spirit World',
+            'last_encounter': '100 AG'
+        })
+
+        # Generate and examine INSERT SQL
+        sql = special_chars_table.get_sql('insert')
+
+        # Column names should be quoted in SQL
+        assert '"spirit-id"' in sql or 'spirit-id' in sql
+        assert '"spirit name"' in sql or 'spirit_name' in sql
+        assert '"power$level"' in sql or 'power$level' in sql
+
+        # But bind parameters should use sanitized names (check _param_config)
+        param_names = special_chars_table._param_config['insert']
+        assert 'spirit_id' in param_names
+        assert 'spirit_name' in param_names
+        assert 'power_level' in param_names
+
+    def test_update_with_special_column_names(self, special_chars_table, cursor):
+        """Test UPDATE with special column names uses sanitized bind parameters."""
+        # Insert first
+        special_chars_table.set_values({
+            'id': 'SPIRIT002',
+            'name': 'Koh',
+            'power': '9',
+            'realm': 'Spirit World',
+            'last_encounter': '99 AG'
+        })
+        special_chars_table.exec_insert()
+        cursor.connection.commit()
+
+        # Now update
+        special_chars_table.set_values({
+            'id': 'SPIRIT002',
+            'name': 'Koh the Face Stealer',
+            'power': '10',
+            'realm': 'Spirit World',
+            'last_encounter': '100 AG'
+        })
+
+        # Generate and examine UPDATE SQL
+        sql = special_chars_table.get_sql('update')
+
+        # Column names should be quoted in SQL
+        assert '"spirit-id"' in sql or 'spirit-id' in sql
+
+        # But bind parameters should use sanitized names (check _param_config)
+        param_names = special_chars_table._param_config['update']
+        assert 'spirit_id' in param_names
+
+
+    def test_merge_with_special_column_names(self, special_chars_table, cursor):
+        """Test MERGE/UPSERT with special column names uses sanitized bind parameters."""
+        special_chars_table.set_values({
+            'id': 'SPIRIT003',
+            'name': 'Hei Bai',
+            'power': '8',
+            'realm': 'Physical World',
+            'last_encounter': '99 AG'
+        })
+
+        # Generate and examine MERGE SQL
+        sql = special_chars_table.get_sql('merge')
+
+        # Column names should be quoted in SQL
+        assert '"spirit-id"' in sql or 'spirit-id' in sql
+        assert '"spirit name"' in sql or 'spirit_name' in sql
+
+        # But bind parameters should use sanitized names (check _param_config)
+        param_names = special_chars_table._param_config['merge']
+        assert 'spirit_id' in param_names
+        assert 'spirit_name' in param_names
+        assert 'power_level' in param_names
 
 
 class TestAdvancedFeatures:

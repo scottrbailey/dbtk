@@ -8,7 +8,73 @@ from .base import Reader, Clean, ReturnType
 
 
 class JSONReader(Reader):
-    """JSON array file reader that returns Record objects or dicts."""
+    """
+    Read JSON files containing arrays of objects.
+
+    JSONReader parses JSON files that contain an array of objects (standard JSON format
+    for tabular data). It can optionally flatten nested objects using dot notation,
+    making it easy to work with hierarchical JSON data in a flat, record-based format.
+
+    The reader automatically discovers the schema by scanning all objects in the array,
+    ensuring all possible keys are available even if some objects don't have all fields.
+
+    Parameters
+    ----------
+    fp : file-like object
+        Open file pointer to JSON file
+    flatten : bool, default True
+        Flatten nested objects with dot notation. For example, ``{"user": {"name": "Bob"}}``
+        becomes ``{"user.name": "Bob"}``. Arrays are preserved as-is.
+    add_rownum : bool, default True
+        Add _row_num field to each record
+    clean_headers : Clean, default Clean.DEFAULT
+        Header cleaning level
+    skip_records : int, default 0
+        Number of records to skip
+    max_records : int, optional
+        Maximum records to read
+    return_type : str, default 'record'
+        'record' or 'dict'
+    **kwargs
+        Reserved for future use
+
+    Example
+    -------
+    ::
+
+        from dbtk import readers
+
+        # Simple JSON array
+        # [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+        with readers.JSONReader(open('users.json')) as reader:
+            for user in reader:
+                print(user.id, user.name)
+
+        # Nested JSON with flattening
+        # [{"id": 1, "user": {"name": "Alice", "email": "a@example.com"}}]
+        with readers.JSONReader(open('nested.json'), flatten=True) as reader:
+            for record in reader:
+                print(record.id, record['user.name'], record['user.email'])
+
+        # Disable flattening to keep nested structure
+        with readers.JSONReader(open('nested.json'), flatten=False) as reader:
+            for record in reader:
+                print(record.user)  # {'name': 'Alice', 'email': 'a@example.com'}
+
+    See Also
+    --------
+    NDJSONReader : Read newline-delimited JSON files
+    Reader : Base reader class
+    writers.to_json : Write JSON files
+
+    Notes
+    -----
+    * JSON file must contain an array at the root level
+    * All objects in array are scanned to discover complete schema
+    * Empty arrays raise ValueError
+    * Nested objects are flattened with dot notation by default
+    * Arrays within objects are never flattened
+    """
 
     def __init__(self,
                  fp: TextIO,
@@ -23,6 +89,7 @@ class JSONReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.fp = fp
+        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
         self.flatten = flatten
         self._data = None
         self._column_cache = None
@@ -126,7 +193,7 @@ class NDJSONReader(Reader):
 
         Args:
             fp: File pointer to NDJSON file (one JSON object per line)
-            add_rownum: Add rownum to each record
+            add_rownum: Add _row_num to each record
             clean_headers: Header cleaning level
             skip_records: Number of records to skip from the beginning
             max_records: Maximum number of records to read (None = unlimited)
@@ -136,6 +203,7 @@ class NDJSONReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.fp = fp
+        self._trackable = self.fp
         self._column_cache = None
         self._original_keys = []  # Track original keys for value extraction
         self._schema_sample_size = 100

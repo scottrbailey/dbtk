@@ -4,14 +4,12 @@ Cursor classes that wrap database cursors and provide different return types.
 All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
-import re
 import logging
-from keyword import iskeyword
-from typing import List, Any, Optional, Iterator
+from typing import List, Any, Optional, Iterator, Callable
 from collections import namedtuple, OrderedDict
 
 from .record import Record
-from .utils import ParamStyle, process_sql_parameters
+from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
@@ -55,21 +53,28 @@ class PreparedStatement:
     so it can be used in the same way as a regular cursor (fetchone(), fetchmany(), etc.).
     """
 
-    def __init__(self, cursor, filename: str, encoding: str = 'utf-8'):
+    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8-sig'):
         """
         Create a prepared statement from a SQL file. It
 
         Args:
             cursor: The cursor that will execute this statement
+            query: SQL query string (optional)
             filename: Path to SQL file (relative to CWD)
-            encoding: File encoding (default: utf-8)
+            encoding: File encoding (default: utf-8-sig)
         """
         self.cursor = cursor
-        self.filename = filename
 
-        # Read SQL from file
-        with open(filename, encoding=encoding) as f:
-            original_sql = f.read()
+        if filename:
+            self.filename = filename
+            # Read SQL from file
+            with open(filename, encoding=encoding) as f:
+                original_sql = f.read()
+        elif query is not None:
+            self.filename = None
+            original_sql = query
+        else:
+            raise ValueError('Must provide either query or filename')
 
         # Transform SQL for cursor's paramstyle
         self.sql, self.param_names = process_sql_parameters(
@@ -99,8 +104,9 @@ class PreparedStatement:
             params = self._prepare_params(bind_vars)
             return self.cursor.execute(self.sql, params)
         except Exception as e:
+            source = self.filename or '<query>'
             logger.error(
-                f"Error executing prepared statement from {self.filename}\n"
+                f"Error executing prepared statement from {source}\n"
                 f"Transformed SQL: {self.sql}\n"
                 f"Parameters: {bind_vars}"
             )
@@ -130,45 +136,121 @@ class PreparedStatement:
 
 class Cursor:
     """
-    Basic cursor that returns results as lists.
-    Base class for other cursor types.
+    Basic cursor that returns query results as lists.
+
+    This is the base class for all DBTK cursor types. It wraps database-specific cursor
+    objects and provides a consistent interface plus additional functionality like SQL
+    file execution, parameter conversion, and prepared statements.
+
+    The basic Cursor returns results as plain lists (index access only). Most users
+    should use higher-level cursor types like RecordCursor, TupleCursor, or DictCursor
+    which provide more convenient access patterns.
+
+    Attributes
+    ----------
+    connection : Database
+        The database connection this cursor belongs to
+    paramstyle : str
+        Parameter style of the underlying database ('qmark', 'named', etc.)
+    placeholder : str
+        Placeholder string for bind parameters (e.g., '?', ':1', etc.)
+    description
+        Column metadata from the last query (delegated to underlying cursor)
+
+    Note
+    ----
+    Cursors delegate attribute access to the underlying database-specific cursor,
+    so all native cursor functionality is available.
+
+    Example
+    -------
+    ::
+
+        # Usually created via Database.cursor()
+        cursor = db.cursor('list')
+        cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
+                      {'status': 'active'})
+
+        for row in cursor:
+            user_id, name, email = row  # Plain list - index access only
+            print(f"{user_id}: {name} ({email})")
+
+    See Also
+    --------
+    RecordCursor : Returns Record objects with multiple access patterns
+    TupleCursor : Returns namedtuples
+    DictCursor : Returns OrderedDict objects
     """
-
+    # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [
-        'connection', 'column_case', 'debug', 'logger', 'return_cursor',
-        'placeholder', 'paramstyle', 'record_factory', '_cursor',
-        '_validate_row_factory'
+        'connection', 'column_case', 'debug', 'return_cursor',
+        'placeholder', 'paramstyle', 'record_factory', 'batch_size',
+        '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
+    # Attributes that are allowed to be passed in from the connection/configuration layer
+    WRAPPER_SETTINGS = ('batch_size', 'column_case', 'debug', 'return_cursor', 'type')
 
-    def __init__(self, connection, column_case: str = None,
-                 debug: bool = False, return_cursor: bool = False, logger=None, **kwargs):
+    def __init__(self,
+                 connection,
+                 column_case: Optional[str] = None,
+                 batch_size: Optional[int] = None,
+                 debug: Optional[bool] = False,
+                 return_cursor: Optional[bool] = False,
+                 **kwargs):
         """
-        Initialize cursor.
+        Initialize a cursor for database operations.
 
-        Args:
-            connection: Database connection object
-            column_case: How to handle column name casing
-            debug: Enable debug output
-            return_cursor: Return a cursor on .execute(), useful for chaining, annoying otherwise
-            logger: Optional logger function
-            **kwargs: Additional arguments passed to underlying cursor
+        Parameters
+        ----------
+        connection : Database
+            Database connection object
+        column_case : str, optional
+            How to handle column name casing: 'lower', 'upper', 'title', or None (default)
+        batch_size: int, optional
+            How many rows to process at a time when using executemany() or bulk operations in DataSurge
+        debug : bool, default False
+            Enable debug output showing queries and bind variables
+        return_cursor : bool, default False
+            If True, execute() returns the cursor for method chaining
+        **kwargs
+            Additional arguments passed to the underlying database cursor
+
+        Example
+        -------
+        ::
+
+            # Typically created via Database.cursor()
+            cursor = db.cursor()
+
+            # With debug enabled
+            cursor = db.cursor(debug=True)
+
+            # With method chaining
+            cursor = db.cursor(return_cursor=True)
+            results = cursor.execute("SELECT * FROM users").fetchall()
         """
         self.connection = connection
         self.debug = debug
-        self.logger = logger
         self.record_factory = None
-        self._validate_row_factory = True
+        self._row_factory_invalid = True
         self.return_cursor = return_cursor
         if column_case is None:
             column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
         self.column_case = column_case
-
+        if batch_size is None:
+            batch_size = settings.get('default_batch_size', 1000)
+        self.batch_size = batch_size
+        self._statement = None              # Stores statement locally if adapter doesn't
+        self._bind_vars = None              # Stores bind vars locally if adapter doesn't
+        self._bulk_method = None            # Allows us to override executemany if needed
+        # remove any kwargs not intended for the underlying cursor
+        filtered_kwargs = {key: val for key, val in kwargs.items() if key not in self.WRAPPER_SETTINGS}
         # Create underlying cursor
         try:
             if hasattr(self.connection, '_connection'):
-                self._cursor = self.connection._connection.cursor(**kwargs)
+                self._cursor = self.connection._connection.cursor(**filtered_kwargs)
             else:
-                self._cursor = self.connection.cursor(**kwargs)
+                self._cursor = self.connection.cursor(**filtered_kwargs)
         except Exception as e:
             raise TypeError(f'First argument must be a database connection object: {e}')
 
@@ -179,10 +261,14 @@ class Cursor:
 
         # Ensure arraysize exists (some adapters don't have it)
         if not hasattr(self._cursor, 'arraysize'):
-            self.__dict__['arraysize'] = 1
+            self.__dict__['arraysize'] = 1000
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying cursor."""
+        if key == 'statement' and not hasattr(self._cursor, 'statement'):
+            return self._statement
+        if key == 'bind_vars' and not hasattr(self._cursor, 'bind_vars'):
+            return self._bind_vars
         return getattr(self._cursor, key)
 
     def __setattr__(self, key: str, value: Any) -> None:
@@ -213,27 +299,36 @@ class Cursor:
         else:
             raise StopIteration
 
-    def _create_row_factory(self) -> None:
+    def _detect_bulk_method(self) -> Callable:
+        """
+        Detect and return the fastest bulk execution method for this cursor.
+
+        Called once per cursor, on first executemany(). Stores in self._bulk_method.
+        """
+        if self.connection.interface.__name__ == 'psycopg2':
+            try:
+                from psycopg2.extras import execute_batch
+                # Return a bound dispatcher: execute_batch(cur, sql, argslist, page_size)
+                def psycopg_batch(cur, sql, argslist):
+                    page_size=getattr(self, 'batch_size', 1000)
+                    return execute_batch(cur, sql, argslist, page_size=page_size)
+
+                logger.debug("Cursor upgraded: executemany → psycopg2.extras.execute_batch")
+                return psycopg_batch
+            except ImportError:
+                logger.debug("psycopg2.extras not available — using native executemany")
+
+        # Fallback for everything else (SQLite, MySQL, etc.)
+        logger.debug("Using native cursor.executemany")
+        return lambda cur, sql, argslist: cur.executemany(sql, argslist)
+
+    def _create_record_factory(self) -> None:
         """Create the function to process each row. Override in subclasses."""
 
         def factory(*args):
             return list(args)
 
         self.record_factory = factory
-
-    def _sanitize_column_name(self, col_name: str, idx: int) -> str:
-        """Clean up column names to be valid Python identifiers."""
-        if col_name is None or col_name == '':
-            return f'column_{idx + 1}'
-
-        # Replace non-word characters with underscore
-        col_name = re.sub(r'\W+', '_', col_name)
-
-        # Handle Python keywords
-        if iskeyword(col_name):
-            col_name = col_name.upper()
-
-        return col_name
 
     def columns(self, case: Optional[str] = None) -> List[str]:
         """Return list of column names."""
@@ -254,7 +349,7 @@ class Cursor:
             cols = [c[0] for c in self.description]
 
         # Sanitize column names
-        return [self._sanitize_column_name(cols[i], i) for i in range(len(cols))]
+        return [sanitize_identifier(cols[i], i) for i in range(len(cols))]
 
     def _is_ready(self) -> bool:
         """Check if cursor is ready to fetch results."""
@@ -262,31 +357,23 @@ class Cursor:
             raise Exception('Query has not been run or did not succeed.')
 
         if self.record_factory is None:
-            self._create_row_factory()
+            self._create_record_factory()
 
         return True
 
-    def _debug_info(self, query: str, bind_vars: tuple = ()) -> None:
-        """Print debug information."""
-        print(f'Query:\n{query}')
-        if bind_vars:
-            print(f'Bind vars:\n{bind_vars}')
-
     def execute(self, query: str, bind_vars: tuple = ()) -> None:
         """Execute a database query."""
-        self._validate_row_factory = True
+        self._row_factory_invalid = True
 
         if self.debug:
-            self._debug_info(query, bind_vars)
+            logger.debug(f'Query:\n{query}')
+            logger.debug(f'Bind vars:\n{bind_vars}')
 
-        # Store query info if adapter doesn't
+        # Store statement and bind_vars locally if the adapter doesn't
         if not hasattr(self._cursor, 'statement'):
-            self.__dict__['statement'] = query
+            self.__dict__['_statement'] = query
         if not hasattr(self._cursor, 'bind_vars'):
-            self.__dict__['bind_vars'] = bind_vars
-
-        if self.logger:
-            self.logger(str(self.connection), query, bind_vars)
+            self.__dict__['_bind_vars'] = bind_vars
 
         # some adapters return a cursor instead of the Database API specified None
         _ = self._cursor.execute(query, bind_vars)
@@ -306,7 +393,7 @@ class Cursor:
             filename: Path to SQL file (relative to CWD)
             bind_vars: Dictionary of named parameters
             **kwargs:
-                encoding: File encoding (default: utf-8)
+                encoding: File encoding (default: utf-8-sig)
 
         Returns:
             Cursor if return_cursor=True, else None
@@ -314,7 +401,7 @@ class Cursor:
         Example:
             cursor.execute_file('queries/get_user.sql', {'user_id': 123})
         """
-        encoding = kwargs.get('encoding', 'utf-8')
+        encoding = kwargs.get('encoding', 'utf-8-sig')
 
         try:
             # Read SQL from file
@@ -337,13 +424,15 @@ class Cursor:
             return self.execute(transformed_sql, params)
 
         except Exception as e:
+            statement = locals().get('transformed_sql', 'N/A')
             logger.error(
                 f"Error executing SQL file: {filename}\n"
+                f"Transformed SQL: {statement}\n"
                 f"Parameters: {bind_vars}"
             )
             raise
 
-    def prepare_file(self, filename: str, encoding: str = 'utf-8') -> PreparedStatement:
+    def prepare_file(self, filename: str, encoding: str = 'utf-8-sig') -> PreparedStatement:
         """
         Prepare a SQL statement from a file for repeated execution.
 
@@ -352,39 +441,44 @@ class Cursor:
 
         Args:
             filename: Path to SQL file (relative to CWD)
-            encoding: File encoding (default: utf-8)
+            encoding: File encoding (default: utf-8-sig)
 
         Returns:
             PreparedStatement object
 
-        Example::
+        Example
+        -------
+        ::
 
             stmt = cursor.prepare_file('queries/insert_user.sql')
             for user in users:
                 stmt.execute({'user_id': user.id, 'name': user.name})
         """
-        return PreparedStatement(self, filename, encoding)
+        return PreparedStatement(self, filename=filename, encoding=encoding)
 
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:
         """Execute a query against multiple parameter sets."""
-        self._validate_row_factory = True
+        self._row_factory_invalid = True
 
         if self.debug:
-            self._debug_info(query, bind_vars)
+            logger.debug(f'Executemany - Query:\n{query}')
+            logger.debug(f'Bind vars (first row):\n{bind_vars[0]}')
 
+        # Store statement and bind_vars (first row only) locally if the adapter doesn't
         if not hasattr(self._cursor, 'statement'):
-            self.__dict__['statement'] = f'--executemany\n{query}'
+            self.__dict__['_statement'] = query
         if not hasattr(self._cursor, 'bind_vars'):
-            self.__dict__['bind_vars'] = bind_vars[0] if bind_vars else ()
+            self.__dict__['_bind_vars'] = bind_vars[0]
 
-        if self.logger:
-            self.logger(
-                str(self.connection),
-                query,
-                bind_vars[0] if bind_vars else ()
-            )
+        if self._bulk_method is None:
+            # Detect and cache the fastest bulk execution method
+            self._bulk_method = self._detect_bulk_method()
 
-        return self._cursor.executemany(query, bind_vars)
+        _ = self._bulk_method(self._cursor, query, bind_vars)
+        if self.return_cursor:
+            return self
+        else:
+            return None
 
     def selectinto(self, query: str, bind_vars: tuple = ()) -> Any:
         """Execute query that must return exactly one row."""
@@ -429,20 +523,6 @@ class Cursor:
             ]
         return []
 
-    def show_statement(self) -> str:
-        """Return the last executed statement with parameters."""
-        if hasattr(self, 'statement'):
-            statement = self.statement
-        elif hasattr(self._cursor, 'query'):
-            statement = self._cursor.query
-        else:
-            statement = 'No statement available'
-
-        if hasattr(self, 'bind_vars') and self.bind_vars:
-            statement += f'\nParams:\n{self.bind_vars!r}'
-
-        return statement
-
 
 class RecordCursor(Cursor):
     """Cursor that returns Record objects with attribute and dict-like access."""
@@ -452,21 +532,21 @@ class RecordCursor(Cursor):
         if self._cursor.description is None:
             raise Exception('Query has not been run or did not succeed.')
         elif self.record_factory is None:
-            self._create_row_factory()
-        elif self._validate_row_factory:
+            self._create_record_factory()
+        elif self._row_factory_invalid:
             # Check if columns have changed since last query
             if hasattr(self.record_factory, '_fields'):
                 if self.record_factory._fields != self.columns():
-                    self._create_row_factory()
+                    self._create_record_factory()
                 else:
-                    self._validate_row_factory = False
+                    self._row_factory_invalid = False
             else:
-                self._create_row_factory()
+                self._create_record_factory()
         return True
 
-    def _create_row_factory(self) -> None:
+    def _create_record_factory(self) -> None:
         """Create Record subclass with current columns."""
-        self._validate_row_factory = False
+        self._row_factory_invalid = False
         columns = self.columns()
 
         # Create dynamic Record subclass
@@ -485,28 +565,28 @@ class TupleCursor(Cursor):
         if self._cursor.description is None:
             raise Exception('Query has not been run or did not succeed.')
         elif self.record_factory is None:
-            self._create_row_factory()
-        elif self._validate_row_factory:
+            self._create_record_factory()
+        elif self._row_factory_invalid:
             # Check if columns have changed
             if hasattr(self.record_factory, '_fields'):
                 if self.record_factory._fields != tuple(self.columns()):
-                    self._create_row_factory()
+                    self._create_record_factory()
                 else:
-                    self._validate_row_factory = False
+                    self._row_factory_invalid = False
             else:
-                self._create_row_factory()
+                self._create_record_factory()
         return True
 
-    def _create_row_factory(self) -> None:
+    def _create_record_factory(self) -> None:
         """Create namedtuple factory with current columns."""
-        self._validate_row_factory = False
+        self._row_factory_invalid = False
         self.record_factory = namedtuple('TupleRecord', self.columns())
 
 
 class DictCursor(Cursor):
     """Cursor that returns OrderedDict objects."""
 
-    def _create_row_factory(self) -> None:
+    def _create_record_factory(self) -> None:
         """Create factory that returns OrderedDict."""
         columns = self.columns()
 

@@ -195,7 +195,9 @@ class Address:
     Parses address strings into components and provides standardized formatting.
     Works with any address format but optimized for US addresses.
 
-    Examples:
+    Example
+    -------
+    ::
         addr = Address("123 Main St, Springfield, IL 62701")
         print(addr.street_number)  # "123"
         print(addr.street_name)    # "Main"
@@ -339,7 +341,9 @@ class Address:
         Returns:
             Formatted address string
 
-        Examples:
+        Example
+        -------
+        ::
             addr.format('standard')      # "123 Main St, Springfield, IL 62701"
             addr.format('single_line')   # "123 Main St Springfield IL 62701"
             addr.format('multiline')     # Multi-line format
@@ -391,7 +395,9 @@ class USAddress(Address):
     - Valid ZIP code format (5 digits or 5+4)
     - Required components (street, city, state, zip)
 
-    Examples:
+    Example
+    -------
+    ::
         addr = USAddress("123 Main St, Springfield, IL 62701")
         print(addr.is_valid)  # True
 
@@ -509,7 +515,7 @@ def parse_address(address: str) -> Dict[str, str]:
     Returns:
         Dictionary of address components
 
-    Examples:
+    Example:
         components = parse_address("123 Main St, Springfield, IL 62701")
         # {'address_line_1': '123 Main St', 'city': 'Springfield', ...}
     """
@@ -528,7 +534,7 @@ def standardize_address(address: str, style: str = 'standard') -> str:
     Returns:
         Standardized address string
 
-    Examples:
+    Example:
         standardize_address("123 main street, springfield il 62701")
         # "123 Main St, Springfield, IL 62701"
     """
@@ -546,7 +552,7 @@ def validate_us_address(address: str) -> bool:
     Returns:
         True if valid US address, False otherwise
 
-    Examples:
+    Example:
         validate_us_address("123 Main St, Springfield, IL 62701")  # True
         validate_us_address("123 Main St, Springfield, XX 12345")  # False
     """

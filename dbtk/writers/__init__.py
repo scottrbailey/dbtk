@@ -18,7 +18,9 @@ Supported formats:
 - Fixed-width: Fixed-column-width text files
 - Database: Direct database-to-database copying
 
-Example:
+Example
+-------
+::
     import dbtk.writers as writers
 
     # Quick export functions

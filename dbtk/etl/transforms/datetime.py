@@ -88,7 +88,7 @@ def set_default_timezone(timezone_name: str):
     Raises:
         ValueError: If timezone format is unrecognized
 
-    Examples:
+    Example:
         set_default_timezone('UTC')
         set_default_timezone('EST')
         set_default_timezone('+05:00')
@@ -201,7 +201,7 @@ def parse_date(val: Any, default_tz: Optional[str] = None) -> Optional[dt.date]:
     Returns:
         date object or None if parsing fails
 
-    Examples:
+    Example:
         parse_date("2024-01-15")      # -> date(2024, 1, 15)
         parse_date("01/15/2024")      # -> date(2024, 1, 15)
         parse_date("15 Jan 2024")     # -> date(2024, 1, 15)
@@ -278,7 +278,7 @@ def parse_time(val: Any) -> Optional[dt.time]:
     Returns:
         time object or None if parsing fails
 
-    Examples:
+    Example:
         parse_time("14:30:00")        # -> time(14, 30, 0)
         parse_time("2:30 PM")         # -> time(14, 30, 0)
         parse_time("14:30:00-05:00")  # -> time(14, 30, 0, tzinfo=...)
@@ -356,7 +356,7 @@ def parse_datetime(val: Any) -> Optional[dt.datetime]:
     Returns:
         datetime object or None if parsing fails
 
-    Examples:
+    Example:
         parse_datetime("2024-01-15 14:30:00")         # -> naive datetime
         parse_datetime("2024-01-15T14:30:00Z")        # -> datetime with UTC
         parse_datetime("01/15/2024 2:30 PM EST")      # -> datetime with EST
@@ -442,7 +442,7 @@ def parse_timestamp(val: Any) -> Optional[dt.datetime]:
     Returns:
         timezone-aware datetime object or None if parsing fails
 
-    Examples:
+    Example:
         parse_timestamp("2024-01-15 14:30:00+00:00")     # -> datetime with UTC
         parse_timestamp("2024-01-15T14:30:00Z")          # -> datetime with UTC
         parse_timestamp("1642262200")                    # -> datetime from Unix timestamp
@@ -478,7 +478,7 @@ def parse_datetimetz(val: Any) -> Optional[dt.datetime]:
     Returns:
         datetime object or None if parsing fails
 
-    Examples:
+    Example:
         set_default_timezone('UTC')
         parse_datetimetz("2024-01-15 14:30:00")  # -> datetime with UTC
         parse_datetimetz("2024-01-15T14:30:00Z") # -> datetime with UTC (preserved)

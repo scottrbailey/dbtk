@@ -5,15 +5,27 @@ Shared test fixtures and configuration for pytest.
 
 import pytest
 import os
+from pathlib import Path
 from unittest.mock import Mock, patch
 
+from dbtk.config import connect
+from dbtk.readers import CSVReader
+from dbtk.etl import Table, DataSurge
 
-# Set test encryption key for all tests
+
+# Set test config file and encryption key for all tests
 @pytest.fixture(autouse=True)
-def set_test_encryption_key():
-    """Automatically set test encryption key for all tests."""
+def setup_test_config():
+    """Automatically set test config file and encryption key for all tests."""
+    from dbtk.config import set_config_file
+
+    # Use test.yml in the tests directory
+    test_config = Path(__file__).parent / 'test.yml'
+    set_config_file(str(test_config))
+
     with patch.dict(os.environ, {'DBTK_ENCRYPTION_KEY': '2YvTXI9DHQPy4d6-ZC9NxcypvLMsJ94OBdmoHyjmwbM='}):
         yield
+
 
 @pytest.fixture
 def mock_db_cursor():
@@ -40,7 +52,7 @@ def mock_db_cursor():
 def mock_connection(mock_db_cursor):
     """Create a mock database connection."""
     connection = Mock()
-    connection.interface.__paramstyle = 'format'
+    connection.interface._paramstyle = 'format'
     connection.placeholder = '%s'
     connection._connection.cursor.return_value = mock_db_cursor
     connection.cursor.return_value = mock_db_cursor
@@ -59,3 +71,108 @@ def sample_records():
     ]
 
 
+@pytest.fixture(scope='session')
+def states_db():
+    """Create test database and load states data. Session-scoped for reuse across all tests."""
+    # Test database and data paths
+    test_dir = Path(__file__).parent
+    TEST_DB_PATH = test_dir / 'fixtures' / 'test_states.db'
+    TEST_CONFIG_PATH = test_dir / 'test.yml'
+    STATES_CSV_PATH = test_dir / 'fixtures' / 'readers' / 'states.csv'
+
+    # Ensure fixtures directory exists
+    TEST_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing database
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
+
+    # Connect using config - use absolute path
+    # Since config has relative path, we need to change to tests dir first or use absolute path
+    from dbtk.database import Database
+    db = Database.create('sqlite', database=str(TEST_DB_PATH))
+    cursor = db.cursor()
+
+    # Drop and recreate states table
+    cursor.execute("DROP TABLE IF EXISTS states")
+    cursor.execute("""
+                   CREATE TABLE states
+                   (
+                       state          TEXT PRIMARY KEY,
+                       code           TEXT NOT NULL UNIQUE,
+                       capital        TEXT NOT NULL,
+                       population     INTEGER,
+                       area_sq_mi     INTEGER,
+                       admitted       TEXT,
+                       sales_tax_rate REAL,
+                       region         TEXT
+                   )
+                   """)
+    db.commit()
+
+    # Create validation/lookup tables
+    cursor.execute("DROP TABLE IF EXISTS valid_regions")
+    cursor.execute("""
+                   CREATE TABLE valid_regions
+                   (
+                       region_name TEXT PRIMARY KEY
+                   )
+                   """)
+    cursor.execute("""
+                   INSERT INTO valid_regions (region_name)
+                   VALUES ('Northeast'),
+                          ('Southeast'),
+                          ('Midwest'),
+                          ('Southwest'),
+                          ('West')
+                   """)
+
+    cursor.execute("DROP TABLE IF EXISTS region_codes")
+    cursor.execute("""
+                   CREATE TABLE region_codes
+                   (
+                       region TEXT PRIMARY KEY,
+                       code   TEXT NOT NULL
+                   )
+                   """)
+    cursor.execute("""
+                   INSERT INTO region_codes (region, code)
+                   VALUES ('Northeast', 'NE'),
+                          ('Southeast', 'SE'),
+                          ('Midwest', 'MW'),
+                          ('Southwest', 'SW'),
+                          ('West', 'W')
+                   """)
+
+    db.commit()
+
+    # Load states data using CSVReader, Table, and DataSurge
+    states_table = Table('states', {
+        'state': {'field': 'state', 'primary_key': True},
+        'code': {'field': 'code', 'nullable': False},
+        'capital': {'field': 'capital', 'nullable': False},
+        'population': {'field': 'population'},
+        'area_sq_mi': {'field': 'area_sq_mi'},
+        'admitted': {'field': 'admitted'},
+        'sales_tax_rate': {'field': 'sales_tax_rate'},
+        'region': {'field': 'region'}
+    }, cursor=cursor)
+
+    surge = DataSurge(states_table, batch_size=25)
+
+    with open(STATES_CSV_PATH, 'r') as f:
+        with CSVReader(f) as reader:
+            errors = surge.insert(reader)
+
+    db.commit()
+
+    assert errors == 0
+    assert states_table.counts['insert'] == 50  # 50 US states
+
+    yield db
+
+    # Cleanup
+    db.close()
+    # Optional: Remove database after all tests complete
+    # if TEST_DB_PATH.exists():
+        # TEST_DB_PATH.unlink()

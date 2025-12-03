@@ -1,5 +1,8 @@
 # DBTK - Data Benders Toolkit
-<img src="/docs/assets/databender.png" height="320" style="float: right; padding-left: 50px"/>
+
+<div style="float: right; padding: 20px">
+    <img src="/docs/assets/databender.png" height="240" align="right" />
+</div>
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
 
@@ -36,6 +39,7 @@ validated along the way.
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
 - **Portable SQL Queries** - Write SQL once with named parameters, run on any database regardless of parameter style
 - **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
+- **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
 - **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
 - **Bulk Operations** - DataSurge class for high-performance batch INSERT/UPDATE/DELETE/MERGE operations
@@ -72,6 +76,9 @@ Extract data from your database and export to multiple formats with portable SQL
 
 ```python
 import dbtk
+
+# One-line setup creates timestamped log - all operations automatically logged
+dbtk.setup_logging()  # Location, filename format are controlled by your configuration
 
 # queries/monthly_report.sql - Write once with named parameters
 # SELECT soldier_id, name, rank, missions_completed, last_mission_date
@@ -114,8 +121,16 @@ with dbtk.connect('fire_nation_db') as db:
     dbtk.writers.to_excel(summary_data, 'reports/officer_summary.xlsx',
                           sheet='Officer Stats')
 
-    print(f"Exported {len(monthly_data)} soldier records")
-    print(f"Exported {len(summary_data)} officer summary rows")
+    # writers will automatically log summary info to the logs and will also be
+    # echoed to stdout in default configuration
+
+# Database queries, file operations - all automatically logged by DBTK
+# The default error handler keeps track of whether errors or critical events were logged
+# and errors_logged() will return the filename of the error log only if there were errors.
+error_log_fn = dbtk.errors_logged()
+if error_log_fn:
+    print("⚠️  Export completed with errors - check log file")
+    # send_notification_email(subject="Export errors", attachment=error_log)
 ```
 
 **What makes this easy:**
@@ -153,10 +168,10 @@ with dbtk.connect('fire_nation_db') as db:
         'soldier_id': {'field': 'id', 'primary_key': True},
         'name': {'field': 'full_name', 'nullable': False},
         'rank': {'field': 'officer_rank', 'nullable': False},
-        'email': {'field': 'contact_email', 'fn': email_clean},
+        'email': {'field': 'contact_email', 'default': 'intel@firenation.com', 'fn': email_clean},
         'enlistment_date': {'field': 'join_date', 'fn': parse_date},
         'missions_completed': {'field': 'mission_count', 'fn': get_int},
-        'status': {'value': 'active'}  # Default value for all
+        'status': {'default': 'active'}  # Default value for all
     }, cursor=cursor)
 
     # Optional specialization table - only insert if specialty data exists
@@ -180,14 +195,15 @@ with dbtk.connect('fire_nation_db') as db:
             # Only insert if requirements met (specialty and master_code not null)
             specialization_table.set_values(record)
             if specialization_table.reqs_met:
-                specialization_table.exec_insert(reqs_checked=True)
-
-    # Report results
-    print(f"Soldiers inserted: {soldier_table.counts['insert']}")
-    print(f"Soldiers skipped (incomplete): {soldier_table.counts['incomplete']}")
-    print(f"Specializations recorded: {specialization_table.counts['insert']}")
-
+                specialization_table.exec_insert(reqs_checked=True) 
+        print(f"Inserted {soldier_table.counts["inserts"]} rows into {soldier_table.name}, skips: {soldier_table.counts["incomplete"]}")
     db.commit()
+
+# Check for errors - DBTK automatically logs all database operations and file errors
+error_log_fn = dbtk.errors_logged()
+if error_log_fn:
+    print(f"⚠️  Errors occurred - check {error_log_fn}")
+    # send_notification_email(subject="Import errors", attachment=error_log_fn)
 ```
 
 **What makes this easy:**
@@ -256,9 +272,9 @@ with db.transaction():
     # Auto-commit on success, rollback on exception
 ```
 
-**Cursor types matter:**
+**Cursor types:**
 
-Choose the right cursor type for your use case to balance functionality and performance:
+Choose the right cursor return type for your use case to balance functionality and performance:
 
 ```python
 # Record cursor - memory efficient and most flexible (recommended for most use cases)
@@ -286,6 +302,57 @@ cursor = db.cursor(return_cursor=True)
 cursor.execute("SELECT * FROM firebenders WHERE rank = 'general'").fetchone()
 ```
 
+**Record objects - Maximum flexibility:**
+
+The Record cursor type (default) provides the most flexible interface for working with database and file data:
+
+```python
+cursor = db.cursor('record')  # or just db.cursor()
+row = cursor.fetchone()
+
+# Dictionary-style access
+print(row['soldier_id'], row['name'])
+
+# Attribute access (like namedtuple)
+print(row.soldier_id, row.name)
+
+# Index access (like tuple/list)
+print(row[0], row[1])
+
+# Safe access with default values
+rank = row.get('rank', 'Unknown')
+
+# Slicing for subsets
+first_five = row[:5]
+last_three = row[-3:]
+
+# Iteration and joining
+print('\t'.join(row))            # Join all fields
+print(', '.join(str(v) for v in row))  # Custom formatting
+
+# Length and membership
+print(len(row))                  # Number of columns
+print('email' in row)            # Check if column exists
+
+# Convert to dict or tuple when needed
+row_dict = dict(row)
+row_tuple = tuple(row)
+
+# Pretty print
+>>> row.pprint()
+trainee_id       : 1
+monk_name        : Master Aang
+home_temple      : Northern Air Temple
+mastery_rank     : 10
+bison_companion  : Lefty
+daily_meditation : 9.93
+birth_date       : 1965-12-16
+last_training    : 2024-12-25 15:51:42
+_row_num         : 1
+```
+
+If it quacks like a dict, walks like a tuple, and iterates like a list - it's a Record! This duck-typed design gives you the flexibility to access data however makes sense for your code, without sacrificing performance. Records are memory-efficient and fast while providing the most flexible API. They're the recommended default for most use cases.
+
 **Supported databases:**
 - PostgreSQL (psycopg2, psycopg3, pgdb)
 - Oracle (oracledb, cx_Oracle)
@@ -304,8 +371,8 @@ See [Database Support](#database-support) for detailed driver information.
 ```python
 from dbtk import readers
 
-# CSV files
-with readers.CSVReader(open('northern_water_tribe_census.csv')) as reader:
+# CSV files - Use utf-8-sig instead of utf-8 to avoid BOM issues (corrupted column names)
+with readers.CSVReader(open('northern_water_tribe_census.csv', encoding='utf-8-sig')) as reader:
     for waterbender in reader:
         print(f"Waterbender: {waterbender.name}, Village: {waterbender.village}")
 
@@ -351,6 +418,95 @@ Let DBTK figure out what you're reading:
 with dbtk.readers.get_reader('data.xlsx') as reader:
     for record in reader:
         process(record)
+```
+
+**Compressed files - Automatic decompression:**
+
+DBTK transparently handles compressed files (`.gz`, `.bz2`, `.xz`, `.zip`) with zero configuration. Just pass the compressed filename - decompression happens automatically:
+
+```python
+# GZIP compressed CSV - automatically decompressed
+with dbtk.readers.get_reader('census_data.csv.gz') as reader:
+    for record in reader:
+        process(record)
+
+# BZ2 compressed JSON
+with dbtk.readers.get_reader('api_response.json.bz2') as reader:
+    for record in reader:
+        process(record)
+
+# XZ compressed TSV
+with dbtk.readers.get_reader('large_dataset.tsv.xz') as reader:
+    for record in reader:
+        process(record)
+```
+
+**ZIP archives - Smart member selection:**
+
+For ZIP files, DBTK automatically selects the right file to read:
+
+```python
+# Single file in ZIP - automatically selected
+with dbtk.readers.get_reader('data.csv.zip') as reader:
+    for record in reader:
+        process(record)
+
+# Archive name matches member name - automatically selected
+# name.subset.zip containing name.subset.tsv
+with dbtk.readers.get_reader('name.subset.zip') as reader:
+    for record in reader:
+        process(record)
+
+# Multiple files - specify which one to read
+with dbtk.readers.get_reader('archive.zip', zip_member='data.csv') as reader:
+    for record in reader:
+        process(record)
+
+# Works with TSV delimiter too
+with dbtk.readers.get_reader('names.zip', delimiter='\t') as reader:
+    for record in reader:
+        process(record)
+```
+
+**Performance characteristics:**
+
+- **Large buffer (1MB default)** - Optimized for fast decompression of large files
+- **Progress tracking** - GZIP and ZIP files show accurate progress bars without decompressing entire file
+- **Memory efficient** - Streaming decompression, constant memory usage regardless of file size
+- **Real-world speed** - 500k+ records/sec reading compressed IMDB dataset (14.7M rows) with full transforms
+
+```python
+# Configure buffer size if needed (default is 1MB)
+from dbtk.defaults import settings
+settings['compressed_file_buffer_size'] = 2 * 1024 * 1024  # 2MB buffer
+```
+
+**Why compress?**
+
+- **Storage savings** - 80-90% smaller files (5-10x compression ratio)
+- **Transfer speed** - Much faster to download/transfer compressed files
+- **Processing speed** - Decompression overhead is negligible on modern CPUs
+- **Standard practice** - Large datasets are typically distributed as `.csv.gz` or `.tsv.gz`
+
+**Common reader parameters:**
+
+All readers support these parameters for controlling input processing:
+
+```python
+# Skip first 10 data rows, read only 100 records, return dicts instead of Records
+reader = dbtk.readers.CSVReader(
+    open('data.csv', encoding='utf-8-sig'), # Use 'utf-8-sig' instead of 'utf-8' to avoid BOM issues
+    skip_records=10,      # Skip N records after headers (useful for bad data)
+    max_records=100,      # Only read first N records (useful for testing/sampling)
+    return_type='dict',   # 'record' (default) or 'dict' for OrderedDict
+    add_rownum=True,      # Add '_row_num' field to each record (default True)
+    clean_headers=dbtk.readers.Clean.LOWER_NOSPACE  # Header cleaning level
+)
+
+# Row numbers track position in source file
+with dbtk.readers.get_reader('data.csv', skip_records=5) as reader:
+    for record in reader:
+        print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
 ```
 
 **Header cleaning for messy data:**
@@ -423,6 +579,20 @@ writers.to_excel(data, 'output.xlsx')
 writers.to_json(data, 'output.json')
 ```
 
+**Quick preview to stdout:**
+
+Pass `None` as the filename to preview data to stdout - perfect for debugging or quick checks:
+
+```python
+# Preview first 20 records to console before writing to file
+cursor.execute("SELECT * FROM soldiers")
+writers.to_csv(cursor, None)  # Prints to stdout
+
+# Then export the full dataset
+cursor.execute("SELECT * FROM soldiers")
+writers.to_csv(cursor, 'soldiers.csv')
+```
+
 ### ETL Operations
 
 **The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
@@ -468,25 +638,35 @@ results = cursor.fetchall()
 
 **Prepared statements for repeated execution:**
 
-When you need to execute the same query many times, `prepare_file()`. Does query and parameter transformations like `execute_file`, but returns a PreparedStatement object that can be executed repeatedly and behaves like a cursor.
+When you need to execute the same query many times use `cursor.prepare_file()`. Does query and parameter transformations like `execute_file`, but returns a PreparedStatement object that can be executed repeatedly and behaves like a cursor.
 
 ```python
-# Prepare once
-stmt = cursor.prepare_file('queries/insert_user.sql')
+# queries/kingdom_report.sql
+# SELECT soldier_id, name, rank, missions_completed
+# FROM soldiers
+# WHERE kingdom = :kingdom
+#   AND rank >= :min_rank
+# ORDER BY missions_completed DESC
 
-# Execute many times
-for user_data in import_data:
-    stmt.execute({
-        'user_id': user_data['id'],
-        'name': user_data['name'],
-        'email': user_data['email']
-    })
+# Prepare once, execute many times with different parameters
+stmt = cursor.prepare_file('queries/kingdom_report.sql')
 
-# PreparedStatement acts like a cursor - fetch directly
-stmt = cursor.prepare_file('queries/get_active_users.sql')
-stmt.execute({'status': 'active', 'min_logins': 5})
-for user in stmt:
-    process_user(user) 
+# Define parameters for each kingdom
+kingdoms = [
+    {'kingdom': 'Fire Nation', 'min_rank': 'Captain'},
+    {'kingdom': 'Earth Kingdom', 'min_rank': 'General'},
+    {'kingdom': 'Water Tribe', 'min_rank': 'Warrior'},
+    {'kingdom': 'Air Nomad', 'min_rank': 'Master'}
+]
+
+# Execute query for each kingdom and export to separate files
+for params in kingdoms:
+    stmt.execute(params)
+    data = stmt.fetchall()  # PreparedStatement acts like a cursor
+
+    filename = f"reports/{params['kingdom'].replace(' ', '_')}.csv"
+    dbtk.writers.to_csv(data, filename)
+    print(f"Exported {len(data)} {params['kingdom']} soldiers")
 ```
 
 **Benefits of SQL files:**
@@ -517,14 +697,13 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
     'home_village': {'field': 'birthplace', 'nullable': False},
     'firebending_skill': {'field': 'flame_control_level', 'fn': transforms.get_int},
     'enlistment_date': {'field': 'joined_army', 'fn': transforms.parse_date},
-    'combat_name': {'field': 'full_name', 'db_fn': 'generate_fire_nation_callsign(#)'},
-    'last_drill': {'db_fn': 'CURRENT_TIMESTAMP'},
-    'conscription_source': {'value': 'Sozin Recruitment Drive'}},
-                                   cursor=cursor)
+    'combat_name': {'field': 'full_name', 'db_expr': 'generate_fire_nation_callsign(#)'},
+    'last_drill': {'db_expr': 'CURRENT_TIMESTAMP'},
+    'conscription_source': {'default': 'Sozin Recruitment Drive'}},
+    cursor=cursor)
 
 # Process records with validation and upsert logic
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
-    phoenix_king_army.calc_update_excludes(reader.headers)
     for recruit in reader:
         phoenix_king_army.set_values(recruit)
         if phoenix_king_army.reqs_met:
@@ -534,15 +713,104 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
             else:
                 phoenix_king_army.exec_insert(reqs_checked=True)
         else:
-            print(f"Recruit rejected: missing {phoenix_king_army.reqs_missing}")
+            print(f"Recruit {phoenix_king_army.values['name']}({phoenix_king_army.values['soldier_id']}) rejected: missing {phoenix_king_army.reqs_missing}")
+            
 
 print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
 ```
 
+**Column configuration schema:**
+
+Each database column is configured with a dictionary specifying how to source and transform its value.
+
+```python
+{
+    'database_column_name': {
+        # DATA SOURCE
+        'field': 'source_field_name',       # Map from input record field       
+        'default': 'static_value',          # Use a default value for all records
+        'fn': transform_function,           # Python function to transform field value, no parens!
+        'db_expr': 'DATABASE_FUNCTION(#)',  # Call database function (e.g., CURRENT_TIMESTAMP, UPPER(#))    
+
+        # VALIDATION - optional:
+        'nullable': False,                  # Column cannot be NULL
+        'required': True,                   # Column is required (inverse of nullable)
+        
+        'primary_key': True,                # Mark as primary key  
+        'key': True,                        # Mark as key column (synonym for primary_key)
+
+        # UPDATE CONTROL - optional:
+        'no_update': True,                  # Exclude from UPDATE operations (default: False)
+    }
+}
+```
+
+**Column configuration examples:**
+
+```python
+columns_config = {
+    # Simple field mapping
+    'user_id': {'field': 'id', 'primary_key': True},
+
+    # Field with transformation
+    'email': {'field': 'email_address', 'fn': email_clean},
+
+    # Field with validation
+    'full_name': {'field': 'name', 'nullable': False},
+
+    # Multiple transformations (compose your own function)
+    'phone': {'field': 'phone_number', 'fn': lambda x: phone_format(phone_clean(x))},
+
+    # Static value for all records
+    'status': {'default': 'active'},
+    'import_date': {'db_expr': 'CURRENT_DATE'},
+
+    # Database function with parameter (# is placeholder for field value)
+    'full_name_upper': {'field': 'name', 'db_expr': 'UPPER(#)'},
+
+    # Computed value using database function
+    'age': {'field': 'birthdate', 'db_expr': 'EXTRACT(YEAR FROM AGE(#))'},
+
+    # Primary key that never updates (redundant - primary keys never update)
+    'record_id': {'field': 'id', 'primary_key': True, 'no_update': True},
+
+    # Field that inserts but never updates (useful for created_at timestamps)
+    'created_at': {'db_expr': 'CURRENT_TIMESTAMP', 'no_update': True},
+}
+```
+
+## Value Resolution Process
+
+For each column, `set_values()` processes data in this order:
+
+### 1. Value Sourcing
+- **field**: Extract from source record.  
+- If `field` is a list, value will also be a list.
+
+### 2. Null Conversion
+The value matches any entries in table.null_values it will be set to `None`. 
+This is configurable but the default is: `('', 'NULL', '<null>', '\\N')`
+
+### 3. Default Fallback
+If value is `None` or `''`, apply **default** if defined.
+
+### 4. Transformation
+Apply **fn** if defined. Functions can:
+- Transform existing values
+- Generate new values from scratch
+- If `fn` is a list, execute in order (pipeline).
+
+### 5. Database Expression
+If **db_expr** is defined:
+- **With `#`**: Pass value from steps 1-4 as parameter  
+  Example: `{'field': 'name', 'db_expr': 'UPPER(#)'}`
+- **Without `#`**: Standalone function (ignores steps 1-4)  
+  Example: `{'db_expr': 'CURRENT_TIMESTAMP'}`
+
 **Key features:**
 - Field mapping and renaming
 - Data type transformations
-- Database function integration (`db_fn` lets you leverage database capabilities)
+- Database function integration (`db_expr` lets you leverage database capabilities)
 - Required field validation with clear error messages
 - Primary key management
 - Automatic UPDATE exclusions
@@ -650,6 +918,187 @@ tx.email_clean("  TOPH@BEIFONG.EARTHKINGDOM ")      # -> "toph@beifong.earthking
 tx.coalesce([None, "", "Jasmine Tea", "Ginseng Tea"])  # -> "Jasmine Tea"
 tx.indicator("Firebender", true_val="Fire Nation Citizen")  # Conditional values
 tx.get_int("123.45 gold pieces")  # -> 123
+
+```
+
+### String Shorthand for Transformations ⚡ NEW!
+
+**The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax. For simple transformations like `'fn': lambda x: get_int(x) or 0`, you need imports, function calls, and lambda overhead.
+
+**The solution:** DBTK now supports **string shorthand** for transformations - just write `'fn': 'int:0'` and it works! No imports, no lambdas, just clean configuration.
+
+```python
+import dbtk
+
+# OLD WAY - verbose, needs imports
+from dbtk.etl.transforms import get_int, Lookup
+table = dbtk.etl.Table('movies', {
+    'year': {'field': 'startYear', 'fn': lambda x: get_int(x) or 0},
+    'title_short': {'field': 'primaryTitle', 'fn': lambda x: str(x or '')[:255]},
+    'first_genre': {'field': 'genres', 'fn': lambda x: x.split(',')[0] if x else None},
+    'state_abbrev': {'field': 'location', 'fn': Lookup('states', 'name', 'abbrev')},
+}, cursor=db.cursor())
+
+# NEW WAY - clean, no imports needed! ✨
+table = dbtk.etl.Table('movies', {
+    'year': {'field': 'startYear', 'fn': 'int:0'},
+    'title_short': {'field': 'primaryTitle', 'fn': 'maxlen:255'},
+    'first_genre': {'field': 'genres', 'fn': 'nth:0'},
+    'state_abbrev': {'field': 'location', 'fn': 'lookup:states:name:abbrev'},
+}, cursor=db.cursor())
+```
+
+**Supported shorthands:**
+
+| Shorthand | Function | Example | Result |
+|-----------|----------|---------|--------|
+| `'int'` | Parse integer | `'123'` → `123` | |
+| `'int:0'` | Parse int with default | `''` → `0` | |
+| `'float'` | Parse float | `'$1,234.56'` → `1234.56` | |
+| `'bool'` | Parse boolean | `'yes'` → `True` | |
+| `'digits'` | Extract digits only | `'(800) 123-4567'` → `'8001234567'` | |
+| `'number'` | Convert to number | `'$42.35'` → `42.35` | |
+| `'lower'` / `'upper'` / `'strip'` | String ops | `'  AANG  '` → `'aang'` | |
+| `'maxlen:n'` | Truncate to n chars | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'` | |
+| `'indicator'` | Boolean → Y/None | `True` → `'Y'`, `False` → `None` | |
+| `'indicator:inv'` | Inverted indicator | `False` → `'Y'`, `True` → `None` | |
+| `'indicator:Y/N'` | Custom true/false | `True` → `'Y'`, `False` → `'N'` | |
+| `'split:,'` | Split on delimiter | `'a,b,c'` → `['a', 'b', 'c']` | |
+| `'split:\t'` | Split on tab | `'a\tb\tc'` → `['a', 'b', 'c']` | |
+| `'nth:0'` | Get first item | `'action,comedy,drama'` → `'action'` | |
+| `'nth:2:\t'` | Get 3rd tab-delimited | `'a\tb\tc'` → `'c'` | |
+| `'lookup:...'` | Database lookup | See below ↓ | |
+| `'validate:...'` | Database validation | See below ↓ | |
+
+**Chaining transformations:**
+
+```python
+# Works in lists - functions are applied in order
+table = dbtk.etl.Table('users', {
+    'username': {'field': 'email', 'fn': ['lower', 'strip', 'maxlen:50']},
+    'is_admin': {'field': 'role', 'fn': ['upper', 'indicator:Y/N']},
+}, cursor=cursor)
+```
+
+**Real-world example (IMDB dataset):**
+
+```python
+# Loading 12 million IMDB titles with clean configuration
+titles_table = dbtk.etl.Table('imdb_titles', {
+    'tconst': {'field': 'tconst', 'primary_key': True},
+    'title_type': {'field': 'titleType', 'fn': 'maxlen:50'},
+    'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500'},
+    'original_title': {'field': 'originalTitle', 'fn': 'maxlen:500'},
+    'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y/N'},
+    'start_year': {'field': 'startYear', 'fn': 'int:0'},
+    'end_year': {'field': 'endYear', 'fn': 'int'},
+    'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
+    'first_genre': {'field': 'genres', 'fn': 'nth:0'},  # Extract first genre
+    'all_genres': {'field': 'genres', 'fn': 'split:,'},  # Or keep all as list
+}, cursor=cursor)
+
+# Process file
+with open('title.basics.tsv') as f:
+    reader = dbtk.readers.CSVReader(f, delimiter='\t', header_clean=2)
+    for record in reader:
+        titles_table.set_values(record)
+        titles_table.exec_insert()
+
+# 132,440 records/sec on single machine with PostgreSQL!
+```
+
+### Database Lookups and Validation 🔥
+
+**The power move:** TableLookup transforms any database table into a reusable lookup function with intelligent caching. Use it directly or via string shorthand for zero-boilerplate data enrichment and validation.
+
+TableLookup is a fast, cache-aware transform that turns any database table or view into a reusable lookup function.  It uses PreparedStatement, so it is portable across databases. Use the high-level Lookup() and Validate() factories directly in your Table column definitions to resolve codes, enrich records, or enforce referential integrity with almost no code.
+
+```python
+import dbtk
+from dbtk.etl.transforms import TableLookup, Lookup, Validate
+db = dbtk.connect('states_db') 
+cur = db.cursor()
+
+# TableLookup requires an active cursor
+state_lookup = TableLookup(cursor=cur, table='states', key_cols='state', return_cols='abbrev', 
+                           cache=TableLookup.CACHE_PRELOAD)
+state_lookup({'state': 'Pennsylvania'}) # -> 'PA'
+
+# Multiple return_cols return type will be based on cursor type (record, dict, namedtuple, list) 
+state_details = TableLookup(cursor=cur, table='states', key_cols='code', return_cols=['state', 'capital', 'region'])
+state_details({'code': 'CA'}) # -> Record('California', 'Sacramento', 'West')
+
+# ⚡ NEW: String shorthand makes lookups incredibly clean!
+customer_etl = dbtk.etl.Table('customers', {
+    # Enrich with state data
+    'state_code': {'field': 'state_name', 'fn': 'lookup:states:name:code'},
+    'state_capital': {'field': 'state_name', 'fn': 'lookup:states:name:capital'},
+    'state_region': {'field': 'state_name', 'fn': 'lookup:states:name:region'},
+
+    # Validate against reference tables
+    'country': {'field': 'country_name', 'fn': 'validate:countries:name'},  # Warns if invalid
+    'industry': {'field': 'industry_code', 'fn': 'validate:industries:code'},
+
+    # Multiple keys and caching strategies
+    'product_name': {'field': ['vendor_id', 'sku'], 'fn': 'lookup:products:vendor_id,sku:name:preload'},
+}, cursor=cur)
+
+# OLD WAY (still supported):
+from dbtk.etl.transforms import Lookup, Validate, TableLookup
+customer_etl = dbtk.etl.Table('customers', {
+    'state_code': {'field': 'state_name', 'fn': Lookup('states', 'name', 'code')},
+    'country': {'field': 'country_name', 'fn': Validate('countries', 'name')},
+}, cursor=cur)
+```
+
+**Lookup/Validate string syntax:**
+
+```
+# Lookup syntax
+'lookup:table:key_col:return_col[:cache]'
+
+Examples:
+'lookup:states:name:code'              # Basic lookup
+'lookup:states:name:code:preload'      # With preloading (small tables)
+'lookup:states:name:code:lazy'         # Lazy caching (default)
+'lookup:states:name:code:no_cache'     # No caching (large tables)
+'lookup:products:id,sku:name'          # Multiple key columns (comma-separated)
+
+# Validate syntax
+'validate:table:key_col[:cache]'
+
+Examples:
+'validate:countries:country_code'      # Basic validation
+'validate:regions:name:preload'        # With preloading
+'validate:users:email,dept:no_cache'   # Multiple keys, no caching
+```
+
+**Caching strategies:**
+
+- **`preload`** (CACHE_PRELOAD): Load entire table into memory upfront. Best for small lookup tables (<10k rows)
+- **`lazy`** (CACHE_LAZY): Cache results as encountered. Best for medium tables or selective lookups
+- **`no_cache`** (CACHE_NONE): Query database every time. Best for large tables or frequently changing data
+
+```python
+# Practical example: Customer data enrichment
+orders_etl = dbtk.etl.Table('orders', {
+    'order_id': {'field': 'id', 'primary_key': True},
+
+    # Small table - preload it
+    'state_name': {'field': 'state_code', 'fn': 'lookup:states:code:name:preload'},
+
+    # Medium table - lazy cache
+    'customer_name': {'field': 'customer_id', 'fn': 'lookup:customers:id:name:lazy'},
+
+    # Large table - no cache
+    'product_desc': {'field': 'product_id', 'fn': 'lookup:products:id:description:no_cache'},
+
+    # Validate referential integrity
+    'category': {'field': 'category_code', 'fn': 'validate:categories:code:preload'},
+}, cursor=cursor)
+
+# Missing lookup keys raise clear errors immediately:
+# ValueError: TableLookup for 'states' missing required keys: ['code']. Provided keys: ['state']
 ```
 
 **Custom transformations:**
@@ -775,11 +1224,32 @@ else:
 - Automatically tracks ERROR and CRITICAL level messages
 - Works regardless of logging configuration
 
-**Complete integration script example:**
+**Note for advanced users:** Error tracking is implemented via a custom `ErrorCountHandler` that's automatically added to the root logger by `setup_logging()`. This handler maintains an error counter that `errors_logged()` checks. You can access this handler directly via `logging.getLogger().handlers` if you need custom error tracking logic.
+
+**What DBTK logs automatically:**
+
+DBTK logs all operations without you writing any log statements:
+- Database connections and queries
+- File reading operations and errors
+- Table operations (INSERT/UPDATE/MERGE counts, validation failures)
+- Data transformation errors
+- Parameter conversions and SQL generation
+
+You only need to add custom logging for your specific business logic.
+
+**When to add custom logging:**
+
+Add your own log statements when you have:
+- Custom validation or business rules
+- External API calls
+- Complex decision logic
+- Non-standard error handling
+
+**Complete integration script example with custom logging:**
 
 ```python
 #!/usr/bin/env python3
-"""Fire Nation intelligence ETL."""
+"""Fire Nation intelligence ETL with custom validation logging."""
 
 import dbtk
 import logging
@@ -787,44 +1257,51 @@ import logging
 # Set up logging - creates dated log files automatically
 dbtk.setup_logging()
 
+# Optional: Create logger only if you need custom log messages
 logger = logging.getLogger(__name__)
 
+def validate_combat_readiness(soldier_data):
+    """Custom business rule - log only your specific logic."""
+    if soldier_data['missions_completed'] < 5 and soldier_data['rank'] == 'General':
+        logger.warning(f"General {soldier_data['name']} has insufficient mission experience")
+        return False
+    return True
+
 def main():
-    logger.info("Starting Fire Nation ETL")
+    with dbtk.connect('fire_nation_db') as db:
+        cursor = db.cursor()
 
-    try:
-        with dbtk.connect('fire_nation_db') as db:
-            cursor = db.cursor()
+        soldier_table = dbtk.etl.Table('soldiers', config, cursor)
 
-            # Your ETL logic
-            soldier_table = dbtk.etl.Table('soldiers', config, cursor)
+        with dbtk.readers.get_reader('conscripts.csv') as reader:
+            for record in reader:
+                soldier_table.set_values(record)
 
-            with dbtk.readers.get_reader('conscripts.csv') as reader:
-                for record in reader:
-                    soldier_table.set_values(record)
-                    soldier_table.exec_insert(raise_error=False)
+                # Custom validation - log only when YOU need to
+                if soldier_table.reqs_met and not validate_combat_readiness(record):
+                    continue  # Skip this record
 
-            logger.info(f"Processed {soldier_table.counts['insert']} soldiers")
-            logger.info(f"Skipped {soldier_table.counts['incomplete']} incomplete records")
+                soldier_table.exec_insert(raise_error=False)
+                # ↑ DBTK automatically logs all insert operations, errors, validation failures
 
-            db.commit()
+        # Summary output (or log it if you prefer)
+        print(f"Processed {soldier_table.counts['insert']} soldiers")
+        print(f"Skipped {soldier_table.counts['incomplete']} incomplete records")
 
-    except Exception as e:
-        logger.error(f"ETL failed: {e}", exc_info=True)
-        raise
+        db.commit()
 
 if __name__ == '__main__':
     main()
-
-    # Clean up old logs
     dbtk.cleanup_old_logs()
 
-    # Check for errors and send notification if needed
+    # Check if errors occurred (DBTK tracked them automatically)
     error_log = dbtk.errors_logged()
     if error_log:
-        # send_notification_email(subject="Fire Nation ETL Errors", attachment=error_log)
         print(f"Errors occurred - check {error_log}")
+        # send_notification_email(subject="ETL Errors", attachment=error_log)
 ```
+
+**Key takeaway:** DBTK does the logging heavy lifting. You only add custom log statements for your specific business logic, not for database operations, file reading, or ETL mechanics.
 
 **Benefits:**
 - **Automatic setup** - Sample config created at `~/.config/dbtk.yml` on first use
@@ -858,6 +1335,10 @@ connections:
     database: northern_water_tribe
     user: waterbender_admin
     encrypted_password: gAAAAABh...
+    cursor:
+      type: dict
+      column_case: preserve
+      return_cursor: True
 
   # Oracle with environment variable
   earth_kingdom_prod:
@@ -903,21 +1384,21 @@ Secure your credentials with encryption:
 import dbtk
 
 # Generate encryption key (store in DBTK_ENCRYPTION_KEY environment variable)
-key = dbtk.config.generate_encryption_key()
+key = dbtk.config._generate_encryption_key()
 
 # Encrypt all passwords in configuration file
-dbtk.config.encrypt_config_file_cli('fire_nation_secrets.yml')
+dbtk.config.encrypt_config_file('fire_nation_secrets.yml')
 
 # Retrieve encrypted password
 sozin_secret = dbtk.config.get_password('phoenix_king_battle_plans')
 
 # Manually encrypt a single password
-encrypted = dbtk.config.encrypt_password_cli('only_azula_knows_this')
+encrypted = dbtk.config.encrypt_password('only_azula_knows_this')
 
 # Migrate configuration with new encryption key
-new_key = dbtk.config.generate_encryption_key()
-dbtk.config.migrate_config_cli('old_regime.yml', 'phoenix_king_era.yml',
-                                new_encryption_key=new_key)
+new_key = dbtk.config._generate_encryption_key()
+dbtk.config.migrate_config('old_regime.yml', 'phoenix_king_era.yml',
+                           new_encryption_key=new_key)
 ```
 
 ### Command Line Tools
@@ -928,6 +1409,11 @@ DBTK provides command-line utilities for managing encryption keys and configurat
 # Generate a new encryption key
 # Store the output in DBTK_ENCRYPTION_KEY environment variable
 dbtk generate-key
+
+# Store key on system keyring. If no key is provided, a new one will be generated
+# Use --force to overwrite an existing key
+# The DBTK_ENCRYPTION_KEY environment variable takes precedence
+dbtk store-key [your_key] --force 
 
 # Encrypt all passwords in a configuration file
 # Prompts for each plaintext password and replaces with encrypted_password
@@ -941,6 +1427,10 @@ dbtk encrypt-password "sozins_comet_2024"
 # Useful when rotating encryption keys
 export DBTK_ENCRYPTION_KEY="old_key_here"
 dbtk migrate-config old_config.yml new_config.yml --new-key "new_key_here"
+
+# Run a check of which recommended libraries, database drivers are installed
+# and check configuration, encryption keys, etc.
+dbtk checkup
 ```
 
 **Common workflow for new deployments:**
@@ -1041,7 +1531,13 @@ DBTK supports multiple database adapters with automatic detection and fallback:
 
 1. **Use appropriate batch sizes** - Larger batches are faster but use more memory:
    ```python
-   bulk_writer.insert(cursor, records, batch_size=5000)  # Tune based on your data
+    import dbtk
+    db = dbtk.connect('fire_nation_archive')
+    cur = db.cursor()
+    ...
+    table = dbtk.etl.Table('intel', intel_cols, cursor=cur)
+    bulk_writer = dbtk.etl.DataSurge(table, batch_size=5000) # Tune based on your data
+    bulk_writer.insert(reader)
    ```
 
 2. **Choose the right cursor type** - Records offer the best balance of functionality and performance:
@@ -1053,21 +1549,22 @@ DBTK supports multiple database adapters with automatic detection and fallback:
 3. **Materialize results when needed** - Don't fetch twice:
    ```python
    data = cursor.fetchall()  # Fetch once
-   writers.to_csv(data, 'output.csv')
-   writers.to_excel(data, 'output.xlsx')
+   dbtk.writers.to_csv(data, 'output.csv')
+   dbtk.writers.to_excel(data, 'output.xlsx')
    ```
 
 4. **Use transactions for bulk operations** - Commit once for many inserts:
    ```python
    with db.transaction():
        for record in records:
-           table.exec_insert(cursor)
+           table.set_values(record) 
+           table.exec_insert()
    ```
 
 5. **Use DataSurge for bulk operations** - Much faster than row-by-row:
    ```python
    bulk_writer = DataSurge(table)
-   bulk_writer.insert(cursor, records, batch_size=2000)
+   bulk_writer.insert(records)
    ```
 
 6. **Use prepared statements for repeated queries** - Read and parse SQL once:
@@ -1077,7 +1574,7 @@ DBTK supports multiple database adapters with automatic detection and fallback:
        stmt.execute(params)
    ```
 
-7. **Let the database do the work** - Use `db_fn` in Table definitions to leverage database functions instead of processing in Python.
+7. **Let the database do the work** - Use `db_expr` in Table definitions to leverage database functions instead of processing in Python.
 
 ## License
 
