@@ -24,6 +24,8 @@ extensions = [
     'sphinx.ext.napoleon',     # Support Google/NumPy style docstrings
     'sphinx.ext.viewcode',     # Add [source] links to code
     'sphinx.ext.intersphinx',  # Link to other project docs (like Python)
+    'rst2pdf.pdfbuilder'       # generate PDF using `sphinx-build -b pdf source build/pdf`
+    'sphinx_simplepdf'         # `make simplepdf`
 ]
 
 templates_path = ['_templates']
