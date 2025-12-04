@@ -5,13 +5,17 @@ Utility functions for dbtk.
 
 import logging
 import re
-
+import datetime as dt
 from typing import Tuple, List, Any, Union, Dict, Iterable
+from .defaults import settings
 try:
     from typing import Mapping
 except ImportError:
     from collections.abc import Mapping
 
+MIDNIGHT = dt.time(0, 0, 0)
+# cache format strings for performance
+_format_cache = None
 
 class ParamStyle:
     """
@@ -78,7 +82,6 @@ class ParamStyle:
         return ''
 
 
-
 class QueryLogger:
     """Simple query logger."""
 
@@ -115,6 +118,82 @@ class QueryLogger:
 
         self.logger.info(message)
 
+def _build_format_strings():
+    """Build format strings for datetime and date objects."""
+    return {
+        'date': settings.get('date_format', '%Y-%m-%d'),
+        'datetime': settings.get('datetime_format', '%Y-%m-%d %H:%M:%S'),
+        'datetime_tz': settings.get('datetime_format', '%Y-%m-%d %H:%M:%S') + \
+                       settings.get('tz_suffix',  '%z'),
+        'timestamp': settings.get('timestamp_format', '%Y-%m-%d %H:%M:%S.%f'),
+        'timestamp_tz': settings.get('timestamp_format', '%Y-%m-%d %H:%M:%S.%f') + \
+                        settings.get('tz_suffix',  '%z'),
+        'time': settings.get('time_format', '%H:%M:%S'),
+        'time_micro': settings.get('time_format', '%H:%M:%S') + '.%f',
+        'time_tz': settings.get('time_format', '%H:%M:%S') + \
+                   settings.get('tz_suffix',  '%z'),
+        'null': settings.get('null_string', ''),
+    }
+
+def reset_format_cache():
+    """Clear format cache to force rebuilding on next call."""
+    global _format_cache
+    _format_cache = None
+
+def _get_format_strings():
+    global _format_cache
+    if _format_cache is None:
+        _format_cache = _build_format_strings()
+    return _format_cache
+
+def to_string(obj: Any) -> str:
+    """
+    Convert a value to string representation.
+
+    Args:
+        obj: Value to convert
+
+    Returns:
+        String representation
+    """
+    fmts = _get_format_strings()
+    if obj is None:
+        return fmts['null']
+    elif isinstance(obj, dt.datetime):
+        if obj.microsecond:
+            if obj.tzinfo:
+                return obj.strftime(fmts['timestamp_tz'])
+            else:
+                return obj.strftime(fmts['timestamp'])
+        else:
+            if obj.tzinfo:
+                return obj.strftime(fmts['datetime_tz'])
+            if obj.time() == MIDNIGHT:
+                return obj.strftime(fmts['date'])
+            else:
+                return obj.strftime(fmts['datetime'])
+    elif isinstance(obj, dt.date):
+        return obj.strftime(fmts['date'])
+    elif isinstance(obj, dt.time):
+        if obj.microsecond:
+            if obj.tzinfo:
+                return obj.strftime(fmts['time_tz'])
+            else:
+                return obj.strftime(fmts['time_micro'])
+        else:
+            if obj.tzinfo:
+                return obj.strftime(fmts['time_tz'])
+            else:
+                return obj.strftime(fmts['time'])
+    elif isinstance(obj, (int, float)):
+        return str(obj)
+    elif isinstance(obj, str):
+        return obj
+    elif hasattr(obj, 'read'):
+        # Handle LOB objects
+        return str(obj.read())
+    else:
+        return str(obj)
 
 def wrap_at_comma(text: str) -> str:
     """Wrap text at commas, avoiding breaks inside parentheses."""

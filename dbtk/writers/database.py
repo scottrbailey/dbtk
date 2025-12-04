@@ -33,7 +33,7 @@ class DatabaseWriter(BaseWriter):
             commit_frequency: How often to commit (in number of records)
         """
         # Call BaseWriter with no filename (we're writing to database)
-        super().__init__(data, filename=None, preserve_types=True)
+        super().__init__(data, file=None, preserve_types=True)
 
         self.target_cursor = target_cursor
         self.target_table = target_table

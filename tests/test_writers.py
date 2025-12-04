@@ -99,7 +99,7 @@ class TestBaseWriter:
         to_csv(sample_records, output_file)
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records = list(reader)
             assert len(records) == 10
             assert records[0]['trainee_id'] == '1'
@@ -111,7 +111,7 @@ class TestBaseWriter:
         to_csv(sample_dicts, output_file)
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records = list(reader)
             assert len(records) == 10
             assert 'trainee_id' in records[0]
@@ -123,7 +123,7 @@ class TestBaseWriter:
         to_csv(sample_namedtuples, output_file)
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records = list(reader)
             assert len(records) == 10
 
@@ -135,7 +135,7 @@ class TestBaseWriter:
         writer.write()
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8'), add_rownum=False) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig'), add_rownum=False) as reader:
             records = list(reader)
             assert len(records) == 10
             assert reader.headers == sample_columns
@@ -146,7 +146,7 @@ class TestBaseWriter:
 
         to_csv(sample_records, output_file, include_headers=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()
             assert 'trainee_id' in first_line
 
@@ -156,7 +156,7 @@ class TestBaseWriter:
 
         to_csv(sample_records, output_file, include_headers=False)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()
             # First line should be data, not headers
             assert first_line.startswith('1,') or first_line.startswith('"1"')
@@ -233,7 +233,7 @@ class TestCSVWriter:
 
         to_csv(sample_records, output_file, delimiter='\t')
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             assert '\t' in first_line
 
@@ -243,7 +243,7 @@ class TestCSVWriter:
 
         to_csv(sample_records, output_file, delimiter='|')
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             assert '|' in first_line
 
@@ -264,7 +264,7 @@ class TestCSVWriter:
         to_csv(sample_records, output_file)
 
         # Read back
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records_back = list(reader)
 
         # Compare (values will be strings after CSV round-trip)
@@ -369,7 +369,7 @@ class TestFixedWidthWriter:
         assert output_file.exists()
 
         # Read back and check structure
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             # Line should be sum of column widths
             assert len(first_line.rstrip('\n')) == sum(column_widths)
@@ -381,7 +381,7 @@ class TestFixedWidthWriter:
 
         to_fixed_width(sample_records, column_widths, output_file, right_align_numbers=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             # trainee_id (int) should be right-aligned in first 5 chars
             trainee_id = first_line[:5]
@@ -396,7 +396,7 @@ class TestFixedWidthWriter:
 
         to_fixed_width(sample_records, column_widths, output_file, right_align_numbers=False)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             # trainee_id should be left-aligned
             trainee_id = first_line[:5]
@@ -446,7 +446,7 @@ class TestJSONWriter:
         assert output_file.exists()
 
         # Parse and verify
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             data = json.load(f)
 
         assert isinstance(data, list)
@@ -459,7 +459,7 @@ class TestJSONWriter:
 
         to_json(sample_records, output_file, indent=2)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should have newlines and indentation
@@ -472,7 +472,7 @@ class TestJSONWriter:
 
         to_json(sample_records, output_file, indent=None)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should be mostly on one line (no pretty printing)
@@ -485,7 +485,7 @@ class TestJSONWriter:
 
         to_json(sample_records, output_file)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             data = json.load(f)
 
         # Dates should be strings
@@ -505,7 +505,7 @@ class TestNDJSONWriter:
         assert output_file.exists()
 
         # Parse and verify - each line should be valid JSON
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             lines = f.readlines()
 
         assert len(lines) == 10
@@ -520,7 +520,7 @@ class TestNDJSONWriter:
 
         to_ndjson(sample_records, output_file)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
 
         # Should be compact (no indentation within the line)
@@ -567,7 +567,7 @@ class TestXMLWriter:
 
         to_xml(sample_records, output_file, pretty=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should have indentation
@@ -711,7 +711,7 @@ class TestDatabaseWriter:
 
         to_xml(sample_records, output_file, pretty=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should have indentation

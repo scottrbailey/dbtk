@@ -18,7 +18,7 @@ class FixedWidthWriter(BaseWriter):
     def __init__(self,
                  data,
                  column_widths: Sequence[int],
-                 filename: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  right_align_numbers: bool = True,
@@ -30,7 +30,7 @@ class FixedWidthWriter(BaseWriter):
         Args:
             data: Cursor object or list of records
             column_widths: List of column widths in characters
-            filename: Output filename. If None, writes to stdout
+            file: Output filename. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             right_align_numbers: Whether to right-align numeric values
@@ -38,7 +38,7 @@ class FixedWidthWriter(BaseWriter):
             fill_char: Character to use for padding
         """
         # Always convert to text for fixed-width output
-        super().__init__(data, filename, columns, encoding, preserve_types=False)
+        super().__init__(data, file, columns, encoding, preserve_types=False)
 
         self.column_widths = list(column_widths)
         self.right_align_numbers = right_align_numbers
@@ -163,7 +163,7 @@ def to_fixed_width(data,
     writer = FixedWidthWriter(
         data=data,
         column_widths=column_widths,
-        filename=filename,
+        file=filename,
         encoding=encoding,
         right_align_numbers=right_align_numbers,
         truncate_overflow=truncate_overflow,

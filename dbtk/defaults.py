@@ -8,9 +8,15 @@ settings = {
     'default_cursor_type': 'record',
     'default_db_type': 'postgres',
     'default_header_clean': 2,  # Clean.LOWER_NOSPACE as int
-    'default_timezone': 'UTC',
     'compressed_file_buffer_size': 1024 * 1024,  # 1MB buffer for .gz/.bz2/.xz files
-
+    'null_string': '',       # how null is represented in text outputs
+    'null_string_csv': '',   # how null is represented in CSV outputs
+    'default_timezone': 'UTC',
+    'date_format': '%Y-%m-%d',
+    'time_format': '%H:%M:%S',
+    'datetime_format': '%Y-%m-%d %H:%M:%S',
+    'timestamp_format': '%Y-%m-%d %H:%M:%S.%f',  # with microseconds
+    'tz_suffix': ' %z',
     'logging': {
         'directory': './logs',
         'level': 'INFO',

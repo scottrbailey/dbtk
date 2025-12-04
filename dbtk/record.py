@@ -4,7 +4,7 @@ Record classes for database result sets.
 """
 
 from typing import List, Any, Iterator, Tuple, Union
-from datetime import date as _date
+from .utils import to_string
 
 class Record(list):
     """
@@ -253,20 +253,4 @@ class Record(list):
 
         for key in self.keys():
             value = self[key]
-            print(template.format(key, _format_value(value)))
-
-
-def _format_value(obj: Any) -> str:
-    """Convert a record value to string representation."""
-    if obj is None:
-        return '(NULL)'
-    elif isinstance(obj, _date):
-        # datetime.datetime is subclassed from date
-        if hasattr(obj, 'microsecond') and obj.microsecond:
-            return obj.strftime('%Y-%m-%d %H:%M:%S.%f %Z')
-        elif hasattr(obj, 'hour') and (obj.hour or obj.minute or obj.second):
-            return obj.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            return obj.strftime('%Y-%m-%d')
-    else:
-        return str(obj)
+            print(template.format(key, to_string(value)))

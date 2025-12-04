@@ -30,7 +30,7 @@ class ExcelWriter(BaseWriter):
 
     def __init__(self,
                  data,
-                 filename: Union[str, Path],
+                 file: Union[str, Path],
                  columns: Optional[List[str]] = None,
                  sheet: str = 'Data',
                  include_headers: bool = True,
@@ -40,14 +40,14 @@ class ExcelWriter(BaseWriter):
 
         Args:
             data: Cursor object or list of records
-            filename: Output Excel filename (.xlsx)
+            file: Output Excel filename (.xlsx)
             columns: Column names for list-of-lists data (optional for other types)
             sheet: Sheet name to write to
             include_headers: Whether to include column headers
             overwrite_sheet: Whether to overwrite existing sheet
         """
         # Preserve data types for Excel output
-        super().__init__(data, filename, columns, encoding='utf-8', preserve_types=True)
+        super().__init__(data, file, columns, encoding='utf-8', preserve_types=True)
         self.sheet = sheet
         self.include_headers = include_headers
         self.overwrite_sheet = overwrite_sheet
@@ -56,8 +56,8 @@ class ExcelWriter(BaseWriter):
         """Write Excel data to workbook."""
         # Try to load existing workbook, create new if it doesn't exist
         try:
-            if Path(self.filename).exists():
-                workbook = load_workbook(self.filename)
+            if Path(self.file).exists():
+                workbook = load_workbook(self.file)
             else:
                 workbook = Workbook()
                 # Remove default sheet if we're creating our own
@@ -65,7 +65,7 @@ class ExcelWriter(BaseWriter):
                     workbook.remove(workbook['Sheet'])
         except (InvalidFileException, BadZipFile, ValueError) as e:
             raise ValueError(
-                f"File '{self.filename}' exists but is not a valid Excel workbook that openpyxl can read. "
+                f"File '{self.file}' exists but is not a valid Excel workbook that openpyxl can read. "
                 f"Original error: {e}") from e
 
         # Create datetime styles
@@ -154,13 +154,13 @@ class ExcelWriter(BaseWriter):
             worksheet.column_dimensions[column_letter].width = adjusted_width
 
         # Save workbook
-        workbook.save(self.filename)
+        workbook.save(self.file)
 
     def write(self) -> int:
         """Override to bypass file handle creation and call _write_data directly."""
         try:
             self._write_data(None)  # Pass None since we don't need file_obj
-            logger.info(f"Wrote {self._row_num} rows to {self.filename}")
+            logger.info(f"Wrote {self._row_num} rows to {self.file}")
             return self._row_num
         except Exception as e:
             logger.error(f"Error writing Excel data: {e}")
@@ -195,7 +195,7 @@ def to_excel(data,
     """
     writer = ExcelWriter(
         data=data,
-        filename=filename,
+        file=filename,
         sheet=sheet,
         include_headers=include_headers,
         overwrite_sheet=overwrite_sheet

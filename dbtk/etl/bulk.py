@@ -10,6 +10,7 @@ and MERGE operations with automatic transaction management and batch sizing.
 import logging
 import re
 import time
+from abc import ABC, abstractmethod
 from .table import Table
 
 from typing import Iterable, Optional
@@ -23,6 +24,21 @@ from ..utils import batch_iterable, RecordLike
 
 logger = logging.getLogger(__name__)
 
+
+class BaseSurge(ABC):
+    """Base class for bulk implementations."""
+
+    def __init__(self, table, batch_size=None, use_transaction=False):
+        self.table = table
+        self.cursor = table.cursor
+        self.batch_size = batch_size or table.cursor.batch_size
+        self.use_transaction = use_transaction
+        self.skips = 0
+
+    @abstractmethod
+    def _execute_batch(self, batch):
+        """Subclass implements actual execution"""
+        pass
 
 class DataSurge:
     """
@@ -224,3 +240,6 @@ class DataSurge:
         logger.info(
             f"Successfully merged {self.table.counts['merge']} records for {self.table.name} with {errors} errors")
         return errors
+
+class BulkSurge(BaseSurge):
+    pass

@@ -18,7 +18,7 @@ class JSONWriter(BaseWriter):
 
     def __init__(self,
                  data,
-                 filename: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  indent: Optional[int] = 2,
@@ -28,14 +28,14 @@ class JSONWriter(BaseWriter):
 
         Args:
             data: Cursor object or list of records
-            filename: Output filename. If None, writes to stdout
+            file: Output filename. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
             **json_kwargs: Additional arguments passed to json.dump
         """
         # Preserve data types for JSON output
-        super().__init__(data, filename, columns, encoding, preserve_types=True)
+        super().__init__(data, file, columns, encoding, preserve_types=True)
         self.indent = indent
         self.json_kwargs = json_kwargs
 
@@ -59,7 +59,7 @@ class NDJSONWriter(JSONWriter):
 
     def __init__(self,
                  data,
-                 filename: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  **json_kwargs):
@@ -68,13 +68,13 @@ class NDJSONWriter(JSONWriter):
 
         Args:
             data: Cursor object or list of records
-            filename: Output filename. If None, writes to stdout
+            file: Output filename. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             **json_kwargs: Additional arguments passed to json.dumps
         """
         # NDJSON doesn't use indentation
-        super().__init__(data, filename, columns, encoding, indent=None, **json_kwargs)
+        super().__init__(data, file, columns, encoding, indent=None, **json_kwargs)
 
     def _write_data(self, file_obj) -> None:
         """Write NDJSON data to file object."""
@@ -114,7 +114,7 @@ def to_json(data,
     """
     writer = JSONWriter(
         data=data,
-        filename=filename,
+        file=filename,
         encoding=encoding,
         indent=indent,
         **json_kwargs
@@ -144,7 +144,7 @@ def to_ndjson(data,
     """
     writer = NDJSONWriter(
         data=data,
-        filename=filename,
+        file=filename,
         encoding=encoding,
         **json_kwargs
     )

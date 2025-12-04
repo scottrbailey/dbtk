@@ -24,7 +24,7 @@ class XMLWriter(BaseWriter):
 
     def __init__(self,
                  data,
-                 filename: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  root_element: str = 'data',
@@ -35,7 +35,7 @@ class XMLWriter(BaseWriter):
 
         Args:
             data: Cursor object or list of records
-            filename: Output filename. If None, writes to stdout
+            file: Output filename. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             root_element: Name of the root XML element
@@ -43,7 +43,7 @@ class XMLWriter(BaseWriter):
             pretty: Whether to format with indentation
         """
         # Preserve data types for XML output
-        super().__init__(data, filename, columns, encoding, preserve_types=True)
+        super().__init__(data, file, columns, encoding, preserve_types=True)
         self.root_element = root_element
         self.record_element = record_element
         self.pretty = pretty
@@ -124,10 +124,10 @@ class XMLStreamer(XMLWriter):
 
     def _get_file_handle(self, mode='wb'):
         """Override to open file in binary mode for streaming XML."""
-        if self.filename is None:
+        if self.file is None:
             return sys.stdout.buffer, False  # Use binary stdout
         else:
-            return open(self.filename, mode), True
+            return open(self.file, mode), True
 
     def _write_data(self, file_obj) -> None:
         """Write XML data to file object using streaming approach."""
@@ -181,7 +181,7 @@ def to_xml(data,
     if stream:
         writer = XMLStreamer(
             data=data,
-            filename=filename,
+            file=filename,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
@@ -190,7 +190,7 @@ def to_xml(data,
     else:
         writer = XMLWriter(
             data=data,
-            filename=filename,
+            file=filename,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,

@@ -9,12 +9,12 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Iterator, List, Optional, Tuple, Union
+from typing import Any, Iterator, List, Optional, Tuple, Union, TextIO
+from ..utils import to_string
 
 logger = logging.getLogger(__name__)
 
 MIDNIGHT = dt.time(0, 0, 0)
-
 
 class BaseWriter(ABC):
     """
@@ -45,10 +45,10 @@ class BaseWriter(ABC):
         * Cursor objects (from database queries)
         * List of Record objects (from readers)
         * List of dictionaries
-        * List of lists (requires columns parameter)
+        * List of lists/tuples (requires columns parameter)
 
-    filename : str or Path, optional
-        Output filename. If None, writes to stdout (limited to 20 rows for preview).
+    file : str, Path or TextIO optional
+        Output filename or file pointer. If None, writes to stdout (limited to 20 rows for preview).
     columns : List[str], optional
         Column names for list-of-lists data. Ignored for other data types which
         have columns embedded.
@@ -113,7 +113,7 @@ class BaseWriter(ABC):
 
     def __init__(self,
                  data,
-                 filename: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path, TextIO]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  preserve_types: bool = False,
@@ -123,9 +123,9 @@ class BaseWriter(ABC):
 
         Parameters
         ----------
-        data
+        data :
             Data source (cursor, list of records, etc.)
-        filename : str or Path, optional
+        file : str or Path, optional
             Output file. None writes to stdout.
         columns : List[str], optional
             Column names for list-of-lists
@@ -137,7 +137,7 @@ class BaseWriter(ABC):
             Format-specific arguments
         """
         self.data = data
-        self.filename = filename
+        self.file = file
         self.encoding = encoding
         self.preserve_types = preserve_types
         self._row_num = 0
@@ -148,7 +148,7 @@ class BaseWriter(ABC):
             raise ValueError("No data to export")
 
         # Limit stdout output to 20 rows
-        if filename is None:
+        if file is None:
             self.data_iterator = itertools.islice(self.data_iterator, 20)
 
     @property
@@ -163,10 +163,12 @@ class BaseWriter(ABC):
         Returns:
             Tuple of (file_obj, should_close)
         """
-        if self.filename is None:
+        if self.file is None:
             return sys.stdout, False
+        elif hasattr(self.file, 'write'):
+            return self.file, False
         else:
-            return open(self.filename, mode, encoding=self.encoding, newline=''), True
+            return open(self.file, mode, encoding=self.encoding, newline=''), True
 
     def _get_data_iterator(self, data, columns: Optional[List[str]] = None) -> Tuple[Iterator, List[str]]:
         """
@@ -221,41 +223,8 @@ class BaseWriter(ABC):
         """
         if obj is None:
             return ''
-        elif isinstance(obj, dt.datetime):
-            if obj.microsecond:
-                if obj.tzinfo:
-                    return obj.strftime('%Y-%m-%d %H:%M:%S.%f %z')
-                else:
-                    return obj.strftime('%Y-%m-%d %H:%M:%S.%f')
-            else:
-                if obj.tzinfo:
-                    return obj.strftime('%Y-%m-%d %H:%M:%S %z')
-                if obj.time() == MIDNIGHT:
-                    return obj.strftime('%Y-%m-%d')
-                else:
-                    return obj.strftime('%Y-%m-%d %H:%M:%S')
-        elif isinstance(obj, dt.date):
-            return obj.strftime('%Y-%m-%d')
-        elif isinstance(obj, dt.time):
-            if obj.microsecond:
-                if obj.tzinfo:
-                    return obj.strftime('%H:%M:%S.%f %z')
-                else:
-                    return obj.strftime('%H:%M:%S.%f')
-            else:
-                if obj.tzinfo:
-                    return obj.strftime('%H:%M:%S %z')
-                else:
-                    return obj.strftime('%H:%M:%S')
-        elif isinstance(obj, (int, float)):
-            return str(obj)
-        elif isinstance(obj, str):
-            return obj
-        elif hasattr(obj, 'read'):
-            # Handle LOB objects
-            return str(obj.read())
         else:
-            return str(obj)
+            return to_string(obj)
 
     def _row_to_dict(self, record) -> dict:
         """
@@ -323,7 +292,7 @@ class BaseWriter(ABC):
         file_obj, should_close = self._get_file_handle()
         try:
             self._write_data(file_obj)
-            logger.info(f"Wrote {self._row_num} rows to {self.filename or 'stdout'}")
+            logger.info(f"Wrote {self._row_num} rows to {self.file or 'stdout'}")
             return self._row_num
         except Exception as e:
             logger.error(f"Error writing data: {e}")
