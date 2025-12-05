@@ -40,6 +40,11 @@ class BaseSurge(ABC):
         """Subclass implements actual execution"""
         pass
 
+    @abstractmethod
+    def _process_records(self, records: Iterable[RecordLike]):
+        """Common processing logic for insert, update, delete, and upsert operations."""
+        pass
+
 class DataSurge:
     """
     Handles bulk ETL operations by delegating to a stateful Table instance.
@@ -242,4 +247,19 @@ class DataSurge:
         return errors
 
 class BulkSurge(BaseSurge):
-    pass
+    def __init__(self, table: Table, batch_size: Optional[int] = 50_000):
+        self.table = table
+        self.cursor = table.cursor
+        self.batch_size = batch_size
+
+    def load(self, records: Iterable[RecordLike]) -> int:
+        """Detect database type and delegate to the correct loader """
+        db_type = self.cursor.connection.database_type
+
+    def _pg_copy(self, records: Iterable[RecordLike]) -> int:
+        copy_sql = f"COPY {self.table.name} FROM STDIN WITH CSV HEADER"
+        rows = 0
+        with self.cursor.copy_expert(copy_sql, records) as copy_stream:
+            #writer =
+            pass
+

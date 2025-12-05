@@ -232,6 +232,8 @@ class Table:
         self._req_cols = tuple(req_cols)
         # Key columns (primary_key=True or key=True)
         self._key_cols = tuple(key_cols)
+        # Store bind_name -> column mapping for quick lookups
+        self._bind_name_map = {col_def['bind_name']: col for col, col_def in columns.items()}
 
         # Initialize operation-specific dictionaries using OPERATIONS tuple
         self._sql_statements: Dict[str, Optional[str]] = {op: None for op in self.OPERATIONS}
@@ -723,7 +725,7 @@ class Table:
         # Process and cache the SQL
         self._finalize_sql(operation, sql)
 
-    def get_bind_params(self, operation: str) -> Union[dict, tuple]:
+    def get_bind_params(self, operation: str, mode: str = None) -> Union[dict, tuple]:
         """Get prepared bind parameters for the specified operation using current self.values."""
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'. Must be one of {self.OPERATIONS}")
@@ -731,6 +733,9 @@ class Table:
             raise ValueError(f"Cannot get {operation} params: no key columns defined")
 
         param_names = self._param_config[operation]
+        if mode is None or mode not in ('positional', 'named'):
+            mode = 'positional' if self._paramstyle in ParamStyle.positional_styles() else 'named'
+
         if not param_names:
             return () if self._paramstyle in ParamStyle.positional_styles() else {}
 
@@ -744,7 +749,7 @@ class Table:
                 if col in self.values:
                     filtered_values[bind_name] = self.values[col]
 
-        if self._paramstyle in ParamStyle.positional_styles():
+        if  mode == 'positional':
             # Return tuple in the order parameters appear in SQL
             return tuple(filtered_values.get(param, None) for param in param_names)
         else:
@@ -844,6 +849,10 @@ class Table:
         err = self.exec_select()
         if not err:
             return self._cursor.fetchone()
+
+    def bind_name_column(self, bind_name):
+        """ Get the column name for a given bind name."""
+        return self._bind_name_map.get(bind_name)
 
     def calc_update_excludes(self, record_fields: Optional[Set[str]] = None):
         """

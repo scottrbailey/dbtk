@@ -5,7 +5,7 @@ CSV writer for database results.
 
 import csv
 import logging
-from typing import Union, List, Optional, Any
+from typing import Union, List, Optional, Any, TextIO
 from pathlib import Path
 
 from .base import BaseWriter, to_string
@@ -19,7 +19,7 @@ class CSVWriter(BaseWriter):
 
     def __init__(self,
                  data,
-                 file: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path, TextIO]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  include_headers: bool = True,
