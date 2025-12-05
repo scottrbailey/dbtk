@@ -189,11 +189,10 @@ class BulkSurge(BaseSurge):
              quotechar: str = '"',
              encoding: str = 'utf-8-sig') -> int:
         path = self._resolve_file_path(file_name)
-        with open(path, "w", encoding=encoding) as fp:
-            writer = CSVWriter(data=self._yield_valid_records(records),
-                           file=fp,
-                           include_headers=True,
-                           delimiter=",",
-                           quotechar='"')
-            writer.write()
+        with open(path, "w", encoding=encoding, newline='') as fp:
+            writer = CSVWriter(data=None, file=fp, include_headers=include_headers, null_string='\\N',
+                               delimiter=delimiter, quotechar=quotechar)
+            for batch in self.batched(records):
+                writer.write_batch(batch)
         logger.info(f"Dumped {self.total_loaded} records to {path}")
+        return self.total_loaded

@@ -1,21 +1,18 @@
 # dbtk/writers/csv.py
-"""
-CSV writer for database results.
-"""
 
 import csv
 import logging
 from typing import Union, List, Optional, Any, TextIO
 from pathlib import Path
 
-from .base import BaseWriter, to_string
+from .base import BatchWriter, to_string
 from ..defaults import settings
 
 logger = logging.getLogger(__name__)
 
 
-class CSVWriter(BaseWriter):
-    """CSV writer class that extends BaseWriter."""
+class CSVWriter(BatchWriter):
+    """CSV writer class that extends BatchWriter."""
 
     def __init__(self,
                  data,
@@ -23,8 +20,6 @@ class CSVWriter(BaseWriter):
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  include_headers: bool = True,
-                 delimiter: str = ',',
-                 quotechar: str = '"',
                  null_string: str = None,
                  **csv_kwargs):
         """
@@ -36,18 +31,14 @@ class CSVWriter(BaseWriter):
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             include_headers: Whether to include column headers
-            delimiter: CSV field delimiter
-            quotechar: CSV quote character
             null_string: String representation for null values
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, file, columns, encoding, preserve_types=False)
+        super().__init__(data, file, columns, encoding, preserve_types=False, **csv_kwargs)
         self.include_headers = include_headers
-        self.delimiter = delimiter
-        self.quotechar = quotechar
         self.null_string = null_string or settings.get('null_string_csv', '')
-        self.csv_kwargs = csv_kwargs
+        self._format_kwargs = csv_kwargs
 
     def to_string(self, obj: Any) -> str:
         """Convert object to string for CSV output.
@@ -61,14 +52,13 @@ class CSVWriter(BaseWriter):
         """Write CSV data to file object."""
         writer = csv.writer(
             file_obj,
-            delimiter=self.delimiter,
-            quotechar=self.quotechar,
-            **self.csv_kwargs
+            **self._format_kwargs
         )
 
         # Write headers if requested
-        if self.include_headers:
+        if self.include_headers and not self._headers_written:
             writer.writerow(self.columns)
+            self._headers_written = True
 
         # Write data rows
         for record in self.data_iterator:
@@ -80,8 +70,6 @@ def to_csv(data,
            file: Optional[Union[str, Path]] = None,
            encoding: str = 'utf-8-sig',
            include_headers: bool = True,
-           delimiter: str = ',',
-           quotechar: str = '"',
            null_string: str = None,
            **csv_kwargs) -> None:
     """
@@ -92,8 +80,6 @@ def to_csv(data,
         file: Output filename. If None, writes to stdout
         encoding: File encoding
         include_headers: Whether to include column headers
-        delimiter: CSV field delimiter
-        quotechar: CSV quote character
         null_string: String representation for null values
          **csv_kwargs: Additional arguments passed to csv.writer
 
@@ -112,8 +98,6 @@ def to_csv(data,
         file=file,
         encoding=encoding,
         include_headers=include_headers,
-        delimiter=delimiter,
-        quotechar=quotechar,
         null_string=null_string,
         **csv_kwargs
     )

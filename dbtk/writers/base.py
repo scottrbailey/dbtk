@@ -300,3 +300,120 @@ class BaseWriter(ABC):
         finally:
             if should_close:
                 file_obj.close()
+
+
+class BatchWriter(BaseWriter):
+    """
+    Base class for writers that support incremental, batch-based output.
+
+    Unlike traditional writers that require all data up-front, BatchWriter
+    subclasses are designed for streaming and bulk ETL workloads where data
+    arrives in chunks (e.g. from BulkSurge, large queries, or infinite streams).
+
+    Key features:
+    - Lazy initialization: columns and iterator are resolved on first write
+    - Reusable file handle: write multiple batches without reopening
+    - Header control: first batch can include headers, subsequent batches omit
+    - Zero-copy compatible: works perfectly with Record objects and generators
+
+    Subclasses must implement _write_data() but inherit write_batch() for free.
+
+    Used by:
+        - BulkSurge.dump() and .load(fallback_path=...)
+        - Any high-performance streaming export pipeline
+
+    Examples
+    --------
+    >>> with open("out.csv", "w") as f:
+    >>>     writer = CSVWriter(data=None, file=f, include_headers=True)
+    >>>     for batch in surge.batched(records):
+    >>>         writer.write_batch(batch, include_headers=(batch is first))
+    """
+
+    def __init__(
+        self,
+        data=None,
+        file=None,
+        columns=None,
+        include_headers: bool = True,
+        preserve_types: bool = False,
+        **fmt_kwargs
+    ):
+        """
+        Initialize a batch-capable writer with deferred setup.
+
+        Parameters
+        ----------
+        data : iterable or None, default None
+            Initial data. If None, setup is deferred until first write_batch().
+            This enables streaming use cases where data arrives in batches.
+
+        file : file-like object or path, optional
+            Output destination. Passed to BaseWriter._get_file_handle().
+
+        columns : list of str, optional
+            Explicit column names. If not provided, inferred from first batch.
+
+        include_headers : bool, default True
+            Whether to write column headers on the first batch.
+
+        preserve_types : bool, default False
+            If True, preserve native Python types (e.g. datetime). If False,
+            convert everything to strings (default for CSV compatibility).
+
+        **fmt_kwargs
+            Format-specific options passed to _write_data().
+        """
+        self.file = file
+        self._should_close = None
+        self._row_num = 0
+        self.include_headers = include_headers
+        self._headers_written = False
+        self.preserve_types = preserve_types
+        self._format_kwargs = fmt_kwargs
+        self.columns = columns
+        if data:
+            self._lazy_init(data)
+        else:
+            self.data_iterator = None
+            self._initialized = False
+
+    def _lazy_init(self, records):
+        """Resolve columns and iterator on first real batch."""
+        if self._initialized:
+            return
+
+        if records is None and self.data_iterator is None:
+            raise ValueError("No data provided.")
+
+        self.data_iterator, self.columns = self._get_data_iterator(records, self.columns)
+        if not self.columns:
+            raise ValueError("Could not determine columns from data")
+
+        self._initialized = True
+
+    def write_batch(self, records):
+        """
+        Write a batch of records to the output stream.
+
+        This is the core method that makes BatchWriter suitable for BulkSurge
+        and other high-volume streaming scenarios.
+
+        Parameters
+        ----------
+        records : iterable
+            A batch of Record objects (or compatible row objects).
+
+        """
+        if not self._initialized:
+            self._lazy_init(records)
+        else:
+            self.data_iterator = iter(records)
+        self._write_data(self.file)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._should_close and self.file:
+            self.file.close()

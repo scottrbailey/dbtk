@@ -541,7 +541,7 @@ def fn_resolver(shorthand: str):
                 raise ValueError
         except ValueError:
             raise ValueError(f"Invalid length in {shorthand}")
-        return lambda x, n: str(x or '')[:n]
+        return lambda x, n=n: str(x or '')[:n]
 
     raise ValueError(f"Unrecognized fn shorthand: '{shorthand}'. "
                      f"See dbtk.etl.transforms.core.fn() docstring for valid options.")
