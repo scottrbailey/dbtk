@@ -18,7 +18,6 @@ class CSVWriter(BatchWriter):
                  data,
                  file: Optional[Union[str, Path, TextIO]] = None,
                  columns: Optional[List[str]] = None,
-                 encoding: str = 'utf-8',
                  include_headers: bool = True,
                  null_string: str = None,
                  **csv_kwargs):
@@ -35,10 +34,9 @@ class CSVWriter(BatchWriter):
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, file, columns, encoding, preserve_types=False, **csv_kwargs)
+        super().__init__(data, file, columns, preserve_types=False, **csv_kwargs)
         self.include_headers = include_headers
         self.null_string = null_string or settings.get('null_string_csv', '')
-        self._format_kwargs = csv_kwargs
 
     def to_string(self, obj: Any) -> str:
         """Convert object to string for CSV output.
@@ -68,7 +66,6 @@ class CSVWriter(BatchWriter):
 
 def to_csv(data,
            file: Optional[Union[str, Path]] = None,
-           encoding: str = 'utf-8-sig',
            include_headers: bool = True,
            null_string: str = None,
            **csv_kwargs) -> None:
@@ -96,7 +93,6 @@ def to_csv(data,
     writer = CSVWriter(
         data=data,
         file=file,
-        encoding=encoding,
         include_headers=include_headers,
         null_string=null_string,
         **csv_kwargs

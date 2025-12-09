@@ -7,12 +7,12 @@ import logging
 from typing import Union, Optional, Sequence, List
 from pathlib import Path
 
-from .base import BaseWriter
+from .base import BatchWriter
 
 logger = logging.getLogger(__name__)
 
 
-class FixedWidthWriter(BaseWriter):
+class FixedWidthWriter(BatchWriter):
     """Fixed width writer class that extends BaseWriter."""
 
     def __init__(self,

@@ -117,7 +117,7 @@ class BaseWriter(ABC):
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  preserve_types: bool = False,
-                 **kwargs):
+                 **fmt_kwargs):
         """
         Initialize the writer with data and options.
 
@@ -133,13 +133,14 @@ class BaseWriter(ABC):
             File encoding
         preserve_types : bool, default False
             Keep native types vs convert to strings
-        **kwargs
+        **fmt_kwargs
             Format-specific arguments
         """
         self.data = data
         self.file = file
         self.encoding = encoding
         self.preserve_types = preserve_types
+        self._format_kwargs = fmt_kwargs
         self._row_num = 0
 
         # Setup data iterator and columns
@@ -330,12 +331,13 @@ class BatchWriter(BaseWriter):
     >>>         writer.write_batch(batch, include_headers=(batch is first))
     """
 
+
     def __init__(
         self,
-        data=None,
-        file=None,
-        columns=None,
-        include_headers: bool = True,
+        data = None,
+        file: Optional[Union[str, Path, TextIO]] = None,
+        columns: Optional[List[str]] = None,
+        encoding: str = 'utf-8',
         preserve_types: bool = False,
         **fmt_kwargs
     ):
@@ -367,16 +369,16 @@ class BatchWriter(BaseWriter):
         self.file = file
         self._should_close = None
         self._row_num = 0
-        self.include_headers = include_headers
         self._headers_written = False
+        self.encoding = encoding
         self.preserve_types = preserve_types
         self._format_kwargs = fmt_kwargs
         self.columns = columns
+        self._initialized = False
         if data:
             self._lazy_init(data)
         else:
             self.data_iterator = None
-            self._initialized = False
 
     def _lazy_init(self, records):
         """Resolve columns and iterator on first real batch."""
