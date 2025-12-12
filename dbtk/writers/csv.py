@@ -29,12 +29,12 @@ class CSVWriter(BatchWriter):
             file: Output filename. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
-            include_headers: Whether to include column headers
+            write_headers: Whether to include column headers
             null_string: String representation for null values
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, file, columns, preserve_types=False, write_headers=write_headers, **csv_kwargs)
+        super().__init__(data, file, columns, write_headers=write_headers, **csv_kwargs)
         self.null_string = null_string or settings.get('null_string_csv', '')
 
     def to_string(self, obj: Any) -> str:
@@ -59,13 +59,13 @@ class CSVWriter(BatchWriter):
 
         # Write data rows
         for record in self.data_iterator:
-            row = self._extract_row_values(record)
+            row = self._row_to_tuple(record)
             writer.writerow(row)
             self._row_num += 1
 
 def to_csv(data,
            file: Optional[Union[str, Path]] = None,
-           include_headers: bool = True,
+           write_headers: bool = True,
            null_string: str = None,
            **csv_kwargs) -> None:
     """
@@ -75,7 +75,7 @@ def to_csv(data,
         data: Cursor object or list of records
         file: Output filename. If None, writes to stdout
         encoding: File encoding
-        include_headers: Whether to include column headers
+        write_headers: Whether to include column headers
         null_string: String representation for null values
          **csv_kwargs: Additional arguments passed to csv.writer
 
@@ -92,7 +92,7 @@ def to_csv(data,
     writer = CSVWriter(
         data=data,
         file=file,
-        include_headers=include_headers,
+        write_headers=write_headers,
         null_string=null_string,
         **csv_kwargs
     )

@@ -33,7 +33,7 @@ def _sanitize_element_name(name: str) -> str:
     Parameters
     ----------
     name : str
-        Column name from database
+        Original column name.
 
     Returns
     -------
@@ -103,6 +103,8 @@ class XMLWriter(BaseWriter):
     >>> to_xml(records, 'output.xml', root_element='users', record_element='user')
     """
 
+    preserve_types = False #
+
     def __init__(
             self,
             data,
@@ -119,7 +121,8 @@ class XMLWriter(BaseWriter):
         self.pretty = pretty
 
         # Preserve types initially (we'll convert in _prepare_record_for_xml)
-        super().__init__(data, file, columns, encoding, preserve_types=True)
+        super().__init__(data, file, columns, encoding)
+        self._xml_columns = {col: _sanitize_element_name(col) for col in self.columns}
 
     def _write_data(self, file_obj: Union[TextIO, BinaryIO]) -> None:
         """Write XML data by building complete tree in memory."""
@@ -129,11 +132,12 @@ class XMLWriter(BaseWriter):
             record_elem = etree.SubElement(root, self.record_element)
 
             # Convert record to dict and prepare for XML
-            record_dict = _prepare_record_for_xml(self._row_to_dict(record))
+            record_dict = self._row_to_dict(record)
 
             # Add elements for each field
             for key, value in record_dict.items():
-                elem = etree.SubElement(record_elem, key)
+                xml_key = self._xml_columns[key]
+                elem = etree.SubElement(record_elem, xml_key)
                 elem.text = value
 
             self._row_num += 1
@@ -206,6 +210,7 @@ class XMLStreamer(BatchWriter):
         self._xmlfile_ctx = None
         self._xf = None
         self._root_ctx = None
+        self._xml_columns = {}
 
         super().__init__(
             data=data,
@@ -265,6 +270,7 @@ class XMLStreamer(BatchWriter):
 
         # Parent handles columns and data_iterator
         super()._lazy_init(data)
+        self._xml_columns = {col: _sanitize_element_name(col) for col in self.columns}
 
         # Set up XML streaming contexts
         self._xmlfile_ctx = etree.xmlfile(self._file_obj)
@@ -288,12 +294,13 @@ class XMLStreamer(BatchWriter):
             self._lazy_init(self.data_iterator)
 
         for record in self.data_iterator:
-            record_dict = _prepare_record_for_xml(self._row_to_dict(record))
+            record_dict = self._row_to_dict(record)
 
             with self._xf.element(self.record_element):
                 for key, value in record_dict.items():
-                    with self._xf.element(key):
-                        if value:  # Only write non-empty values
+                    xml_key = self._xml_columns[key]
+                    with self._xf.element(xml_key):
+                        if value != '':  # Only write non-empty values
                             self._xf.write(value)
 
             # Newline after each record

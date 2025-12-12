@@ -140,21 +140,21 @@ class TestBaseWriter:
             assert len(records) == 10
             assert reader.headers == sample_columns
 
-    def test_include_headers_true(self, tmp_path, sample_records):
-        """Test include_headers=True writes header row."""
+    def test_write_headers_true(self, tmp_path, sample_records):
+        """Test write_headers=True writes header row."""
         output_file = tmp_path / "output.csv"
 
-        to_csv(sample_records, output_file, include_headers=True)
+        to_csv(sample_records, output_file, write_headers=True)
 
         with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()
             assert 'trainee_id' in first_line
 
-    def test_include_headers_false(self, tmp_path, sample_records):
-        """Test include_headers=False omits header row."""
+    def test_write_headers_false(self, tmp_path, sample_records):
+        """Test write_headers=False omits header row."""
         output_file = tmp_path / "output.csv"
 
-        to_csv(sample_records, output_file, include_headers=False)
+        to_csv(sample_records, output_file, write_headers=False)
 
         with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()

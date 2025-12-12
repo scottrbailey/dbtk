@@ -53,9 +53,6 @@ class BaseWriter(ABC):
         have columns embedded.
     encoding : str, default 'utf-8-sig'
         File encoding for text-based formats
-    preserve_types : bool, default False
-        If False, converts all values to strings. If True, preserves native Python
-        types (useful for formats like JSON that support multiple types).
     write_headers : bool, default True
         If True, include header row in formats that support it.
     **fmt_kwargs
@@ -115,13 +112,17 @@ class BaseWriter(ABC):
     # (e.g., ExcelWriter, DatabaseWriter).
     accepts_file_handle = True
 
+    # Class attribute that controls if native types are preserved or converted to strings
+    # The to_string method can be overridden in each subclass if specific types need converted
+    # while others are preserved.
+    preserve_types = False
+
     def __init__(
             self,
             data: Iterable[RecordLike],
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
             encoding: str = "utf-8-sig",
-            preserve_types: bool = False,
             write_headers: bool = True,
             **fmt_kwargs,
     ):
@@ -138,8 +139,6 @@ class BaseWriter(ABC):
             Column names for list-of-lists
         encoding : str, default 'utf-8-sig'
             File encoding
-        preserve_types : bool, default False
-            Keep native types vs convert to strings
         write_headers : bool, default True
             Include header row in output
         **fmt_kwargs
@@ -147,7 +146,6 @@ class BaseWriter(ABC):
         """
         self.file = file
         self.encoding = encoding
-        self.preserve_types = preserve_types
         self.write_headers = write_headers
         self._headers_written = False
         self._format_kwargs = fmt_kwargs
@@ -362,19 +360,25 @@ class BaseWriter(ABC):
             Dictionary representation
         """
         if isinstance(record, dict):
-            return record
+            record_dict = record
         elif hasattr(record, "to_dict"):
-            return record.to_dict()
+            record_dict = record.to_dict()
         elif hasattr(record, "_asdict"):
-            return record._asdict()
+            record_dict = record._asdict()
         elif hasattr(record, "keys") and callable(record.keys):
-            return {key: record[key] for key in record.keys()}
+            record_dict = {key: record[key] for key in record.keys()}
         elif isinstance(record, (list, tuple)):
-            return {self.columns[i]: record[i] for i in range(min(len(self.columns), len(record)))}
+            record_dict = {self.columns[i]: record[i] for i in range(min(len(self.columns), len(record)))}
         else:
-            return {col: getattr(record, col, None) for col in self.columns}
+            record_dict = {col: getattr(record, col, None) for col in self.columns}
 
-    def _extract_row_values(self, record: RecordLike) -> List[Any]:
+        # Apply to_string conversion if preserve_types is False
+        if not self.preserve_types:
+            record_dict = {k: self.to_string(v) for k, v in record_dict.items()}
+
+        return record_dict
+
+    def _row_to_tuple(self, record: RecordLike) -> List[Any]:
         """
         Extract values from record with optional text conversion.
 
@@ -401,7 +405,7 @@ class BaseWriter(ABC):
                 value = self.to_string(value)
             values.append(value)
 
-        return values
+        return tuple(values)
 
 
 class BatchWriter(BaseWriter):
@@ -448,9 +452,6 @@ class BatchWriter(BaseWriter):
         Explicit column names. If not provided, inferred from first batch.
     encoding : str, default 'utf-8'
         File encoding for text-based formats
-    preserve_types : bool, default False
-        If True, preserve native Python types (e.g., datetime). If False,
-        convert everything to strings (default for CSV compatibility).
     write_headers : bool, default True
         Whether to write column headers on the first batch.
     **fmt_kwargs
@@ -472,13 +473,14 @@ class BatchWriter(BaseWriter):
     """
 
     accepts_file_handle = True
+    preserve_types = False
 
     def __init__(
             self,
             data: Optional[Iterable[RecordLike]] = None,
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
-            preserve_types: bool = False,
+            encoding: Optional[str] = 'utf-8-sig',
             write_headers: bool = True,
             **fmt_kwargs,
     ):
@@ -495,16 +497,14 @@ class BatchWriter(BaseWriter):
             Explicit column names. If not provided, inferred from data.
         encoding : str, default 'utf-8'
             File encoding
-        preserve_types : bool, default False
-            Keep native types vs convert to strings
         write_headers : bool, default True
             Include header row in output
         **fmt_kwargs
             Format-specific options
         """
         self.file = file
-        self.preserve_types = preserve_types
         self.write_headers = write_headers
+        self.encoding = encoding
         self._format_kwargs = fmt_kwargs
         self._row_num = 0
         self._headers_written = False

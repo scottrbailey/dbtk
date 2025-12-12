@@ -38,7 +38,7 @@ class FixedWidthWriter(BatchWriter):
             fill_char: Character to use for padding
         """
         # Always convert to text for fixed-width output
-        super().__init__(data, file, columns, encoding, preserve_types=False)
+        super().__init__(data, file, columns, encoding)
 
         self.column_widths = list(column_widths)
         self.right_align_numbers = right_align_numbers
@@ -58,7 +58,7 @@ class FixedWidthWriter(BatchWriter):
         # Write data rows
         for record in self.data_iterator:
             # Use BaseWriter to extract values as strings
-            values = self._extract_row_values(record)
+            values = self._row_to_tuple(record)
 
             line = ''
             for i, (value, width) in enumerate(zip(values, self.column_widths)):
