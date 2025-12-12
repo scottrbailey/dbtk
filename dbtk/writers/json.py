@@ -8,9 +8,18 @@ from datetime import datetime, date, time
 from typing import Union, List, Optional
 from pathlib import Path
 
-from .base import BaseWriter
+from .base import BaseWriter, BatchWriter
+from ..utils import to_string
 
 logger = logging.getLogger(__name__)
+
+
+def _prepare_row_for_json(row: dict) -> dict:
+    """Iterate dict and convert all dates/times to strings."""
+    for key, value in row.items():
+        if isinstance(value, (datetime, date, time)):
+            row[key] = to_string(value)
+    return row
 
 
 class JSONWriter(BaseWriter):
@@ -39,23 +48,18 @@ class JSONWriter(BaseWriter):
         self.indent = indent
         self.json_kwargs = json_kwargs
 
-    def _row_to_dict(self, record) -> dict:
-        """Convert record to dict with dates converted to strings for JSON."""
-        record_dict = super()._row_to_dict(record)
-        for key, value in record_dict.items():
-            if isinstance(value, (datetime, date, time)):
-                record_dict[key] = self.to_string(value)
-        return record_dict
-
     def _write_data(self, file_obj) -> None:
         """Write JSON data to file object."""
-        records = [self._row_to_dict(record) for record in self.data_iterator]
+        records = []
+        for record in self.data_iterator:
+            record_dict = _prepare_row_for_json(self._row_to_dict(record))
+            records.append_pre(record_dict)
         self._row_num = len(records)
         json.dump(records, file_obj, indent=self.indent, **self.json_kwargs)
 
 
 class NDJSONWriter(JSONWriter):
-    """NDJSON (newline-delimited JSON) writer that extends JSONWriter."""
+    """NDJSON (newline-delimited JSON) writer."""
 
     def __init__(self,
                  data,
@@ -79,12 +83,11 @@ class NDJSONWriter(JSONWriter):
     def _write_data(self, file_obj) -> None:
         """Write NDJSON data to file object."""
         for record in self.data_iterator:
-            record_dict = self._row_to_dict(record)
+            record_dict = _prepare_row_for_json(self._row_to_dict(record))
             json_line = json.dumps(record_dict, **self.json_kwargs)
             file_obj.write(json_line + '\n')
             self._row_num += 1
-            if self._row_num % 1000 == 0:
-                file_obj.flush()
+        file_obj.flush()
 
 
 def to_json(data,

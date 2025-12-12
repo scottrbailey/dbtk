@@ -1,5 +1,6 @@
 # dbtk/etl/bulk_surge.py
 import datetime as dt
+import io
 import logging
 import subprocess
 import os
@@ -26,16 +27,27 @@ class BulkSurge(BaseSurge):
     def __init__(self, table, batch_size: int = 50_000, operation: str = "insert"):
         super().__init__(table, batch_size=batch_size, operation=operation, param_mode="positional")
         path = None
+        # Make sure Table columns are compatible with bulk processing
+        self._valid_for_bulk()
         if settings.get('data_dump_dir'):
             path = Path(settings.get('data_dump_dir'))
         if not path or not path.exists():
             path = Path(tempfile.gettempdir())
         self.fallback_dir = path
 
-    def load(self, records: Iterable[Record]) -> int:
-        if self.operation != "insert":
-            raise NotImplementedError("BulkSurge v1 supports only insert. merge/update coming in v2.")
+    def _valid_for_bulk(self):
+        """ Determine if table is compatible with bulk loading. """
+        expr_cols = []
+        for col, info in self.table.columns.items():
+            if info.get('db_expr', None) is not None:
+                expr_cols.append(col)
+        if expr_cols:
+            cols = ','.join(expr_cols)
+            msg = f"Columns with `db_expr` are incompatible with BulkSurge. Use DataSurge instead.  cols: {cols}"
+            logger.exception(msg)
+            raise RuntimeError(msg)
 
+    def load(self, records: Iterable[Record]) -> int:
         db_type = self.cursor.connection.database_type.lower()
 
         if "postgres" in db_type or "redshift" in db_type:
@@ -51,17 +63,14 @@ class BulkSurge(BaseSurge):
 
     def _load_postgres(self, records: Iterable[Record]) -> int:
         cols = ", ".join(self.table.columns.keys())
-        sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '', ESCAPE '\\')"
-        with self.cursor.copy_expert(sql) as copy_in:
-            writer = CSVWriter(
-                data=self._yield_valid_records(records),
-                file=copy_in,
-                include_headers=False,
-                delimiter=",",
-                quotechar='"',
-                quoting=csv.QUOTE_MINIMAL,
-            )
-            writer.write()
+        sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N', ESCAPE '\\')"
+        batch_iter = self.batched(records)
+        with TextIOWrapper(io.StringIO(), encoding="utf-8") as text_stream:
+            writer = CSVWriter(data=next(batch_iter), file=text_stream, include_headers=False, null_string='\\N')
+            text_stream.seek(0)
+            self.cursor.copy_expert(sql, text_stream)
+            for batch in batch_iter:
+                writer.write_batch(batch)
         return self.total_loaded
 
     def _load_sqlserver(self, records: Iterable[Record]) -> int:

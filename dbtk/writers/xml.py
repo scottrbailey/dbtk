@@ -3,177 +3,373 @@
 XML writer for database results using lxml.
 """
 
+import io
 import logging
+import re
 import sys
-from typing import Union, Optional, List
+from typing import Any, BinaryIO, List, Optional, TextIO, Union
 from pathlib import Path
 
 try:
     from lxml import etree
+
     HAS_LXML = True
 except ImportError:
     HAS_LXML = False
 
-from .base import BaseWriter
+from .base import BaseWriter, BatchWriter
+from ..utils import to_string
 
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_element_name(name: str) -> str:
+    """
+    Sanitize column name to be valid XML element name.
+
+    XML element names must start with a letter or underscore, and can only
+    contain letters, digits, hyphens, underscores, and periods.
+
+    Parameters
+    ----------
+    name : str
+        Column name from database
+
+    Returns
+    -------
+    str
+        Valid XML element name
+    """
+    sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '_', str(name))
+
+    # Ensure it doesn't start with a number
+    if sanitized and sanitized[0].isdigit():
+        sanitized = 'col_' + sanitized
+
+    return sanitized or 'unnamed'
+
+
+def _prepare_record_for_xml(record_dict: dict) -> dict:
+    """
+    Prepare a record dictionary for XML output.
+
+    Sanitizes keys to be valid XML element names and converts all values
+    to strings suitable for XML text content.
+
+    Parameters
+    ----------
+    record_dict : dict
+        Dictionary representation of a record
+
+    Returns
+    -------
+    dict
+        Dictionary with sanitized keys and stringified values
+    """
+    result = {}
+    for key, value in record_dict.items():
+        sanitized_key = _sanitize_element_name(key)
+        result[sanitized_key] = to_string(value)
+    return result
+
+
 class XMLWriter(BaseWriter):
-    """XML writer class that extends BaseWriter."""
+    """
+    XML writer that builds complete XML tree in memory.
 
-    def __init__(self,
-                 data,
-                 file: Optional[Union[str, Path]] = None,
-                 columns: Optional[List[str]] = None,
-                 encoding: str = 'utf-8',
-                 root_element: str = 'data',
-                 record_element: str = 'record',
-                 pretty: bool = True):
-        """
-        Initialize XML writer.
+    Best for small to medium datasets. For large datasets that don't fit
+    in memory, use XMLStreamer instead.
 
-        Args:
-            data: Cursor object or list of records
-            file: Output filename. If None, writes to stdout
-            columns: Column names for list-of-lists data (optional for other types)
-            encoding: File encoding
-            root_element: Name of the root XML element
-            record_element: Name of each record element
-            pretty: Whether to format with indentation
-        """
-        # Preserve data types for XML output
-        super().__init__(data, file, columns, encoding, preserve_types=True)
+    Parameters
+    ----------
+    data : Iterable[RecordLike]
+        Data to write
+    file : str, Path, TextIO, or BinaryIO, optional
+        Output filename or file handle. If None, writes to stdout.
+    columns : List[str], optional
+        Column names for list-of-lists data
+    encoding : str, default 'utf-8'
+        XML encoding declaration
+    root_element : str, default 'data'
+        Name of the root XML element
+    record_element : str, default 'record'
+        Name of each record element
+    pretty : bool, default True
+        Whether to format with indentation
+
+    Examples
+    --------
+    >>> to_xml(cursor, 'users.xml')
+    >>> to_xml(records, 'output.xml', root_element='users', record_element='user')
+    """
+
+    def __init__(
+            self,
+            data,
+            file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+            columns: Optional[List[str]] = None,
+            encoding: str = 'utf-8',
+            root_element: str = 'data',
+            record_element: str = 'record',
+            pretty: bool = True,
+    ):
+        """Initialize XML writer."""
         self.root_element = root_element
         self.record_element = record_element
         self.pretty = pretty
 
-    def _row_to_dict(self, record) -> dict:
-        """Convert record to dict with keys sanitized for XML element names."""
-        record_dict = super()._row_to_dict(record)
+        # Preserve types initially (we'll convert in _prepare_record_for_xml)
+        super().__init__(data, file, columns, encoding, preserve_types=True)
 
-        # Sanitize keys to be valid XML element names
-        sanitized_dict = {}
-        for key, value in record_dict.items():
-            sanitized_key = self._sanitize_element_name(key)
-            sanitized_dict[sanitized_key] = value
-
-        return sanitized_dict
-
-    def _sanitize_element_name(self, name: str) -> str:
-        """
-        Sanitize column name to be valid XML element name.
-
-        Args:
-            name: Column name from database
-
-        Returns:
-            Valid XML element name
-        """
-        import re
-        sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', str(name))
-
-        # Ensure it doesn't start with a number
-        if sanitized and sanitized[0].isdigit():
-            sanitized = 'col_' + sanitized
-
-        return sanitized or 'unnamed'
-
-    def _format_xml_value(self, value) -> str:
-        """
-        Format a value for XML content, handling None and database types.
-
-        Args:
-            value: Database value
-
-        Returns:
-            String representation suitable for XML
-        """
-        if value is None:
-            return ''
-        else:
-            return self.to_string(value)
-
-    def _write_data(self, file_obj) -> None:
-        """Write XML data to file object using tree building."""
+    def _write_data(self, file_obj: Union[TextIO, BinaryIO]) -> None:
+        """Write XML data by building complete tree in memory."""
         root = etree.Element(self.root_element)
 
         for record in self.data_iterator:
             record_elem = etree.SubElement(root, self.record_element)
 
-            # Convert record to dict with sanitized keys
-            record_dict = self._row_to_dict(record)
+            # Convert record to dict and prepare for XML
+            record_dict = _prepare_record_for_xml(self._row_to_dict(record))
 
             # Add elements for each field
             for key, value in record_dict.items():
                 elem = etree.SubElement(record_elem, key)
-                elem.text = self._format_xml_value(value)
+                elem.text = value
 
             self._row_num += 1
 
-        # Generate XML string using lxml's built-in pretty printing
+        # Generate XML string
         xml_str = etree.tostring(root, encoding='unicode', pretty_print=self.pretty)
 
         # Write output
         file_obj.write(f'<?xml version="1.0" encoding="{self.encoding}"?>\n')
         file_obj.write(xml_str)
 
+class XMLStreamer(BatchWriter):
+    """
+    Streaming XML writer that writes records incrementally.
 
-class XMLStreamer(XMLWriter):
-    """Streaming XML writer that extends XMLWriter."""
+    Memory-efficient for large datasets. Writes XML elements as they arrive
+    without building the entire tree in memory.
 
-    def _get_file_handle(self, mode='wb'):
-        """Override to open file in binary mode for streaming XML."""
+    Parameters
+    ----------
+    data : Iterable[RecordLike], optional
+        Initial data. For streaming mode, use data=None.
+    file : str, Path, or BinaryIO, optional
+        Output filename or binary file handle. Must be binary mode for streaming.
+    columns : List[str], optional
+        Column names for list-of-lists data
+    encoding : str, default 'utf-8'
+        XML encoding declaration
+    root_element : str, default 'data'
+        Name of the root XML element
+    record_element : str, default 'record'
+        Name of each record element
+
+    Examples
+    --------
+    Streaming mode::
+
+        with open('output.xml', 'wb') as f:
+            with XMLStreamer(data=None, file=f, root_element='data') as writer:
+                for batch in surge.batched(records):
+                    writer.write_batch(batch)
+
+    Single-shot mode::
+
+        XMLStreamer(data=records, file='output.xml').write()
+
+    Notes
+    -----
+    - Requires lxml library
+    - File must be opened in binary mode ('wb') for streaming
+    - No pretty-printing (streaming writes compact XML)
+    - More memory-efficient than XMLWriter for large datasets
+    """
+
+    def __init__(
+            self,
+            data=None,
+            file: Optional[Union[str, Path, BinaryIO]] = None,
+            columns: Optional[List[str]] = None,
+            encoding: str = 'utf-8',
+            root_element: str = 'data',
+            record_element: str = 'record',
+    ):
+        """Initialize streaming XML writer."""
+        # Set these BEFORE super().__init__() in case _lazy_init is called
+        self.root_element = root_element
+        self.record_element = record_element
+
+        # XML streaming contexts (set up in _lazy_init)
+        self._xmlfile_ctx = None
+        self._xf = None
+        self._root_ctx = None
+
+        super().__init__(
+            data=data,
+            file=file,
+            columns=columns,
+            encoding=encoding,
+            preserve_types=True,  # We'll convert in _prepare_record_for_xml
+        )
+
+    def _open_file_handle(self, mode: str = 'wb') -> tuple[BinaryIO, bool]:
+        """
+        Override to use binary mode and validate binary streams.
+
+        Parameters
+        ----------
+        mode : str, default 'wb'
+            File open mode (must be binary)
+
+        Returns
+        -------
+        tuple[BinaryIO, bool]
+            (file_handle, should_close_flag)
+
+        Raises
+        ------
+        ValueError
+            If a text stream is provided instead of binary
+        """
         if self.file is None:
-            return sys.stdout.buffer, False  # Use binary stdout
-        else:
-            return open(self.file, mode), True
+            return sys.stdout.buffer, False
 
-    def _write_data(self, file_obj) -> None:
-        """Write XML data to file object using streaming approach."""
-        with etree.xmlfile(file_obj, encoding=self.encoding) as xf:
-            with xf.element(self.root_element):
-                for record in self.data_iterator:
-                    record_dict = self._row_to_dict(record)
-                    with xf.element(self.record_element):
-                        for key, value in record_dict.items():
-                            with xf.element(key):
-                                if value is not None:
-                                    xf.write(self._format_xml_value(value))
+        if hasattr(self.file, 'write'):
+            # Validate it's a binary stream
+            if isinstance(self.file, io.TextIOWrapper):
+                raise ValueError(
+                    "XMLStreamer requires a binary file handle, got TextIOWrapper. "
+                    "Open file in 'wb' mode or use file.buffer"
+                )
+            if hasattr(self.file, 'mode') and 'b' not in self.file.mode:
+                raise ValueError(
+                    f"XMLStreamer requires binary mode, file opened in '{self.file.mode}' mode. "
+                    "Use 'wb' mode instead."
+                )
+        return super()._open_file_handle('wb')
 
-                    self._row_num += 1
-                    if self._row_num % 1000 == 0:
-                        xf.flush()
+    def _lazy_init(self, data) -> None:
+        """
+        Set up columns and XML streaming contexts on first use.
+
+        Parameters
+        ----------
+        data : Iterable[RecordLike]
+            First batch of data
+        """
+        if self._initialized:
+            return
+
+        # Parent handles columns and data_iterator
+        super()._lazy_init(data)
+
+        # Set up XML streaming contexts
+        self._xmlfile_ctx = etree.xmlfile(self._file_obj)
+        self._xf = self._xmlfile_ctx.__enter__()
+        self._root_ctx = self._xf.element(self.root_element)
+        self._root_ctx.__enter__()
+
+        # Newline after opening root tag
+        self._xf.write('\n')
+
+    def _write_data(self, file_obj: BinaryIO) -> None:
+        """
+        Write XML records to stream.
+
+        Parameters
+        ----------
+        file_obj : BinaryIO
+            Binary file handle (managed by parent class)
+        """
+        if not self._initialized:
+            self._lazy_init(self.data_iterator)
+
+        for record in self.data_iterator:
+            record_dict = _prepare_record_for_xml(self._row_to_dict(record))
+
+            with self._xf.element(self.record_element):
+                for key, value in record_dict.items():
+                    with self._xf.element(key):
+                        if value:  # Only write non-empty values
+                            self._xf.write(value)
+
+            # Newline after each record
+            self._xf.write('\n')
+            self._row_num += 1
+
+        # Flush after writing
+        self._xf.flush()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close XML contexts, then close file."""
+        # Close XML contexts
+        if self._root_ctx:
+            self._root_ctx.__exit__(exc_type, exc_val, exc_tb)
+            self._root_ctx = None
+
+        if self._xmlfile_ctx:
+            self._xmlfile_ctx.__exit__(exc_type, exc_val, exc_tb)
+            self._xmlfile_ctx = None
+
+        # Let parent close the file
+        return super().__exit__(exc_type, exc_val, exc_tb)
 
 
-def to_xml(data,
-           filename: Optional[Union[str, Path]] = None,
-           encoding: str = 'utf-8',
-           root_element: str = 'data',
-           record_element: str = 'record',
-           stream: bool = False,
-           pretty: bool = None) -> None:
+def to_xml(
+        data,
+        filename: Optional[Union[str, Path]] = None,
+        encoding: str = 'utf-8',
+        root_element: str = 'data',
+        record_element: str = 'record',
+        stream: bool = False,
+        pretty: bool = None,
+) -> None:
     """
     Export cursor or result set to XML file.
 
-    Args:
-        data: Cursor object or list of records
-        filename: Output filename. If None, writes to stdout (limited to 20 rows)
-        encoding: File encoding
-        root_element: Name of the root XML element
-        record_element: Name of each record element
-        stream: Whether to write incrementally (reduces memory usage for large datasets)
-        pretty: Whether to format with indentation
+    Parameters
+    ----------
+    data : Iterable[RecordLike]
+        Cursor object or list of records
+    filename : str or Path, optional
+        Output filename. If None, writes to stdout (limited to 20 rows)
+    encoding : str, default 'utf-8'
+        XML encoding declaration
+    root_element : str, default 'data'
+        Name of the root XML element
+    record_element : str, default 'record'
+        Name of each record element
+    stream : bool, default False
+        Whether to use streaming mode (reduces memory usage for large datasets)
+    pretty : bool, optional
+        Whether to format with indentation. Defaults to True for tree mode,
+        False for streaming mode.
 
-    Example:
-        # Write to file
+    Examples
+    --------
+    Write to file::
+
         to_xml(cursor, 'users.xml')
 
-        # Write to stdout (limited to 20 rows)
+    Write to stdout (limited to 20 rows)::
+
         to_xml(cursor)
 
-        # Custom element names with streaming
-        to_xml(cursor, 'active_users.xml', root_element='users', record_element='user', stream=True)
+    Custom element names with streaming::
+
+        to_xml(cursor, 'active_users.xml',
+               root_element='users',
+               record_element='user',
+               stream=True)
+
+    Notes
+    -----
+    - Tree mode (stream=False): Builds complete XML tree in memory, supports pretty printing
+    - Streaming mode (stream=True): Memory-efficient, writes incrementally, no pretty printing
+    - For large datasets (>100K rows), use stream=True
     """
     if pretty is None:
         pretty = not stream
@@ -185,7 +381,6 @@ def to_xml(data,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
-            pretty=pretty
         )
     else:
         writer = XMLWriter(
@@ -194,14 +389,16 @@ def to_xml(data,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
-            pretty=pretty
+            pretty=pretty,
         )
 
     writer.write()
 
 
 def check_dependencies():
+    """Check for optional dependencies and issue warnings if missing."""
     if not HAS_LXML:
         logger.error('lxml is required for XML support. Install with "pip install lxml".')
+
 
 check_dependencies()

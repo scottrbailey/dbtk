@@ -18,7 +18,7 @@ class CSVWriter(BatchWriter):
                  data,
                  file: Optional[Union[str, Path, TextIO]] = None,
                  columns: Optional[List[str]] = None,
-                 include_headers: bool = True,
+                 write_headers: bool = True,
                  null_string: str = None,
                  **csv_kwargs):
         """
@@ -34,8 +34,7 @@ class CSVWriter(BatchWriter):
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, file, columns, preserve_types=False, **csv_kwargs)
-        self.include_headers = include_headers
+        super().__init__(data, file, columns, preserve_types=False, write_headers=write_headers, **csv_kwargs)
         self.null_string = null_string or settings.get('null_string_csv', '')
 
     def to_string(self, obj: Any) -> str:
@@ -54,7 +53,7 @@ class CSVWriter(BatchWriter):
         )
 
         # Write headers if requested
-        if self.include_headers and not self._headers_written:
+        if self.write_headers and not self._headers_written:
             writer.writerow(self.columns)
             self._headers_written = True
 
