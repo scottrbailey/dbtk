@@ -49,30 +49,6 @@ def _sanitize_element_name(name: str) -> str:
     return sanitized or 'unnamed'
 
 
-def _prepare_record_for_xml(record_dict: dict) -> dict:
-    """
-    Prepare a record dictionary for XML output.
-
-    Sanitizes keys to be valid XML element names and converts all values
-    to strings suitable for XML text content.
-
-    Parameters
-    ----------
-    record_dict : dict
-        Dictionary representation of a record
-
-    Returns
-    -------
-    dict
-        Dictionary with sanitized keys and stringified values
-    """
-    result = {}
-    for key, value in record_dict.items():
-        sanitized_key = _sanitize_element_name(key)
-        result[sanitized_key] = to_string(value)
-    return result
-
-
 class XMLWriter(BaseWriter):
     """
     XML writer that builds complete XML tree in memory.
@@ -103,7 +79,7 @@ class XMLWriter(BaseWriter):
     >>> to_xml(records, 'output.xml', root_element='users', record_element='user')
     """
 
-    preserve_types = False #
+    preserve_types = False
 
     def __init__(
             self,
@@ -120,7 +96,11 @@ class XMLWriter(BaseWriter):
         self.record_element = record_element
         self.pretty = pretty
 
-        # Preserve types initially (we'll convert in _prepare_record_for_xml)
+        # BOM encodings can break XML parsers
+        if encoding and '-sig' in encoding:
+            encoding = encoding.replace('-sig', '')
+            logger.warning(f'A BOM encoding ({encoding}-sig) is not supported by LXML and most parsers. Using {encoding} instead.')
+
         super().__init__(data, file, columns, encoding)
         self._xml_columns = {col: _sanitize_element_name(col) for col in self.columns}
 
@@ -141,13 +121,9 @@ class XMLWriter(BaseWriter):
                 elem.text = value
 
             self._row_num += 1
-
-        # Generate XML string
-        xml_str = etree.tostring(root, encoding='unicode', pretty_print=self.pretty)
-
+        xml_str = etree.tostring(root, encoding=self.encoding, xml_declaration=True, pretty_print=self.pretty)
         # Write output
-        file_obj.write(f'<?xml version="1.0" encoding="{self.encoding}"?>\n')
-        file_obj.write(xml_str)
+        file_obj.write(xml_str.decode(self.encoding))
 
 class XMLStreamer(BatchWriter):
     """
@@ -382,24 +358,24 @@ def to_xml(
         pretty = not stream
 
     if stream:
-        writer = XMLStreamer(
+        with XMLStreamer(
             data=data,
             file=filename,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
-        )
+        ) as writer:
+            writer.write()
     else:
-        writer = XMLWriter(
+        with XMLWriter(
             data=data,
             file=filename,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
             pretty=pretty,
-        )
-
-    writer.write()
+        ) as writer:
+            writer.write()
 
 
 def check_dependencies():

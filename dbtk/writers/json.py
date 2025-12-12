@@ -117,14 +117,14 @@ def to_json(data,
         # Compact format
         to_json(cursor, 'data.json', indent=None)
     """
-    writer = JSONWriter(
+    with JSONWriter(
         data=data,
         file=filename,
         encoding=encoding,
         indent=indent,
         **json_kwargs
-    )
-    writer.write()
+    ) as writer:
+        writer.write()
 
 
 def to_ndjson(data,
@@ -147,10 +147,10 @@ def to_ndjson(data,
         # Write to stdout
         to_ndjson(cursor)
     """
-    writer = NDJSONWriter(
+    with NDJSONWriter(
         data=data,
         file=filename,
         encoding=encoding,
         **json_kwargs
-    )
-    writer.write()
+    ) as writer:
+        writer.write()

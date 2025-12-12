@@ -55,10 +55,10 @@ class ExcelWriter(BaseWriter):
 
     def to_string(self, obj: Any) -> str:
         """
-        Convert lists, tupls
+        Convert lists, tuples, dicts and sets to strings, leave other types unchanged.
         """
         if isinstance(obj, (list, dict, set, tuple)):
-            return str(obj)  # or json.dumps(obj) for prettier formatting
+            return str(obj)
         return obj
 
     def _write_data(self, file_obj) -> None:
@@ -164,17 +164,6 @@ class ExcelWriter(BaseWriter):
 
         # Save workbook
         workbook.save(self.file)
-    '''
-    def write(self) -> int:
-        """Override to bypass file handle creation and call _write_data directly."""
-        try:
-            self._write_data(None)  # Pass None since we don't need file_obj
-            logger.info(f"Wrote {self._row_num} rows to {self.file}")
-            return self._row_num
-        except Exception as e:
-            logger.error(f"Error writing Excel data: {e}")
-            raise
-    '''
 
 def to_excel(data,
              filename: Union[str, Path],
@@ -202,14 +191,14 @@ def to_excel(data,
         to_excel(users_cursor, 'report.xlsx', sheet='Users')
         to_excel(orders_cursor, 'report.xlsx', sheet='Orders')
     """
-    writer = ExcelWriter(
+    with ExcelWriter(
         data=data,
         file=filename,
         sheet_name=sheet,
         write_headers=write_headers,
         overwrite_sheet=overwrite_sheet
-    )
-    writer.write()
+    ) as writer:
+        writer.write()
 
 def check_dependencies():
     """Check for optional dependencies and issue warnings if missing."""

@@ -131,8 +131,8 @@ class TestBaseWriter:
         """Test writing from list of lists with explicit columns."""
         output_file = tmp_path / "output.csv"
 
-        writer = CSVWriter(sample_lists, output_file, columns=sample_columns)
-        writer.write()
+        with CSVWriter(sample_lists, output_file, columns=sample_columns) as writer:
+            writer.write()
 
         # Read back and verify
         with CSVReader(open(output_file, encoding='utf-8-sig'), add_rownum=False) as reader:

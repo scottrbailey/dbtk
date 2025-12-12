@@ -89,11 +89,11 @@ def to_csv(data,
         # Custom delimiter
         to_csv(cursor, 'data.tsv', delimiter='\t')
     """
-    writer = CSVWriter(
+    with CSVWriter(
         data=data,
         file=file,
         write_headers=write_headers,
         null_string=null_string,
         **csv_kwargs
-    )
-    writer.write()
+    ) as writer:
+        writer.write()
