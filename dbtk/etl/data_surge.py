@@ -37,9 +37,11 @@ class DataSurge(BaseSurge):
             batch_size: Number of records per batch
             use_transaction: Use transaction for all operations (default: False)
         """
-        super().__init__(table, batch_size=batch_size, operation="insert", param_mode='positional')
+        super().__init__(table, batch_size=batch_size)
         self.use_transaction = use_transaction
         self.skips = 0
+        # Swap to positional parameters if named to save memory in bind parameters
+        self.table.force_positional()
         self._sql_statements = {}  # Only for modified SQL (merge temp table hack)
 
     def get_sql(self, operation: str) -> str:
@@ -71,6 +73,32 @@ class DataSurge(BaseSurge):
         else:
             return self._merge_with_temp_table(records, raise_error)
 
+    def _execute_batches(self, records, operation, sql, raise_error):
+        """Execute batches with executemany."""
+        errors = 0
+        skipped = 0
+
+        for batch in batch_iterable(records, self.batch_size):
+            batch_params = []
+            for record in batch:
+                params = self._transform_row(record)
+                if params is None:
+                    skipped += 1
+                    continue
+                batch_params.append(params)
+
+            if batch_params:
+                try:
+                    self.cursor.executemany(sql, batch_params)
+                    self.table.counts[operation] += len(batch_params)
+                except self.cursor.connection.interface.DatabaseError as e:
+                    logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
+                    if raise_error:
+                        raise
+                    errors += len(batch_params)
+
+        return errors, skipped
+
     def load(
         self,
         records: Iterable[Record],
@@ -84,47 +112,18 @@ class DataSurge(BaseSurge):
         if operation not in ("insert", "update", "delete", "merge"):
             raise ValueError(f"Invalid operation: {operation}")
 
-        # Temporarily override operation for this call
-        old_op = self.operation
-        self.operation = operation
-        try:
-            sql = self.get_sql(operation)
-            errors = 0
-            skipped = 0
+        sql = self.get_sql(operation)
 
-            def process():
-                nonlocal errors, skipped
-                batch_gen = batch_iterable(self._yield_valid_records(records), self.batch_size)
-                for batch in batch_gen:
-                    if not batch:
-                        continue
-                    # Convert Records → list of dicts (named params) for executemany
-                    params_list = [r._asdict() if hasattr(r, "_asdict") else dict(r) for r in batch]
-                    try:
-                        self.cursor.executemany(sql, params_list)
-                        self.table.counts[operation] += len(params_list)
-                    except self.cursor.connection.interface.DatabaseError as e:
-                        logger.error(f"{operation.capitalize()} batch failed: {e}")
-                        if raise_error:
-                            raise
-                        errors += len(params_list)
+        if self.use_transaction:
+            with self.cursor.connection.transaction():
+                errors, skipped = self._execute_batches(records, operation, sql, raise_error)
+        else:
+            errors, skipped = self._execute_batches(records, operation, sql, raise_error)
 
-            if self.use_transaction:
-                with self.cursor.connection.transaction():
-                    process()
-            else:
-                process()
-
-            total_done = self.table.counts[operation]
-            logger.info(
-                f"DataSurge → {operation.upper()}: {total_done:,} | "
-                f"errors: {errors:,} | skipped: {skipped:,} | table: {self.table.name}"
-            )
-            self.skips += skipped
-            return errors
-
-        finally:
-            self.operation = old_op  # restore
+        logger.info(
+            f"Batched `{self.table.name}` <{operation}s: {self.table.counts[operation]:,}; errors: {errors:,}; skips: {skipped:,}>")
+        self.skips += skipped
+        return errors
 
     def _merge_with_temp_table(self, records: Iterable[Record], raise_error: bool) -> int:
         """Perform bulk merge using temporary table (for databases requiring true MERGE)."""

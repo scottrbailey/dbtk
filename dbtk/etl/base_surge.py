@@ -17,15 +17,16 @@ class BaseSurge(ABC):
         self,
         table,
         batch_size: Optional[int] = None,
-        operation: str = "insert",
-        param_mode: Optional[str] = None,  # None → named, "positional" → tuple
+        pass_through: bool = False
     ):
         self.table = table
         self.cursor = table.cursor
         self.batch_size = batch_size or getattr(self.cursor, "batch_size", 1000)
-        self.operation = operation.lower()
-        self.param_mode = param_mode
-
+        self.pass_through = pass_through
+        self.operation = 'insert'
+        # force positional parameter style
+        self.table.force_positional()
+        # stats
         self.total_processed = 0
         self.total_loaded = 0
         self.skipped = 0
@@ -51,6 +52,15 @@ class BaseSurge(ABC):
             return self.table.has_all_keys
         return self.table.reqs_met
 
+    def _transform_row(self, record, mode=None):
+        """Transform and validate a row. Shared logic for all surges."""
+        self.table.set_values(record)
+        self.total_processed += 1
+        if not self._record_is_valid():
+            self.skipped += 1
+            return None
+        return self.table.get_bind_params(self.operation, mode=mode)
+
     def batched(self, source: Iterable[RecordLike]) -> Generator[list, None, None]:
         """
         Primary batch interface.
@@ -68,23 +78,16 @@ class BaseSurge(ABC):
         >>> for batch in surge.batched(reader):
         >>>     writer.write_batch(batch)
         """
-        RecordClass = self._get_record_class(
-            self.operation if self.param_mode != "positional" else None
-        )
+
         batch = []
 
         for raw in source:
-            self.total_processed += 1
-            self.table.set_values(raw)
-
-            if not self._record_is_valid():
-                self.skipped += 1
-                continue
-
-            params = self.table.get_bind_params(self.operation, mode=self.param_mode)
-            record = RecordClass(*params) # if self.param_mode == "positional" else RecordClass(**params)
-            batch.append(record)
-            self.total_loaded += 1
+            if self.pass_through:
+                return raw
+            params = self.transform_row(raw)
+            if params:
+                batch.append(params)
+                self.total_loaded += 1
 
             if len(batch) >= self.batch_size:
                 yield batch
@@ -109,6 +112,14 @@ class BaseSurge(ABC):
 
         timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         return base / f"{self.table.name}_{timestamp}.csv"
+
+    @abstractmethod
+    def load(self,
+             records: Iterable[RecordLike],
+             operation: Optional[str] = 'insert',
+             raise_error: bool = True) -> int:
+        """ Load records into database. """
+        self.operation = operation
 
     def __enter__(self):
         return self
