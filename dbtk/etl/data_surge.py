@@ -111,7 +111,7 @@ class DataSurge(BaseSurge):
         operation = (operation or self.operation).lower()
         if operation not in ("insert", "update", "delete", "merge"):
             raise ValueError(f"Invalid operation: {operation}")
-
+        self.operation = operation
         sql = self.get_sql(operation)
 
         if self.use_transaction:

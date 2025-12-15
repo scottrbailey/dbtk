@@ -55,9 +55,7 @@ class BaseSurge(ABC):
     def _transform_row(self, record, mode=None):
         """Transform and validate a row. Shared logic for all surges."""
         self.table.set_values(record)
-        self.total_processed += 1
         if not self._record_is_valid():
-            self.skipped += 1
             return None
         return self.table.get_bind_params(self.operation, mode=mode)
 
@@ -83,12 +81,15 @@ class BaseSurge(ABC):
 
         for raw in source:
             if self.pass_through:
-                return raw
-            params = self.transform_row(raw)
-            if params:
+                params = raw
+            else:
+                params = self._transform_row(raw)
+            if params is not None:
                 batch.append(params)
+                self.total_processed += 1
                 self.total_loaded += 1
-
+            else:
+                self.skipped += 1
             if len(batch) >= self.batch_size:
                 yield batch
                 batch = []

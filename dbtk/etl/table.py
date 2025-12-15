@@ -306,6 +306,11 @@ class Table:
         return self._paramstyle
 
     @property
+    def param_config(self) -> Dict[str, Tuple[str, ...]]:
+        """Parameter configuration dictionary."""
+        return self._param_config
+
+    @property
     def cursor(self) -> Cursor:
         """Database cursor for executing SQL operations."""
         return self._cursor

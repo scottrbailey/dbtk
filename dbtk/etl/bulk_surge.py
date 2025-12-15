@@ -24,8 +24,8 @@ class BulkSurge(BaseSurge):
     Zero temp files when possible. Streaming. Memory-safe.
     """
 
-    def __init__(self, table, batch_size: int = 50_000, operation: str = "insert"):
-        super().__init__(table, batch_size=batch_size, operation=operation, param_mode="positional")
+    def __init__(self, table, batch_size: int = 50_000, pass_through: bool = False):
+        super().__init__(table, batch_size=batch_size, pass_through=pass_through)
         path = None
         # Make sure Table columns are compatible with bulk processing
         self._valid_for_bulk()
@@ -62,15 +62,23 @@ class BulkSurge(BaseSurge):
             raise NotImplementedError(f"BulkSurge not supported for {db_type}")
 
     def _load_postgres(self, records: Iterable[Record]) -> int:
-        cols = ", ".join(self.table.columns.keys())
+        _ = self.table.get_sql('insert')
+        cols = ", ".join(self.table._param_config['insert'])
         sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N', ESCAPE '\\')"
-        batch_iter = self.batched(records)
-        with TextIOWrapper(io.StringIO(), encoding="utf-8") as text_stream:
-            writer = CSVWriter(data=next(batch_iter), file=text_stream, include_headers=False, null_string='\\N')
-            text_stream.seek(0)
-            self.cursor.copy_expert(sql, text_stream)
-            for batch in batch_iter:
-                writer.write_batch(batch)
+
+        logger.debug(f"Running copy_expert with: {sql}")
+
+        # Create a writable stream
+        copy_stream = io.StringIO()
+        # Execute COPY, streaming into our StringIO
+        self.cursor.copy_expert(sql, copy_stream)
+        # Reset to beginning and use CSVWriter
+        copy_stream.seek(0)
+        writer = CSVWriter(data=None, file=copy_stream, write_headers=False, null_string='\\N')
+
+        for batch in self.batched(records):
+            writer.write_batch(batch)
+
         return self.total_loaded
 
     def _load_sqlserver(self, records: Iterable[Record]) -> int:
