@@ -731,8 +731,11 @@ class Table:
             raise ValueError(f"Invalid operation '{operation}'. Must be one of {self.OPERATIONS}")
         if operation in ('update', 'delete', 'merge') and not self._key_cols:
             raise ValueError(f"Cannot get {operation} params: no key columns defined")
-
         param_names = self._param_config[operation]
+        if not param_names:
+            # generate SQL and calculate parameter order
+            _ = self.get_sql(operation)
+            param_names = self._param_config[operation]
         if mode is None or mode not in ('positional', 'named'):
             mode = 'positional' if self._paramstyle in ParamStyle.positional_styles() else 'named'
 
@@ -1101,3 +1104,14 @@ class Table:
         sql = self.get_sql('merge')
         params = self.get_bind_params('merge')
         return self._exec_sql(sql, params, 'merge', raise_error)
+
+    def force_positional(self):
+        """ Convert to positional paramstyle if using named style. """
+        if self._paramstyle in ParamStyle.positional_styles():
+            return
+        if self._paramstyle == 'named':
+            self._paramstyle = 'numeric'
+        elif self._paramstyle == 'pyformat':
+            self._paramstyle = 'format'
+        # rebuild SQL and parameter maps
+        self._reset()
