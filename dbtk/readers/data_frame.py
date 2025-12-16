@@ -49,13 +49,11 @@ class DataFrameReader(Reader):
         self,
         df,
         add_rownum: bool = True,
-        clean_headers: Clean = None,
+        clean_headers: Clean = Clean.NOOP,
         return_type: str = 'record',
         skip_records: int = 0,
         max_records: Optional[int] = None
     ):
-        if clean_headers is None:
-            clean_headers = Clean.NOOP
         super().__init__(
             add_rownum=add_rownum,
             clean_headers=clean_headers,
@@ -87,7 +85,10 @@ class DataFrameReader(Reader):
 
         # Progress tracking
         self._trackable = None
-        self._total_rows = len(df) - self.skip_records
+
+        self._total_rows = len(df)
+        if self.skip_records:
+            self._total_rows -= self.skip_records
         if self.max_records is not None:
             self._total_rows = min(self._total_rows, self.max_records)
         self._total_rows = max(self._total_rows, 0)

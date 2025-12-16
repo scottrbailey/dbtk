@@ -305,7 +305,8 @@ class Cursor:
 
         Called once per cursor, on first executemany(). Stores in self._bulk_method.
         """
-        if self.connection.interface.__name__ == 'psycopg2':
+        adapter = self.connection.interface.__name__
+        if adapter == 'psycopg2':
             try:
                 from psycopg2.extras import execute_batch
                 # Return a bound dispatcher: execute_batch(cur, sql, argslist, page_size)
@@ -317,9 +318,12 @@ class Cursor:
                 return psycopg_batch
             except ImportError:
                 logger.debug("psycopg2.extras not available — using native executemany")
+        elif adapter == 'pyodbc':
+            if hasattr(self._cursor, 'fast_executemany') and not getattr(self._cursor, 'fast_executemany', False):
+                self._cursor.fast_executemany = True
+                logger.debug("pyodbc: enabled fast_executemany for bulk operations")
 
         # Fallback for everything else (SQLite, MySQL, etc.)
-        logger.debug("Using native cursor.executemany")
         return lambda cur, sql, argslist: cur.executemany(sql, argslist)
 
     def _create_record_factory(self) -> None:

@@ -1,18 +1,14 @@
 # dbtk/etl/bulk_surge.py
 import datetime as dt
-import io
 import logging
-import subprocess
-import os
 import tempfile
 import queue
 from pathlib import Path
-from io import TextIOWrapper
 from textwrap import dedent
 from typing import Iterable
 from ..defaults import settings
 from .base_surge import BaseSurge
-from ..writers.csv import CSVWriter, csv
+from ..writers.csv import CSVWriter
 from ..record import Record
 
 
@@ -79,12 +75,20 @@ class BulkSurge(BaseSurge):
 
         if "postgres" in db_type or "redshift" in db_type:
             return self._load_postgres(records)
-        elif "sqlserver" in db_type or "mssql" in db_type:
-            return self._load_sqlserver(records)
         elif "oracle" in db_type:
             return self._load_oracle(records)
         elif "mysql" in db_type or "maria" in db_type:
-            return self._load_mysql(records)
+            msg = dedent("""\
+            BulkSurge can not load directly into MySQL.  
+            Either use DataSurge.import() or 
+            BulkSurge.dump() to generate a transformed CSV file with LOAD DATA LOCAL INFILE (often disabled for security reasons). """)
+            raise NotImplementedError(msg)
+        elif "sqlserver" in db_type or "mssql" in db_type:
+            if self.cursor.connection.interface.__name__ == 'pyodbc':
+                msg = "Pyodbc has a very fast executemany implementation. Use DataSurge instead, and skip the hassle of bcp!"
+            else:
+                msg = "If you switch to pyodbc, you can use DataSurge for blazing fast speeds. Otherwise, you can call BulkSurge.dump() to generate a CSV to use with bcp."
+            raise NotImplementedError(msg)
         else:
             raise NotImplementedError(f"BulkSurge not supported for {db_type}")
 
@@ -120,110 +124,73 @@ class BulkSurge(BaseSurge):
 
         return self.total_loaded
 
-
-    def _load_sqlserver(self, records: Iterable[Record]) -> int:
-        conn = self.cursor.connection
-        cmd = [
-            "bcp", f"{conn.database}.dbo.{self.table.name}", "in", "-",
-            "-S", conn.server or "(local)",
-            "-d", conn.database,
-            "-c", "-t,", "-r\n",
-        ]
-        if getattr(conn, "username", None):
-            cmd += ["-U", conn.username, "-P", conn.password or ""]
-        else:
-            cmd.append("-T")
-
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=False, bufsize=0)
-        wrapper = TextIOWrapper(proc.stdin, encoding="utf-8", line_buffering=True)
-
-        try:
-            writer = CSVWriter(
-                data=self._yield_valid_records(records),
-                file=wrapper,
-                include_headers=False,
-                delimiter=",",
-            )
-            writer.write()
-            wrapper.flush()
-        finally:
-            wrapper.detach()
-            proc.stdin.close()
-
-        rc = proc.wait()
-        if rc != 0:
-            raise RuntimeError(f"bcp failed with return code {rc}")
-        return self.total_loaded
-
     def _load_oracle(self, records: Iterable[Record]) -> int:
-        if os.name == "nt":
-            raise NotImplementedError("Oracle on Windows requires sqlldr + control file (temp file fallback)")
-        pipe_path = f"/tmp/oracle_bulk_{os.getpid()}_{id(self)}.pipe"
-        os.mkfifo(pipe_path)
+        """
+        Load data into Oracle using python-oracledb's direct_path_load.
 
-        ctl = dedent(f"""\
-        LOAD DATA
-        INFILE '{pipe_path}' "str '\\n'"
-        INTO TABLE {self.table.name}
-        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-        TRAILING NULLCOLS
-        ({", ".join(self.table.columns.keys())})
-        """)
-        ctl_path = f"/tmp/oracle_bulk_{os.getpid()}.ctl"
-        with open(ctl_path, "w") as f:
-            f.write(ctl.strip())
+        This method uses Oracle's direct path load mechanism for maximum performance.
+        It bypasses the SQL engine and writes directly to data files, offering
+        significantly higher throughput than standard INSERT.  However, DataSurge
+        (using normal inserts and executemany) is MUCH more forgiving and many times
+        as fast or even faster.
 
-        conn_str = f"{self.cursor.connection.username}/{self.cursor.connection.password}@{self.cursor.connection.dsn}"
-        proc = subprocess.Popen([
-            "sqlldr", conn_str, f"control={ctl_path}", "direct=true", "errors=0", "silent=header,feedback"
-        ])
+        Parameters
+        ----------
+        records : Iterable[Record]
+            Stream of transformed and validated Record objects from batched().
 
-        try:
-            with open(pipe_path, "w", encoding="utf-8") as pipe:
-                writer = CSVWriter(
-                    data=self._yield_valid_records(records),
-                    file=pipe,
-                    include_headers=False,
-                    delimiter=",",
-                )
-                writer.write()
-        finally:
-            os.unlink(pipe_path)
-            os.unlink(ctl_path)
+        Returns
+        -------
+        int
+            Total number of records successfully loaded.
 
-        rc = proc.wait()
-        if rc != 0:
-            raise RuntimeError(f"sqlldr failed with code {rc}")
-        return self.total_loaded
+        Raises
+        ------
+        ValueError
+            If table name is not in schema.table format.
+        NotImplementedError
+            If the oracledb driver version does not support direct_path_load
+            (requires python-oracledb >= 3.4).
+        RuntimeError
+            If direct_path_load fails (e.g., due to constraints, triggers,
+            or data type issues).
 
-    def _load_mysql(self, records: Iterable[Record]) -> int:
-        conn = self.cursor.connection
-        cmd = [
-            "mysql",
-            f"--host={conn.host}", f"--port={conn.port or 3306}",
-            f"--user={conn.username}", f"--password={conn.password or ''}",
-            "--local-infile=1",
-            "--silent",
-            conn.database,
-            "-e", f"LOAD DATA LOCAL INFILE '-' INTO TABLE {self.table.name} "
-                  f"FIELDS TERMINATED BY ',' ENCLOSED BY '\"' LINES TERMINATED BY '\\n'"
-        ]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+        Notes
+        -----
+        - direct_path_load is extremely fast but has strict requirements:
+            * Table must allow direct path loads (no active triggers, foreign keys,
+              or certain constraints unless disabled).
+            * Primary keys and unique indexes should typically be disabled or
+              deferred.
+            * The load is non-logged in some configurations (faster but less recoverable).
+        - This method is only used when BulkSurge is instantiated — it is not
+          suitable for tables with db_expr columns or active DML constraints.
+        - For more forgiving loads, use DataSurge.insert().
+        """
+        _ = self.table.get_sql('insert')
+        cols = list(self.table.param_config['insert'])
 
-        try:
-            writer = CSVWriter(
-                data=self._yield_valid_records(records),
-                file=proc.stdin,
-                include_headers=False,
-                delimiter=",",
+        tabname = self.table.name.split('.')
+        if len(tabname) == 2:
+            schema, table_name = tabname
+        else:
+            raise ValueError("Schema is required, use [schema].[table] format")
+
+        # Check if driver supports direct_path_load
+        if not hasattr(self.cursor.connection, 'direct_path_load'):
+            raise NotImplementedError(
+                "direct_path_load requires python-oracledb 3.4+. "
+                "Current driver does not support it."
             )
-            writer.write()
-        finally:
-            proc.stdin.close()
-
-        rc = proc.wait()
-        if rc != 0:
-            raise RuntimeError(f"mysql LOAD DATA failed with code {rc}")
+        for batch in self.batched(records):
+            # Execute direct path load
+            self.cursor.connection.direct_path_load(
+                schema_name=schema,
+                table_name=table_name,
+                batch_size=self.batch_size,
+                data=batch,
+                column_names=cols
+            )
         return self.total_loaded
 
     def _resolve_file_path(self, file_name: str = None) -> str:

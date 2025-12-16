@@ -59,6 +59,20 @@ class BaseSurge(ABC):
             return None
         return self.table.get_bind_params(self.operation, mode=mode)
 
+    def records(self, source: Iterable[RecordLike]) -> Generator[tuple, None, None]:
+        """Yield individual transformed and validated records."""
+        for raw in source:
+            if self.pass_through:
+                params = raw
+            else:
+                params = self._transform_row(raw)
+            if params is not None:
+                self.total_processed += 1
+                self.total_loaded += 1
+                yield params
+            else:
+                self.skipped += 1
+
     def batched(self, source: Iterable[RecordLike]) -> Generator[list, None, None]:
         """
         Primary batch interface.
