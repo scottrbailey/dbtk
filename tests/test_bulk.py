@@ -2,7 +2,7 @@
 import pytest
 from pathlib import Path
 
-from dbtk.etl.bulk import DataSurge
+from dbtk.etl.data_surge import DataSurge
 from dbtk.etl.table import Table
 from dbtk.database import ParamStyle, Database
 
@@ -217,8 +217,7 @@ class TestInsertOperation:
     def test_insert_single_batch(self, airbender_table, airbender_records, cursor):
         """Test inserting Air Nomad records in single batch."""
         surge = DataSurge(airbender_table)
-
-        errors = surge.insert(airbender_records)
+        errors = surge.load(airbender_records, 'insert')
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 3

@@ -19,17 +19,19 @@ def wrap_array(val):
 
 if __name__ == '__main__':
     # Logging & connection configuration in ~/.config/dbtk.yml
-    dbtk.setup_logging()
+    dbtk.setup_logging(level='DEBUG')
     # Connecting to Postgres database... also running on my laptop!
     db = dbtk.connect('imdb')
     # Psycopg2's extras/execute_batch will be called instead of executemany
     cur = db.cursor()
+    # cur.fast_executemany = True
+    cur.batch_size = 5_000
     # Cleanup
-    cur.execute('TRUNCATE TABLE etl.names_subset')
+    # cur.execute('TRUNCATE TABLE names')
     # First 1,000,000 rows of IMDB's name dataset
-    fn = r'c:\Temp\name.subset.tsv.gz'
+    fn = r'c:\Temp\name.basics.tsv.gz'
     # Compressed archive automatically detected and streamed
-    reader = dbtk.readers.get_reader(fn, delimiter='\t')
+    reader = dbtk.readers.get_reader(fn, delimiter='\t', skip_records=2_000_000, max_records=1_000_000)
     # Maps reader column names to table columns and applies transforms
     names_cols = {
         'nconst': {'field': 'nconst', 'primary_key': True},
@@ -40,9 +42,9 @@ if __name__ == '__main__':
         'known_for_titles': {'field': 'knownfortitles', 'fn': wrap_array},
     }
     # Table does the heavy lifting, generating SQL, mapping bind parameters, applying transforms, etc.
-    table = dbtk.etl.Table('etl.names_subset', names_cols, cursor=cur)
+    table = dbtk.etl.Table('names', names_cols, cursor=cur)
     # DataSurge handles batching and committing
     names_loader = dbtk.etl.DataSurge(table)
     # Iterate reader and load data
     names_loader.insert(reader)
-    db.close()
+    # db.close()

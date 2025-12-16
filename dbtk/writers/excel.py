@@ -3,12 +3,11 @@
 Excel writer for database results using openpyxl.
 """
 import logging
-from typing import Union, List, Optional
+from typing import Any, Union, List, Optional, Iterable
 from pathlib import Path
 from datetime import datetime, date, time
-
-from .base import BaseWriter
 from zipfile import BadZipFile
+from .base import BaseWriter, RecordLike
 
 try:
     from openpyxl import Workbook, load_workbook
@@ -28,12 +27,15 @@ MIDNIGHT = time(0, 0)
 class ExcelWriter(BaseWriter):
     """Excel writer class that extends BaseWriter."""
 
+    accepts_file_handle = False
+    preserve_types = False
+
     def __init__(self,
-                 data,
+                 data: Iterable[RecordLike],
                  file: Union[str, Path],
                  columns: Optional[List[str]] = None,
-                 sheet: str = 'Data',
-                 include_headers: bool = True,
+                 write_headers: bool = True,
+                 sheet_name: str = 'Data',
                  overwrite_sheet: bool = True):
         """
         Initialize Excel writer.
@@ -42,15 +44,22 @@ class ExcelWriter(BaseWriter):
             data: Cursor object or list of records
             file: Output Excel filename (.xlsx)
             columns: Column names for list-of-lists data (optional for other types)
-            sheet: Sheet name to write to
-            include_headers: Whether to include column headers
+            sheet_name: Sheet name to write to
+            write_headers: Whether to include column headers
             overwrite_sheet: Whether to overwrite existing sheet
         """
         # Preserve data types for Excel output
-        super().__init__(data, file, columns, encoding='utf-8', preserve_types=True)
-        self.sheet = sheet
-        self.include_headers = include_headers
+        super().__init__(data, file, columns, write_headers=write_headers)
+        self.sheet = sheet_name
         self.overwrite_sheet = overwrite_sheet
+
+    def to_string(self, obj: Any) -> str:
+        """
+        Convert lists, tuples, dicts and sets to strings, leave other types unchanged.
+        """
+        if isinstance(obj, (list, dict, set, tuple)):
+            return str(obj)
+        return obj
 
     def _write_data(self, file_obj) -> None:
         """Write Excel data to workbook."""
@@ -105,7 +114,7 @@ class ExcelWriter(BaseWriter):
         header_font = Font(bold=True)
 
         # Write headers
-        if self.include_headers:
+        if self.write_headers:
             for col_idx, column_name in enumerate(self.columns, 1):
                 cell = worksheet.cell(row=1 + row_offset, column=col_idx, value=column_name)
                 if header_font:
@@ -117,7 +126,7 @@ class ExcelWriter(BaseWriter):
         # Write data and track column widths for sample
         for row_idx, record in enumerate(self.data_iterator, data_start_row):
             # Use BaseWriter to extract values with preserved data types
-            values = self._extract_row_values(record)
+            values = self._row_to_tuple(record)
 
             for col_idx, value in enumerate(values, 1):
                 # Handle special data types and formatting
@@ -156,21 +165,10 @@ class ExcelWriter(BaseWriter):
         # Save workbook
         workbook.save(self.file)
 
-    def write(self) -> int:
-        """Override to bypass file handle creation and call _write_data directly."""
-        try:
-            self._write_data(None)  # Pass None since we don't need file_obj
-            logger.info(f"Wrote {self._row_num} rows to {self.file}")
-            return self._row_num
-        except Exception as e:
-            logger.error(f"Error writing Excel data: {e}")
-            raise
-
-
 def to_excel(data,
              filename: Union[str, Path],
              sheet: str = 'Data',
-             include_headers: bool = True,
+             write_headers: bool = True,
              overwrite_sheet: bool = True) -> None:
     """
     Export cursor or result set to Excel file.
@@ -179,7 +177,7 @@ def to_excel(data,
         data: Cursor object or list of records
         filename: Output Excel filename (.xlsx)
         sheet: Sheet name to write to
-        include_headers: Whether to include column headers
+        write_headers: Whether to include column headers
         overwrite_sheet: Whether to overwrite existing sheet
 
     Example:
@@ -193,14 +191,14 @@ def to_excel(data,
         to_excel(users_cursor, 'report.xlsx', sheet='Users')
         to_excel(orders_cursor, 'report.xlsx', sheet='Orders')
     """
-    writer = ExcelWriter(
+    with ExcelWriter(
         data=data,
         file=filename,
-        sheet=sheet,
-        include_headers=include_headers,
+        sheet_name=sheet,
+        write_headers=write_headers,
         overwrite_sheet=overwrite_sheet
-    )
-    writer.write()
+    ) as writer:
+        writer.write()
 
 def check_dependencies():
     """Check for optional dependencies and issue warnings if missing."""

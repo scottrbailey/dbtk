@@ -1,21 +1,45 @@
 # dbtk/etl/bulk_surge.py
 import datetime as dt
 import logging
-import subprocess
-import os
 import tempfile
+import queue
 from pathlib import Path
-from io import TextIOWrapper
 from textwrap import dedent
 from typing import Iterable
 from ..defaults import settings
 from .base_surge import BaseSurge
-from ..writers.csv import CSVWriter, csv
+from ..writers.csv import CSVWriter
 from ..record import Record
 
 
 logger = logging.getLogger(__name__)
 
+
+class DequeBuffer:
+    """File-like queue buffer for streaming to copy_expert."""
+
+    def __init__(self, max_rows = 50_000):
+        self._queue = queue.Queue(maxsize=max_rows)
+        self.closed = False
+
+    def write(self, data):
+        self._queue.put(data)
+
+    def read(self, size=-1):
+        if self.closed and self._queue.empty():
+            return ''  # EOF
+
+        try:
+            # Block for up to 0.1 seconds waiting for data
+            return self._queue.get(timeout=0.1)
+        except queue.Empty:
+            # If closed and empty, EOF. Otherwise keep trying
+            if self.closed:
+                return ''
+            return self.read(size)  # Retry
+
+    def close(self):
+        self.closed = True
 
 class BulkSurge(BaseSurge):
     """
@@ -23,150 +47,150 @@ class BulkSurge(BaseSurge):
     Zero temp files when possible. Streaming. Memory-safe.
     """
 
-    def __init__(self, table, batch_size: int = 50_000, operation: str = "insert"):
-        super().__init__(table, batch_size=batch_size, operation=operation, param_mode="positional")
+    def __init__(self, table, batch_size: int = 10_000, pass_through: bool = False):
+        super().__init__(table, batch_size=batch_size, pass_through=pass_through)
         path = None
+        # Make sure Table columns are compatible with bulk processing
+        self._valid_for_bulk()
         if settings.get('data_dump_dir'):
             path = Path(settings.get('data_dump_dir'))
         if not path or not path.exists():
             path = Path(tempfile.gettempdir())
         self.fallback_dir = path
 
-    def load(self, records: Iterable[Record]) -> int:
-        if self.operation != "insert":
-            raise NotImplementedError("BulkSurge v1 supports only insert. merge/update coming in v2.")
+    def _valid_for_bulk(self):
+        """ Determine if table is compatible with bulk loading. """
+        expr_cols = []
+        for col, info in self.table.columns.items():
+            if info.get('db_expr', None) is not None:
+                expr_cols.append(col)
+        if expr_cols:
+            cols = ','.join(expr_cols)
+            msg = f"Columns with `db_expr` are incompatible with BulkSurge. Use DataSurge instead.  cols: {cols}"
+            logger.exception(msg)
+            raise RuntimeError(msg)
 
+    def load(self, records: Iterable[Record]) -> int:
         db_type = self.cursor.connection.database_type.lower()
 
         if "postgres" in db_type or "redshift" in db_type:
             return self._load_postgres(records)
-        elif "sqlserver" in db_type or "mssql" in db_type:
-            return self._load_sqlserver(records)
         elif "oracle" in db_type:
             return self._load_oracle(records)
         elif "mysql" in db_type or "maria" in db_type:
-            return self._load_mysql(records)
+            msg = dedent("""\
+            BulkSurge can not load directly into MySQL.  
+            Either use DataSurge.import() or 
+            BulkSurge.dump() to generate a transformed CSV file with LOAD DATA LOCAL INFILE (often disabled for security reasons). """)
+            raise NotImplementedError(msg)
+        elif "sqlserver" in db_type or "mssql" in db_type:
+            if self.cursor.connection.interface.__name__ == 'pyodbc':
+                msg = "Pyodbc has a very fast executemany implementation. Use DataSurge instead, and skip the hassle of bcp!"
+            else:
+                msg = "If you switch to pyodbc, you can use DataSurge for blazing fast speeds. Otherwise, you can call BulkSurge.dump() to generate a CSV to use with bcp."
+            raise NotImplementedError(msg)
         else:
             raise NotImplementedError(f"BulkSurge not supported for {db_type}")
 
     def _load_postgres(self, records: Iterable[Record]) -> int:
-        cols = ", ".join(self.table.columns.keys())
-        sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '', ESCAPE '\\')"
-        with self.cursor.copy_expert(sql) as copy_in:
-            writer = CSVWriter(
-                data=self._yield_valid_records(records),
-                file=copy_in,
-                include_headers=False,
-                delimiter=",",
-                quotechar='"',
-                quoting=csv.QUOTE_MINIMAL,
-            )
-            writer.write()
-        return self.total_loaded
+        import threading
 
-    def _load_sqlserver(self, records: Iterable[Record]) -> int:
-        conn = self.cursor.connection
-        cmd = [
-            "bcp", f"{conn.database}.dbo.{self.table.name}", "in", "-",
-            "-S", conn.server or "(local)",
-            "-d", conn.database,
-            "-c", "-t,", "-r\n",
-        ]
-        if getattr(conn, "username", None):
-            cmd += ["-U", conn.username, "-P", conn.password or ""]
-        else:
-            cmd.append("-T")
+        _ = self.table.get_sql('insert')
+        cols = ", ".join(self.table._param_config['insert'])
+        sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N')"
 
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=False, bufsize=0)
-        wrapper = TextIOWrapper(proc.stdin, encoding="utf-8", line_buffering=True)
+        buf = DequeBuffer(max_rows=self.batch_size * 3)
+        exception = None
 
-        try:
-            writer = CSVWriter(
-                data=self._yield_valid_records(records),
-                file=wrapper,
-                include_headers=False,
-                delimiter=",",
-            )
-            writer.write()
-            wrapper.flush()
-        finally:
-            wrapper.detach()
-            proc.stdin.close()
+        def writer_thread():
+            nonlocal exception
+            try:
+                writer = CSVWriter(data=None, file=buf, write_headers=False, null_string='\\N')
+                for batch in self.batched(records):
+                    writer.write_batch(batch)
+            except Exception as e:
+                exception = e
+            finally:
+                buf.close()
 
-        rc = proc.wait()
-        if rc != 0:
-            raise RuntimeError(f"bcp failed with return code {rc}")
+        thread = threading.Thread(target=writer_thread, daemon=True)
+        thread.start()
+
+        self.cursor.copy_expert(sql, buf)
+        thread.join()
+
+        if exception:
+            raise exception
+
         return self.total_loaded
 
     def _load_oracle(self, records: Iterable[Record]) -> int:
-        if os.name == "nt":
-            raise NotImplementedError("Oracle on Windows requires sqlldr + control file (temp file fallback)")
-        pipe_path = f"/tmp/oracle_bulk_{os.getpid()}_{id(self)}.pipe"
-        os.mkfifo(pipe_path)
+        """
+        Load data into Oracle using python-oracledb's direct_path_load.
 
-        ctl = dedent(f"""\
-        LOAD DATA
-        INFILE '{pipe_path}' "str '\\n'"
-        INTO TABLE {self.table.name}
-        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-        TRAILING NULLCOLS
-        ({", ".join(self.table.columns.keys())})
-        """)
-        ctl_path = f"/tmp/oracle_bulk_{os.getpid()}.ctl"
-        with open(ctl_path, "w") as f:
-            f.write(ctl.strip())
+        This method uses Oracle's direct path load mechanism for maximum performance.
+        It bypasses the SQL engine and writes directly to data files, offering
+        significantly higher throughput than standard INSERT.  However, DataSurge
+        (using normal inserts and executemany) is MUCH more forgiving and many times
+        as fast or even faster.
 
-        conn_str = f"{self.cursor.connection.username}/{self.cursor.connection.password}@{self.cursor.connection.dsn}"
-        proc = subprocess.Popen([
-            "sqlldr", conn_str, f"control={ctl_path}", "direct=true", "errors=0", "silent=header,feedback"
-        ])
+        Parameters
+        ----------
+        records : Iterable[Record]
+            Stream of transformed and validated Record objects from batched().
 
-        try:
-            with open(pipe_path, "w", encoding="utf-8") as pipe:
-                writer = CSVWriter(
-                    data=self._yield_valid_records(records),
-                    file=pipe,
-                    include_headers=False,
-                    delimiter=",",
-                )
-                writer.write()
-        finally:
-            os.unlink(pipe_path)
-            os.unlink(ctl_path)
+        Returns
+        -------
+        int
+            Total number of records successfully loaded.
 
-        rc = proc.wait()
-        if rc != 0:
-            raise RuntimeError(f"sqlldr failed with code {rc}")
-        return self.total_loaded
+        Raises
+        ------
+        ValueError
+            If table name is not in schema.table format.
+        NotImplementedError
+            If the oracledb driver version does not support direct_path_load
+            (requires python-oracledb >= 3.4).
+        RuntimeError
+            If direct_path_load fails (e.g., due to constraints, triggers,
+            or data type issues).
 
-    def _load_mysql(self, records: Iterable[Record]) -> int:
-        conn = self.cursor.connection
-        cmd = [
-            "mysql",
-            f"--host={conn.host}", f"--port={conn.port or 3306}",
-            f"--user={conn.username}", f"--password={conn.password or ''}",
-            "--local-infile=1",
-            "--silent",
-            conn.database,
-            "-e", f"LOAD DATA LOCAL INFILE '-' INTO TABLE {self.table.name} "
-                  f"FIELDS TERMINATED BY ',' ENCLOSED BY '\"' LINES TERMINATED BY '\\n'"
-        ]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+        Notes
+        -----
+        - direct_path_load is extremely fast but has strict requirements:
+            * Table must allow direct path loads (no active triggers, foreign keys,
+              or certain constraints unless disabled).
+            * Primary keys and unique indexes should typically be disabled or
+              deferred.
+            * The load is non-logged in some configurations (faster but less recoverable).
+        - This method is only used when BulkSurge is instantiated — it is not
+          suitable for tables with db_expr columns or active DML constraints.
+        - For more forgiving loads, use DataSurge.insert().
+        """
+        _ = self.table.get_sql('insert')
+        cols = list(self.table.param_config['insert'])
 
-        try:
-            writer = CSVWriter(
-                data=self._yield_valid_records(records),
-                file=proc.stdin,
-                include_headers=False,
-                delimiter=",",
+        tabname = self.table.name.split('.')
+        if len(tabname) == 2:
+            schema, table_name = tabname
+        else:
+            raise ValueError("Schema is required, use [schema].[table] format")
+
+        # Check if driver supports direct_path_load
+        if not hasattr(self.cursor.connection, 'direct_path_load'):
+            raise NotImplementedError(
+                "direct_path_load requires python-oracledb 3.4+. "
+                "Current driver does not support it."
             )
-            writer.write()
-        finally:
-            proc.stdin.close()
-
-        rc = proc.wait()
-        if rc != 0:
-            raise RuntimeError(f"mysql LOAD DATA failed with code {rc}")
+        for batch in self.batched(records):
+            # Execute direct path load
+            self.cursor.connection.direct_path_load(
+                schema_name=schema,
+                table_name=table_name,
+                batch_size=self.batch_size,
+                data=batch,
+                column_names=cols
+            )
         return self.total_loaded
 
     def _resolve_file_path(self, file_name: str = None) -> str:
@@ -184,16 +208,15 @@ class BulkSurge(BaseSurge):
 
     def dump(self, records: Iterable[Record],
              file_name: str = None,
-             include_headers: bool = True,
+             write_headers: bool = True,
              delimiter: str = ",",
              quotechar: str = '"',
              encoding: str = 'utf-8-sig') -> int:
         path = self._resolve_file_path(file_name)
-        with open(path, "w", encoding=encoding) as fp:
-            writer = CSVWriter(data=self._yield_valid_records(records),
-                           file=fp,
-                           include_headers=True,
-                           delimiter=",",
-                           quotechar='"')
-            writer.write()
+        with open(path, "w", encoding=encoding, newline='') as fp:
+            writer = CSVWriter(data=None, file=fp, write_headers=write_headers, null_string='\\N',
+                               delimiter=delimiter, quotechar=quotechar)
+            for batch in self.batched(records):
+                writer.write_batch(batch)
         logger.info(f"Dumped {self.total_loaded} records to {path}")
+        return self.total_loaded

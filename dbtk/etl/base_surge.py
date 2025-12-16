@@ -1,8 +1,13 @@
 # dbtk/etl/base_surge.py
-from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Generator
-from ..record import Record
 import logging
+from abc import ABC, abstractmethod
+from typing import Iterable, Generator, Optional
+import datetime as dt
+import tempfile
+from pathlib import Path
+
+from ..utils import RecordLike, batch_iterable
+from ..record import Record
 
 logger = logging.getLogger(__name__)
 
@@ -12,62 +17,124 @@ class BaseSurge(ABC):
         self,
         table,
         batch_size: Optional[int] = None,
-        operation: str = "insert",
-        param_mode: Optional[str] = None,
+        pass_through: bool = False
     ):
         self.table = table
         self.cursor = table.cursor
-        self.batch_size = batch_size or getattr(self.cursor, "batch_size", 1_000)
-        self.operation = operation.lower()
-        self.param_mode = param_mode  # None → Table default, 'positional' → force tuple
-
+        self.batch_size = batch_size or getattr(self.cursor, "batch_size", 1000)
+        self.pass_through = pass_through
+        self.operation = 'insert'
+        # force positional parameter style
+        self.table.force_positional()
+        # stats
         self.total_processed = 0
         self.total_loaded = 0
         self.skipped = 0
 
-        # Cached dynamic Record class — one per table
-        self._RecordClass = None
+        self._RecordClass = None  # Built on first use
 
-    def _get_record_class(self, operation = None):
+    def _get_record_class(self, operation: Optional[str] = None):
+        """Your perfect method — unchanged, just moved and documented."""
         if self._RecordClass is None:
             if operation is not None:
-                # make sure _param_config is populated by generating SQL for operation
+                # Force SQL generation to populate _param_config[operation]
                 _ = self.table.get_sql(operation)
                 cols = list(self.table._param_config[operation])
             else:
                 cols = list(self.table.columns.keys())
-            self._RecordClass = type('BulkRecord', (Record,), {})
+
+            self._RecordClass = type("Record", (Record,), {})
             self._RecordClass.set_columns(cols)
         return self._RecordClass
 
-    def _yield_valid_records(self, records: Iterable[Record]) -> Generator:
-        """Core shared logic — identical transformation path for DataSurge & BulkSurge"""
-        RecordClass = self._get_record_class()
-        # mode = self.param_mode  # BulkSurge: 'positional', DataSurge: None
-        # @TODO: see if all db adapters are happy taking Records for named params
-        mode = 'positional'
-        for raw in records:
-            self.total_processed += 1
-            self.table.set_values(raw)
+    def _record_is_valid(self) -> bool:
+        if self.operation == "delete":
+            return self.table.has_all_keys
+        return self.table.reqs_met
 
-            # Validation — same rules as DataSurge
-            if self.operation == "delete":
-                if not self.table.has_all_keys:
-                    self.skipped += 1
-                    continue
+    def _transform_row(self, record, mode=None):
+        """Transform and validate a row. Shared logic for all surges."""
+        self.table.set_values(record)
+        if not self._record_is_valid():
+            return None
+        return self.table.get_bind_params(self.operation, mode=mode)
+
+    def records(self, source: Iterable[RecordLike]) -> Generator[tuple, None, None]:
+        """Yield individual transformed and validated records."""
+        for raw in source:
+            if self.pass_through:
+                params = raw
             else:
-                if not self.table.reqs_met:
-                    self.skipped += 1
-                    continue
+                params = self._transform_row(raw)
+            if params is not None:
+                self.total_processed += 1
+                self.total_loaded += 1
+                yield params
+            else:
+                self.skipped += 1
 
-            params = self.table.get_bind_params(self.operation, mode=mode)
-            yield RecordClass(*params)
-            self.total_loaded += 1
+    def batched(self, source: Iterable[RecordLike]) -> Generator[list, None, None]:
+        """
+        Primary batch interface.
+
+        Returns an iterator that yields batches of fully transformed and validated
+        Record objects. This is the canonical way to consume data from a Surge.
+
+        Used by:
+            - DataSurge.load() → executemany
+            - BulkSurge.dump() → CSVWriter
+            - Any custom streaming pipeline
+
+        Example
+        -------
+        >>> for batch in surge.batched(reader):
+        >>>     writer.write_batch(batch)
+        """
+
+        batch = []
+
+        for raw in source:
+            if self.pass_through:
+                params = raw
+            else:
+                params = self._transform_row(raw)
+            if params is not None:
+                batch.append(params)
+                self.total_processed += 1
+                self.total_loaded += 1
+            else:
+                self.skipped += 1
+            if len(batch) >= self.batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
+
+    def _resolve_file_path(self, path_input: Optional[str | Path] = None) -> Path:
+        """ """
+        if path_input is None:
+            base = Path(tempfile.gettempdir())
+        else:
+            p = Path(path_input)
+            if p.is_dir():
+                base = p
+            elif p.parent.exists() and p.parent.is_dir():
+                return p
+            else:
+                base = Path(tempfile.gettempdir())
+                return base / p.name
+
+        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        return base / f"{self.table.name}_{timestamp}.csv"
 
     @abstractmethod
-    def load(self, records: Iterable[Record]) -> int:
-        """Subclasses implement the sink: executemany vs native bulk"""
-        pass
+    def load(self,
+             records: Iterable[RecordLike],
+             operation: Optional[str] = 'insert',
+             raise_error: bool = True) -> int:
+        """ Load records into database. """
+        self.operation = operation
 
     def __enter__(self):
         return self
@@ -76,6 +143,6 @@ class BaseSurge(ABC):
         if exc_type is None:
             logger.info(
                 f"{self.__class__.__name__} [{self.operation.upper()}]: "
-                f"{self.total_loaded:,} loaded, {self.skipped:,} skipped, "
-                f"{self.total_processed:,} total → {self.table.name}"
+                f"{self.total_loaded:,} loaded, {self.skipped:,} skipped → {self.table.name}"
             )
+        return None

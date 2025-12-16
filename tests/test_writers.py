@@ -131,8 +131,8 @@ class TestBaseWriter:
         """Test writing from list of lists with explicit columns."""
         output_file = tmp_path / "output.csv"
 
-        writer = CSVWriter(sample_lists, output_file, columns=sample_columns)
-        writer.write()
+        with CSVWriter(sample_lists, output_file, columns=sample_columns) as writer:
+            writer.write()
 
         # Read back and verify
         with CSVReader(open(output_file, encoding='utf-8-sig'), add_rownum=False) as reader:
@@ -140,21 +140,21 @@ class TestBaseWriter:
             assert len(records) == 10
             assert reader.headers == sample_columns
 
-    def test_include_headers_true(self, tmp_path, sample_records):
-        """Test include_headers=True writes header row."""
+    def test_write_headers_true(self, tmp_path, sample_records):
+        """Test write_headers=True writes header row."""
         output_file = tmp_path / "output.csv"
 
-        to_csv(sample_records, output_file, include_headers=True)
+        to_csv(sample_records, output_file, write_headers=True)
 
         with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()
             assert 'trainee_id' in first_line
 
-    def test_include_headers_false(self, tmp_path, sample_records):
-        """Test include_headers=False omits header row."""
+    def test_write_headers_false(self, tmp_path, sample_records):
+        """Test write_headers=False omits header row."""
         output_file = tmp_path / "output.csv"
 
-        to_csv(sample_records, output_file, include_headers=False)
+        to_csv(sample_records, output_file, write_headers=False)
 
         with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()

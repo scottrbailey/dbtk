@@ -97,52 +97,48 @@ class ReturnType:
     DEFAULT = RECORD
 
 class _Progress:
-    """ Helper class for displaying progress bar. """
-    __slots__ = ('tell', 'total')
+    __slots__ = ('tell', 'byte_total', 'row_total')
 
-    def __init__(self, obj):
-        # Check if object has precomputed uncompressed size (from compressed files)
-        if hasattr(obj, '_uncompressed_size'):
-            if obj._uncompressed_size is not None:
-                # Use the precomputed size from file metadata (GZIP, ZIP)
-                self.total = obj._uncompressed_size
-                self.tell = obj.tell
-            else:
-                # Compressed format without size metadata (BZ2, XZ) - disable progress
-                self.total = 0
-                self.tell = lambda: 0
-        elif hasattr(obj, 'buffer'):
-            buf = obj.buffer
-            pos = buf.tell()
-            buf.seek(0, 2)
-            self.total = buf.tell()
-            buf.seek(pos)
-            self.tell = buf.tell
-        elif hasattr(obj, 'tell'):
-            pos = obj.tell()
-            obj.seek(0, 2)
-            self.total = obj.tell()
-            obj.seek(pos)
-            self.tell = obj.tell
+    def __init__(self, source_obj=None, row_total: Optional[int] = None):
+        if source_obj is not None and hasattr(source_obj, 'tell'):
+            self.tell = source_obj.tell
+            self.byte_total = getattr(source_obj, '_uncompressed_size', None)
         else:
-            # Excel: fake byte size from row count
-            if hasattr(obj, 'nrows'):
-                #xlrd
-                rows = getattr(obj, 'nrows', 65_000)
-            else:
-                # openpyxl
-                rows = getattr(obj, 'max_row', 1_000_000)
-            self.total = rows * 1024
-            self.tell = lambda: getattr(obj, '_current_row', 1) * 1024
+            self.tell = lambda: 0
+            self.byte_total = None
 
-    def update(self):
-        if not self.total:
+        self.row_total = row_total
+
+    def current(self) -> int:
+        try:
+            return self.tell()
+        except Exception:
+            return 0
+
+    def update(self, row_num: int) -> str:
+        if self.byte_total is not None:
+            # Byte-based progress
+            pos = self.current()
+            if self.byte_total == 0:
+                return ""
+            pct = pos / self.byte_total
+            current_val = pos // 1024
+            total_val = self.byte_total // 1024
+            unit = "K"
+        elif self.row_total is not None:
+            # Row-based progress
+            if self.row_total == 0:
+                return ""
+            pct = row_num / self.row_total
+            current_val = row_num
+            total_val = self.row_total
+            unit = ""
+        else:
             return ""
-        pos = self.tell()
-        pct = pos / self.total
-        filled = round(20 * pct)
+
+        filled = max(0, min(20, round(20 * pct)))
         bar = "█" * filled + "░" * (20 - filled)
-        return f"{bar} {pos // 1024:,}K/{self.total // 1024:,}K"
+        return f"{bar} {current_val:,}{unit}/{total_val:,}{unit}"
 
 
 class Reader(ABC):
@@ -236,6 +232,10 @@ class Reader(ABC):
     * ``_cleanup()`` - Release resources (file handles, etc.)
     """
 
+    # Class constants for "big" thresholds for adding progress tracking
+    BIG_ROW_THRESHOLD = 10_000  # Show progress for >10k rows
+    BIG_BYTE_THRESHOLD = 5 * 1024 * 1024  # Show progress for >5MB files
+
     def __init__(self,
                  add_rownum: bool = True,
                  clean_headers: Clean = None,
@@ -288,10 +288,12 @@ class Reader(ABC):
         self.max_records = max_records
         self.return_type = return_type
         self._record_class = None
+
         self._raw_headers: Optional[List[str]] = headers
         self._headers: List[str] = []
         self._headers_initialized: bool = False
         self._data_iter: Optional[Iterator[List[Any]]] = None
+        self._total_records = 0         # used by progress tracker when we know the number of rows ahead of time (Excel, DataFrames)
         self._trackable = None          # used by progress tracker
         self._prog: _Progress = None    # progress tracker _Progress object
         self._big: bool = False         # True if source > 5MB (adds progress bar)
@@ -315,9 +317,13 @@ class Reader(ABC):
             self._setup_record_class()
         if not self._start_time:
             self._start_time = time.monotonic()
-        if self._prog is None and self._trackable is not None:
-            self._prog = _Progress(self._trackable)
-            self._big = self._prog.total > 5_242_880
+        if self._prog is None:
+            if self._trackable and hasattr(self._trackable, 'tell'):
+                self._prog = _Progress(self._trackable)
+                self._big = self._prog.byte_total is not None and self._prog.byte_total > self.BIG_BYTE_THRESHOLD
+            elif hasattr(self, '_total_rows') and self._total_rows is not None:
+                self._prog = _Progress(row_total=self._total_rows)
+                self._big = self._total_rows > self.BIG_ROW_THRESHOLD
 
         try:
             row_data = self._read_next_row()
@@ -325,7 +331,7 @@ class Reader(ABC):
             took = time.monotonic() - self._start_time
             rate = self._row_num / took if took else 0
             if self._big:
-                print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} ✅")
+                print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
             print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
             logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
             raise  # ← let for-loop end
@@ -333,7 +339,7 @@ class Reader(ABC):
         self._row_num += 1
 
         if self._big and (self._row_num == 500 or self._row_num % 50_000 == 0):
-            print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update()} "
+            print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
                   f"({self._row_num:,})", end="", flush=True)
 
         return self._create_record(row_data)
