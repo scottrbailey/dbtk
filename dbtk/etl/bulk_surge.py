@@ -5,6 +5,7 @@ import logging
 import subprocess
 import os
 import tempfile
+import queue
 from pathlib import Path
 from io import TextIOWrapper
 from textwrap import dedent
@@ -18,13 +19,39 @@ from ..record import Record
 logger = logging.getLogger(__name__)
 
 
+class DequeBuffer:
+    """File-like queue buffer for streaming to copy_expert."""
+
+    def __init__(self, max_rows = 50_000):
+        self._queue = queue.Queue(maxsize=max_rows)
+        self.closed = False
+
+    def write(self, data):
+        self._queue.put(data)
+
+    def read(self, size=-1):
+        if self.closed and self._queue.empty():
+            return ''  # EOF
+
+        try:
+            # Block for up to 0.1 seconds waiting for data
+            return self._queue.get(timeout=0.1)
+        except queue.Empty:
+            # If closed and empty, EOF. Otherwise keep trying
+            if self.closed:
+                return ''
+            return self.read(size)  # Retry
+
+    def close(self):
+        self.closed = True
+
 class BulkSurge(BaseSurge):
     """
     Lightning-fast native bulk loading using COPY, bcp, sqlldr, etc.
     Zero temp files when possible. Streaming. Memory-safe.
     """
 
-    def __init__(self, table, batch_size: int = 50_000, pass_through: bool = False):
+    def __init__(self, table, batch_size: int = 10_000, pass_through: bool = False):
         super().__init__(table, batch_size=batch_size, pass_through=pass_through)
         path = None
         # Make sure Table columns are compatible with bulk processing
@@ -62,24 +89,37 @@ class BulkSurge(BaseSurge):
             raise NotImplementedError(f"BulkSurge not supported for {db_type}")
 
     def _load_postgres(self, records: Iterable[Record]) -> int:
+        import threading
+
         _ = self.table.get_sql('insert')
         cols = ", ".join(self.table._param_config['insert'])
-        sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N', ESCAPE '\\')"
+        sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N')"
 
-        logger.debug(f"Running copy_expert with: {sql}")
+        buf = DequeBuffer(max_rows=self.batch_size * 3)
+        exception = None
 
-        # Create a writable stream
-        copy_stream = io.StringIO()
-        # Execute COPY, streaming into our StringIO
-        self.cursor.copy_expert(sql, copy_stream)
-        # Reset to beginning and use CSVWriter
-        copy_stream.seek(0)
-        writer = CSVWriter(data=None, file=copy_stream, write_headers=False, null_string='\\N')
+        def writer_thread():
+            nonlocal exception
+            try:
+                writer = CSVWriter(data=None, file=buf, write_headers=False, null_string='\\N')
+                for batch in self.batched(records):
+                    writer.write_batch(batch)
+            except Exception as e:
+                exception = e
+            finally:
+                buf.close()
 
-        for batch in self.batched(records):
-            writer.write_batch(batch)
+        thread = threading.Thread(target=writer_thread, daemon=True)
+        thread.start()
+
+        self.cursor.copy_expert(sql, buf)
+        thread.join()
+
+        if exception:
+            raise exception
 
         return self.total_loaded
+
 
     def _load_sqlserver(self, records: Iterable[Record]) -> int:
         conn = self.cursor.connection
@@ -201,13 +241,13 @@ class BulkSurge(BaseSurge):
 
     def dump(self, records: Iterable[Record],
              file_name: str = None,
-             include_headers: bool = True,
+             write_headers: bool = True,
              delimiter: str = ",",
              quotechar: str = '"',
              encoding: str = 'utf-8-sig') -> int:
         path = self._resolve_file_path(file_name)
         with open(path, "w", encoding=encoding, newline='') as fp:
-            writer = CSVWriter(data=None, file=fp, include_headers=include_headers, null_string='\\N',
+            writer = CSVWriter(data=None, file=fp, write_headers=write_headers, null_string='\\N',
                                delimiter=delimiter, quotechar=quotechar)
             for batch in self.batched(records):
                 writer.write_batch(batch)
