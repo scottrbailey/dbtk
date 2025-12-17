@@ -322,23 +322,6 @@ class TestExcelWriter:
         assert 'First' in wb.sheetnames
         assert 'Second' in wb.sheetnames
 
-    def test_overwrite_sheet_true(self, tmp_path, sample_records):
-        """Test overwrite_sheet=True replaces existing sheet."""
-        output_file = tmp_path / "output.xlsx"
-
-        # Write initial data
-        to_excel(sample_records, output_file, sheet='Data')
-
-        # Overwrite with less data
-        to_excel(sample_records[:3], output_file, sheet='Data', overwrite_sheet=True)
-
-        from openpyxl import load_workbook
-        wb = load_workbook(output_file)
-        ws = wb['Data']
-
-        # Should have 3 data rows + 1 header
-        assert ws.max_row == 4
-
     def test_date_type_preservation(self, tmp_path, sample_records):
         """Test that dates are written as date types in Excel."""
         output_file = tmp_path / "output.xlsx"

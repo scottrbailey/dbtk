@@ -15,4 +15,4 @@ prepared_query = cur.prepare_file(QUERY_PATH)
 for region in regions:
     prepared_query.execute(region)
     # Generates an Excel file with tabs for each region
-    dbtk.writers.to_excel(prepared_query, 'StatesByRegion.xlsx', sheet=region['region'], overwrite_sheet=True)
+    dbtk.writers.to_excel(prepared_query, 'StatesByRegion.xlsx', sheet=region['region'])
