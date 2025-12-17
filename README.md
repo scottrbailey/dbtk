@@ -67,6 +67,7 @@ with dbtk.connect('fire_nation_db') as db:
     cursor = db.cursor()
 
     # SQL with named parameters - works on ANY database
+    # Supports both :named and %(pyformat)s parameter styles!
     params = {
         'min_rank': 'Captain',
         'start_date': '2024-01-01',
@@ -74,7 +75,7 @@ with dbtk.connect('fire_nation_db') as db:
         'status': 'active'
     }
 
-    # DBTK converts parameters to match database style automatically
+    # DBTK auto-detects parameter format and converts to match database
     cursor.execute_file('queries/monthly_report.sql', params)
     monthly_data = cursor.fetchall()
 
