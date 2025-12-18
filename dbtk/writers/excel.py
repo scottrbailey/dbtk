@@ -29,97 +29,27 @@ MIDNIGHT = time(0, 0)
 
 class ExcelWriter(BatchWriter):
     """
-    Stateful Excel writer with multi-sheet support and batch streaming capabilities.
+    Stateful Excel writer using openpyxl.
 
-    ExcelWriter extends BatchWriter to provide high-performance Excel file generation using
-    openpyxl. The workbook remains open across multiple write_batch() calls, enabling
-    efficient multi-sheet reports and large dataset streaming without memory overhead.
+    Keeps the workbook open across multiple write_batch() calls and saves only on context exit.
+    Designed for both single-sheet legacy use and multi-sheet reports.
 
-    Key Features
-    ------------
-    * **Stateful workbook** - Opens once, writes multiple times, saves on exit
-    * **Multi-sheet support** - Write to different sheets in a single workbook
-    * **Batch streaming** - Append data incrementally without loading entire dataset
-    * **Smart headers** - Automatically writes headers only when sheet is empty
-    * **Type preservation** - Maintains dates, datetimes, and numeric types
-    * **Auto-formatting** - Applies date/datetime styles and adjusts column widths
-    * **Append mode** - Load existing workbooks and add/update sheets
+    Usage examples:
 
-    The writer can load existing .xlsx files and append new sheets or add rows to
-    existing sheets. Headers are only written if the target sheet is empty (first
-    cell of row 1 is None).
+    # Legacy single-sheet
+    with ExcelWriter('report.xlsx') as writer:
+        writer.write_batch(cursor)  # goes to sheet 'Data'
 
-    Parameters
-    ----------
-    file : str or Path
-        Output Excel filename (.xlsx). If file exists, it will be loaded and
-        modified. If it doesn't exist, a new workbook will be created.
-    sheet_name : str, optional
-        Default sheet name for write_batch() calls that don't specify a sheet.
-        If not provided, defaults to 'Data'.
-    write_headers : bool, default True
-        Whether to write column headers. Headers are only written when the
-        target sheet is empty (determined by checking cell A1).
+    # Multi-sheet report
+    with ExcelWriter('report.xlsx', sheet_name='Summary') as writer:
+        writer.write_batch(summary_data, sheet_name='Summary')
+        writer.write_batch(users_data, sheet_name='Users')
+        writer.write_batch(orders_data, sheet_name='Orders')
 
-    Attributes
-    ----------
-    workbook : openpyxl.Workbook
-        The active workbook instance, kept open during the context manager lifecycle.
-    active_sheet : str
-        The current default sheet name for write operations.
-    columns : List[str]
-        Column names detected from the first batch of data.
-    row_count : int
-        Total number of data rows written across all batches and sheets.
-
-    Examples
-    --------
-    **Single-sheet export (legacy compatibility)**::
-
-        with ExcelWriter('report.xlsx') as writer:
-            writer.write_batch(cursor)  # Creates 'Data' sheet
-
-    **Multi-sheet report**::
-
-        with ExcelWriter('quarterly_report.xlsx') as writer:
-            writer.write_batch(summary_data, sheet_name='Summary')
-            writer.write_batch(revenue_data, sheet_name='Revenue')
-            writer.write_batch(expenses_data, sheet_name='Expenses')
-
-    **Streaming large datasets in batches**::
-
-        with ExcelWriter('large_export.xlsx') as writer:
-            for batch in surge.batched(reader):
-                writer.write_batch(batch, sheet_name='Data')
-
-    **Appending to existing workbook**::
-
-        # First run creates file
-        with ExcelWriter('monthly.xlsx') as writer:
-            writer.write_batch(january_data, sheet_name='January')
-
-        # Later run appends new sheet
-        with ExcelWriter('monthly.xlsx') as writer:
-            writer.write_batch(february_data, sheet_name='February')
-
-    **Using with convenience function**::
-
-        to_excel(cursor, 'simple_export.xlsx', sheet='Results')
-
-    Notes
-    -----
-    * ExcelWriter preserves native types (dates, numbers) unlike CSV writers
-    * Column widths are auto-adjusted based on first 15 rows of data
-    * Maximum column width is capped at 60 characters for readability
-    * Named styles (date_style, datetime_style, hyperlink_style) are registered on init
-    * The workbook is saved only on context manager exit (__exit__)
-    * For very large datasets (>100K rows), consider using CSV or database bulk loads
-
-    See Also
-    --------
-    LinkedExcelWriter : Advanced writer with internal and external hyperlinking
-    BatchWriter : Base class providing streaming/batch capabilities
-    to_excel : Convenience function for simple single-sheet exports
+    # Streaming / batch mode
+    with ExcelWriter('large.xlsx') as writer:
+        for batch in large_generator:
+            writer.write_batch(batch, sheet_name='Data')  # appends to 'Data'
     """
 
     accepts_file_handle = False
@@ -282,54 +212,14 @@ class ExcelWriter(BatchWriter):
         sheet_name: Optional[str] = None,
     ) -> None:
         """
-        Write a batch of records to a worksheet.
-
-        This is the primary method for writing data to Excel files. It can be called
-        multiple times to append data to the same sheet or write to different sheets
-        within the same workbook.
+        Write a batch of data to a sheet.
 
         Parameters
         ----------
         data : Iterable[RecordLike]
-            Data to write. Accepts cursors, lists of Record objects, lists of dicts,
-            or lists of tuples. Columns are auto-detected from the first record.
+            The data batch
         sheet_name : str, optional
-            Target worksheet name. If None, uses the active_sheet set during __init__,
-            or defaults to 'Data'. Once set, becomes the new active_sheet for
-            subsequent calls.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        RuntimeError
-            If workbook was not initialized properly.
-        ValueError
-            If columns cannot be determined from data.
-
-        Notes
-        -----
-        * Headers are written only if the sheet is empty (cell A1 is None)
-        * If the sheet already exists, data is appended starting after the last row
-        * Column detection happens on first batch - subsequent batches must match columns
-        * Native types (dates, numbers) are preserved with appropriate formatting
-        * Row count is tracked in self._row_num across all batches
-
-        Examples
-        --------
-        **Writing multiple batches to same sheet**::
-
-            with ExcelWriter('output.xlsx') as writer:
-                for batch in batched_reader:
-                    writer.write_batch(batch, sheet_name='Data')
-
-        **Writing different data to different sheets**::
-
-            with ExcelWriter('report.xlsx') as writer:
-                writer.write_batch(summary, sheet_name='Summary')
-                writer.write_batch(details, sheet_name='Details')
+            Target sheet. If None, uses active_sheet or defaults to 'Data'
         """
         if self.workbook is None:
             raise RuntimeError("Workbook not initialized")
@@ -343,8 +233,7 @@ class ExcelWriter(BatchWriter):
         row_count = self._write_to_worksheet(
             data=data,
             worksheet=worksheet,
-            write_headers=self.write_headers,
-            target_sheet_name=target_sheet,
+            write_headers=self.write_headers
         )
 
         self._row_num += row_count

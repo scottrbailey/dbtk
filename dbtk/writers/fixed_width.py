@@ -144,7 +144,7 @@ class FixedWidthWriter(BatchWriter):
                     )
 
             # Extract values as strings
-            values = self._extract_row_values(record)
+            values = self._row_to_tuple(record)
 
             line = ''
             for i, (value, width) in enumerate(zip(values, self.column_widths)):
@@ -229,7 +229,7 @@ class FixedWidthWriter(BatchWriter):
 
 def to_fixed_width(data,
                    column_widths: Sequence[int],
-                   filename: Optional[Union[str, Path]] = None,
+                   file: Optional[Union[str, Path]] = None,
                    encoding: str = 'utf-8',
                    right_align_numbers: bool = True,
                    truncate_overflow: bool = True,
@@ -240,7 +240,7 @@ def to_fixed_width(data,
     Args:
         data: Cursor object or list of records
         column_widths: List of column widths in characters
-        filename: Output filename. If None, writes to stdout
+        file: Output filename. If None, writes to stdout
         encoding: File encoding
         right_align_numbers: Whether to right-align numeric values
         truncate_overflow: Whether to truncate values that exceed column width
@@ -257,7 +257,7 @@ def to_fixed_width(data,
     writer = FixedWidthWriter(
         data=data,
         column_widths=column_widths,
-        filename=filename,
+        file=file,
         encoding=encoding,
         right_align_numbers=right_align_numbers,
         truncate_overflow=truncate_overflow,
