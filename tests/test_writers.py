@@ -272,6 +272,55 @@ class TestCSVWriter:
         assert str(sample_records[0]['trainee_id']) == records_back[0]['trainee_id']
         assert sample_records[0]['monk_name'] == records_back[0]['monk_name']
 
+    def test_csv_write_batch_multiple_calls(self, tmp_path, sample_records):
+        """Test CSVWriter.write_batch() called multiple times."""
+        output_file = tmp_path / "output.csv"
+
+        with CSVWriter(data=None, file=output_file) as writer:
+            # Write in batches
+            writer.write_batch(sample_records[:5])
+            writer.write_batch(sample_records[5:])
+
+        # Read back
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
+            records_back = list(reader)
+
+        assert len(records_back) == 10
+
+    def test_csv_write_batch_headers_only_once(self, tmp_path, sample_records):
+        """Test CSV headers written only on first batch."""
+        output_file = tmp_path / "output.csv"
+
+        with CSVWriter(data=None, file=output_file) as writer:
+            writer.write_batch(sample_records[:3])
+            writer.write_batch(sample_records[3:6])
+            writer.write_batch(sample_records[6:])
+
+        # Check file content
+        with open(output_file, encoding='utf-8-sig') as f:
+            lines = f.readlines()
+
+        # Should have 1 header line + 10 data lines
+        assert len(lines) == 11
+        assert 'trainee_id' in lines[0]
+
+    def test_csv_write_batch_streaming(self, tmp_path, sample_records):
+        """Test CSV streaming with batches."""
+        output_file = tmp_path / "output.csv"
+
+        # Open file handle and use streaming mode
+        with open(output_file, 'w', encoding='utf-8-sig', newline='') as fp:
+            writer = CSVWriter(data=None, file=fp)
+            for i in range(0, len(sample_records), 2):
+                batch = sample_records[i:i+2]
+                writer.write_batch(batch)
+
+        # Read back and verify
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
+            records_back = list(reader)
+
+        assert len(records_back) == 10
+
 
 class TestExcelWriter:
     """Tests specific to Excel writer."""
@@ -337,6 +386,130 @@ class TestExcelWriter:
 
         # Should be a datetime object, not string
         assert isinstance(birth_date_cell.value, datetime)
+
+    def test_write_batch_multiple_calls_same_sheet(self, tmp_path, sample_records):
+        """Test calling write_batch multiple times appends to same sheet."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(output_file) as writer:
+            # Write first batch
+            writer.write_batch(sample_records[:5], sheet_name='Data')
+            # Write second batch
+            writer.write_batch(sample_records[5:], sheet_name='Data')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+        ws = wb['Data']
+
+        # Should have headers + 10 data rows
+        assert ws.max_row == 11
+        assert ws.cell(1, 1).value == 'trainee_id'
+        assert ws.cell(2, 1).value == 1
+        assert ws.cell(11, 1).value == 10
+
+    def test_write_batch_multiple_sheets(self, tmp_path, sample_records):
+        """Test write_batch to multiple different sheets in one workbook."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(output_file) as writer:
+            writer.write_batch(sample_records[:5], sheet_name='First')
+            writer.write_batch(sample_records[5:], sheet_name='Second')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'First' in wb.sheetnames
+        assert 'Second' in wb.sheetnames
+
+        # Check row counts
+        assert wb['First'].max_row == 6  # headers + 5 data
+        assert wb['Second'].max_row == 6  # headers + 5 data
+
+    def test_write_batch_headers_only_once(self, tmp_path, sample_records):
+        """Test that headers are written only on first batch, not subsequent."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(output_file) as writer:
+            writer.write_batch(sample_records[:3], sheet_name='Data')
+            writer.write_batch(sample_records[3:6], sheet_name='Data')
+            writer.write_batch(sample_records[6:], sheet_name='Data')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+        ws = wb['Data']
+
+        # Should have exactly 1 header row + 10 data rows
+        assert ws.max_row == 11
+
+        # Check first row is headers
+        assert ws.cell(1, 1).value == 'trainee_id'
+
+        # Check second row is data (not duplicate headers)
+        assert ws.cell(2, 1).value == 1
+
+    def test_write_batch_streaming_mode(self, tmp_path, sample_records):
+        """Test streaming mode with write_batch (data=None in init)."""
+        output_file = tmp_path / "output.xlsx"
+
+        # Simulate streaming: no data in __init__
+        with ExcelWriter(output_file) as writer:
+            # Write in batches
+            for i in range(0, len(sample_records), 3):
+                batch = sample_records[i:i+3]
+                writer.write_batch(batch, sheet_name='Stream')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+        ws = wb['Stream']
+
+        # Should have all records
+        assert ws.max_row == 11  # headers + 10 data rows
+
+    def test_write_batch_append_to_existing_workbook(self, tmp_path, sample_records):
+        """Test appending new sheet to existing workbook."""
+        output_file = tmp_path / "output.xlsx"
+
+        # First session: create workbook with one sheet
+        with ExcelWriter(output_file) as writer:
+            writer.write_batch(sample_records[:5], sheet_name='FirstRun')
+
+        # Second session: append another sheet
+        with ExcelWriter(output_file) as writer:
+            writer.write_batch(sample_records[5:], sheet_name='SecondRun')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'FirstRun' in wb.sheetnames
+        assert 'SecondRun' in wb.sheetnames
+        assert wb['FirstRun'].max_row == 6
+        assert wb['SecondRun'].max_row == 6
+
+    def test_write_batch_default_sheet_name(self, tmp_path, sample_records):
+        """Test that default sheet name 'Data' is used when not specified."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(output_file) as writer:
+            writer.write_batch(sample_records)
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'Data' in wb.sheetnames
+
+    def test_write_batch_custom_active_sheet(self, tmp_path, sample_records):
+        """Test using sheet_name parameter in __init__ as default."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(output_file, sheet_name='MySheet') as writer:
+            # Don't specify sheet_name - should use 'MySheet'
+            writer.write_batch(sample_records)
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'MySheet' in wb.sheetnames
+        assert wb['MySheet'].max_row == 11
 
 
 class TestFixedWidthWriter:
