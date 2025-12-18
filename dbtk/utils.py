@@ -135,68 +135,43 @@ def wrap_at_comma(text: str) -> str:
 def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, ...]]:
     """
     Process SQL parameters according to the specified paramstyle.
-
-    Supports SQL input in either 'named' (:param) or 'pyformat' (%(param)s) format.
-    Auto-detects the input format and converts to the target paramstyle.
+    Always extracts parameter names; converts SQL format if needed.
 
     Parameters:
-        sql: SQL query with named (:name) or pyformat (%(name)s) parameters
-        paramstyle: The desired parameter style for the resulting SQL string
+        sql: The SQL query string containing named parameters in the format ':name'.
+        paramstyle: The desired parameter style for the resulting SQL string.
 
     Returns:
         A tuple containing the processed SQL query string and a tuple of all named parameters
         extracted in the order in which they appear in the original query.
 
     Raises:
-        ValueError: If the SQL contains mixed parameter formats or unsupported paramstyle.
-
-    Examples:
-        >>> # Named input, convert to pyformat
-        >>> process_sql_parameters("SELECT * FROM users WHERE id = :user_id", "pyformat")
-        ("SELECT * FROM users WHERE id = %(user_id)s", ('user_id',))
-
-        >>> # Pyformat input, convert to qmark
-        >>> process_sql_parameters("SELECT * FROM users WHERE id = %(user_id)s", "qmark")
-        ("SELECT * FROM users WHERE id = ?", ('user_id',))
+        ValueError: If the provided paramstyle is not supported.
     """
-    # Detect input format
-    has_named = bool(re.search(r':(\w+)', sql))
-    has_pyformat = bool(re.search(r'%\((\w+)\)s', sql))
+    # Extract parameter names in order of appearance
+    param_names = tuple(re.findall(r':(\w+)', sql))
 
-    if has_named and has_pyformat:
-        raise ValueError(
-            "SQL contains mixed parameter formats. "
-            "Use either :named or %(pyformat)s, not both."
-        )
-
-    # Determine source pattern
-    if has_pyformat:
-        source_pattern = r'%\((\w+)\)s'
-    elif has_named:
-        source_pattern = r':(\w+)'
-    else:
-        # No parameters found - return as-is
-        return sql, tuple()
-
-    # Extract parameter names using detected pattern
-    param_names = tuple(re.findall(source_pattern, sql))
-
-    # Convert to target paramstyle
     if paramstyle == ParamStyle.NAMED:
-        sql = re.sub(source_pattern, r':\1', sql)
+        # No conversion needed
+        return sql, param_names
     elif paramstyle == ParamStyle.PYFORMAT:
-        sql = re.sub(source_pattern, r'%(\1)s', sql)
+        # Convert :param to %(param)s
+        new_sql = re.sub(r':(\w+)', r'%(\1)s', sql)
+        return new_sql, param_names
     elif paramstyle == ParamStyle.QMARK:
-        sql = re.sub(source_pattern, r'?', sql)
+        # Convert :param to ?
+        new_sql = re.sub(r':(\w+)', r'?', sql)
+        return new_sql, param_names
     elif paramstyle == ParamStyle.FORMAT:
-        sql = re.sub(source_pattern, r'%s', sql)
+        # Convert :param to %s
+        new_sql = re.sub(r':(\w+)', r'%s', sql)
+        return new_sql, param_names
     elif paramstyle == ParamStyle.NUMERIC:
         counter = iter(range(1, len(param_names) + 1))
-        sql = re.sub(source_pattern, lambda m: f':{next(counter)}', sql)
+        new_sql = re.sub(r':(\w+)', lambda m: f':{next(counter)}', sql)
+        return new_sql, param_names
     else:
         raise ValueError(f"Unsupported paramstyle: {paramstyle}")
-
-    return sql, param_names
 
 def validate_identifier(identifier: str, max_length: int = 64) -> str:
     """
