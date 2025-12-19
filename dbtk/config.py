@@ -917,25 +917,19 @@ def migrate_config(source_file: str, target_file: str, new_encryption_key: str) 
     with open(target_file, 'w') as f:
         yaml.safe_dump(new_config, f, default_flow_style=False)
 
-def setup_config(location: Optional[str] = None) -> None:
+def setup_config() -> None:
     """
     Interactive setup wizard for DBTK configuration.
 
     This command guides you through:
+    - Choosing config file location (project vs user)
     - Creating a config file from dbtk_sample.yml
     - Setting up encryption (keyring or environment variable)
     - Adding database connections
 
-    Args:
-        location: Where to create config ('project' or 'user'). If None, prompts interactively.
-
     Example:
-        # Interactive setup (recommended)
+        # Interactive setup
         dbtk config-setup
-
-        # Create in specific location
-        dbtk config-setup --location user
-        dbtk config-setup --location project
     """
     import getpass
     import shutil
@@ -946,12 +940,11 @@ def setup_config(location: Optional[str] = None) -> None:
     print("="*60)
 
     # Determine config file location
-    if not location:
-        print("\nWhere should I create the config file?")
-        print("  1. ./dbtk.yml (this project only)")
-        print("  2. ~/.config/dbtk.yml (all your projects) [default]")
-        choice = input("Choice [2]: ").strip()
-        location = 'project' if choice == '1' else 'user'
+    print("\nWhere should I create the config file?")
+    print("  1. ./dbtk.yml (this project only)")
+    print("  2. ~/.config/dbtk.yml (all your projects) [default]")
+    choice = input("Choice [2]: ").strip()
+    location = 'project' if choice == '1' else 'user'
 
     if location == 'project':
         config_path = Path('dbtk.yml')

@@ -117,9 +117,7 @@ def main():
     subparsers.add_parser('checkup', help='Check for dependencies and configuration issues')
 
     # config-setup
-    setup_parser = subparsers.add_parser('config-setup', help='Interactive configuration setup wizard')
-    setup_parser.add_argument('--location', choices=['project', 'user'],
-                             help="Config location: 'project' (./dbtk.yml) or 'user' (~/.config/dbtk.yml)")
+    subparsers.add_parser('config-setup', help='Interactive configuration setup wizard')
 
     # generate-key
     subparsers.add_parser('generate-key', help='Generate encryption key')
@@ -151,7 +149,7 @@ def main():
     if args.command == 'checkup':
         return checkup()
     elif args.command == 'config-setup':
-        return config.setup_config(location=args.location)
+        return config.setup_config()
     elif args.command == 'generate-key':
         return config.generate_encryption_key()
     elif args.command == 'store-key':
