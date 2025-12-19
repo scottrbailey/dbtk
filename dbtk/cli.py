@@ -116,6 +116,16 @@ def main():
     # checkup
     subparsers.add_parser('checkup', help='Check for dependencies and configuration issues')
 
+    # config-setup
+    setup_parser = subparsers.add_parser('config-setup', help='Initialize DBTK configuration')
+    setup_parser.add_argument('--interactive', '-i', action='store_true',
+                             help='Interactive setup wizard')
+    setup_parser.add_argument('--location', choices=['project', 'user'],
+                             help="Config location: 'project' (./dbtk.yml) or 'user' (~/.config/dbtk.yml)")
+    setup_parser.add_argument('--example',
+                             choices=['postgres', 'oracle', 'mysql', 'sqlserver', 'sqlite'],
+                             help='Include example connection for database type')
+
     # generate-key
     subparsers.add_parser('generate-key', help='Generate encryption key')
 
@@ -145,6 +155,12 @@ def main():
 
     if args.command == 'checkup':
         return checkup()
+    elif args.command == 'config-setup':
+        return config.setup_config(
+            interactive=args.interactive,
+            location=args.location,
+            example=args.example
+        )
     elif args.command == 'generate-key':
         return config.generate_encryption_key()
     elif args.command == 'store-key':

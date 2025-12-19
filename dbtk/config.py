@@ -916,3 +916,190 @@ def migrate_config(source_file: str, target_file: str, new_encryption_key: str) 
 
     with open(target_file, 'w') as f:
         yaml.safe_dump(new_config, f, default_flow_style=False)
+
+def setup_config(interactive: bool = False, location: Optional[str] = None, example: Optional[str] = None) -> None:
+    """
+    Initialize DBTK configuration file.
+    
+    Creates a configuration file with optional example connections. More user-friendly
+    than the automatic config creation that happens on first connect().
+    
+    Args:
+        interactive: If True, run interactive setup wizard
+        location: Where to create config ('project' or 'user'). If None, prompts or defaults to 'user'
+        example: Database type to include as example connection (postgres, oracle, mysql, sqlserver, sqlite)
+    
+    Example:
+        # Basic setup
+        dbtk config-setup
+        
+        # Interactive wizard  
+        dbtk config-setup -i
+        
+        # Create with Postgres example
+        dbtk config-setup --example postgres --location user
+    """
+    import getpass
+    
+    # Determine config file location
+    if interactive and not location:
+        print("Where should I create the config file?")
+        print("  1. ./dbtk.yml (this project only)")
+        print("  2. ~/.config/dbtk.yml (all your projects) [default]")
+        choice = input("Choice [2]: ").strip()
+        location = 'project' if choice == '1' else 'user'
+    elif not location:
+        location = 'user'
+    
+    if location == 'project':
+        config_path = Path('dbtk.yml')
+    else:
+        config_path = Path.home() / '.config' / 'dbtk.yml'
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Check if config already exists
+    if config_path.exists():
+        print(f"⚠ Config file already exists at {config_path}")
+        overwrite = input("Overwrite? [y/N]: ").strip().lower()
+        if overwrite not in ('y', 'yes'):
+            print("Cancelled.")
+            return
+    
+    # Start with basic config structure
+    config_data = {
+        'settings': {},
+        'connections': {},
+        'passwords': {}
+    }
+    
+    # Interactive mode - walk through connection setup
+    if interactive:
+        print("\n" + "="*60)
+        print("DBTK Configuration Setup")
+        print("="*60)
+        
+        add_connection = input("\nAdd a database connection? [y/N]: ").strip().lower()
+        if add_connection in ('y', 'yes'):
+            conn_name = input("Connection name: ").strip() or 'my_database'
+            
+            db_types = ['postgres', 'oracle', 'mysql', 'sqlserver', 'sqlite']
+            print(f"Database type: {', '.join(db_types)}")
+            db_type = input(f"Type [postgres]: ").strip().lower() or 'postgres'
+            
+            if db_type not in db_types:
+                print(f"Unknown type '{db_type}', using 'postgres'")
+                db_type = 'postgres'
+            
+            conn_config = {'type': db_type}
+            
+            if db_type != 'sqlite':
+                conn_config['host'] = input("Host [localhost]: ").strip() or 'localhost'
+                
+                default_ports = {
+                    'postgres': 5432,
+                    'oracle': 1521,
+                    'mysql': 3306,
+                    'sqlserver': 1433
+                }
+                default_port = default_ports.get(db_type, 5432)
+                port_input = input(f"Port [{default_port}]: ").strip()
+                conn_config['port'] = int(port_input) if port_input else default_port
+                
+                conn_config['database'] = input("Database name: ").strip() or 'mydb'
+                conn_config['user'] = input("Username: ").strip() or 'admin'
+                
+                password = getpass.getpass("Password (leave empty to skip): ")
+                if password:
+                    encrypt = input("Encrypt this password? [Y/n]: ").strip().lower()
+                    if encrypt in ('', 'y', 'yes'):
+                        # Generate and store key
+                        try:
+                            key = generate_encryption_key()
+                            if HAS_KEYRING:
+                                store_key(key)
+                                print("✓ Generated encryption key and stored in system keyring")
+                            else:
+                                print(f"✓ Generated encryption key (add to DBTK_ENCRYPTION_KEY env var):")
+                                print(f"  export DBTK_ENCRYPTION_KEY='{key}'")
+                            
+                            # Encrypt password
+                            encrypted = encrypt_password(password, key)
+                            conn_config['encrypted_password'] = encrypted
+                        except Exception as e:
+                            print(f"⚠ Encryption failed: {e}")
+                            print("Storing password in plaintext (not recommended for production)")
+                            conn_config['password'] = password
+                    else:
+                        conn_config['password'] = password
+            else:
+                # SQLite
+                db_path = input("Database file path: ").strip() or './data.db'
+                conn_config['database'] = db_path
+            
+            config_data['connections'][conn_name] = conn_config
+    
+    # Non-interactive with example
+    elif example:
+        example_configs = {
+            'postgres': {
+                'type': 'postgres',
+                'host': 'localhost',
+                'port': 5432,
+                'database': 'mydb',
+                'user': 'postgres',
+                'password': 'changeme'
+            },
+            'oracle': {
+                'type': 'oracle',
+                'host': 'localhost',
+                'port': 1521,
+                'database': 'ORCL',
+                'user': 'system',
+                'password': 'changeme'
+            },
+            'mysql': {
+                'type': 'mysql',
+                'host': 'localhost',
+                'port': 3306,
+                'database': 'mydb',
+                'user': 'root',
+                'password': 'changeme'
+            },
+            'sqlserver': {
+                'type': 'sqlserver',
+                'host': 'localhost',
+                'port': 1433,
+                'database': 'master',
+                'user': 'sa',
+                'password': 'changeme'
+            },
+            'sqlite': {
+                'type': 'sqlite',
+                'database': './data.db'
+            }
+        }
+        config_data['connections'][f'my_{example}'] = example_configs[example]
+    
+    # Write config file
+    with open(config_path, 'w') as f:
+        yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
+    
+    print(f"\n✓ Created config at {config_path}")
+    
+    # Show next steps
+    if config_data['connections']:
+        conn_names = list(config_data['connections'].keys())
+        has_plaintext = any('password' in c for c in config_data['connections'].values())
+        
+        print("\nNext steps:")
+        if has_plaintext:
+            print(f"  1. Edit {config_path} to update connection details")
+            print(f"  2. Encrypt passwords: dbtk encrypt-config")
+            print(f"  3. Test connection: python -c \"import dbtk; db = dbtk.connect('{conn_names[0]}')\"")
+        else:
+            print(f"  1. Edit {config_path} to update connection details")
+            print(f"  2. Test connection: python -c \"import dbtk; db = dbtk.connect('{conn_names[0]}')\"")
+    else:
+        print("\nTo add a connection, edit the config file:")
+        print(f"  {config_path}")
+        print("\nOr run: dbtk config-setup -i")
