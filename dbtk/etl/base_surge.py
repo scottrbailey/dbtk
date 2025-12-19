@@ -134,7 +134,7 @@ class BaseSurge(ABC):
              operation: Optional[str] = 'insert',
              raise_error: bool = True) -> int:
         """ Load records into database. """
-        self.operation = operation
+        pass
 
     def __enter__(self):
         return self
