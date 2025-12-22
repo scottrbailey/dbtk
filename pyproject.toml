@@ -29,33 +29,38 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14"
 ]
-dependencies = ["PyYAML>=6.0",
-    "importlib-metadata>=1.0;python_version<'3.8'"]
+dependencies = [
+    "PyYAML>=6.0",
+    "cryptography>=3.4.8",
+    "importlib-metadata>=1.0;python_version<'3.8'"
+]
 
 [project.optional-dependencies]
-encryption = ["cryptography>=3.4.8", "keyring>=23.0.0"]
+encryption = ["keyring>=23.0.0"]
 formats = ["lxml>=4.6.0", "openpyxl>=3.0.0"]
-recommended = ["cryptography>=3.4.8",
+recommended = [
     "keyring>=23.0.0",
     "lxml>=4.6.0",
     "openpyxl>=3.0.0",
     "phonenumbers>=8.12.0",
     "python-dateutil>=2.8.0",
-    "usaddress>=0.5.11"]
+    "usaddress>=0.5.11"
+]
 postgresql = ["psycopg2-binary>=2.9", "psycopg[binary]>=3.1"]
 oracle = ["oracledb>=1.0;python_version>='3.7'",  # For modern systems
     "cx_Oracle>=8.0;python_version<'3.7'",  # Fallback for 3.6
 ]
 mysql = ["pymysql>=1.0"]
 sqlserver = ["pyodbc>=4.0.21,<5.0"]
-all = ["cryptography>=3.4.8",
+all = [
     "keyring>=23.0.0",
     "lxml>=4.6.0",
     "openpyxl>=3.0.0",
     "xlrd>=1.2.0",
     "phonenumbers>=8.12.0",
     "python-dateutil>=2.8.0",
-    "usaddress>=0.5.11"]
+    "usaddress>=0.5.11"
+]
 dev = ["pytest>=6.0", "pytest-cov>=2.10"]
 
 [project.scripts]
