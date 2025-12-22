@@ -3,13 +3,13 @@
 import argparse
 import importlib.util
 import sys
-from pathlib import Path
 from .database import _get_all_drivers
 from . import config
 
 try:
     from importlib.metadata import metadata, requires
 except ImportError:
+    # backport to older versions
     from importlib_metadata import metadata, requires
 
 
