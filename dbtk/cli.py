@@ -3,13 +3,13 @@
 import argparse
 import importlib.util
 import sys
-from pathlib import Path
 from .database import _get_all_drivers
 from . import config
 
 try:
     from importlib.metadata import metadata, requires
 except ImportError:
+    # backport to older versions
     from importlib_metadata import metadata, requires
 
 
@@ -116,6 +116,9 @@ def main():
     # checkup
     subparsers.add_parser('checkup', help='Check for dependencies and configuration issues')
 
+    # config-setup
+    subparsers.add_parser('config-setup', help='Interactive configuration setup wizard')
+
     # generate-key
     subparsers.add_parser('generate-key', help='Generate encryption key')
 
@@ -145,6 +148,8 @@ def main():
 
     if args.command == 'checkup':
         return checkup()
+    elif args.command == 'config-setup':
+        return config.setup_config()
     elif args.command == 'generate-key':
         return config.generate_encryption_key()
     elif args.command == 'store-key':

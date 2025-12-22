@@ -9,7 +9,7 @@ from textwrap import dedent
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
-
+from cryptography.fernet import Fernet
 from .defaults import settings # noqa: F401
 from .database import Database, _get_params_for_database
 from .cursors import Cursor
@@ -18,12 +18,6 @@ try:
     import yaml
 except ImportError:
     raise ImportError("PyYAML is required. Install with: pip install PyYAML")
-
-try:
-    from cryptography.fernet import Fernet
-    HAS_CRYPTO = True
-except ImportError:
-    HAS_CRYPTO = False
 
 try:
     import keyring
@@ -82,7 +76,6 @@ def diagnose_config(config_file: Optional[str] = None) -> List[Tuple[str, str]]:
         return results
 
     # 2. Deps
-    results.append(('✓', "cryptography ready") if HAS_CRYPTO else ('✗', "cryptography missing"))
     results.append(('✓', "keyring ready") if HAS_KEYRING else ('?', "keyring optional"))
 
     # 3. Keys — safe peek, no decrypt
@@ -430,20 +423,18 @@ class ConfigManager:
                     "Run: python -c \"import dbtk.config as c, keyring; "
                     "keyring.set_password('dbtk', 'encryption_key', c.generate_encryption_key())\""
                 )
-        if HAS_CRYPTO:
-            if HAS_KEYRING:
-                msg = dedent("""\
-                Encryption key not found in environment or keyring.
-                Run: `dbtk store-key` to generate and store a new encryption key in the keyring.
-                """)
-            else:
-                msg = dedent("""\
-                Encryption key not found in environment or keyring.
-                Run `dbtk generate-key` to generate and a new encryption key
-                then in the DBTK_ENCRYPTION_KEY environment variable.""")
-            raise ValueError(msg)
+
+        if HAS_KEYRING:
+            msg = dedent("""\
+            Encryption key not found in environment or keyring.
+            Run: `dbtk store-key` to generate and store a new encryption key in the keyring.
+            """)
         else:
-            raise ValueError("Encryption not available. Install cryptography package to enable encryption.")
+            msg = dedent("""\
+            Encryption key not found in environment or keyring.
+            Run `dbtk generate-key` to generate and a new encryption key
+            then in the DBTK_ENCRYPTION_KEY environment variable.""")
+        raise ValueError(msg)
 
     def _get_fernet(self) -> Fernet:
         """Get or create Fernet instance for encryption/decryption."""
@@ -641,9 +632,6 @@ _config_manager: Optional[ConfigManager] = None
 
 def store_key(key: Optional[str] = None, force: bool = False) -> None:
     """CLI utility to store encryption key in system keyring."""
-    if not HAS_CRYPTO:
-        raise ValueError("Encryption not available. Install cryptography package to enable encryption.")
-
     if not HAS_KEYRING:
         raise ValueError("Keyring not available. Install keyring package to store key in system keyring.")
 
@@ -684,9 +672,7 @@ def store_key(key: Optional[str] = None, force: bool = False) -> None:
 
 
 def _generate_encryption_key() -> str:
-    """
-
-    """
+    """ Generate encryption key with Fernet """
     return Fernet.generate_key().decode()
 
 
@@ -916,3 +902,272 @@ def migrate_config(source_file: str, target_file: str, new_encryption_key: str) 
 
     with open(target_file, 'w') as f:
         yaml.safe_dump(new_config, f, default_flow_style=False)
+
+def setup_config() -> None:
+    """
+    Interactive setup wizard for DBTK configuration.
+
+    This command guides you through:
+    - Choosing config file location (project vs user)
+    - Creating a config file from dbtk_sample.yml
+    - Setting up encryption (keyring or environment variable)
+    - Adding database connections
+
+    Example:
+        # Interactive setup
+        dbtk config-setup
+    """
+    import getpass
+    import shutil
+    import os
+
+    print("\n" + "="*60)
+    print("DBTK Configuration Setup Wizard")
+    print("="*60)
+
+    # Determine config file location
+    print(dedent("""\
+    \nWhere should config file be created?
+      1. ~/.config/dbtk.yml (all your projects) [default]
+      2. ./dbtk.yml (this project only) 
+    """))
+    choice = input("Choice [1]: ").strip()
+    location = 'project' if choice == '2' else 'user'
+    if location == 'project':
+        config_path = Path('dbtk.yml')
+    else:
+        config_path = Path.home() / '.config' / 'dbtk.yml'
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Check if config already exists
+    if config_path.exists():
+        print(f"\n⚠ Config file already exists at {config_path}")
+        overwrite = input("Overwrite? [y/N]: ").strip().lower()
+        if overwrite not in ('y', 'yes'):
+            print("Cancelled.")
+            return
+
+    # Copy dbtk_sample.yml to target location
+    sample_path = Path(__file__).parent / 'dbtk_sample.yml'
+    if not sample_path.exists():
+        print(f"⚠ Sample config not found at {sample_path}")
+        print("Cannot continue without sample file.")
+        return
+
+    shutil.copy(sample_path, config_path)
+    print(f"\n✓ Created config from sample at {config_path}")
+
+    # Also copy sample to ~/.config for reference
+    user_sample_path = Path.home() / '.config' / 'dbtk_sample.yml'
+    user_sample_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(sample_path, user_sample_path)
+    print(f"✓ Copied sample to {user_sample_path} for reference")
+
+    # Check encryption setup
+    print("\n" + "-"*60)
+    print("Encryption Setup")
+    print("-"*60)
+
+    # Check if encryption key already exists
+    has_env_key = 'DBTK_ENCRYPTION_KEY' in os.environ
+    has_keyring_key = False
+
+    if HAS_KEYRING:
+        try:
+            keyring_key = keyring.get_password('dbtk', 'encryption_key')
+            has_keyring_key = keyring_key is not None
+        except:
+            # keyring is available create and store
+            has_keyring_key = False
+
+    if has_env_key:
+        print("✓ Encryption key found in DBTK_ENCRYPTION_KEY environment variable")
+        print("  Your existing encryption key will be used.")
+    elif has_keyring_key:
+        print("✓ Encryption key found in system keyring")
+        print("  Your existing encryption key will be used.")
+    else:
+        keyring_msg = '✓ installed' if HAS_KEYRING else '⚠ not installed'
+        # No encryption key exists - offer to set one up
+        print(dedent(f"""\
+        No encryption key detected.
+        To encrypt passwords in your config, you need an encryption key.
+        Options:
+          1. Store key in system keyring (recommended - {keyring_msg})
+          2. Store key in DBTK_ENCRYPTION_KEY environment variable
+          3. Skip encryption setup (passwords stored as plaintext)
+        """))
+        choice = input("\nChoice [1]: ").strip() or '1'
+
+        if choice == '1':
+            # Keyring option
+            if not HAS_KEYRING:
+                print(dedent("""\
+                ⚠ The 'keyring' library is not installed.
+                
+                To use keyring for encryption keys:
+                  1. Install keyring: pip install keyring
+                  2. Re-run: dbtk config-setup
+                  
+                Exiting setup. Please install keyring and restart.
+                """))
+                return
+            else:
+                # Generate and store in keyring
+                key = generate_encryption_key()
+                store_key(key)
+                print(f"\n✓ Generated encryption key and stored in system keyring")
+
+        elif choice == '2':
+            # Environment variable option
+            key = generate_encryption_key()
+            print(f"\n✓ Generated encryption key:")
+            print(f"\n  {key}")
+            if os.name == 'nt':
+                print(dedent("""\
+                Add the DBTK_ENCRYTPION_KEY as an Environmental Variable 
+                  (System Properties > Advanced > Environmental Variables)"""))
+            else:
+                print(dedent(f"""\
+                Add this to your shell profile (~/.bashrc, ~/zshrc, etc.):
+                  export DBTK_ENCRYPTION_KEY='key'"""))
+            # Store in current session so we can continue
+            os.environ['DBTK_ENCRYPTION_KEY'] = key
+            print("\n✓ Key set for this session (you can add connections below)")
+
+        else:
+            print("\nSkipping encryption setup.")
+            print("Passwords will be stored as plaintext in the config file.")
+
+    # Ask about adding connections
+    print("\n" + "-"*60)
+    print("Database Connections")
+    print("-"*60)
+
+    # Load the config we just created
+    with open(config_path) as f:
+        config_data = yaml.safe_load(f)
+
+    if 'connections' not in config_data:
+        config_data['connections'] = {}
+
+    print(dedent("""\
+    Warning: The config file created has lots of comments that will be lost if you continue.
+    The YAML format was designed to be readable and it is recommended to just edit in the 
+    text editor of your choice. If you do continue and overwrite the comments, a fully commented
+    sample is also available at ~/.config/dbtk_sample.yml.
+    """))
+    add_connection = input("\nAdd a database connection now? [y/N]: ").strip().lower()
+    edits = 0
+    while add_connection in ('y', 'yes'):
+        edits += 1
+        conn_name = input("\nConnection name: ").strip()
+        if not conn_name:
+            print("Connection name cannot be empty. Skipping.")
+            break
+
+        if conn_name in config_data['connections']:
+            print(f"⚠ Connection '{conn_name}' already exists in config")
+            overwrite_conn = input("Overwrite? [y/N]: ").strip().lower()
+            if overwrite_conn not in ('y', 'yes'):
+                add_connection = input("\nAdd another connection? [y/N]: ").strip().lower()
+                continue
+
+        db_types = ['postgres', 'oracle', 'mysql', 'sqlserver', 'sqlite']
+        print(f"Database type: {', '.join(db_types)}")
+        db_type = input("Type [postgres]: ").strip().lower() or 'postgres'
+
+        if db_type not in db_types:
+            print(f"Unknown type '{db_type}', using 'postgres'")
+            db_type = 'postgres'
+
+        conn_config = {'type': db_type}
+
+        if db_type != 'sqlite':
+            conn_config['host'] = input("Host [localhost]: ").strip() or 'localhost'
+
+            default_ports = {
+                'postgres': 5432,
+                'oracle': 1521,
+                'mysql': 3306,
+                'sqlserver': 1433
+            }
+            default_port = default_ports.get(db_type, 5432)
+            port_input = input(f"Port [{default_port}]: ").strip()
+            conn_config['port'] = int(port_input) if port_input else default_port
+
+            conn_config['database'] = input("Database name: ").strip()
+            if not conn_config['database']:
+                print("Database name cannot be empty. Skipping connection.")
+                add_connection = input("\nAdd another connection? [y/N]: ").strip().lower()
+                continue
+
+            conn_config['user'] = input("Username: ").strip()
+            if not conn_config['user']:
+                print("Username cannot be empty. Skipping connection.")
+                add_connection = input("\nAdd another connection? [y/N]: ").strip().lower()
+                continue
+
+            password = getpass.getpass("Password (leave empty to skip): ")
+            if password:
+                # Check if we can encrypt
+                can_encrypt = (has_env_key or has_keyring_key or
+                              'DBTK_ENCRYPTION_KEY' in os.environ)
+
+                if can_encrypt:
+                    encrypt = input("Encrypt this password? [Y/n]: ").strip().lower()
+                    if encrypt in ('', 'y', 'yes'):
+                        try:
+                            # Use existing or newly created key
+                            if 'DBTK_ENCRYPTION_KEY' in os.environ:
+                                key = os.environ['DBTK_ENCRYPTION_KEY']
+                            elif HAS_KEYRING:
+                                key = keyring.get_password('dbtk', 'encryption_key')
+                            else:
+                                key = os.environ.get('DBTK_ENCRYPTION_KEY')
+
+                            encrypted = encrypt_password(password, key)
+                            conn_config['encrypted_password'] = encrypted
+                            print("✓ Password encrypted")
+                        except Exception as e:
+                            print(f"⚠ Encryption failed: {e}")
+                            print("Storing password in plaintext")
+                            conn_config['password'] = password
+                    else:
+                        conn_config['password'] = password
+                else:
+                    print("⚠ Encryption not available. Storing password in plaintext.")
+                    conn_config['password'] = password
+        else:
+            # SQLite
+            db_path = input("Database file path [./data.db]: ").strip() or './data.db'
+            conn_config['database'] = db_path
+
+        config_data['connections'][conn_name] = conn_config
+        print(f"✓ Added connection '{conn_name}'")
+
+        add_connection = input("\nAdd another connection? [y/N]: ").strip().lower()
+
+    if edits:
+        # Write updated config file
+        with open(config_path, 'w') as f:
+            yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+    # Show summary
+    print("\n" + "="*60)
+    print("Setup Complete!")
+    print("="*60)
+    print(f"\nConfig file: {config_path}")
+    print(f"Sample file: {user_sample_path}")
+
+    if edits and config_data.get('connections'):
+        print(f"\nConnections configured: {', '.join(config_data['connections'].keys())}")
+        print("\nTest a connection:")
+        first_conn = list(config_data['connections'].keys())[0]
+        print(f"  python -c \"import dbtk; db = dbtk.connect('{first_conn}'); print('Connected!')\"")
+    else:
+        print(f"Edit {config_path} to add connections manually,")
+        print("or run 'dbtk config-setup' again.")
+
+    print("\nSee the sample file for all available settings and examples.")
+    print()
