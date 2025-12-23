@@ -9,7 +9,6 @@ for imports where a reliable primary key exists in source data.
 
 import json
 import logging
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Union
 
@@ -19,7 +18,7 @@ from .transforms.database import TableLookup
 logger = logging.getLogger(__name__)
 
 
-class EntityStatus(str, Enum):
+class EntityStatus:
     """Status values for entity resolution lifecycle."""
     PENDING = "pending"
     RESOLVED = "resolved"
