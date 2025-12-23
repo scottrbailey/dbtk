@@ -162,6 +162,10 @@ class EntityManager:
         resolved_keys = entity.setdefault("_resolved_keys", set())
 
         for key in self.key_types:
+            # Early exit if all keys already resolved
+            if all(entity.get(k) is not None for k in self.key_types):
+                break
+
             # Skip if already resolved
             if key in resolved_keys:
                 continue
