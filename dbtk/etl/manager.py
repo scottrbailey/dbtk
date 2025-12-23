@@ -9,6 +9,7 @@ for imports where a reliable primary key exists in source data.
 
 import json
 import logging
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Union
 
@@ -16,6 +17,14 @@ from ..cursors import PreparedStatement
 from .transforms.database import TableLookup
 
 logger = logging.getLogger(__name__)
+
+
+class EntityStatus(str, Enum):
+    """Status values for entity resolution lifecycle."""
+    PENDING = "pending"
+    RESOLVED = "resolved"
+    ERROR = "error"
+    SKIPPED = "skipped"
 
 
 class ErrorDetail:
@@ -37,7 +46,7 @@ class ErrorDetail:
 
     def __repr__(self) -> str:
         return (
-            f"ErrorDetail(message={self.message!r}, stage={self.stage!r},  "
+            f"ErrorDetail(message={self.message!r}, stage={self.stage!r}, "
             f"field={self.field!r}, code={self.code!r})"
         )
 
@@ -98,7 +107,7 @@ class EntityManager:
         primary_value: Any,
         *,
         auto_resolve: bool = True,
-        status: str = "pending",
+        status: str = EntityStatus.PENDING,
     ) -> Dict[str, Any]:
         """Core method: get/create entity and optionally resolve."""
         entity = self.entities.get(primary_value)
@@ -108,6 +117,7 @@ class EntityManager:
                 self.primary_key: primary_value,
                 "status": status,
                 "errors": [],
+                "_resolved_keys": set(),
             }
             self.entities[primary_value] = entity
 
@@ -150,8 +160,12 @@ class EntityManager:
         """Resolve secondary keys and enrich entity."""
         updated = False
         primary_val = entity.get(self.primary_key)
+        resolved_keys = entity.setdefault("_resolved_keys", set())
 
         for key in self.key_types:
+            # Skip if already resolved
+            if key in resolved_keys:
+                continue
             if entity.get(key) is None:
                 continue
             resolver = self._resolvers.get(key)
@@ -160,9 +174,10 @@ class EntityManager:
 
             if self._apply_resolver(entity, key, resolver, primary_val):
                 updated = True
+                resolved_keys.add(key)
 
         if updated:
-            entity["status"] = "resolved"
+            entity["status"] = EntityStatus.RESOLVED
 
         return updated
 
@@ -173,47 +188,61 @@ class EntityManager:
         resolver: Union[TableLookup, PreparedStatement],
         primary_val: Any,
     ) -> bool:
-        bind_vars = {using_key: entity[using_key]}
+        try:
+            bind_vars = {using_key: entity[using_key]}
 
-        if isinstance(resolver, TableLookup):
-            result = resolver(bind_vars)
-        else:
-            resolver.execute(bind_vars)
-            result = resolver.fetchone()
+            if isinstance(resolver, TableLookup):
+                result = resolver(bind_vars)
+            else:
+                resolver.execute(bind_vars)
+                result = resolver.fetchone()
 
-        if not result:
-            return False
+            if not result:
+                return False
 
-        # Normalize to dict
-        if hasattr(result, "to_dict"):
-            row_dict = result.to_dict()
-        elif hasattr(result, "_asdict"):
-            row_dict = result._asdict()
-        else:
-            row_dict = dict(result)
+            # Normalize to dict
+            if hasattr(result, "to_dict"):
+                row_dict = result.to_dict()
+            elif hasattr(result, "_asdict"):
+                row_dict = result._asdict()
+            else:
+                row_dict = dict(result)
 
-        updated = False
+            updated = False
 
-        # Tracked secondary keys
-        for sk in self.secondary_keys:
-            if sk == using_key:
-                continue
-            new_val = row_dict.get(sk)
-            if new_val is not None and entity.get(sk) != new_val:
-                old_val = entity.get(sk)
-                entity[sk] = new_val
-                self._secondary_index[sk][new_val] = primary_val
-                if old_val is not None:
-                    self._secondary_index[sk].pop(old_val, None)
-                updated = True
+            # Tracked secondary keys
+            for sk in self.secondary_keys:
+                if sk == using_key:
+                    continue
+                new_val = row_dict.get(sk)
+                if new_val is not None and entity.get(sk) != new_val:
+                    old_val = entity.get(sk)
 
-        # Enrichment columns
-        for col, val in row_dict.items():
-            if col not in self.key_types and entity.get(col) != val:
-                entity[col] = val
-                updated = True
+                    # Detect conflicts: same secondary value pointing to different primary
+                    existing_primary = self._secondary_index[sk].get(new_val)
+                    if existing_primary and existing_primary != primary_val:
+                        raise ValueError(
+                            f"Secondary key conflict: {sk}={new_val} already maps to "
+                            f"{existing_primary}, cannot also map to {primary_val}"
+                        )
 
-        return updated
+                    entity[sk] = new_val
+                    self._secondary_index[sk][new_val] = primary_val
+                    if old_val is not None:
+                        self._secondary_index[sk].pop(old_val, None)
+                    updated = True
+
+            # Enrichment columns
+            for col, val in row_dict.items():
+                if col not in self.key_types and entity.get(col) != val:
+                    entity[col] = val
+                    updated = True
+
+            return updated
+
+        except Exception as e:
+            logger.error(f"Resolver failed for {using_key}={entity.get(using_key)}: {e}")
+            raise
 
     # =================================================================
     # Lookups
@@ -255,6 +284,20 @@ class EntityManager:
                 yield entity
 
     # =================================================================
+    # Metrics
+    # =================================================================
+    def summary(self) -> Dict[str, int]:
+        """Return processing summary statistics."""
+        return {
+            "total": len(self.entities),
+            "resolved": sum(1 for e in self.entities.values() if e["status"] == EntityStatus.RESOLVED),
+            "pending": sum(1 for e in self.entities.values() if e["status"] == EntityStatus.PENDING),
+            "error": sum(1 for e in self.entities.values() if e["status"] == EntityStatus.ERROR),
+            "skipped": sum(1 for e in self.entities.values() if e["status"] == EntityStatus.SKIPPED),
+            "with_errors": sum(1 for e in self.entities.values() if e.get("errors")),
+        }
+
+    # =================================================================
     # Persistence
     # =================================================================
     def save(self, path: Union[str, Path]) -> None:
@@ -262,6 +305,7 @@ class EntityManager:
             primary: {
                 **entity,
                 "errors": [e.__dict__ for e in entity.get("errors", [])],
+                "_resolved_keys": list(entity.get("_resolved_keys", set())),
             }
             for primary, entity in self.entities.items()
         }
@@ -285,6 +329,7 @@ class EntityManager:
             entity = {
                 **entity_data,
                 "errors": [ErrorDetail(**e) for e in entity_data.get("errors", [])],
+                "_resolved_keys": set(entity_data.get("_resolved_keys", [])),
             }
             manager.entities[primary_val] = entity
 
