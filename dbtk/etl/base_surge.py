@@ -47,15 +47,10 @@ class BaseSurge(ABC):
             self._RecordClass.set_columns(cols)
         return self._RecordClass
 
-    def _record_is_valid(self) -> bool:
-        if self.operation == "delete":
-            return self.table.has_all_keys
-        return self.table.reqs_met
-
     def _transform_row(self, record, mode=None):
         """Transform and validate a row. Shared logic for all surges."""
         self.table.set_values(record)
-        if not self._record_is_valid():
+        if not self.table.is_ready(self.operation):
             return None
         return self.table.get_bind_params(self.operation, mode=mode)
 

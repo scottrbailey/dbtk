@@ -438,13 +438,13 @@ class TestETLTransformations:
 
         # Valid region
         city_table.set_values({'name': 'Boston', 'state': 'MA', 'region': 'Northeast'})
-        assert city_table.reqs_met
+        assert city_table.reqs_met('insert')
         assert city_table.values['region'] == 'Northeast'
 
         # Invalid region - should fail reqs_met
         city_table.set_values({'name': 'Atlantis', 'state': 'XX', 'region': 'Ocean'})
-        assert not city_table.reqs_met
-        assert 'region' in city_table.reqs_missing
+        assert not city_table.reqs_met('insert')
+        assert 'region' in city_table.reqs_missing('insert')
 
     def test_table_with_lookup(self, states_db):
         """Test Table with TableLookup transformation."""
