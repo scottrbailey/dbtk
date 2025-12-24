@@ -127,9 +127,9 @@ with dbtk.connect('fire_nation_db') as db:
     with dbtk.readers.get_reader('incoming/new_recruits.csv') as reader:
         for record in reader:
             soldier_table.set_values(record)
-            soldier_table.exec_insert(raise_error=False)
+            soldier_table.execute('insert', raise_error=False)
 
-    print(f"Inserted {soldier_table.counts['inserts']} rows")
+    print(f"Inserted {soldier_table.counts['insert']} rows")
     db.commit()
 ```
 

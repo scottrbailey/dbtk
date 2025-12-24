@@ -505,10 +505,12 @@ class Table:
         table_name = quote_identifier(self._name)
         conditions = []
 
-        for col in self._key_cols:
+        for col, col_def in self._columns.items():
+            bind_name = col_def['bind_name']
+            if bind_name not in self._key_cols:
+                continue
             quoted_col = quote_identifier(col)
-            bind_name = self._columns[col]['bind_name']
-            db_expr = self._columns[col].get('db_expr')
+            db_expr = col_def.get('db_expr')
             placeholder = self._wrap_db_expr(bind_name, db_expr)
             conditions.append(f"{quoted_col} = {placeholder}")
         conditions_str = '\n    AND '.join(conditions)
@@ -574,7 +576,7 @@ class Table:
             if len(update_assignments) > 4:
                 update_clause = wrap_at_comma(update_clause)
 
-            sql = dedent(f"""/
+            sql = dedent(f"""\
             INSERT INTO {table_name} ({cols_str})
             VALUES ({placeholders_str}) AS new_vals
             ON DUPLICATE KEY UPDATE {update_clause}""")
