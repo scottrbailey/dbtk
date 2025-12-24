@@ -117,7 +117,7 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
     for recruit in reader:
         phoenix_king_army.set_values(recruit)
-        if phoenix_king_army.reqs_met('insert'):
+        if phoenix_king_army.is_ready('insert'):  # Fast O(1) cached check
             existing_soldier = phoenix_king_army.fetch()
             if existing_soldier:
                 phoenix_king_army.execute('update')
@@ -250,7 +250,7 @@ print(f"Skipped (incomplete data): {soldier_table.counts['incomplete']}")
 # your logs.
 for record in records:
     recruit_table.set_values(record)
-    if recruit_table.reqs_met('insert'):
+    if recruit_table.is_ready('insert'):  # Fast cached check
         recruit_table.execute('insert')
     # Records with missing data are silently skipped.
 
@@ -263,12 +263,16 @@ for record in records:
     critical_table.execute('insert', raise_error=True)  # Raises ValueError if incomplete
 ```
 
-**Performance tip:** Use the new `is_ready()` method for O(1) operation readiness checking:
+**Performance tip:** Use `is_ready()` instead of `reqs_met()` for readiness checks:
 
 ```python
-# Fast bit-flag check - no redundant validation
+# ✅ RECOMMENDED: is_ready() - O(1) cached bit-flag check
 address_table.set_values(record)
 if address_table.is_ready('insert'):
+    address_table.execute('insert')
+
+# ❌ SLOWER: reqs_met() - recalculates requirements every call
+if address_table.reqs_met('insert'):  # Don't use this in loops!
     address_table.execute('insert')
 
 # For conditional operations based on data completeness
@@ -276,6 +280,25 @@ if address_table.is_ready('update'):
     address_table.execute('update')
 elif address_table.is_ready('insert'):
     address_table.execute('insert')
+```
+
+**Key differences:**
+- `is_ready(operation)` - **Fast O(1)** cached readiness check using bit flags. Updated automatically by `set_values()`. Use this in loops and hot paths.
+- `reqs_met(operation)` - **Slower** non-cached check that validates requirements on every call. Only use when you need to verify requirements changed outside `set_values()`.
+
+**When to use `refresh_readiness()`:**
+
+If you modify `table.values` directly (bypassing `set_values()`), you must call `refresh_readiness()` to update the cached readiness state:
+
+```python
+# Direct modification requires manual refresh
+table.set_values(record)
+table.values['status'] = 'active'  # Direct modification
+table.refresh_readiness()  # Update cached state
+
+# Now is_ready() will reflect the changes
+if table.is_ready('insert'):
+    table.execute('insert')
 ```
 
 ### Bulk Operations with DataSurge
