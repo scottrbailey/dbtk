@@ -117,15 +117,16 @@ phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
 with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
     for recruit in reader:
         phoenix_king_army.set_values(recruit)
-        if phoenix_king_army.reqs_met:
+        if phoenix_king_army.reqs_met('insert'):
             existing_soldier = phoenix_king_army.fetch()
             if existing_soldier:
-                phoenix_king_army.exec_update(reqs_checked=True)
+                phoenix_king_army.execute('update')
             else:
-                phoenix_king_army.exec_insert(reqs_checked=True)
+                phoenix_king_army.execute('insert')
         else:
-            print(f"Recruit {phoenix_king_army.values['name']}({phoenix_king_army.values['soldier_id']}) rejected: missing {phoenix_king_army.reqs_missing}")
-            
+            missing = phoenix_king_army.reqs_missing('insert')
+            print(f"Recruit {phoenix_king_army.values['name']}({phoenix_king_army.values['soldier_id']}) rejected: missing {missing}")
+
 
 print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
 ```
@@ -230,28 +231,28 @@ If **db_expr** is defined:
 
 **Handling Incomplete Records:**
 
-DBTK supports two patterns for handling incomplete records:
+DBTK supports three patterns for handling incomplete records:
 
 ```python
-# Pattern 1: Tables expected to be complete - let exec methods handle validation
+# Pattern 1: Tables expected to be complete - let execute() handle validation
 # Use this when you want to track all incomplete records
 for record in records:
     soldier_table.set_values(record)
-    # exec_* functions automatically validate keys and required columns have values
-    soldier_table.exec_insert(raise_error=False)  # Track incomplete, don't raise
+    # execute() automatically validates keys and required columns have values
+    soldier_table.execute('insert', raise_error=False)  # Track incomplete, don't raise
 
 print(f"Inserted: {soldier_table.counts['insert']}")
 print(f"Skipped (incomplete data): {soldier_table.counts['incomplete']}")
 
 # Pattern 2: "Optional" tables, check requirements before executing DML
 # Use this when missing data is expected and you want to skip incomplete records.
-# If you call exec_insert(raise_error=False) with many incomplete records you will flood 
+# If you call execute(raise_error=False) with many incomplete records you will flood
 # your logs.
 for record in records:
     recruit_table.set_values(record)
-    if recruit_table.reqs_met: #
-        recruit_table.exec_insert(reqs_checked=True)  # Skip redundant validation
-    # Records with missing data are silently skipped. 
+    if recruit_table.reqs_met('insert'):
+        recruit_table.execute('insert')
+    # Records with missing data are silently skipped.
 
 print(f"Inserted: {recruit_table.counts['insert']}")
 
@@ -259,14 +260,22 @@ print(f"Inserted: {recruit_table.counts['insert']}")
 # Use this when all data must be complete
 for record in records:
     critical_table.set_values(record)
-    critical_table.exec_insert(raise_error=True)  # Raises ValueError if incomplete
+    critical_table.execute('insert', raise_error=True)  # Raises ValueError if incomplete
 ```
 
-**Performance tip:** Use `reqs_checked=True` when you've already validated requirements to avoid redundant checks:
+**Performance tip:** Use the new `is_ready()` method for O(1) operation readiness checking:
 
 ```python
-if address_table.reqs_met:  # Check once
-    address_table.exec_insert(reqs_checked=True)  # Skip redundant check
+# Fast bit-flag check - no redundant validation
+address_table.set_values(record)
+if address_table.is_ready('insert'):
+    address_table.execute('insert')
+
+# For conditional operations based on data completeness
+if address_table.is_ready('update'):
+    address_table.execute('update')
+elif address_table.is_ready('insert'):
+    address_table.execute('insert')
 ```
 
 ### Bulk Operations with DataSurge
@@ -413,7 +422,7 @@ with open('title.basics.tsv') as f:
     reader = dbtk.readers.CSVReader(f, delimiter='\t', header_clean=2)
     for record in reader:
         titles_table.set_values(record)
-        titles_table.exec_insert()
+        titles_table.execute('insert')
 
 # 132,440 records/sec on single machine with PostgreSQL!
 ```
@@ -689,10 +698,10 @@ def main():
                 soldier_table.set_values(record)
 
                 # Custom validation - log only when YOU need to
-                if soldier_table.reqs_met and not validate_combat_readiness(record):
+                if soldier_table.is_ready('insert') and not validate_combat_readiness(record):
                     continue  # Skip this record
 
-                soldier_table.exec_insert(raise_error=False)
+                soldier_table.execute('insert', raise_error=False)
                 # ↑ DBTK automatically logs all insert operations, errors, validation failures
 
         # Summary output (or log it if you prefer)
