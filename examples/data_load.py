@@ -52,7 +52,7 @@ if __name__ == '__main__':
     prof_collector = ValidationCollector(lookup=prof_lookup, desc_field='title', return_desc=False)
     # Use polars ridiculously fast... but lazy csv reader
     df = pl.scan_csv(r'c:\Temp\name.basics.tsv.gz', separator="\t", n_rows=100_000).collect()
-    reader = DataFrameReader(df, add_rownum=False)
+    reader = DataFrameReader(df, add_row_num=False)
     names_cols = {
         'nconst': {'field': 'nconst', 'primary_key': True},
         'primary_name': {'field': 'primaryName', 'nullable': False, 'fn': 'maxlen:100'},

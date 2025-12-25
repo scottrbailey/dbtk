@@ -57,7 +57,7 @@ if __name__ == '__main__':
     genre_collector = ValidationCollector(lookup=genre_lookup, desc_field='title', return_desc=False)
     # Use polars ridiculously fast... but lazy csv reader
     df = pl.scan_csv(r'c:\Temp\title.basics.tsv.gz', separator="\t", null_values=r'\N', n_rows=100_000).collect()
-    reader = DataFrameReader(df, add_rownum=False)
+    reader = DataFrameReader(df, add_row_num=False)
     title_cols = {
         'tconst': {'field': 'tconst', 'primary_key': True},
         'title_type': {'field': 'titleType', 'nullable': False},

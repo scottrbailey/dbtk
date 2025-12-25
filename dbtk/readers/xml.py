@@ -42,11 +42,12 @@ class XMLReader(Reader):
                  record_xpath: str = "//record",
                  columns: Optional[List[XMLColumn]] = None,
                  sample_size: int = 10,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT):
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
+                 return_type: str = ReturnType.DEFAULT,
+                 null_values=None):
         """
         Initialize XML reader.
 
@@ -55,17 +56,30 @@ class XMLReader(Reader):
             record_xpath: XPath expression to find record elements
             columns: List of XMLColumn definitions for custom extraction
             sample_size: Number of records to sample for column discovery
-            add_rownum: Add _row_num to each record
+            add_row_num: Add _row_num to each record
             clean_headers: Header cleaning level (default: Clean.DEFAULT)
-            skip_records: Number of data records to skip after headers
-            max_records: Maximum number of records to read, or None for all
+            skip_rows: Number of data rows to skip after headers
+            n_rows: Maximum number of rows to read, or None for all
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict
+            null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
+        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+                         skip_rows=skip_rows, n_rows=n_rows,
+                         return_type=return_type, null_values=null_values)
         self.fp = fp
-        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
+
+        # Set trackable for progress tracking
+        if hasattr(fp, '_uncompressed_size'):
+            # Compressed file - use buffer's tell() but preserve _uncompressed_size
+            self._trackable = fp.buffer
+            self._trackable._uncompressed_size = fp._uncompressed_size
+        elif hasattr(fp, 'buffer'):
+            # Text mode file - use buffer for better performance
+            self._trackable = fp.buffer
+        else:
+            # Binary mode or other file type
+            self._trackable = fp
+
         self.record_xpath = record_xpath
         self.custom_columns = columns or []
         self.sample_size = sample_size

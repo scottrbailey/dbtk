@@ -31,7 +31,7 @@ if __name__ == '__main__':
     # First 1,000,000 rows of IMDB's name dataset
     fn = r'c:\Temp\name.basics.tsv.gz'
     # Compressed archive automatically detected and streamed
-    reader = dbtk.readers.get_reader(fn, delimiter='\t', skip_records=2_000_000, max_records=1_000_000)
+    reader = dbtk.readers.get_reader(fn, delimiter='\t', skip_rows=2_000_000, n_rows=1_000_000)
     # Maps reader column names to table columns and applies transforms
     names_cols = {
         'nconst': {'field': 'nconst', 'primary_key': True},

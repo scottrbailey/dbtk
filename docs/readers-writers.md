@@ -133,18 +133,18 @@ settings['compressed_file_buffer_size'] = 2 * 1024 * 1024  # 2MB buffer
 All readers support these parameters for controlling input processing:
 
 ```python
-# Skip first 10 data rows, read only 100 records, return dicts instead of Records
+# Skip first 10 data rows, read only 100 rows, return dicts instead of Records
 reader = dbtk.readers.CSVReader(
     open('data.csv', encoding='utf-8-sig'), # Use 'utf-8-sig' instead of 'utf-8' to avoid BOM issues
-    skip_records=10,      # Skip N records after headers (useful for bad data)
-    max_records=100,      # Only read first N records (useful for testing/sampling)
+    skip_rows=10,         # Skip N rows after headers (useful for bad data)
+    n_rows=100,           # Only read first N rows (useful for testing/sampling)
     return_type='dict',   # 'record' (default) or 'dict' for OrderedDict
-    add_rownum=True,      # Add '_row_num' field to each record (default True)
+    add_row_num=True,     # Add '_row_num' field to each record (default True)
     clean_headers=dbtk.readers.Clean.LOWER_NOSPACE  # Header cleaning level
 )
 
 # Row numbers track position in source file
-with dbtk.readers.get_reader('data.csv', skip_records=5) as reader:
+with dbtk.readers.get_reader('data.csv', skip_rows=5) as reader:
     for record in reader:
         print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
 ```

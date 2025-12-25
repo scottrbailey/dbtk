@@ -348,7 +348,7 @@ class ValidationCollector:
 
         if hasattr(result, "get"):
             if self.desc_field:
-                return result.get(self.desc_field, str(code))
+                return result.get(self.desc_field, "")
             for field in ("title", "description", "name", "label"):
                 if val := result.get(field):
                     return val
