@@ -145,7 +145,18 @@ class CSVReader(Reader):
         if hasattr(fp, 'encoding') and fp.encoding == 'utf-8':
             # Using the standard utf-8 encoding can cause issues with BOM headers in column names
             logger.warning("utf-8 encoding detected. Consider using 'utf-8-sig' encoding instead.")
-        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
+
+        # Set trackable for progress tracking
+        if hasattr(fp, '_uncompressed_size'):
+            # Compressed file - use fp to preserve _uncompressed_size attribute
+            self._trackable = fp
+        elif hasattr(fp, 'buffer'):
+            # Text mode file - use buffer for better performance
+            self._trackable = fp.buffer
+        else:
+            # Binary mode or other file type
+            self._trackable = fp
+
         self._rdr = csv.reader(fp, dialect=dialect, **kwargs)
         self._headers_read = False
 

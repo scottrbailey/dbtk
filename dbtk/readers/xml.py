@@ -65,7 +65,18 @@ class XMLReader(Reader):
                          skip_records=skip_records, max_records=max_records,
                          return_type=return_type)
         self.fp = fp
-        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
+
+        # Set trackable for progress tracking
+        if hasattr(fp, '_uncompressed_size'):
+            # Compressed file - use fp to preserve _uncompressed_size attribute
+            self._trackable = fp
+        elif hasattr(fp, 'buffer'):
+            # Text mode file - use buffer for better performance
+            self._trackable = fp.buffer
+        else:
+            # Binary mode or other file type
+            self._trackable = fp
+
         self.record_xpath = record_xpath
         self.custom_columns = columns or []
         self.sample_size = sample_size
