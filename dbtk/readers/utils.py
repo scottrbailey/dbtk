@@ -214,6 +214,7 @@ def get_reader(filename: Union[str, Path],
         encoding: File encoding for text files
         clean_headers: Header cleaning level (defaults vary by file type)
         **kwargs: Additional arguments passed to specific readers:
+            - null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
             - sheet_name, sheet_index: For Excel files
             - fixed_config: For fixed-width files
             - zip_member: For ZIP archives with multiple files

@@ -46,7 +46,8 @@ class XMLReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT):
+                 return_type: str = ReturnType.DEFAULT,
+                 null_values=None):
         """
         Initialize XML reader.
 
@@ -60,10 +61,11 @@ class XMLReader(Reader):
             skip_records: Number of data records to skip after headers
             max_records: Maximum number of records to read, or None for all
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict
+            null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
+                         return_type=return_type, null_values=null_values)
         self.fp = fp
 
         # Set trackable for progress tracking

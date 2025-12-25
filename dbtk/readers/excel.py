@@ -36,7 +36,8 @@ class XLSXReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT):
+                 return_type: str = ReturnType.DEFAULT,
+                 null_values=None):
         """Initialize XLSXReader for reading Excel .xlsx files.
 
         Args:
@@ -47,6 +48,7 @@ class XLSXReader(Reader):
             skip_records: Number of data records to skip after headers (default: 0).
             max_records: Maximum number of records to read, or None for all (default: None).
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
+            null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
 
         Raises:
             TypeError: If worksheet is not an openpyxl.Worksheet.
@@ -55,7 +57,7 @@ class XLSXReader(Reader):
             raise TypeError('worksheet must be of type openpyxl.Worksheet or use XLReader')
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
+                         return_type=return_type, null_values=null_values)
         self.ws = worksheet
         self._trackable = self.ws
         self._total_records = self.ws.max_row + 1
@@ -108,7 +110,8 @@ class XLSReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT):
+                 return_type: str = ReturnType.DEFAULT,
+                 null_values=None):
         """Initialize XLReader for reading Excel .xls files.
 
         Args:
@@ -119,6 +122,7 @@ class XLSReader(Reader):
             skip_records: Number of data records to skip after headers (default: 0).
             max_records: Maximum number of records to read, or None for all (default: None).
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
+            null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
 
         Raises:
             TypeError: If worksheet is not an xlrd.Sheet.
@@ -127,7 +131,7 @@ class XLSReader(Reader):
             raise TypeError('worksheet must be of type xlrd.Sheet or use XLSXReader')
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         headers=headers, return_type=return_type)
+                         headers=headers, return_type=return_type, null_values=null_values)
         self.ws = worksheet
         self._trackable = self.ws
         self.datemode = worksheet.book.datemode

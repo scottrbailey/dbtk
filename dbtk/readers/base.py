@@ -164,6 +164,7 @@ class Reader(ABC):
     * **Flexible return types** - Record objects or dictionaries
     * **Context manager** - Automatic resource cleanup
     * **Iterator protocol** - Memory-efficient streaming
+    * **Null value conversion** - Convert specified values to None
 
     Parameters
     ----------
@@ -179,6 +180,9 @@ class Reader(ABC):
         Maximum number of records to read. None (default) reads all records.
     return_type : str, default 'record'
         Return type for records: 'record' for Record objects, 'dict' for OrderedDict
+    null_values : str, list, tuple, or set, optional
+        Values to convert to None. Can be a single string or a collection of strings.
+        Common examples: '\\N' (IMDB files), 'NULL', 'NA', '' (empty string)
 
     Example
     -------
@@ -242,7 +246,8 @@ class Reader(ABC):
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
                  headers: Optional[List[str]] = None,
-                 return_type: str = ReturnType.DEFAULT
+                 return_type: str = ReturnType.DEFAULT,
+                 null_values: Union[str, List[str], tuple, set, None] = None
                  ):
         """
         Initialize the reader with common options.
@@ -261,6 +266,9 @@ class Reader(ABC):
         headers: Optional list of header names to use instead of reading from row 0
         return_type : str, default 'record'
             Either 'record' for Record objects or 'dict' for OrderedDict
+        null_values : str, list, tuple, or set, optional
+            Values to convert to None. Can be a single string or collection of strings.
+            Common examples: '\\N' (IMDB), 'NULL', 'NA', '' (empty string)
 
         Example
         -------
@@ -288,6 +296,16 @@ class Reader(ABC):
         self.max_records = max_records
         self.return_type = return_type
         self._record_class = None
+
+        # Normalize null_values to a set for O(1) lookup
+        if null_values is None:
+            self._null_values = set()
+        elif isinstance(null_values, str):
+            self._null_values = {null_values}
+        elif isinstance(null_values, (list, tuple, set)):
+            self._null_values = set(null_values)
+        else:
+            raise TypeError(f"null_values must be str, list, tuple, or set, got {type(null_values)}")
 
         self._raw_headers: Optional[List[str]] = headers
         self._headers: List[str] = []
@@ -451,6 +469,21 @@ class Reader(ABC):
 
         self._headers_initialized = True
 
+    def _convert_nulls(self, row_data: List[Any]) -> List[Any]:
+        """
+        Convert null values to None in row data.
+
+        Args:
+            row_data: List of values for this row
+
+        Returns:
+            List with null values converted to None
+        """
+        if not self._null_values:
+            return row_data
+
+        return [None if val in self._null_values else val for val in row_data]
+
     def _create_record(self, row_data: List[Any]) -> Union[Record, OrderedDict]:
         """
         Create a Record or dict from row data.
@@ -466,6 +499,9 @@ class Reader(ABC):
 
         # Make a copy to avoid modifying the original
         row_data = list(row_data)
+
+        # Convert null values to None
+        row_data = self._convert_nulls(row_data)
 
         # Pad with None if row is shorter than expected (excluding _row_num)
         expected_data_cols = len(self._headers) - (1 if self.add_rownum and '_row_num' in self._headers else 0)

@@ -52,7 +52,8 @@ class DataFrameReader(Reader):
         clean_headers: Clean = Clean.NOOP,
         return_type: str = 'record',
         skip_records: int = 0,
-        max_records: Optional[int] = None
+        max_records: Optional[int] = None,
+        null_values=None
     ):
         super().__init__(
             add_rownum=add_rownum,
@@ -61,6 +62,7 @@ class DataFrameReader(Reader):
             max_records=max_records,
             return_type=return_type,
             headers=None,  # we'll set this ourselves
+            null_values=null_values
         )
 
         # 2. Now do our DataFrame-specific work

@@ -110,6 +110,7 @@ class CSVReader(Reader):
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
+                 null_values=None,
                  **kwargs):
         """
         Initialize CSV reader for a file.
@@ -132,6 +133,8 @@ class CSVReader(Reader):
             Maximum records to read
         return_type : str, default 'record'
             'record' or 'dict'
+        null_values : str, list, tuple, or set, optional
+            Values to convert to None (e.g., '\\N' for IMDB files)
         **kwargs
             Additional csv.reader() arguments (delimiter, quotechar, etc.)
         """
@@ -140,7 +143,7 @@ class CSVReader(Reader):
             kwargs.pop('delimiter')
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         headers=headers, return_type=return_type)
+                         headers=headers, return_type=return_type, null_values=null_values)
         self.fp = fp
         if hasattr(fp, 'encoding') and fp.encoding == 'utf-8':
             # Using the standard utf-8 encoding can cause issues with BOM headers in column names

@@ -84,10 +84,11 @@ class JSONReader(Reader):
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
+                 null_values=None,
                  **kwargs):
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
+                         return_type=return_type, null_values=null_values)
         self.fp = fp
 
         # Set trackable for progress tracking
@@ -199,7 +200,8 @@ class NDJSONReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_records: int = 0,
                  max_records: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT):
+                 return_type: str = ReturnType.DEFAULT,
+                 null_values=None):
         """
         Initialize NDJSON reader.
 
@@ -210,10 +212,11 @@ class NDJSONReader(Reader):
             skip_records: Number of records to skip from the beginning
             max_records: Maximum number of records to read (None = unlimited)
             return_type: Either 'record' for Record objects or 'dict' for dict
+            null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
         super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
                          skip_records=skip_records, max_records=max_records,
-                         return_type=return_type)
+                         return_type=return_type, null_values=null_values)
         self.fp = fp
         self._trackable = self.fp
         self._column_cache = None
