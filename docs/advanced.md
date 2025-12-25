@@ -62,7 +62,7 @@ register_user_drivers(custom_drivers)
    with db.transaction():
        for record in records:
            table.set_values(record)
-           table.exec_insert()
+           table.execute('insert')
    ```
 
 5. **Use DataSurge for bulk operations** - Much faster than row-by-row:

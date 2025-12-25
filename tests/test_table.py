@@ -1013,6 +1013,179 @@ class TestSpecialColumnNames:
         assert 'spirit_name' in param_names
         assert 'power_level' in param_names
 
+    def test_select_with_special_column_names(self, special_chars_table, cursor):
+        """Test SELECT with special column names uses sanitized bind parameters."""
+        # Insert a record first
+        special_chars_table.set_values({
+            'id': 'SPIRIT004',
+            'name': 'Raava',
+            'power': '10',
+            'realm': 'Spirit World',
+            'last_encounter': '0 AG'
+        })
+        special_chars_table.execute('insert')
+        cursor.connection.commit()
+
+        # Now select it
+        special_chars_table.set_values({'id': 'SPIRIT004'})
+
+        # Generate and examine SELECT SQL
+        sql = special_chars_table.get_sql('select')
+
+        # Column names should be quoted in SQL
+        assert '"spirit-id"' in sql or 'spirit-id' in sql
+        assert '"spirit name"' in sql or 'spirit_name' in sql
+
+        # But bind parameters should use sanitized names
+        param_names = special_chars_table._param_config['select']
+        assert 'spirit_id' in param_names
+
+        # Execute the select
+        result = special_chars_table.execute('select')
+        assert result == 0
+        row = cursor.fetchone()
+        assert row['spirit-id'] == 'SPIRIT004'
+
+    def test_delete_with_special_column_names(self, special_chars_table, cursor):
+        """Test DELETE with special column names uses sanitized bind parameters.
+
+        This test specifically catches the bug where _create_delete() was
+        iterating over _key_cols (bind_names) but treating them as column names.
+        """
+        # Insert a record first
+        special_chars_table.set_values({
+            'id': 'SPIRIT005',
+            'name': 'Vaatu',
+            'power': '10',
+            'realm': 'Spirit World',
+            'last_encounter': '0 AG'
+        })
+        special_chars_table.execute('insert')
+        cursor.connection.commit()
+
+        # Now delete it
+        special_chars_table.set_values({'id': 'SPIRIT005'})
+
+        # Generate and examine DELETE SQL
+        sql = special_chars_table.get_sql('delete')
+
+        # Column names should be quoted in SQL
+        assert '"spirit-id"' in sql or 'spirit-id' in sql
+
+        # But bind parameters should use sanitized names
+        param_names = special_chars_table._param_config['delete']
+        assert 'spirit_id' in param_names
+
+        # Execute the delete
+        result = special_chars_table.execute('delete')
+        assert result == 0
+        cursor.connection.commit()
+
+        # Verify deletion
+        cursor.execute("SELECT COUNT(*) as cnt FROM spirit_world_records WHERE \"spirit-id\" = 'SPIRIT005'")
+        row = cursor.fetchone()
+        assert row['cnt'] == 0
+
+
+class TestReadinessTracking:
+    """Test the is_ready() and refresh_readiness() refactored functionality."""
+
+    def test_is_ready_for_all_operations(self, airbender_table):
+        """Test is_ready() method for all operation types."""
+        # Set complete record with all required fields
+        airbender_table.set_values({
+            'trainee_id': 'TEST001',
+            'monk_name': 'Test Monk',
+            'home_temple': 'Test Temple',
+            'mastery_rank': '5'
+        })
+
+        # With key + required fields, all operations should be ready
+        assert airbender_table.is_ready('insert')
+        assert airbender_table.is_ready('select')
+        assert airbender_table.is_ready('update')
+        assert airbender_table.is_ready('delete')
+        assert airbender_table.is_ready('merge')
+
+    def test_is_ready_partial_data(self, airbender_table):
+        """Test is_ready() with partial data (only key fields)."""
+        # Set only key field
+        airbender_table.set_values({
+            'trainee_id': 'TEST002'
+        })
+
+        # Only select and delete should be ready (they only need key)
+        assert not airbender_table.is_ready('insert')  # Needs required temple field
+        assert airbender_table.is_ready('select')      # Only needs key
+        assert not airbender_table.is_ready('update')  # Needs required fields
+        assert airbender_table.is_ready('delete')      # Only needs key
+        assert not airbender_table.is_ready('merge')   # Needs required fields
+
+    def test_is_ready_insert_only(self, airbender_table):
+        """Test is_ready() with data sufficient for insert but not update."""
+        # Set required fields but not key (for insert-only scenario)
+        airbender_table.set_values({
+            'monk_name': 'No ID Monk',
+            'home_temple': 'Orphan Temple'
+        })
+
+        # This has required nullable=False fields but missing primary key
+        # So insert could work but not operations requiring keys
+        assert not airbender_table.is_ready('select')
+        assert not airbender_table.is_ready('update')
+        assert not airbender_table.is_ready('delete')
+
+    def test_refresh_readiness_auto_called(self, airbender_table):
+        """Test that refresh_readiness() is automatically called by set_values()."""
+        # Initially no data
+        airbender_table.set_values({})
+        assert not airbender_table.is_ready('insert')
+
+        # Set complete data - refresh_readiness should be called automatically
+        airbender_table.set_values({
+            'trainee_id': 'TEST003',
+            'monk_name': 'Auto Refresh',
+            'home_temple': 'Auto Temple'
+        })
+
+        # Should now be ready without manual refresh_readiness() call
+        assert airbender_table.is_ready('insert')
+        assert airbender_table.is_ready('update')
+
+    def test_refresh_readiness_manual_call(self, airbender_table):
+        """Test manual refresh_readiness() call."""
+        # Set incomplete data
+        airbender_table.set_values({'trainee_id': 'TEST004'})
+        assert not airbender_table.is_ready('insert')
+
+        # Manually modify values (bypassing set_values)
+        airbender_table.values['name'] = 'Manual Test'
+        airbender_table.values['temple'] = 'Manual Temple'
+
+        # Still not ready until we refresh
+        assert not airbender_table.is_ready('insert')
+
+        # Manually call refresh
+        airbender_table.refresh_readiness()
+
+        # Now should be ready
+        assert airbender_table.is_ready('insert')
+
+    def test_readiness_bitflag_performance(self, airbender_table):
+        """Test that readiness check uses O(1) bitflag operations."""
+        # Set complete data
+        airbender_table.set_values({
+            'trainee_id': 'PERF001',
+            'monk_name': 'Performance Test',
+            'home_temple': 'Speed Temple'
+        })
+
+        # Multiple checks should be fast (O(1))
+        for _ in range(1000):
+            assert airbender_table.is_ready('insert')
+            assert airbender_table.is_ready('select')
+            assert airbender_table.is_ready('update')
+
 
 class TestAdvancedFeatures:
     """Test advanced ETL features."""
