@@ -168,16 +168,16 @@ class Reader(ABC):
 
     Parameters
     ----------
-    add_rownum : bool, default True
+    add_row_num : bool, default True
         Add a '_row_num' field to each record containing the 1-based row number
     clean_headers : Clean or str, optional
         Header cleaning level. Options: Clean.LOWER_NOSPACE (default), Clean.STANDARDIZE,
         Clean.NONE. Can also pass string like 'lower_nospace'.
-    skip_records : int, default 0
-        Number of data records to skip after headers (useful for skipping footer rows
+    skip_rows : int, default 0
+        Number of data rows to skip after headers (useful for skipping footer rows
         or known bad data at start of file)
-    max_records : int, optional
-        Maximum number of records to read. None (default) reads all records.
+    n_rows : int, optional
+        Maximum number of rows to read. None (default) reads all rows.
     return_type : str, default 'record'
         Return type for records: 'record' for Record objects, 'dict' for OrderedDict
     null_values : str, list, tuple, or set, optional
@@ -196,10 +196,10 @@ class Reader(ABC):
             for record in reader:
                 print(record.name, record.email)
 
-        # Skip first 5 records, read only 100, return dicts
+        # Skip first 5 rows, read only 100, return dicts
         with readers.CSVReader(open('data.csv'),
-                              skip_records=5,
-                              max_records=100,
+                              skip_rows=5,
+                              n_rows=100,
                               return_type='dict') as reader:
             for row in reader:
                 print(row['name'])
@@ -241,10 +241,10 @@ class Reader(ABC):
     BIG_BYTE_THRESHOLD = 5 * 1024 * 1024  # Show progress for >5MB files
 
     def __init__(self,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = None,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
                  headers: Optional[List[str]] = None,
                  return_type: str = ReturnType.DEFAULT,
                  null_values: Union[str, List[str], tuple, set, None] = None
@@ -254,15 +254,15 @@ class Reader(ABC):
 
         Parameters
         ----------
-        add_rownum : bool, default True
+        add_row_num : bool, default True
             Add a '_row_num' field to each record containing the 1-based row number
         clean_headers : Clean or str, optional
             Header cleaning level from Clean enum or string. If None, uses
             default_header_clean from settings (default: Clean.LOWER_NOSPACE)
-        skip_records : int, default 0
-            Number of data records to skip after headers
-        max_records : int, optional
-            Maximum number of records to read, or None for all records
+        skip_rows : int, default 0
+            Number of data rows to skip after headers
+        n_rows : int, optional
+            Maximum number of rows to read, or None for all rows
         headers: Optional list of header names to use instead of reading from row 0
         return_type : str, default 'record'
             Either 'record' for Record objects or 'dict' for OrderedDict
@@ -287,13 +287,13 @@ class Reader(ABC):
                     for line in self.file:
                         yield line.strip().split(',')
         """
-        self.add_rownum = add_rownum
+        self.add_row_num = add_row_num
         if clean_headers is None:
             clean_headers = settings.get('default_header_clean', Clean.LOWER_NOSPACE)
         self.clean_headers = Clean.from_string(clean_headers)
         self._row_num = 0
-        self.skip_records = skip_records
-        self.max_records = max_records
+        self.skip_rows = skip_rows
+        self.n_rows = n_rows
         self.return_type = return_type
         self._record_class = None
 
@@ -432,8 +432,8 @@ class Reader(ABC):
     def _read_next_row(self) -> List[Any]:
         if self._data_iter is None:
             gen = self._generate_rows()
-            start = self.skip_records
-            stop = start + self.max_records if self.max_records is not None else None
+            start = self.skip_rows
+            stop = start + self.n_rows if self.n_rows is not None else None
             self._data_iter = itertools.islice(gen, start, stop)
 
         return next(self._data_iter)
@@ -456,10 +456,10 @@ class Reader(ABC):
         # Clean headers
         self._headers = [Clean.normalize(h, self.clean_headers) for h in raw_headers]
 
-        # Add self.add_rownum if requested and not already present
-        if self.add_rownum:
+        # Add self.add_row_num if requested and not already present
+        if self.add_row_num:
             if '_row_num' in self._headers:
-                raise ValueError("Header '_row_num' already exists. Remove it or set add_rownum=False.")
+                raise ValueError("Header '_row_num' already exists. Remove it or set add_row_num=False.")
             self._headers.append('_row_num')
 
         # Create Record subclass only if return_type is 'record'
@@ -504,13 +504,13 @@ class Reader(ABC):
         row_data = self._convert_nulls(row_data)
 
         # Pad with None if row is shorter than expected (excluding _row_num)
-        expected_data_cols = len(self._headers) - (1 if self.add_rownum and '_row_num' in self._headers else 0)
+        expected_data_cols = len(self._headers) - (1 if self.add_row_num and '_row_num' in self._headers else 0)
         while len(row_data) < expected_data_cols:
             row_data.append(None)
 
         # Add _row_num if it's in headers (always goes at the end)
-        if self.add_rownum and '_row_num' in self._headers:
-            row_data.append(self.skip_records + self._row_num)
+        if self.add_row_num and '_row_num' in self._headers:
+            row_data.append(self.skip_rows + self._row_num)
 
         # Truncate if row is longer than headers
         if len(row_data) > len(self._headers):

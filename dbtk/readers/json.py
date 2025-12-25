@@ -79,15 +79,15 @@ class JSONReader(Reader):
     def __init__(self,
                  fp: TextIO,
                  flatten: bool = True,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
                  null_values=None,
                  **kwargs):
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records,
+        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+                         skip_rows=skip_rows, n_rows=n_rows,
                          return_type=return_type, null_values=null_values)
         self.fp = fp
 
@@ -196,10 +196,10 @@ class NDJSONReader(Reader):
 
     def __init__(self,
                  fp: TextIO,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """
@@ -207,15 +207,15 @@ class NDJSONReader(Reader):
 
         Args:
             fp: File pointer to NDJSON file (one JSON object per line)
-            add_rownum: Add _row_num to each record
+            add_row_num: Add _row_num to each record
             clean_headers: Header cleaning level
-            skip_records: Number of records to skip from the beginning
-            max_records: Maximum number of records to read (None = unlimited)
+            skip_rows: Number of rows to skip from the beginning
+            n_rows: Maximum number of rows to read (None = unlimited)
             return_type: Either 'record' for Record objects or 'dict' for dict
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records,
+        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+                         skip_rows=skip_rows, n_rows=n_rows,
                          return_type=return_type, null_values=null_values)
         self.fp = fp
         self._trackable = self.fp

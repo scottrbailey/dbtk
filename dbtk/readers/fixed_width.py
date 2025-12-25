@@ -38,10 +38,10 @@ class FixedReader(Reader):
                  fp: TextIO,
                  columns: List[FixedColumn],
                  auto_trim: bool = True,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = Clean.NOOP,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """
@@ -54,15 +54,15 @@ class FixedReader(Reader):
                 structure of columns in the data.
             auto_trim (bool): Determines whether to automatically trim whitespace
                 from field values. Default is True.
-            add_rownum (bool): Determines whether to add a row number attribute
+            add_row_num (bool): Determines whether to add a row number attribute
             clean_headers (Clean): Determines the header cleaning level. Default is NOOP.
-            skip_records (int): The number of records to skip before reading data.
-            max_records (Optional[int]): The maximum number of records to read.
+            skip_rows (int): The number of rows to skip before reading data.
+            n_rows (Optional[int]): The maximum number of rows to read.
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
         """
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records,
+        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+                         skip_rows=skip_rows, n_rows=n_rows,
                          return_type=return_type, null_values=null_values)
         self.fp = fp
 

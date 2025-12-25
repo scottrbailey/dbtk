@@ -32,10 +32,10 @@ class XLSXReader(Reader):
     def __init__(self,
                  worksheet,
                  headers: Optional[List[str]] = None,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """Initialize XLSXReader for reading Excel .xlsx files.
@@ -43,10 +43,10 @@ class XLSXReader(Reader):
         Args:
             worksheet: openpyxl.Worksheet object to read from.
             headers: Optional list of header names to use instead of reading from row 1.
-            add_rownum: If True, adds a _row_num field to each record (default: True).
+            add_row_num: If True, adds a _row_num field to each record (default: True).
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
-            skip_records: Number of data records to skip after headers (default: 0).
-            max_records: Maximum number of records to read, or None for all (default: None).
+            skip_rows: Number of data rows to skip after headers (default: 0).
+            n_rows: Maximum number of rows to read, or None for all (default: None).
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
 
@@ -55,8 +55,8 @@ class XLSXReader(Reader):
         """
         if worksheet.__class__.__name__ != 'Worksheet':
             raise TypeError('worksheet must be of type openpyxl.Worksheet or use XLReader')
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records,
+        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+                         skip_rows=skip_rows, n_rows=n_rows,
                          return_type=return_type, null_values=null_values)
         self.ws = worksheet
         self._trackable = self.ws
@@ -106,10 +106,10 @@ class XLSReader(Reader):
     def __init__(self,
                  worksheet,
                  headers: Optional[List[str]] = None,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """Initialize XLReader for reading Excel .xls files.
@@ -117,10 +117,10 @@ class XLSReader(Reader):
         Args:
             worksheet: xlrd.Sheet object to read from.
             headers: Optional list of header names to use instead of reading from row 0.
-            add_rownum: If True, adds a _row_num field to each record (default: True).
+            add_row_num: If True, adds a _row_num field to each record (default: True).
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
-            skip_records: Number of data records to skip after headers (default: 0).
-            max_records: Maximum number of records to read, or None for all (default: None).
+            skip_rows: Number of data rows to skip after headers (default: 0).
+            n_rows: Maximum number of rows to read, or None for all (default: None).
             return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
 
@@ -129,8 +129,8 @@ class XLSReader(Reader):
         """
         if worksheet.__class__.__name__ != 'Sheet':
             raise TypeError('worksheet must be of type xlrd.Sheet or use XLSXReader')
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records,
+        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+                         skip_rows=skip_rows, n_rows=n_rows,
                          headers=headers, return_type=return_type, null_values=null_values)
         self.ws = worksheet
         self._trackable = self.ws

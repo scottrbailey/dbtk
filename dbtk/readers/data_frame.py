@@ -48,18 +48,18 @@ class DataFrameReader(Reader):
     def __init__(
         self,
         df,
-        add_rownum: bool = True,
+        add_row_num: bool = True,
         clean_headers: Clean = Clean.NOOP,
         return_type: str = 'record',
-        skip_records: int = 0,
-        max_records: Optional[int] = None,
+        skip_rows: int = 0,
+        n_rows: Optional[int] = None,
         null_values=None
     ):
         super().__init__(
-            add_rownum=add_rownum,
+            add_row_num=add_row_num,
             clean_headers=clean_headers,
-            skip_records=skip_records,
-            max_records=max_records,
+            skip_rows=skip_rows,
+            n_rows=n_rows,
             return_type=return_type,
             headers=None,  # we'll set this ourselves
             null_values=null_values
@@ -77,11 +77,11 @@ class DataFrameReader(Reader):
         else:
             raise TypeError(f"Unsupported DataFrame type: {type(df)}")
 
-        # Apply skip/max if needed (parent already stored the values)
-        if self.skip_records:
-            iterator = itertools.islice(iterator, self.skip_records, None)
-        if self.max_records is not None:
-            iterator = itertools.islice(iterator, self.max_records)
+        # Apply skip/n_rows if needed (parent already stored the values)
+        if self.skip_rows:
+            iterator = itertools.islice(iterator, self.skip_rows, None)
+        if self.n_rows is not None:
+            iterator = itertools.islice(iterator, self.n_rows)
 
         self._iterator = iterator
 
@@ -89,10 +89,10 @@ class DataFrameReader(Reader):
         self._trackable = None
 
         self._total_rows = len(df)
-        if self.skip_records:
-            self._total_rows -= self.skip_records
-        if self.max_records is not None:
-            self._total_rows = min(self._total_rows, self.max_records)
+        if self.skip_rows:
+            self._total_rows -= self.skip_rows
+        if self.n_rows is not None:
+            self._total_rows = min(self._total_rows, self.n_rows)
         self._total_rows = max(self._total_rows, 0)
 
     @property
@@ -108,7 +108,7 @@ class DataFrameReader(Reader):
         # Use columns we already detected from DataFrame
         self._headers = self.columns[:]
 
-        if self.add_rownum:
+        if self.add_row_num:
             if '_row_num' in self._headers:
                 raise ValueError("Header '_row_num' already exists.")
             self._headers.append('_row_num')
