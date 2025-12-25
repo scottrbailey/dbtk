@@ -68,8 +68,9 @@ class XMLReader(Reader):
 
         # Set trackable for progress tracking
         if hasattr(fp, '_uncompressed_size'):
-            # Compressed file - use fp to preserve _uncompressed_size attribute
-            self._trackable = fp
+            # Compressed file - use buffer's tell() but preserve _uncompressed_size
+            self._trackable = fp.buffer
+            self._trackable._uncompressed_size = fp._uncompressed_size
         elif hasattr(fp, 'buffer'):
             # Text mode file - use buffer for better performance
             self._trackable = fp.buffer
