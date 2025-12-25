@@ -206,12 +206,12 @@ class TestReaderBase:
             assert headers[-1] == '_row_num', f"{reader_type} should add _row_num at the end"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_skip_records(self, reader_type, csv_file, excel_file, json_file,
-                          ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test skip_records skips the correct number of records."""
+    def test_skip_rows(self, reader_type, csv_file, excel_file, json_file,
+                       ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test skip_rows skips the correct number of rows."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             skip_records=10) as reader:
+                             skip_rows=10) as reader:
             records = list(reader)
             assert len(records) == 90, f"{reader_type} should return 90 records after skipping 10"
 
@@ -223,22 +223,22 @@ class TestReaderBase:
                 assert first['trainee_id'] == 11, f"{reader_type} first record should be 11"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_max_records(self, reader_type, csv_file, excel_file, json_file,
-                         ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test max_records limits the number of records returned."""
+    def test_n_rows(self, reader_type, csv_file, excel_file, json_file,
+                    ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test n_rows limits the number of rows returned."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             max_records=25) as reader:
+                             n_rows=25) as reader:
             records = list(reader)
             assert len(records) == 25, f"{reader_type} should return exactly 25 records"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_skip_and_max_combined(self, reader_type, csv_file, excel_file, json_file,
-                                   ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test skip_records and max_records work together."""
+    def test_skip_and_n_rows_combined(self, reader_type, csv_file, excel_file, json_file,
+                                      ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test skip_rows and n_rows work together."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             skip_records=50, max_records=10) as reader:
+                             skip_rows=50, n_rows=10) as reader:
             records = list(reader)
             assert len(records) == 10, f"{reader_type} should return 10 records"
 
@@ -250,12 +250,12 @@ class TestReaderBase:
                 assert first['trainee_id'] == 51, f"{reader_type} first record should be 51"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_add_rownum_true(self, reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test add_rownum=True adds _row_num field."""
+    def test_add_row_num_true(self, reader_type, csv_file, excel_file, json_file,
+                              ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test add_row_num=True adds _row_num field."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             add_rownum=True) as reader:
+                             add_row_num=True) as reader:
             records = list(reader)
             first = records[0]
             assert '_row_num' in first, f"{reader_type} should have _row_num field"
@@ -265,12 +265,12 @@ class TestReaderBase:
             assert last['_row_num'] == 100, f"{reader_type} last _row_num should be 99"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_add_rownum_false(self, reader_type, csv_file, excel_file, json_file,
-                              ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test add_rownum=False excludes _row_num field."""
+    def test_add_row_num_false(self, reader_type, csv_file, excel_file, json_file,
+                               ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test add_row_num=False excludes _row_num field."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             add_rownum=False) as reader:
+                             add_row_num=False) as reader:
             headers = reader.headers
             assert '_row_num' not in headers, f"{reader_type} should not have _row_num in headers"
             assert len(headers) == 8, f"{reader_type} should have 8 columns without _row_num"
