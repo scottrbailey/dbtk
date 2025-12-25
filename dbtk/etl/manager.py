@@ -294,3 +294,116 @@ class EntityManager:
 
         logger.info(f"EntityManager state loaded from {path_obj} ({len(manager.entities)} entities)")
         return manager
+
+class ValidationCollector:
+    """
+    Callable collector/enricher for fn pipelines.
+
+    During row-wise processing:
+      - Collects unique codes
+      - Optionally enriches them with descriptions using TableLookup
+      - Can return enriched values (titles) instead of raw codes
+
+    Supports:
+      - Preload mode: instant enrichment, perfect valid/new split
+      - Lazy mode: enrich on first encounter
+      - No lookup: pure collection
+
+    Returns enriched value if return_desc=True (default), else raw.
+    """
+
+    def __init__(
+        self,
+        lookup: Optional[TableLookup] = None,
+        desc_field: Optional[str] = None,
+        return_desc: bool = True,
+    ):
+        self.lookup = lookup
+        self.desc_field = desc_field
+        self.return_desc = return_desc
+
+        self.existing: Dict[Any, str] = {}  # code -> description
+        self.added: set = set()             # new codes
+
+        if lookup:
+            self.key_name = (
+                lookup._key_col_names[0]
+                if isinstance(lookup._key_col_names, (list, tuple))
+                else lookup._key_col_names
+            )
+
+            if lookup._cache_strategy == TableLookup.CACHE_PRELOAD and lookup._preloaded:
+                self._preload_all()
+
+    def _preload_all(self):
+        """Extract all valid codes + descriptions from preloaded cache."""
+        for cache_key, result in self.lookup._cache.items():
+            code = cache_key[0] if isinstance(cache_key, tuple) else cache_key
+            desc = self._extract_desc(result)
+            self.existing[code] = desc
+
+    def _extract_desc(self, result: Any) -> str:
+        if isinstance(result, (str, int, float)):
+            return str(result)
+
+        if hasattr(result, "get"):
+            if self.desc_field:
+                return result.get(self.desc_field, str(code))
+            for field in ("title", "description", "name", "label"):
+                if val := result.get(field):
+                    return val
+            return str(result)
+
+        if isinstance(result, (tuple, list)) and len(result) > 1:
+            return result[1]
+
+        return str(result)
+
+    def __call__(self, value: Any) -> Any:
+        if value is None:
+            return value
+
+        if isinstance(value, str):
+            raw_codes = [c.strip() for c in value.split(",") if c.strip()]
+        elif isinstance(value, (list, tuple, set)):
+            raw_codes = [c for c in value if c]
+        else:
+            raw_codes = [value]
+
+        enriched = []
+        for code in raw_codes:
+            if code in self.existing:
+                desc = self.existing[code]
+            elif code in self.added:
+                desc = code
+            else:
+                if self.lookup:
+                    result = self.lookup({self.key_name: code})
+                    if result:
+                        desc = self._extract_desc(result)
+                        self.existing[code] = desc
+                    else:
+                        desc = code
+                        self.added.add(code)
+                else:
+                    desc = code
+                    self.added.add(code)
+
+            enriched.append(desc if self.return_desc else code)
+
+        # Return in original format
+        if isinstance(value, str):
+            return ",".join(enriched)
+        return enriched if isinstance(value, (list, tuple)) else enriched[0]
+
+    # Reporting
+    def get_valid_mapping(self) -> Dict[Any, str]:
+        return dict(self.existing)
+
+    def get_new_codes(self) -> List[Any]:
+        return sorted(self.added)
+
+    def get_all_mapping(self) -> Dict[Any, str]:
+        combined = dict(self.existing)
+        combined.update({code: code for code in self.added})
+        return combined
