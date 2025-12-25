@@ -3,11 +3,12 @@
 """Utility functions for automatic file format detection and reader selection."""
 
 import os
-from typing import List, Optional, TextIO
+from typing import List, Optional, TextIO, Union
+from pathlib import Path
 from ..defaults import settings
 
 
-def open_file(filename: str,
+def open_file(filename: Union[str, Path],
               mode: str = 'rt',
               encoding: Optional[str] = None,
               zip_member: Optional[str] = None) -> TextIO:
@@ -17,7 +18,7 @@ def open_file(filename: str,
     Supports: .gz (gzip), .bz2 (bzip2), .xz (lzma), .zip (zipfile)
 
     Args:
-        filename: Path to file (e.g., 'data.csv.gz', 'archive.zip')
+        filename: Path to file (e.g., 'data.csv.gz', 'archive.zip', or Path object)
         mode: File mode (default 'rt' for text reading)
         encoding: Text encoding (default None = use Python default)
         zip_member: For ZIP files, specific member to extract. If None, uses smart selection:
@@ -42,7 +43,14 @@ def open_file(filename: str,
 
         # ZIP with specific member
         fp = open_file('archive.zip', zip_member='data.csv')
+
+        # Using pathlib.Path
+        from pathlib import Path
+        fp = open_file(Path('data.csv.gz'))
     """
+    # Convert Path to string for compatibility with extension checks
+    filename = str(filename) if isinstance(filename, Path) else filename
+
     effective_encoding = encoding or 'utf-8-sig'
     buffer_size = settings.get('compressed_file_buffer_size', 1024 * 1024)
 
@@ -192,7 +200,7 @@ def open_file(filename: str,
         return open(filename, mode, encoding=effective_encoding)
 
 
-def get_reader(filename: str,
+def get_reader(filename: Union[str, Path],
                encoding: Optional[str] = None,
                clean_headers: Optional['Clean'] = None,
                **kwargs) -> 'Reader':
@@ -202,7 +210,7 @@ def get_reader(filename: str,
     Automatically handles compressed files (.gz, .bz2, .xz, .zip) transparently.
 
     Args:
-        filename: Path to data file (e.g., 'data.csv', 'data.csv.gz', 'archive.zip')
+        filename: Path to data file (e.g., 'data.csv', 'data.csv.gz', 'archive.zip', or Path object)
         encoding: File encoding for text files
         clean_headers: Header cleaning level (defaults vary by file type)
         **kwargs: Additional arguments passed to specific readers:
@@ -253,7 +261,16 @@ def get_reader(filename: str,
         with get_reader('data.txt', fixed_config=config) as reader:
             for record in reader:
                 print(record.name)
+
+        # Using pathlib.Path
+        from pathlib import Path
+        with get_reader(Path('data.csv.gz')) as reader:
+            for record in reader:
+                print(record)
     """
+    # Convert Path to string for compatibility with extension detection
+    filename = str(filename) if isinstance(filename, Path) else filename
+
     # Extract file format, handling compression extensions
     parts = filename.lower().split('.')
     compression_exts = {'gz', 'bz2', 'xz', 'zip'}
