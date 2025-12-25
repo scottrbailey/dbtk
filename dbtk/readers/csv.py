@@ -82,10 +82,10 @@ class CSVReader(Reader):
             for user_dict in reader:
                 print(user_dict['name'])
 
-        # Skip first 10 data rows, read only 100 records
+        # Skip first 10 data rows, read only 100 rows
         with readers.CSVReader(open('large.csv'),
-                              skip_records=10,
-                              max_records=100) as reader:
+                              skip_rows=10,
+                              n_rows=100) as reader:
             data = list(reader)
 
     See Also
@@ -105,11 +105,12 @@ class CSVReader(Reader):
                  fp: TextIO,
                  dialect=csv.excel,
                  headers: Optional[List[str]] = None,
-                 add_rownum: bool = True,
+                 add_row_num: bool = True,
                  clean_headers: Clean = Clean.DEFAULT,
-                 skip_records: int = 0,
-                 max_records: Optional[int] = None,
+                 skip_rows: int = 0,
+                 n_rows: Optional[int] = None,
                  return_type: str = ReturnType.DEFAULT,
+                 null_values=None,
                  **kwargs):
         """
         Initialize CSV reader for a file.
@@ -122,30 +123,44 @@ class CSVReader(Reader):
             CSV dialect (excel, excel_tab, unix_dialect, etc.)
         headers : List[str], optional
             Custom headers to use instead of reading from file
-        add_rownum : bool, default True
+        add_row_num : bool, default True
             Add _row_num field to records
         clean_headers : Clean, default Clean.DEFAULT
             Header cleaning level
-        skip_records : int, default 0
+        skip_rows : int, default 0
             Data rows to skip after headers
-        max_records : int, optional
-            Maximum records to read
+        n_rows : int, optional
+            Maximum rows to read
         return_type : str, default 'record'
             'record' or 'dict'
+        null_values : str, list, tuple, or set, optional
+            Values to convert to None (e.g., '\\N' for IMDB files)
         **kwargs
             Additional csv.reader() arguments (delimiter, quotechar, etc.)
         """
         if kwargs.get('delimiter') == '\t' and dialect == csv.excel:
             dialect = csv.excel_tab
             kwargs.pop('delimiter')
-        super().__init__(add_rownum=add_rownum, clean_headers=clean_headers,
-                         skip_records=skip_records, max_records=max_records,
-                         headers=headers, return_type=return_type)
+        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+                         skip_rows=skip_rows, n_rows=n_rows,
+                         headers=headers, return_type=return_type, null_values=null_values)
         self.fp = fp
         if hasattr(fp, 'encoding') and fp.encoding == 'utf-8':
             # Using the standard utf-8 encoding can cause issues with BOM headers in column names
             logger.warning("utf-8 encoding detected. Consider using 'utf-8-sig' encoding instead.")
-        self._trackable = fp.buffer if hasattr(fp, 'buffer') else fp
+
+        # Set trackable for progress tracking
+        if hasattr(fp, '_uncompressed_size'):
+            # Compressed file - use buffer's tell() but preserve _uncompressed_size
+            self._trackable = fp.buffer
+            self._trackable._uncompressed_size = fp._uncompressed_size
+        elif hasattr(fp, 'buffer'):
+            # Text mode file - use buffer for better performance
+            self._trackable = fp.buffer
+        else:
+            # Binary mode or other file type
+            self._trackable = fp
+
         self._rdr = csv.reader(fp, dialect=dialect, **kwargs)
         self._headers_read = False
 

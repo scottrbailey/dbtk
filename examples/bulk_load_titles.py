@@ -7,13 +7,12 @@ from dbtk.etl.transforms import TableLookup
 from dbtk.readers import DataFrameReader
 
 """
-Loads title.basics.tsv.gz from the IMDB dataset into a Postgres database.
-The title.basics.tsv dataset has over 11M records and is over 205MB compressed!
-If you
+Loads the first 100,000 rows of title.basics.tsv.gz from the IMDB dataset into a Postgres database.
+The title.basics.tsv dataset has over 11M records and is over 205MB compressed.
 
 The IMDB dataset can be found at https://developer.imdb.com/non-commercial-datasets/
 
-CREATE TABLE titles (
+CREATE TABLE titles_subset (
   tconst          varchar(10) PRIMARY KEY,
   title_type      varchar(30) NOT NULL,
   primary_title   text NOT NULL,
@@ -58,27 +57,10 @@ if __name__ == '__main__':
                               cache=TableLookup.CACHE_PRELOAD)
 
     # keep track of new genre
-    genre_collector = ValidationCollector()
+    genre_collector = ValidationCollector(lookup=genre_lookup, desc_field='title', return_desc=False)
     # Use polars ridiculously fast... but lazy csv reader
-    fp = Path.home() / 'Downloads' / 'title.basics.tsv.gz'
-    r"""
-    df = pl.scan_csv(fp, separator="\t", null_values=r'\N', encoding='utf8', ignore_errors=True).collect()
-    reader = DataFrameReader(df, add_rownum=False)
-    """
-    reader = dbtk.readers.get_reader(fp,
-                                     clean_headers=dbtk.readers.Clean.NOOP,
-                                     add_rownum=False,
-                                     dialect=excel_tab)
-    # pick a small subset from 11M rows
-    filtered = (r for r in reader
-                if r.get('titleType') == 'movie'
-                and r.get('isAdult') == '0'
-                and 'Drama' in r.get('genres', '')
-                and 'Crime' in r.get('genres', '')
-                and r.get('runtimeMinutes') != r'\N'
-                and int(r.get('runtimeMinutes')) <= 90
-                and r.get('startYear') != r'\N'
-                and 2020 <= int(r.get('startYear', 0) or 0) <= 2022)
+    df = pl.scan_csv(r'c:\Temp\title.basics.tsv.gz', separator="\t", null_values=r'\N', n_rows=100_000).collect()
+    reader = DataFrameReader(df, add_row_num=False)
     title_cols = {
         'tconst': {'field': 'tconst', 'primary_key': True},
         'title_type': {'field': 'titleType', 'nullable': False},
@@ -91,12 +73,10 @@ if __name__ == '__main__':
     }
     titles = dbtk.etl.Table('titles_subset', title_cols, cursor=cur)
     with dbtk.etl.BulkSurge(titles) as title_loader:
-        title_loader.load(filtered)
+        title_loader.load(reader)
 
     genre_insert = 'INSERT INTO genres (genre, title) VALUES (%s, %s)'
     new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]
-    """
     if new_genre:
         cur.executemany(genre_insert, new_genre)
         db.commit()
-    """

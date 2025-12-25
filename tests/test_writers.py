@@ -48,7 +48,7 @@ def sample_records(excel_file):
 
     reader_class = XLSXReader if ws.__class__.__name__ == 'Worksheet' else XLSReader
 
-    with reader_class(ws, add_rownum=False) as reader:
+    with reader_class(ws, add_row_num=False) as reader:
         records = []
         for i, record in enumerate(reader):
             if i >= 10:
@@ -135,7 +135,7 @@ class TestBaseWriter:
             writer.write()
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8-sig'), add_rownum=False) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
             records = list(reader)
             assert len(records) == 10
             assert reader.headers == sample_columns
