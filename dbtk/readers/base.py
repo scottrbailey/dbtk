@@ -161,6 +161,7 @@ class Reader(ABC):
     * **Row number tracking** - Automatic _row_num field for debugging
     * **Record skipping** - Skip header rows or bad data
     * **Record limiting** - Process only first N records
+    * **Record filtering** - Filter records with custom functions (new!)
     * **Flexible return types** - Record objects or dictionaries
     * **Context manager** - Automatic resource cleanup
     * **Iterator protocol** - Memory-efficient streaming
@@ -210,6 +211,13 @@ class Reader(ABC):
             # Headers like "ID #", "Student Name" become "id", "studentname"
             for record in reader:
                 print(record.id, record.studentname)
+
+        # Filter records with custom function
+        with readers.CSVReader(open('data.csv')) as reader:
+            reader.filter(lambda r: int(r.age) >= 18)
+            reader.filter(lambda r: r.country == 'US')
+            for record in reader:
+                print(record.name)  # Only US adults
 
     See Also
     --------
@@ -317,6 +325,7 @@ class Reader(ABC):
         self._big: bool = False         # True if source > 5MB (adds progress bar)
         self._source: str = None        # keep track of source filename for subclasses that use a file pointer directly (Excel)
         self._start_time: float = 0     # will get updated when the first record is read (time.monotonic())
+        self._filters = []              # filter pipeline (list of callables)
 
     def __enter__(self):
         """Context manager entry."""
@@ -325,6 +334,87 @@ class Reader(ABC):
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with cleanup."""
         self._cleanup()
+
+    def filter(self, func):
+        """
+        Add a filter function to the filtering pipeline.
+
+        Filter functions are applied after skip_rows and null_values conversion, but before
+        the n_rows limit. Multiple calls to filter() accumulate in a pipeline - all filters
+        must return True for a record to be included.
+
+        The filter operates on the final record (Record object or OrderedDict depending on
+        return_type), after null value conversion has been applied. This allows you to filter
+        on clean data rather than raw values.
+
+        Parameters
+        ----------
+        func : callable
+            A function that takes a record (Record or OrderedDict) and returns True to keep it,
+            False to filter it out. The function should accept a single argument (the record).
+
+        Returns
+        -------
+        Reader
+            Returns self to allow method chaining
+
+        Example
+        -------
+        ::
+
+            from dbtk import readers
+
+            # Single filter
+            with readers.CSVReader(open('users.csv')) as reader:
+                reader.filter(lambda r: r.age >= 18)
+                for record in reader:
+                    print(record.name)  # Only adults
+
+            # Multiple filters (all must pass)
+            with readers.CSVReader(open('users.csv')) as reader:
+                reader.filter(lambda r: r.age >= 18)
+                reader.filter(lambda r: r.country == 'US')
+                reader.filter(lambda r: r.active == 'true')
+                for record in reader:
+                    print(record.name)  # US adults who are active
+
+            # Complex filter function
+            def valid_email(record):
+                return '@' in record.email and '.' in record.email
+
+            with readers.CSVReader(open('users.csv')) as reader:
+                reader.filter(valid_email)
+                for record in reader:
+                    print(record.email)
+
+            # Get exactly n_rows after filtering
+            with readers.CSVReader(open('users.csv')) as reader:
+                reader.filter(lambda r: r.age >= 18)
+                reader.n_rows = 100  # Get 100 records that pass the filter
+                data = list(reader)
+                print(len(data))  # Will be 100 (or less if fewer than 100 match)
+
+        Notes
+        -----
+        * Filters are lazy - they're applied during iteration, not when filter() is called
+        * Execution order: read → skip_rows → null_values → filter pipeline → n_rows
+        * If both skip_rows and filter() are used, a warning is logged (skip_rows applies first)
+        * The n_rows limit applies after filtering, so n_rows=100 returns 100 filtered records
+        * Record._row_num field reflects the count of returned (filtered) records, not raw file rows
+        """
+        if not callable(func):
+            raise TypeError(f"filter() requires a callable, got {type(func).__name__}")
+
+        self._filters.append(func)
+
+        # Warn if combining skip_rows with filtering (only on first filter)
+        if self.skip_rows > 0 and len(self._filters) == 1:
+            logger.warning(
+                "Using both skip_rows and filter() - skip_rows applies before filtering. "
+                "Consider using only filter() for clarity."
+            )
+
+        return self
 
     def __iter__(self) -> Iterator[Union[Record, OrderedDict]]:
         """Make reader iterable."""
@@ -343,24 +433,40 @@ class Reader(ABC):
                 self._prog = _Progress(row_total=self._total_rows)
                 self._big = self._total_rows > self.BIG_ROW_THRESHOLD
 
-        try:
-            row_data = self._read_next_row()
-        except StopIteration:
-            took = time.monotonic() - self._start_time
-            rate = self._row_num / took if took else 0
-            if self._big:
-                print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
-            print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
-            logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
-            raise  # ← let for-loop end
+        while True:
+            # Check n_rows limit (applies after filtering)
+            if self.n_rows is not None and self._row_num >= self.n_rows:
+                raise StopIteration
 
-        self._row_num += 1
+            try:
+                row_data = self._read_next_row()
+            except StopIteration:
+                took = time.monotonic() - self._start_time
+                rate = self._row_num / took if took else 0
+                if self._big:
+                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
+                print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
+                logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
+                raise  # ← let for-loop end
 
-        if self._big and (self._row_num == 500 or self._row_num % 50_000 == 0):
-            print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
-                  f"({self._row_num:,})", end="", flush=True)
+            # Increment _row_num before creating record (needed for _row_num field)
+            self._row_num += 1
+            record = self._create_record(row_data)
 
-        return self._create_record(row_data)
+            # Apply filter pipeline
+            if self._filters:
+                passed = all(f(record) for f in self._filters)
+                if not passed:
+                    # Record didn't pass filter, undo increment and try next row
+                    self._row_num -= 1
+                    continue
+
+            # Record passed all filters (or no filters present)
+            if self._big and (self._row_num == 500 or self._row_num % 50_000 == 0):
+                print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
+                      f"({self._row_num:,})", end="", flush=True)
+
+            return record
 
     def __repr__(self):
         source = self._get_source(base_name=True)
@@ -432,9 +538,10 @@ class Reader(ABC):
     def _read_next_row(self) -> List[Any]:
         if self._data_iter is None:
             gen = self._generate_rows()
-            start = self.skip_rows
-            stop = start + self.n_rows if self.n_rows is not None else None
-            self._data_iter = itertools.islice(gen, start, stop)
+            # Only apply skip_rows here; n_rows is applied after filtering in __next__()
+            if self.skip_rows > 0:
+                gen = itertools.islice(gen, self.skip_rows, None)
+            self._data_iter = gen
 
         return next(self._data_iter)
 
