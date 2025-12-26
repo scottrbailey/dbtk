@@ -458,6 +458,14 @@ class Reader(ABC):
             # Track total rows read (before filtering)
             self._rows_read += 1
 
+            # Show progress based on rows read, not filtered count
+            if self._big and (self._rows_read == 500 or self._rows_read % 50_000 == 0):
+                if self._filters:
+                    print(f"\r{self.__class__.__name__[:-6]} → {self._rows_read:,} read → {self._row_num:,} filtered", end="", flush=True)
+                else:
+                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
+                          f"({self._row_num:,})", end="", flush=True)
+
             # Increment _row_num before creating record (needed for _row_num field)
             self._row_num += 1
             record = self._create_record(row_data)
@@ -471,14 +479,6 @@ class Reader(ABC):
                     continue
 
             # Record passed all filters (or no filters present)
-            # Show progress based on rows read, not filtered count
-            if self._big and (self._rows_read == 500 or self._rows_read % 50_000 == 0):
-                if self._filters:
-                    print(f"\r{self.__class__.__name__[:-6]} → {self._rows_read:,} read → {self._row_num:,} filtered", end="", flush=True)
-                else:
-                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
-                          f"({self._row_num:,})", end="", flush=True)
-
             return record
 
     def __repr__(self):
