@@ -441,3 +441,35 @@ class ValidationCollector:
         combined = dict(self.existing)
         combined.update({code: code for code in self.added})
         return combined
+
+    def get_all(self) -> set:
+        """
+        Get all codes (existing + added) as a set.
+
+        Useful for filtering with tools like polars that need a set/list
+        of valid values rather than a callable.
+
+        Returns
+        -------
+        set
+            Union of existing codes and added codes
+
+        Example
+        -------
+        ::
+
+            # Collect valid titles
+            title_collector = ValidationCollector()
+            for record in titles:
+                title_collector(record['tconst'])
+
+            # Use with polars filtering
+            all_titles = title_collector.get_all()
+            df = pl.scan_csv('principals.tsv.gz').filter(
+                pl.col('tconst').is_in(all_titles)
+            )
+
+            # Or with dbtk reader filtering
+            reader.filter(lambda r: r.tconst in title_collector)  # Uses __contains__
+        """
+        return set(self.existing.keys()) | self.added
