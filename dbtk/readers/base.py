@@ -444,15 +444,13 @@ class Reader(ABC):
             except StopIteration:
                 took = time.monotonic() - self._start_time
                 rate = self._row_num / took if took else 0
+                if self._big:
+                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
                 # Show both counts if filtering was used
                 if self._filters and self._rows_read != self._row_num:
-                    if self._big:
-                        print()  # Clear the progress line
                     print(f"Done in {took:.2f}s - {self._rows_read:,} read → {self._row_num:,} returned ({int(rate):,} rec/s)")
                     logger.info(f"Read {self._rows_read:,} rows, returned {self._row_num:,} in {took:.2f}s ({int(rate):,} rec/s)")
                 else:
-                    if self._big:
-                        print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
                     print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
                     logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
                 raise  # ← let for-loop end
