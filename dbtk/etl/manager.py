@@ -396,13 +396,12 @@ class ValidationCollector:
             return ",".join(enriched)
         return enriched if isinstance(value, (list, tuple)) else enriched[0]
 
-    # Validation
-    def is_valid(self, value: Any) -> bool:
+    def __contains__(self, value: Any) -> bool:
         """
-        Check if a value exists in either existing or added sets.
+        Support 'in' operator for validation.
 
-        Useful for validating/filtering records based on collected values
-        without worrying about which set contains the value.
+        Check if a value exists in either existing or added sets.
+        Useful for validating/filtering records based on collected values.
 
         Parameters
         ----------
@@ -425,19 +424,11 @@ class ValidationCollector:
 
             # Filter principals based on collected titles
             with get_reader('title.principals.tsv.gz') as reader:
-                reader.filter(lambda r: title_collector.is_valid(r.tconst))
+                reader.filter(lambda r: r.tconst in title_collector)
                 for record in reader:
                     process(record)
         """
         return value in self.existing or value in self.added
-
-    def __contains__(self, value: Any) -> bool:
-        """
-        Support 'in' operator for validation.
-
-        Allows: if value in collector: ...
-        """
-        return self.is_valid(value)
 
     # Reporting
     def get_valid_mapping(self) -> Dict[Any, str]:
