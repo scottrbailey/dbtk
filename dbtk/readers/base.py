@@ -300,6 +300,7 @@ class Reader(ABC):
             clean_headers = settings.get('default_header_clean', Clean.LOWER_NOSPACE)
         self.clean_headers = Clean.from_string(clean_headers)
         self._row_num = 0
+        self._rows_read = 0
         self.skip_rows = skip_rows
         self.n_rows = n_rows
         self.return_type = return_type
@@ -445,9 +446,17 @@ class Reader(ABC):
                 rate = self._row_num / took if took else 0
                 if self._big:
                     print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
-                print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
-                logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
+                # Show both counts if filtering was used
+                if self._filters and self._rows_read != self._row_num:
+                    print(f"Done in {took:.2f}s - {self._rows_read:,} read → {self._row_num:,} returned ({int(rate):,} rec/s)")
+                    logger.info(f"Read {self._rows_read:,} rows, returned {self._row_num:,} in {took:.2f}s ({int(rate):,} rec/s)")
+                else:
+                    print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
+                    logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
                 raise  # ← let for-loop end
+
+            # Track total rows read (before filtering)
+            self._rows_read += 1
 
             # Increment _row_num before creating record (needed for _row_num field)
             self._row_num += 1
@@ -462,9 +471,13 @@ class Reader(ABC):
                     continue
 
             # Record passed all filters (or no filters present)
-            if self._big and (self._row_num == 500 or self._row_num % 50_000 == 0):
-                print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
-                      f"({self._row_num:,})", end="", flush=True)
+            # Show progress based on rows read, not filtered count
+            if self._big and (self._rows_read == 500 or self._rows_read % 50_000 == 0):
+                if self._filters:
+                    print(f"\r{self.__class__.__name__[:-6]} → {self._rows_read:,} read → {self._row_num:,} filtered", end="", flush=True)
+                else:
+                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
+                          f"({self._row_num:,})", end="", flush=True)
 
             return record
 
