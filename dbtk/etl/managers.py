@@ -1,4 +1,4 @@
-# dbtk/etl/manager.py
+# dbtk/etl/managers.py
 
 """
 Orchestration tools for multi-stage, resumable ETL processes.
