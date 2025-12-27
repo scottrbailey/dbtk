@@ -377,7 +377,9 @@ class ValidationCollector:
             elif code in self.added:
                 desc = code
             else:
-                if self.lookup:
+                # Only query DB if lookup exists and isn't preloaded
+                # Preloaded means all valid values are in cache, so cache miss = new value
+                if self.lookup and not self.lookup._preloaded:
                     result = self.lookup({self.key_name: code})
                     if result:
                         desc = self._extract_desc(result)
@@ -386,6 +388,7 @@ class ValidationCollector:
                         desc = code
                         self.added.add(code)
                 else:
+                    # No lookup or preloaded (cache miss = definitely new)
                     desc = code
                     self.added.add(code)
 
