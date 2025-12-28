@@ -1044,7 +1044,9 @@ class TestSpecialColumnNames:
         result = special_chars_table.execute('select')
         assert result == 0
         row = cursor.fetchone()
-        assert row['spirit-id'] == 'SPIRIT004'
+        # Cursor returns sanitized field names, not original column names
+        assert row['spirit_id'] == 'SPIRIT004'
+        assert row['spirit_name'] == 'Raava'
 
     def test_delete_with_special_column_names(self, special_chars_table, cursor):
         """Test DELETE with special column names uses sanitized bind parameters.
