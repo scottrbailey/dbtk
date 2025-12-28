@@ -55,15 +55,15 @@ class EntityManager:
     Incremental entity manager for resumable, multi-stage imports.
 
     Optimized for workflows where every inbound record has a reliable
-    primary key (e.g., CRM application ID), and secondary keys plus
+    primary id (e.g., CRM application ID), and secondary ids plus
     enrichment data are resolved on-demand.
 
     Parameters
     ----------
     primary_id : str
-        Name of the reliable source key (e.g., "crm_id")
+        Name of the reliable source id (e.g., "crm_id")
     secondary_ids : List[str]
-        Keys to resolve and index (e.g., ["recruit_id", "sis_id"])
+        IDs to resolve and index (e.g., ["recruit_id", "sis_id"])
 
     Examples
     --------
