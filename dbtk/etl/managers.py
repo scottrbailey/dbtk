@@ -18,6 +18,14 @@ from .transforms.database import TableLookup
 logger = logging.getLogger(__name__)
 
 
+class EntityStatus:
+    """Status values for entity resolution lifecycle."""
+    PENDING = "pending"
+    RESOLVED = "resolved"
+    ERROR = "error"
+    SKIPPED = "skipped"
+    
+    
 class ErrorDetail:
     """Structured error record attached to an entity."""
 
@@ -47,19 +55,19 @@ class EntityManager:
     Incremental entity manager for resumable, multi-stage imports.
 
     Optimized for workflows where every inbound record has a reliable
-    primary key (e.g., CRM application ID), and secondary keys plus
+    primary id (e.g., CRM application ID), and secondary ids plus
     enrichment data are resolved on-demand.
 
     Parameters
     ----------
-    primary_key : str
-        Name of the reliable source key (e.g., "crm_id")
-    secondary_keys : List[str]
-        Keys to resolve and index (e.g., ["recruit_id", "sis_id"])
+    primary_id : str
+        Name of the reliable source id (e.g., "crm_id")
+    secondary_ids : List[str]
+        IDs to resolve and index (e.g., ["recruit_id", "sis_id"])
 
     Examples
     --------
-    >>> manager = EntityManager(primary_key="crm_id", secondary_keys=["recruit_id", "sis_id"])
+    >>> manager = EntityManager(primary_id="crm_id", secondary_ids=["recruit_id", "sis_id"])
     >>> stmt = cursor.prepare_file("sql/resolve_person.sql")
     >>> manager.set_main_resolver(stmt)
     >>>
@@ -72,22 +80,22 @@ class EntityManager:
 
     def __init__(
         self,
-        primary_key: str,
-        secondary_keys: List[str],
+        primary_id: str,
+        secondary_ids: List[str],
     ):
-        self.primary_key = primary_key
-        self.secondary_keys = secondary_keys or []
-        self.key_types = [primary_key] + self.secondary_keys
+        self.primary_id = primary_id
+        self.secondary_ids = secondary_ids or []
+        self.id_types = [primary_id] + self.secondary_ids
 
         # primary_value -> entity dict
         self.entities: Dict[Any, Dict[str, Any]] = {}
 
         # secondary_value -> primary_value
         self._secondary_index: Dict[str, Dict[Any, Any]] = {
-            k: {} for k in self.secondary_keys
+            k: {} for k in self.secondary_ids
         }
 
-        # from_key -> resolver
+        # from_id -> resolver
         self._resolvers: Dict[str, Any] = {}
 
     # =================================================================
@@ -98,14 +106,14 @@ class EntityManager:
         primary_value: Any,
         *,
         auto_resolve: bool = True,
-        status: str = "pending",
+        status: str = EntityStatus.PENDING,
     ) -> Dict[str, Any]:
         """Core method: get/create entity and optionally resolve."""
         entity = self.entities.get(primary_value)
 
         if entity is None:
             entity = {
-                self.primary_key: primary_value,
+                self.primary_id: primary_value,
                 "status": status,
                 "errors": [],
             }
@@ -122,26 +130,26 @@ class EntityManager:
     def set_main_resolver(
         self,
         resolver: Union[TableLookup, PreparedStatement],
-        from_keys: Optional[List[str]] = None,
+        from_ids: Optional[List[str]] = None,
     ) -> None:
-        """Set the main resolver (most common: from primary_key)."""
-        if from_keys is None:
-            from_keys = [self.primary_key]
+        """Set the main resolver (most common: from primary_id)."""
+        if from_ids is None:
+            from_ids = [self.primary_id]
 
-        for key in from_keys:
-            if key not in self.key_types:
-                raise ValueError(f"Invalid from_key for resolver: {key}")
-            self._resolvers[key] = resolver
+        for id in from_ids:
+            if id not in self.id_types:
+                raise ValueError(f"Invalid from_id for resolver: {id}")
+            self._resolvers[id] = resolver
 
     def add_fallback_resolver(
         self,
-        from_key: str,
+        from_id: str,
         resolver: Union[TableLookup, PreparedStatement],
     ) -> None:
         """Add resolver for rare secondary-to-secondary cases."""
-        if from_key not in self.secondary_keys:
-            raise ValueError(f"Fallback from_key must be secondary: {from_key}")
-        self._resolvers[from_key] = resolver
+        if from_id not in self.secondary_ids:
+            raise ValueError(f"Fallback from_key must be secondary: {from_id}")
+        self._resolvers[from_id] = resolver
 
     # =================================================================
     # Resolution
@@ -149,31 +157,31 @@ class EntityManager:
     def resolve(self, entity: Dict[str, Any]) -> bool:
         """Resolve secondary keys and enrich entity."""
         updated = False
-        primary_val = entity.get(self.primary_key)
+        primary_val = entity.get(self.primary_id)
 
-        for key in self.key_types:
-            if entity.get(key) is None:
+        for id in self.id_types:
+            if entity.get(id) is None:
                 continue
-            resolver = self._resolvers.get(key)
+            resolver = self._resolvers.get(id)
             if resolver is None:
                 continue
 
-            if self._apply_resolver(entity, key, resolver, primary_val):
+            if self._apply_resolver(entity, id, resolver, primary_val):
                 updated = True
 
         if updated:
-            entity["status"] = "resolved"
+            entity["status"] = EntityStatus.RESOLVED
 
         return updated
 
     def _apply_resolver(
         self,
         entity: Dict[str, Any],
-        using_key: str,
+        using_id: str,
         resolver: Union[TableLookup, PreparedStatement],
         primary_val: Any,
     ) -> bool:
-        bind_vars = {using_key: entity[using_key]}
+        bind_vars = {using_id: entity[using_id]}
 
         if isinstance(resolver, TableLookup):
             result = resolver(bind_vars)
@@ -195,8 +203,8 @@ class EntityManager:
         updated = False
 
         # Tracked secondary keys
-        for sk in self.secondary_keys:
-            if sk == using_key:
+        for sk in self.secondary_ids:
+            if sk == using_id:
                 continue
             new_val = row_dict.get(sk)
             if new_val is not None and entity.get(sk) != new_val:
@@ -209,7 +217,7 @@ class EntityManager:
 
         # Enrichment columns
         for col, val in row_dict.items():
-            if col not in self.key_types and entity.get(col) != val:
+            if col not in self.id_types and entity.get(col) != val:
                 entity[col] = val
                 updated = True
 
@@ -221,10 +229,10 @@ class EntityManager:
     def get_by_primary(self, primary_value: Any) -> Optional[Dict[str, Any]]:
         return self.entities.get(primary_value)
 
-    def get_by_secondary(self, secondary_key: str, value: Any) -> Optional[Dict[str, Any]]:
-        if secondary_key not in self.secondary_keys:
-            raise ValueError(f"Unknown secondary key: {secondary_key}")
-        primary_val = self._secondary_index[secondary_key].get(value)
+    def get_by_secondary(self, secondary_id: str, value: Any) -> Optional[Dict[str, Any]]:
+        if secondary_id not in self.secondary_ids:
+            raise ValueError(f"Unknown secondary id: {secondary_id}")
+        primary_val = self._secondary_index[secondary_id].get(value)
         return self.entities.get(primary_val) if primary_val is not None else None
 
     # =================================================================
@@ -273,13 +281,13 @@ class EntityManager:
     def load(
         cls,
         path: Union[str, Path],
-        primary_key: str,
-        secondary_keys: List[str],
+        primary_id: str,
+        secondary_ids: List[str],
     ) -> "EntityManager":
         path_obj = Path(path)
         data = json.loads(path_obj.read_text())
 
-        manager = cls(primary_key=primary_key, secondary_keys=secondary_keys)
+        manager = cls(primary_id=primary_id, secondary_ids=secondary_ids)
 
         for primary_val, entity_data in data.items():
             entity = {
@@ -288,7 +296,7 @@ class EntityManager:
             }
             manager.entities[primary_val] = entity
 
-            for sk in secondary_keys:
+            for sk in secondary_ids:
                 if (val := entity.get(sk)) is not None:
                     manager._secondary_index[sk][val] = primary_val
 

@@ -758,14 +758,11 @@ class Table:
         if not param_names:
             return () if self._paramstyle in ParamStyle.positional_styles() else {}
 
-        bind_to_col = {col_def['bind_name']: col for col, col_def in self._columns.items()}
         filtered_values = {}
 
         for bind_name in param_names:
-            if bind_name in bind_to_col:
-                col = bind_to_col[bind_name]
-                if col in self.values:
-                    filtered_values[bind_name] = self.values[col]
+            if bind_name in self.values:
+                filtered_values[bind_name] = self.values[bind_name]
 
         if mode == 'positional':
             return tuple(filtered_values.get(param, None) for param in param_names)
@@ -810,7 +807,9 @@ class Table:
                         val = func(val)
                 else:
                     val = fn(val)
-            values[col] = val
+            # Store values using bind_name as key (not column name)
+            bind_name = col_def['bind_name']
+            values[bind_name] = val
         self.values = values
 
         # Automatically update readiness after normal record processing
