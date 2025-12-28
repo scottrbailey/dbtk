@@ -10,7 +10,7 @@ CREATE TABLE etl.names_subset (
     birth_year int,
     death_year int,
     primary_profession varchar(100)[],
-    known_for_titles varchar(100)[]
+    known_for_titles varchar(10)[]
 );
 """
 
