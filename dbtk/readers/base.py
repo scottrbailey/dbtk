@@ -463,8 +463,8 @@ class Reader(ABC):
                 if self._filters:
                     print(f"\r{self.__class__.__name__[:-6]} → {self._rows_read:,} read → {self._row_num:,} filtered", end="", flush=True)
                 else:
-                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} "
-                          f"({self._row_num:,})", end="", flush=True)
+                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._rows_read)} "
+                          f"({self._rows_read:,})", end="", flush=True)
 
             # Increment _row_num before creating record (needed for _row_num field)
             self._row_num += 1
