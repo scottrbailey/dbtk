@@ -1,4 +1,4 @@
-# dbtk/etl/manager.py
+# dbtk/etl/managers.py
 
 """
 Orchestration tools for multi-stage, resumable ETL processes.
@@ -377,7 +377,9 @@ class ValidationCollector:
             elif code in self.added:
                 desc = code
             else:
-                if self.lookup:
+                # Only query DB if lookup exists and isn't preloaded
+                # Preloaded means all valid values are in cache, so cache miss = new value
+                if self.lookup and not self.lookup._preloaded:
                     result = self.lookup({self.key_name: code})
                     if result:
                         desc = self._extract_desc(result)
@@ -386,6 +388,7 @@ class ValidationCollector:
                         desc = code
                         self.added.add(code)
                 else:
+                    # No lookup or preloaded (cache miss = definitely new)
                     desc = code
                     self.added.add(code)
 
@@ -395,6 +398,40 @@ class ValidationCollector:
         if isinstance(value, str):
             return ",".join(enriched)
         return enriched if isinstance(value, (list, tuple)) else enriched[0]
+
+    def __contains__(self, value: Any) -> bool:
+        """
+        Support 'in' operator for validation.
+
+        Check if a value exists in either existing or added sets.
+        Useful for validating/filtering records based on collected values.
+
+        Parameters
+        ----------
+        value : Any
+            The value to check
+
+        Returns
+        -------
+        bool
+            True if value exists in either existing or added sets
+
+        Example
+        -------
+        ::
+
+            # Collect titles
+            title_collector = ValidationCollector()
+            for record in titles_reader:
+                title_collector(record['tconst'])
+
+            # Filter principals based on collected titles
+            with get_reader('title.principals.tsv.gz') as reader:
+                reader.filter(lambda r: r.tconst in title_collector)
+                for record in reader:
+                    process(record)
+        """
+        return value in self.existing or value in self.added
 
     # Reporting
     def get_valid_mapping(self) -> Dict[Any, str]:
@@ -407,3 +444,35 @@ class ValidationCollector:
         combined = dict(self.existing)
         combined.update({code: code for code in self.added})
         return combined
+
+    def get_all(self) -> set:
+        """
+        Get all codes (existing + added) as a set.
+
+        Useful for filtering with tools like polars that need a set/list
+        of valid values rather than a callable.
+
+        Returns
+        -------
+        set
+            Union of existing codes and added codes
+
+        Example
+        -------
+        ::
+
+            # Collect valid titles
+            title_collector = ValidationCollector()
+            for record in titles:
+                title_collector(record['tconst'])
+
+            # Use with polars filtering
+            all_titles = title_collector.get_all()
+            df = pl.scan_csv('principals.tsv.gz').filter(
+                pl.col('tconst').is_in(all_titles)
+            )
+
+            # Or with dbtk reader filtering
+            reader.filter(lambda r: r.tconst in title_collector)  # Uses __contains__
+        """
+        return set(self.existing.keys()) | self.added
