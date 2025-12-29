@@ -391,7 +391,7 @@ class TestExcelWriter:
         """Test calling write_batch multiple times appends to same sheet."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             # Write first batch
             writer.write_batch(sample_records[:5], sheet_name='Data')
             # Write second batch
@@ -411,7 +411,7 @@ class TestExcelWriter:
         """Test write_batch to multiple different sheets in one workbook."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[:5], sheet_name='First')
             writer.write_batch(sample_records[5:], sheet_name='Second')
 
@@ -429,7 +429,7 @@ class TestExcelWriter:
         """Test that headers are written only on first batch, not subsequent."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[:3], sheet_name='Data')
             writer.write_batch(sample_records[3:6], sheet_name='Data')
             writer.write_batch(sample_records[6:], sheet_name='Data')
@@ -452,7 +452,7 @@ class TestExcelWriter:
         output_file = tmp_path / "output.xlsx"
 
         # Simulate streaming: no data in __init__
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             # Write in batches
             for i in range(0, len(sample_records), 3):
                 batch = sample_records[i:i+3]
@@ -470,11 +470,11 @@ class TestExcelWriter:
         output_file = tmp_path / "output.xlsx"
 
         # First session: create workbook with one sheet
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[:5], sheet_name='FirstRun')
 
         # Second session: append another sheet
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[5:], sheet_name='SecondRun')
 
         from openpyxl import load_workbook
@@ -489,7 +489,7 @@ class TestExcelWriter:
         """Test that default sheet name 'Data' is used when not specified."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records)
 
         from openpyxl import load_workbook
@@ -501,7 +501,7 @@ class TestExcelWriter:
         """Test using sheet_name parameter in __init__ as default."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file, sheet_name='MySheet') as writer:
+        with ExcelWriter(file=output_file, sheet_name='MySheet') as writer:
             # Don't specify sheet_name - should use 'MySheet'
             writer.write_batch(sample_records)
 

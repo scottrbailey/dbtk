@@ -41,25 +41,25 @@ class ExcelWriter(BatchWriter):
     Usage examples:
 
     # Mode 1: Traditional single-shot write
-    ExcelWriter('report.xlsx', data=cursor).write()
+    ExcelWriter(cursor, 'report.xlsx').write()
 
-    # Mode 2: Pure streaming with write_batch() (backward compatible)
-    with ExcelWriter('report.xlsx') as writer:
+    # Mode 2: Pure streaming with write_batch()
+    with ExcelWriter(file='report.xlsx') as writer:
         writer.write_batch(cursor)  # goes to sheet 'Data'
 
     # Mode 3: Hybrid - initial data + streaming
-    with ExcelWriter('report.xlsx', data=first_batch) as writer:
+    with ExcelWriter(first_batch, 'report.xlsx') as writer:
         writer.write()  # Write initial batch
         writer.write_batch(second_batch)  # Stream additional batches
 
     # Multi-sheet report
-    with ExcelWriter('report.xlsx', sheet_name='Summary') as writer:
+    with ExcelWriter(file='report.xlsx', sheet_name='Summary') as writer:
         writer.write_batch(summary_data, sheet_name='Summary')
         writer.write_batch(users_data, sheet_name='Users')
         writer.write_batch(orders_data, sheet_name='Orders')
 
     # Streaming / batch mode
-    with ExcelWriter('large.xlsx') as writer:
+    with ExcelWriter(file='large.xlsx') as writer:
         for batch in large_generator:
             writer.write_batch(batch, sheet_name='Data')  # appends to 'Data'
     """
@@ -69,8 +69,8 @@ class ExcelWriter(BatchWriter):
 
     def __init__(
         self,
-        file: Union[str, Path],
         data: Optional[Iterable[RecordLike]] = None,
+        file: Optional[Union[str, Path]] = None,
         sheet_name: Optional[str] = None,
         write_headers: bool = True,
     ):
@@ -79,15 +79,18 @@ class ExcelWriter(BatchWriter):
 
         Parameters
         ----------
-        file : str or Path
-            Output Excel filename (.xlsx)
         data : Iterable[RecordLike], optional
             Initial data to write. If None, use write_batch() for streaming mode.
+        file : str or Path, optional
+            Output Excel filename (.xlsx). Required for Excel output.
         sheet_name : str, optional
             Default/active sheet name to use for write_batch() calls without explicit sheet_name
         write_headers : bool, default True
             Whether to write column headers (only when sheet is empty)
         """
+        if file is None:
+            raise ValueError("ExcelWriter requires an output file path")
+
         super().__init__(data=data, file=file, write_headers=write_headers)
 
         self.output_path = Path(file)
@@ -356,7 +359,7 @@ def to_excel(
 
     For multi-sheet or advanced reports, use ExcelWriter as a context manager with write_batch().
     """
-    with ExcelWriter(file=filename, write_headers=write_headers) as writer:
+    with ExcelWriter(data=None, file=filename, write_headers=write_headers) as writer:
         writer.write_batch(data=data, sheet_name=sheet)
 
 
@@ -553,10 +556,10 @@ class LinkedExcelWriter(ExcelWriter):
 
     Parameters
     ----------
-    file : str or Path
-        Output Excel filename (.xlsx)
     data : Iterable[RecordLike], optional
         Initial data to write. If None, use write_batch() for streaming mode.
+    file : str or Path
+        Output Excel filename (.xlsx)
     sheet_name : str, optional
         Default sheet name for write_batch() calls
     write_headers : bool, default True
@@ -571,7 +574,7 @@ class LinkedExcelWriter(ExcelWriter):
     --------
     **Basic internal linking between sheets**::
 
-        with LinkedExcelWriter('school_report.xlsx') as writer:
+        with LinkedExcelWriter(file='school_report.xlsx') as writer:
             # Define linkable entity
             student_link = LinkSource(
                 name="student",
@@ -592,7 +595,7 @@ class LinkedExcelWriter(ExcelWriter):
 
     **External links to CRM system**::
 
-        with LinkedExcelWriter('sales_report.xlsx') as writer:
+        with LinkedExcelWriter(file='sales_report.xlsx') as writer:
             customer_link = LinkSource(
                 name="customer",
                 source_sheet="Customers",
@@ -611,7 +614,7 @@ class LinkedExcelWriter(ExcelWriter):
 
     **Hybrid mode with internal and external links**::
 
-        with LinkedExcelWriter('support_tickets.xlsx') as writer:
+        with LinkedExcelWriter(file='support_tickets.xlsx') as writer:
             ticket_link = LinkSource(
                 name="ticket",
                 source_sheet="Tickets",
@@ -633,7 +636,7 @@ class LinkedExcelWriter(ExcelWriter):
 
     **Multiple link sources in one sheet**::
 
-        with LinkedExcelWriter('class_roster.xlsx') as writer:
+        with LinkedExcelWriter(file='class_roster.xlsx') as writer:
             student_link = LinkSource(
                 name="student",
                 source_sheet="Students",
@@ -678,12 +681,12 @@ class LinkedExcelWriter(ExcelWriter):
 
     def __init__(
         self,
-        file: Union[str, Path],
         data: Optional[Iterable[RecordLike]] = None,
+        file: Optional[Union[str, Path]] = None,
         sheet_name: Optional[str] = None,
         write_headers: bool = True,
     ):
-        super().__init__(file=file, data=data, sheet_name=sheet_name, write_headers=write_headers)
+        super().__init__(data=data, file=file, sheet_name=sheet_name, write_headers=write_headers)
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:
