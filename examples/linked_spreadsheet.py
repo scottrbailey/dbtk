@@ -5,9 +5,10 @@ if __name__ == '__main__':
     dbtk.setup_logging()
     db = dbtk.connect('imdb')
     cur = db.cursor()
-    fp = Path.cwd()  /  'output' / 'IMDB_Linked.xlsx'
+    output_path = Path.cwd()  /  'output'
+    output_path.mkdir(parents=True, exist_ok=True)
     query_path = Path.cwd()
-    writer = dbtk.writers.LinkedExcelWriter(str(fp))
+    writer = dbtk.writers.LinkedExcelWriter(str(output_path / 'linked_spreadsheet.xlsx'))
     #writer = dbtk.writers.ExcelWriter(fp)
     movie_links = dbtk.writers.LinkSource('titles',
                                           source_sheet='Movies',

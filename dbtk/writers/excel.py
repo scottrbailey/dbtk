@@ -147,9 +147,7 @@ class ExcelWriter(BatchWriter):
         """
         from openpyxl.worksheet.worksheet import Worksheet
 
-        # Lazy init columns
-        self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
-        self.columns = detected_columns
+        self.data_iterator, self.columns = self._get_data_iterator(data, columns)
 
         if not self.columns:
             raise ValueError("Could not determine columns from data")
@@ -680,9 +678,7 @@ class LinkedExcelWriter(ExcelWriter):
         source_for_this_sheet = source_for_this_sheet or []
 
         # Lazy init columns
-        self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
-        if self.columns is None:
-            self.columns = detected_columns
+        self.data_iterator, self.columns = self._get_data_iterator(data, columns)
 
         if not self.columns:
             raise ValueError("Could not determine columns from data")
