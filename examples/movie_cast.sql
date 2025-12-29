@@ -1,15 +1,15 @@
 SELECT
+  sub.nconst,
   MAX(name)                  name,
   MAX(current_age)           current_age,
-  nconst,
   MAX(CASE WHEN rn = 1 THEN movie END)  movie_1,
-  MAX(CASE WHEN rn = 1 THEN tconst END) movie_id_1,
+  MAX(CASE WHEN rn = 1 THEN sub.tconst END) movie_id_1,
   MAX(CASE WHEN rn = 2 THEN movie END)  movie_2,
-  MAX(CASE WHEN rn = 2 THEN tconst END) movie_id_2,
+  MAX(CASE WHEN rn = 2 THEN sub.tconst END) movie_id_2,
   MAX(CASE WHEN rn = 3 THEN movie END)  movie_3,
-  MAX(CASE WHEN rn = 3 THEN tconst END) movie_id_3,
+  MAX(CASE WHEN rn = 3 THEN sub.tconst END) movie_id_3,
   MAX(CASE WHEN rn = 4 THEN movie END)  movie_4,
-  MAX(CASE WHEN rn = 4 THEN tconst END) movie_id_4
+  MAX(CASE WHEN rn = 4 THEN sub.tconst END) movie_id_4
 FROM (
 	SELECT DISTINCT ON (p.nconst, p.tconst)
 	  p.nconst,
@@ -27,9 +27,9 @@ FROM (
 	JOIN title_principals_subset p ON n.nconst = p.nconst
 	JOIN titles_subset t ON p.tconst = t.tconst
 	WHERE p.category IN ('actor', 'actress')
-	ORDER BY p.nconst, p.tconst
+	ORDER BY p.nconst, p.tconst 
 ) sub
 JOIN titles_subset t ON sub.tconst = t.tconst
 WHERE %(genre)s = ANY(t.genres)
-GROUP BY nconst
-ORDER BY name, nconst
+GROUP BY sub.nconst
+ORDER BY name, sub.nconst

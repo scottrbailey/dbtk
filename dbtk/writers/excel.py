@@ -7,7 +7,6 @@ from typing import Any, Union, List, Optional, Iterable
 from pathlib import Path
 from datetime import datetime, date, time
 from zipfile import BadZipFile
-from dataclasses import dataclass, field
 from typing import Any, Optional, Dict
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -150,8 +149,7 @@ class ExcelWriter(BatchWriter):
 
         # Lazy init columns
         self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
-        if self.columns is None:
-            self.columns = detected_columns
+        self.columns = detected_columns
 
         if not self.columns:
             raise ValueError("Could not determine columns from data")
