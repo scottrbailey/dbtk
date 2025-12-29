@@ -760,10 +760,8 @@ class LinkedExcelWriter(ExcelWriter):
         link_mapping = link_mapping or {}
         source_for_this_sheet = source_for_this_sheet or []
 
-        # Lazy init columns
-        self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
-        if self.columns is None:
-            self.columns = detected_columns
+        # Lazy init columns - always update columns for each batch
+        self.data_iterator, self.columns = self._get_data_iterator(data, columns)
 
         if not self.columns:
             raise ValueError("Could not determine columns from data")
@@ -791,7 +789,26 @@ class LinkedExcelWriter(ExcelWriter):
                 col_name = self.columns[col_idx - 1]
                 cell = worksheet.cell(row=row_idx, column=col_idx)
 
-                # Check if this column has a link spec
+                # First, set cell value normally (handles dates, None, type preservation)
+                if isinstance(value, datetime) and value.time() != MIDNIGHT:
+                    cell.value = value
+                    cell.style = 'datetime_style'
+                    if row_count < width_sample_size:
+                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
+                elif isinstance(value, (date, datetime)):
+                    cell.value = value
+                    cell.style = 'date_style'
+                    if row_count < width_sample_size:
+                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
+                elif value is None:
+                    cell.value = ''
+                else:
+                    cell.value = value
+                    if row_count < width_sample_size:
+                        value_length = len(str(value))
+                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
+
+                # Then, check if this column has a link spec and override if present
                 link_spec = link_mapping.get(col_name)
                 if link_spec:
                     source, mode = link_spec
@@ -804,37 +821,16 @@ class LinkedExcelWriter(ExcelWriter):
                         cell.style = 'hyperlink_style'
                     elif source.missing_text is not None:
                         cell.value = source.missing_text
-                    else:
-                        # No link found — use raw value from detail row
-                        cell.value = value
-
-                # Normal value handling (dates, etc.)
-                if isinstance(value, datetime) and value.time() != MIDNIGHT:
-                    cell.value = value
-                    cell.style = 'datetime_style'
-                    if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
-                elif isinstance(value, (date, datetime)):
-                    cell.value = value
-                    cell.style = 'date_style'
-                    if row_idx < width_sample_size:
-                        # sample column size to adjust later
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
-                elif value is None:
-                    cell.value = ''
-                else:
-                    cell.value = value
-                    if row_count < width_sample_size:
-                        value_length = len(str(value))
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
+                    # else: keep the value we already set above
 
             # If this sheet is a source, cache the row for future linking
-            if source_for_this_sheet:
-                key_col_letter = get_column_letter(col_index_map[source_for_this_sheet[0].key_column])
+            # Support multiple LinkSources per sheet (as long as different key_columns)
+            for source in source_for_this_sheet:
+                key_col_letter = get_column_letter(col_index_map[source.key_column])
                 ref = f"#{target_sheet}!{key_col_letter}{row_idx}"
-                key_value = row_dict.get(source_for_this_sheet[0].key_column)
+                key_value = row_dict.get(source.key_column)
                 if key_value is not None:
-                    source_for_this_sheet[0].cache_record(key_value, row_dict, ref)
+                    source.cache_record(key_value, row_dict, ref)
 
             row_count += 1
 
