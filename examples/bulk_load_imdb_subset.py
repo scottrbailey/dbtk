@@ -1,8 +1,9 @@
 import dbtk
 import logging
 import polars as pl
+import time
 from pathlib import Path
-from dbtk.etl import DataSurge, Table, ValidationCollector
+from dbtk.etl import BulkSurge, DataSurge, Table, ValidationCollector
 from dbtk.etl.transforms import TableLookup
 
 """
@@ -34,7 +35,7 @@ CREATE TABLE title_principals_subset (
   tconst         varchar(10) NOT NULL,
   ordering       int         NOT NULL,
   nconst         varchar(10) NOT NULL,
-  category       varchar(10),
+  category       text,
   job            text,
   characters     text[],
   PRIMARY KEY (tconst, ordering)
@@ -69,7 +70,7 @@ def wrap_array(val) -> str:
 
 
 if __name__ == '__main__':
-    logger = logging(__name__)
+    logger = logging.getLogger(__name__)
     dbtk.setup_logging()
     db = dbtk.connect('imdb')
     cur = db.cursor()
@@ -81,7 +82,8 @@ if __name__ == '__main__':
     ratings_path = Path.home() / 'Downloads' / 'title.ratings.tsv.gz'
     principals_path = Path.home() / 'Downloads' / 'title.principals.tsv.gz'
     names_path = Path.home() / 'Downloads' / 'name.basics.tsv.gz'
-
+    # start timer
+    st = time.monotonic()
     # load existing genre validation
     genre_lookup = TableLookup(cur,
                               table='genres',
@@ -119,9 +121,10 @@ if __name__ == '__main__':
         & pl.col("startYear").cast(pl.Int16, strict=False).is_between(2020, 2022)
     ).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
-        surge = DataSurge(titles, use_transaction=True)
-        surge.insert(reader)
-    # materialize a set that combines existing and added (the table was truncated earlier so there were no existing records)
+        surge = BulkSurge(titles)
+        surge.load(reader)
+    # materialize a set that combines existing and added
+    # the table was truncated earlier so there were no existing records
     all_titles = title_collector.get_all()
 
     # ----------------------------------------------------------------------------------------------
@@ -164,8 +167,8 @@ if __name__ == '__main__':
             ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
     ).filter((pl.col("tconst").is_in(all_titles))).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
-        surge = DataSurge(principals, use_transaction=True)
-        surge.insert(reader)
+        surge = BulkSurge(principals)
+        surge.load(reader)
     all_names = names_collector.get_all()
 
     # ----------------------------------------------------------------------------------------------
@@ -188,9 +191,8 @@ if __name__ == '__main__':
             ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
     ).filter((pl.col("nconst").is_in(all_names))).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
-        surge = DataSurge(names, use_transaction=True)
-        surge.insert(reader)
-
+        surge = BulkSurge(names)
+        surge.load(reader)
     # ----------------------------------------------------------------------------------------------
     # Import new genres we collected.
     # ----------------------------------------------------------------------------------------------
@@ -199,3 +201,5 @@ if __name__ == '__main__':
         genre_insert = 'INSERT INTO genres (genre, title) VALUES (%s, %s)'
         cur.executemany(genre_insert, new_genre)
     db.commit()
+    et = time.monotonic()
+    print(f'Read through and filtered over 121 million rows, loaded into database in {et-st:.01f} seconds.')
