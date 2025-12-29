@@ -239,7 +239,8 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
         ("SELECT * FROM users WHERE id = ?", ('user_id',))
     """
     # Detect input format
-    has_named = bool(re.search(r':(\w+)', sql))
+    # Use negative lookbehind (?<!:) to exclude PostgreSQL :: cast syntax
+    has_named = bool(re.search(r'(?<!:):(\w+)', sql))
     has_pyformat = bool(re.search(r'%\((\w+)\)s', sql))
 
     if has_named and has_pyformat:
@@ -252,7 +253,7 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
     if has_pyformat:
         source_pattern = r'%\((\w+)\)s'
     elif has_named:
-        source_pattern = r':(\w+)'
+        source_pattern = r'(?<!:):(\w+)'
     else:
         # No parameters found - return as-is
         return sql, tuple()

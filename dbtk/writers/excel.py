@@ -250,8 +250,8 @@ class ExcelWriter(BatchWriter):
 
         self.write_batch(self.data_iterator)
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Save workbook on context exit."""
+    def _save_workbook(self):
+        """Save the workbook. Idempotent - safe to call multiple times."""
         if self.workbook is not None:
             try:
                 self.workbook.save(self.output_path)
@@ -259,7 +259,17 @@ class ExcelWriter(BatchWriter):
             except Exception as e:
                 logger.error(f"Failed to save workbook: {e}")
                 raise
-        super().__exit__(exc_type, exc_val, exc_tb)
+            finally:
+                self.workbook = None  # Mark as saved to prevent duplicate saves
+
+    def close(self):
+        """Close the writer and save the workbook."""
+        self._save_workbook()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Save workbook on context exit."""
+        self.close()
+        return False
 
 
 def to_excel(
