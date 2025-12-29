@@ -33,11 +33,24 @@ class ExcelWriter(BatchWriter):
     Keeps the workbook open across multiple write_batch() calls and saves only on context exit.
     Designed for both single-sheet legacy use and multi-sheet reports.
 
+    Supports all 3 BatchWriter modes:
+    1. Complete write from __init__ + write()
+    2. Batch write (no data on init) + write_batch()
+    3. Hybrid: data on init + write() + write_batch()
+
     Usage examples:
 
-    # Legacy single-sheet
+    # Mode 1: Traditional single-shot write
+    ExcelWriter('report.xlsx', data=cursor).write()
+
+    # Mode 2: Pure streaming with write_batch() (backward compatible)
     with ExcelWriter('report.xlsx') as writer:
         writer.write_batch(cursor)  # goes to sheet 'Data'
+
+    # Mode 3: Hybrid - initial data + streaming
+    with ExcelWriter('report.xlsx', data=first_batch) as writer:
+        writer.write()  # Write initial batch
+        writer.write_batch(second_batch)  # Stream additional batches
 
     # Multi-sheet report
     with ExcelWriter('report.xlsx', sheet_name='Summary') as writer:
@@ -57,6 +70,7 @@ class ExcelWriter(BatchWriter):
     def __init__(
         self,
         file: Union[str, Path],
+        data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
         write_headers: bool = True,
     ):
@@ -67,12 +81,14 @@ class ExcelWriter(BatchWriter):
         ----------
         file : str or Path
             Output Excel filename (.xlsx)
+        data : Iterable[RecordLike], optional
+            Initial data to write. If None, use write_batch() for streaming mode.
         sheet_name : str, optional
             Default/active sheet name to use for write_batch() calls without explicit sheet_name
         write_headers : bool, default True
             Whether to write column headers (only when sheet is empty)
         """
-        super().__init__(data=None, file=file, write_headers=write_headers)
+        super().__init__(data=data, file=file, write_headers=write_headers)
 
         self.output_path = Path(file)
         self.active_sheet: Optional[str] = sheet_name
@@ -239,14 +255,73 @@ class ExcelWriter(BatchWriter):
 
     def _write_data(self, file_obj: Any) -> None:
         """
-        BatchWriter contract implementation for legacy compatibility.
+        BatchWriter contract implementation.
 
-        Writes current data_iterator to the active sheet or 'Data'.
+        Writes current data_iterator (set up by _lazy_init) to the active sheet or 'Data'.
+        This is called by write() when data was provided at initialization.
         """
         if self.data_iterator is None:
-            raise RuntimeError("No data provided for legacy write mode")
+            raise RuntimeError("No data provided")
 
-        self.write_batch(self.data_iterator)
+        if not self.columns:
+            raise RuntimeError("Columns not initialized")
+
+        if self.workbook is None:
+            raise RuntimeError("Workbook not initialized")
+
+        target_sheet = self.active_sheet or 'Data'
+        worksheet = self._get_or_create_worksheet(target_sheet)
+
+        # Write headers if needed
+        should_write_headers = self.write_headers and not self._headers_written and worksheet.cell(1, 1).value is None
+        data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+
+        if should_write_headers:
+            header_font = Font(bold=True)
+            for col_idx, column_name in enumerate(self.columns, 1):
+                cell = worksheet.cell(row=1, column=col_idx, value=column_name)
+                cell.font = header_font
+            self._headers_written = True
+
+        row_count = 0
+        column_widths = [len(col) for col in self.columns]
+        width_sample_size = 15
+
+        # Write data rows
+        for row_idx, record in enumerate(self.data_iterator, data_start_row):
+            values = self._row_to_tuple(record)
+
+            for col_idx, value in enumerate(values, 1):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+
+                if isinstance(value, datetime) and value.time() != MIDNIGHT:
+                    cell.value = value
+                    cell.style = 'datetime_style'
+                    if row_count < width_sample_size:
+                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
+                elif isinstance(value, (date, datetime)):
+                    cell.value = value
+                    cell.style = 'date_style'
+                    if row_count < width_sample_size:
+                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
+                elif value is None:
+                    cell.value = ''
+                else:
+                    cell.value = value
+                    if row_count < width_sample_size:
+                        value_length = len(str(value))
+                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
+
+            row_count += 1
+
+        # Apply column widths
+        for col_idx, width in enumerate(column_widths, 1):
+            adjusted_width = min(max(width + 2, 6), 60)
+            column_letter = get_column_letter(col_idx)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+
+        self._row_num += row_count
+        logger.info(f"Wrote {row_count} rows to sheet '{target_sheet}' (total: {self._row_num})")
 
     def _save_workbook(self):
         """Save the workbook. Idempotent - safe to call multiple times."""
@@ -281,7 +356,7 @@ def to_excel(
 
     For multi-sheet or advanced reports, use ExcelWriter as a context manager with write_batch().
     """
-    with ExcelWriter(file=filename) as writer:
+    with ExcelWriter(file=filename, write_headers=write_headers) as writer:
         writer.write_batch(data=data, sheet_name=sheet)
 
 
@@ -480,6 +555,8 @@ class LinkedExcelWriter(ExcelWriter):
     ----------
     file : str or Path
         Output Excel filename (.xlsx)
+    data : Iterable[RecordLike], optional
+        Initial data to write. If None, use write_batch() for streaming mode.
     sheet_name : str, optional
         Default sheet name for write_batch() calls
     write_headers : bool, default True
@@ -602,10 +679,11 @@ class LinkedExcelWriter(ExcelWriter):
     def __init__(
         self,
         file: Union[str, Path],
+        data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
         write_headers: bool = True,
     ):
-        super().__init__(file=file, sheet_name=sheet_name, write_headers=write_headers)
+        super().__init__(file=file, data=data, sheet_name=sheet_name, write_headers=write_headers)
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:
