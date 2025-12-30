@@ -41,14 +41,14 @@ class ExcelWriter(BatchWriter):
     Usage examples:
 
     # Mode 1: Traditional single-shot write
-    ExcelWriter(cursor, 'report.xlsx').write()
+    ExcelWriter('report.xlsx', cursor).write()
 
     # Mode 2: Pure streaming with write_batch()
     with ExcelWriter(file='report.xlsx') as writer:
         writer.write_batch(cursor)  # goes to sheet 'Data'
 
     # Mode 3: Hybrid - initial data + streaming
-    with ExcelWriter(first_batch, 'report.xlsx') as writer:
+    with ExcelWriter('report.xlsx', first_batch) as writer:
         writer.write()  # Write initial batch
         writer.write_batch(second_batch)  # Stream additional batches
 
@@ -69,8 +69,8 @@ class ExcelWriter(BatchWriter):
 
     def __init__(
         self,
-        data: Optional[Iterable[RecordLike]] = None,
         file: Optional[Union[str, Path]] = None,
+        data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
         write_headers: bool = True,
     ):
@@ -79,10 +79,10 @@ class ExcelWriter(BatchWriter):
 
         Parameters
         ----------
-        data : Iterable[RecordLike], optional
-            Initial data to write. If None, use write_batch() for streaming mode.
         file : str or Path, optional
             Output Excel filename (.xlsx). Required for Excel output.
+        data : Iterable[RecordLike], optional
+            Initial data to write. If None, use write_batch() for streaming mode.
         sheet_name : str, optional
             Default/active sheet name to use for write_batch() calls without explicit sheet_name
         write_headers : bool, default True
@@ -631,10 +631,10 @@ class LinkedExcelWriter(ExcelWriter):
 
     Parameters
     ----------
-    data : Iterable[RecordLike], optional
-        Initial data to write. If None, use write_batch() for streaming mode.
     file : str or Path
         Output Excel filename (.xlsx)
+    data : Iterable[RecordLike], optional
+        Initial data to write. If None, use write_batch() for streaming mode.
     sheet_name : str, optional
         Default sheet name for write_batch() calls
     write_headers : bool, default True
@@ -756,12 +756,12 @@ class LinkedExcelWriter(ExcelWriter):
 
     def __init__(
         self,
-        data: Optional[Iterable[RecordLike]] = None,
         file: Optional[Union[str, Path]] = None,
+        data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
         write_headers: bool = True,
     ):
-        super().__init__(data=data, file=file, sheet_name=sheet_name, write_headers=write_headers)
+        super().__init__(file=file, data=data, sheet_name=sheet_name, write_headers=write_headers)
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:
@@ -906,10 +906,6 @@ class LinkedExcelWriter(ExcelWriter):
                         # Cross-sheet linking: look up from cache using current column's value
                         # The value in this column IS the foreign key to look up
                         key_value = value
-                        if row_idx == data_start_row:  # Debug first row only
-                            print(f"DEBUG LINK: col={col_name}, key_value={key_value}, cache_size={len(source._records)}")
-                            if key_value:
-                                print(f"  Cache lookup result: {source.get_link(key_value, mode=mode)}")
                         link_info = source.get_link(key_value, mode=mode) if key_value is not None else None
 
                     if link_info:

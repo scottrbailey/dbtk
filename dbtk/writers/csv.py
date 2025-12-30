@@ -15,8 +15,8 @@ class CSVWriter(BatchWriter):
     """CSV writer class that extends BatchWriter."""
 
     def __init__(self,
-                 data,
                  file: Optional[Union[str, Path, TextIO]] = None,
+                 data = None,
                  columns: Optional[List[str]] = None,
                  write_headers: bool = True,
                  null_string: str = None,
@@ -25,8 +25,8 @@ class CSVWriter(BatchWriter):
         Initialize CSV writer.
 
         Args:
-            data: Cursor object or list of records
             file: Output filename. If None, writes to stdout
+            data: Cursor object or list of records
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             write_headers: Whether to include column headers
@@ -90,8 +90,8 @@ def to_csv(data,
         to_csv(cursor, 'data.tsv', delimiter='\t')
     """
     with CSVWriter(
-        data=data,
         file=file,
+        data=data,
         write_headers=write_headers,
         null_string=null_string,
         **csv_kwargs

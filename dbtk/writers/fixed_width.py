@@ -83,15 +83,17 @@ class FixedWidthWriter(BatchWriter):
     preserve_types = False  # Always convert to strings for fixed-width
 
     def __init__(self,
-                 data: Optional[Iterable[RecordLike]],
-                 column_widths: Sequence[int],
                  file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+                 column_widths: Sequence[int] = None,
+                 data: Optional[Iterable[RecordLike]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  right_align_numbers: bool = True,
                  truncate_overflow: bool = True,
                  fill_char: str = ' '):
         """Initialize fixed width writer with batch streaming support."""
+        if column_widths is None:
+            raise ValueError("column_widths is required for FixedWidthWriter")
         self.column_widths = list(column_widths)
         self.right_align_numbers = right_align_numbers
         self.truncate_overflow = truncate_overflow
@@ -255,9 +257,9 @@ def to_fixed_width(data,
         to_fixed_width(cursor, [15, 30], right_align_numbers=False)
     """
     writer = FixedWidthWriter(
-        data=data,
-        column_widths=column_widths,
         file=file,
+        column_widths=column_widths,
+        data=data,
         encoding=encoding,
         right_align_numbers=right_align_numbers,
         truncate_overflow=truncate_overflow,

@@ -17,8 +17,8 @@ class JSONWriter(BaseWriter):
     """JSON writer class that extends BaseWriter."""
 
     def __init__(self,
-                 data,
                  file: Optional[Union[str, Path]] = None,
+                 data = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  indent: Optional[int] = 2,
@@ -27,8 +27,8 @@ class JSONWriter(BaseWriter):
         Initialize JSON writer.
 
         Args:
-            data: Cursor object or list of records
             file: Output filename. If None, writes to stdout
+            data: Cursor object or list of records
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
@@ -58,8 +58,8 @@ class NDJSONWriter(BatchWriter):
     """NDJSON (newline-delimited JSON) writer."""
 
     def __init__(self,
-                 data,
                  file: Optional[Union[str, Path]] = None,
+                 data = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  **json_kwargs):
@@ -67,8 +67,8 @@ class NDJSONWriter(BatchWriter):
         Initialize NDJSON writer.
 
         Args:
-            data: Cursor object or list of records
             file: Output filename. If None, writes to stdout
+            data: Cursor object or list of records
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             **json_kwargs: Additional arguments passed to json.dumps
@@ -118,8 +118,8 @@ def to_json(data,
         to_json(cursor, 'data.json', indent=None)
     """
     with JSONWriter(
-        data=data,
         file=filename,
+        data=data,
         encoding=encoding,
         indent=indent,
         **json_kwargs
@@ -148,8 +148,8 @@ def to_ndjson(data,
         to_ndjson(cursor)
     """
     with NDJSONWriter(
-        data=data,
         file=filename,
+        data=data,
         encoding=encoding,
         **json_kwargs
     ) as writer:
