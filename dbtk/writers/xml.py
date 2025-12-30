@@ -83,8 +83,8 @@ class XMLWriter(BaseWriter):
 
     def __init__(
             self,
-            data,
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+            data = None,
             columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
@@ -170,8 +170,8 @@ class XMLStreamer(BatchWriter):
 
     def __init__(
             self,
-            data=None,
             file: Optional[Union[str, Path, BinaryIO]] = None,
+            data = None,
             columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
@@ -359,8 +359,8 @@ def to_xml(
 
     if stream:
         with XMLStreamer(
-            data=data,
             file=filename,
+            data=data,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
@@ -368,8 +368,8 @@ def to_xml(
             writer.write()
     else:
         with XMLWriter(
-            data=data,
             file=filename,
+            data=data,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,

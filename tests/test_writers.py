@@ -131,7 +131,7 @@ class TestBaseWriter:
         """Test writing from list of lists with explicit columns."""
         output_file = tmp_path / "output.csv"
 
-        with CSVWriter(sample_lists, output_file, columns=sample_columns) as writer:
+        with CSVWriter(output_file, sample_lists, columns=sample_columns) as writer:
             writer.write()
 
         # Read back and verify
@@ -164,7 +164,7 @@ class TestBaseWriter:
     def test_to_string_date(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles dates correctly."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_date = date(2024, 12, 25)
         result = writer.to_string(test_date)
@@ -173,7 +173,7 @@ class TestBaseWriter:
     def test_to_string_datetime_no_microseconds(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles datetime without microseconds."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_datetime = datetime(2024, 12, 25, 15, 30, 45)
         result = writer.to_string(test_datetime)
@@ -182,7 +182,7 @@ class TestBaseWriter:
     def test_to_string_datetime_with_microseconds(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles datetime with microseconds."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_datetime = datetime(2024, 12, 25, 15, 30, 45, 123456)
         result = writer.to_string(test_datetime)
@@ -191,7 +191,7 @@ class TestBaseWriter:
     def test_to_string_datetime_at_midnight(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles datetime at midnight as date."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_datetime = datetime(2024, 12, 25, 0, 0, 0)
         result = writer.to_string(test_datetime)
@@ -200,7 +200,7 @@ class TestBaseWriter:
     def test_to_string_none(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles None."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         result = writer.to_string(None)
         assert result == ''
@@ -208,7 +208,7 @@ class TestBaseWriter:
     def test_to_string_number(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles numbers."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         assert writer.to_string(42) == '42'
         assert writer.to_string(3.14) == '3.14'
@@ -217,7 +217,7 @@ class TestBaseWriter:
         """Test that row_count is correctly tracked."""
         output_file = tmp_path / "output.csv"
 
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
         count = writer.write()
 
         assert count == 10
@@ -391,7 +391,7 @@ class TestExcelWriter:
         """Test calling write_batch multiple times appends to same sheet."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             # Write first batch
             writer.write_batch(sample_records[:5], sheet_name='Data')
             # Write second batch
@@ -411,7 +411,7 @@ class TestExcelWriter:
         """Test write_batch to multiple different sheets in one workbook."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[:5], sheet_name='First')
             writer.write_batch(sample_records[5:], sheet_name='Second')
 
@@ -429,7 +429,7 @@ class TestExcelWriter:
         """Test that headers are written only on first batch, not subsequent."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[:3], sheet_name='Data')
             writer.write_batch(sample_records[3:6], sheet_name='Data')
             writer.write_batch(sample_records[6:], sheet_name='Data')
@@ -452,7 +452,7 @@ class TestExcelWriter:
         output_file = tmp_path / "output.xlsx"
 
         # Simulate streaming: no data in __init__
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             # Write in batches
             for i in range(0, len(sample_records), 3):
                 batch = sample_records[i:i+3]
@@ -470,11 +470,11 @@ class TestExcelWriter:
         output_file = tmp_path / "output.xlsx"
 
         # First session: create workbook with one sheet
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[:5], sheet_name='FirstRun')
 
         # Second session: append another sheet
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records[5:], sheet_name='SecondRun')
 
         from openpyxl import load_workbook
@@ -489,7 +489,7 @@ class TestExcelWriter:
         """Test that default sheet name 'Data' is used when not specified."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file) as writer:
+        with ExcelWriter(file=output_file) as writer:
             writer.write_batch(sample_records)
 
         from openpyxl import load_workbook
@@ -501,7 +501,7 @@ class TestExcelWriter:
         """Test using sheet_name parameter in __init__ as default."""
         output_file = tmp_path / "output.xlsx"
 
-        with ExcelWriter(output_file, sheet_name='MySheet') as writer:
+        with ExcelWriter(file=output_file, sheet_name='MySheet') as writer:
             # Don't specify sheet_name - should use 'MySheet'
             writer.write_batch(sample_records)
 
