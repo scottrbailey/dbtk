@@ -2,7 +2,57 @@ import dbtk
 from pathlib import Path
 
 """
+LinkedExcelWriter Example: Multi-Sheet Excel Report with Hyperlinks
 
+This example demonstrates creating a navigable multi-sheet Excel workbook with both
+internal (cross-sheet) and external (web) hyperlinks using LinkedExcelWriter.
+
+Features Demonstrated
+---------------------
+* **Multiple sheets**: Movies, Cast, and Crew tabs
+* **External hyperlinks**: Clickable links to IMDB movie and person pages
+* **Internal hyperlinks**: Cross-sheet references from Cast/Crew back to Movies tab
+* **external_only LinkSource**: Reusable LinkSource across Cast and Crew sheets
+* **Link modes**: Default external links and explicit :internal mode
+* **PreparedStatement**: Reusable parameterized queries
+* **Batch writing**: Efficient multi-sheet report generation
+
+LinkSource Types Used
+---------------------
+1. **title_links** (standard LinkSource):
+   - Caches movie records from Movies sheet
+   - Creates external links to IMDB on Movies sheet
+   - Creates internal links from Cast/Crew sheets back to Movies sheet
+   - Requires source_sheet and key_column for cross-sheet linking
+
+2. **name_links** (external_only LinkSource):
+   - Creates external links to IMDB person pages
+   - Reused on both Cast and Crew sheets (no caching needed)
+   - No source_sheet or key_column required
+   - Memory efficient for large datasets
+
+Link Specifications
+-------------------
+- `'primary_title': 'titles'` - External link to IMDB movie page
+- `'name': 'names'` - External link to IMDB person page (reusable)
+- `'movie_1': 'titles:internal'` - Internal link to Movies sheet row
+
+Output
+------
+Generates examples/output/linked_spreadsheet.xlsx with:
+- Movies sheet: Movie listings with external IMDB links
+- Cast sheet: Actors/actresses with name links to IMDB + movie links to Movies sheet
+- Crew sheet: Other crew with name links to IMDB + movie links to Movies sheet
+
+Prerequisites
+-------------
+- IMDB sample data loaded via examples/bulk_load_imdb_subset.py
+- Database connection configured in dbtk config
+
+See Also
+--------
+- movie_list.sql: Query for Drama movies
+- movie_principals.sql: Query for cast/crew with role filtering
 """
 if __name__ == '__main__':
     dbtk.setup_logging()
