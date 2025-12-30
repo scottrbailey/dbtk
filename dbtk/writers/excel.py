@@ -518,10 +518,14 @@ class LinkSource:
         self._records = {}
 
         # Validation
-        if not external_only and not source_sheet:
-            raise ValueError(f"source_sheet is required when external_only=False for LinkSource '{name}'")
-        if not external_only and not key_column:
-            raise ValueError(f"key_column is required when external_only=False for LinkSource '{name}'")
+        if external_only:
+            if not url_template:
+                raise ValueError(f"url_template is required when external_only=True for LinkSource '{name}'")
+        else:
+            if not source_sheet:
+                raise ValueError(f"source_sheet is required when external_only=False for LinkSource '{name}'")
+            if not key_column:
+                raise ValueError(f"key_column is required when external_only=False for LinkSource '{name}'")
 
         # Track display width for column sizing (sample first 100 rows, cap at 50 chars)
         self._max_display_width: int = 0
@@ -581,10 +585,11 @@ class LinkSource:
         self,
         row_dict: Dict[str, Any],
         ref: str,
-        mode: str = "external"
+        mode: str = "external",
+        column_value: Any = None
     ) -> Optional[dict]:
         """
-        Generate link info directly from row data (for self-linking).
+        Generate link info directly from row data (for self-linking or external-only).
 
         Used when writing the source sheet itself to create links from current row
         instead of looking up from cache.
@@ -597,6 +602,8 @@ class LinkSource:
             The cell reference for internal links (e.g., "#Movies!A5")
         mode : str
             "external" or "internal"
+        column_value : Any, optional
+            For external_only sources, the value from the linked column
 
         Returns
         -------
@@ -611,15 +618,20 @@ class LinkSource:
                 logger.warning(f"Missing key {e} in text_template for {self.name}")
                 return None
         else:
-            # No template → use the key value if available, or first column value
-            if self.key_column:
+            # No template → use column_value for external_only, or key_column for others
+            if self.external_only:
+                # For external_only: use the linked column's value
+                if column_value is None:
+                    return None
+                display_text = str(column_value)
+            elif self.key_column:
+                # For self-linking: use key_column
                 key_value = row_dict.get(self.key_column)
                 if key_value is None:
                     return None
                 display_text = str(key_value)
             else:
-                # For external_only sources without text_template, use first available value
-                display_text = str(next(iter(row_dict.values()), ""))
+                return None
 
         # Track max display width for first 100 self-links (capped at 50 chars)
         if self._sample_count < 100:
@@ -989,7 +1001,7 @@ class LinkedExcelWriter(ExcelWriter):
 
                     if source.external_only:
                         # External-only: always generate from current row (no caching, reusable)
-                        link_info = source.generate_link_from_row(row_dict, ref="", mode="external")
+                        link_info = source.generate_link_from_row(row_dict, ref="", mode="external", column_value=value)
                     elif source.source_sheet == target_sheet:
                         # Self-linking: generate link from current row data
                         key_col_letter = get_column_letter(col_index_map[source.key_column])
