@@ -104,9 +104,14 @@ class ExcelWriter(BatchWriter):
         """Load existing workbook or create a new one."""
         try:
             if self.output_path.exists():
+                with open(self.output_path, mode='r+b'):
+                    # make sure it is actually writable (not open in Excel)
+                    pass
                 self.workbook = load_workbook(self.output_path)
                 logger.info(f"Loaded existing workbook: {self.output_path}")
             else:
+                with open(self.output_path, mode='wb'):
+                    pass
                 self.workbook = Workbook()
                 if 'Sheet' in self.workbook.sheetnames:
                     self.workbook.remove(self.workbook['Sheet'])
@@ -115,6 +120,11 @@ class ExcelWriter(BatchWriter):
                 f"File '{self.output_path}' exists but is not a valid Excel workbook. "
                 f"Original error: {e}"
             ) from e
+        except PermissionError:
+            raise PermissionError(
+                f"Cannot write to '{self.output_path}' - file may be open in Excel or another application. "
+                "Please close the file and try again."
+            )
 
         self._register_styles()
 
@@ -193,6 +203,7 @@ class ExcelWriter(BatchWriter):
             for col_idx, column_name in enumerate(self.columns, 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
+            worksheet.freeze_panes('A1')
 
         # Write data rows
         for row_idx, record in enumerate(self.data_iterator, data_start_row):
