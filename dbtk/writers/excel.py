@@ -232,11 +232,12 @@ class ExcelWriter(BatchWriter):
 
             row_count += 1
 
-        # Apply column widths
-        for col_idx, width in enumerate(column_widths, 1):
-            adjusted_width = min(max(width + 2, 6), 60)
-            column_letter = get_column_letter(col_idx)
-            worksheet.column_dimensions[column_letter].width = adjusted_width
+        # Apply column widths only when writing headers (i.e., creating new sheet)
+        if should_write_headers:
+            for col_idx, width in enumerate(column_widths, 1):
+                adjusted_width = min(max(width + 2, 6), 60)
+                column_letter = get_column_letter(col_idx)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
 
         return row_count
 
@@ -309,6 +310,7 @@ class ExcelWriter(BatchWriter):
             for col_idx, column_name in enumerate(self.columns, 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
+            worksheet.freeze_panes = 'A2'
             self._headers_written = True
 
         row_count = 0
@@ -342,11 +344,12 @@ class ExcelWriter(BatchWriter):
 
             row_count += 1
 
-        # Apply column widths
-        for col_idx, width in enumerate(column_widths, 1):
-            adjusted_width = min(max(width + 2, 6), 60)
-            column_letter = get_column_letter(col_idx)
-            worksheet.column_dimensions[column_letter].width = adjusted_width
+        # Apply column widths only when writing headers (i.e., creating new sheet)
+        if should_write_headers:
+            for col_idx, width in enumerate(column_widths, 1):
+                adjusted_width = min(max(width + 2, 6), 60)
+                column_letter = get_column_letter(col_idx)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
 
         self._row_num += row_count
         logger.info(f"Wrote {row_count} rows to sheet '{target_sheet}' (total: {self._row_num})")
@@ -494,6 +497,10 @@ class LinkSource:
         self.missing_text = missing_text
         self._records = {}
 
+        # Track display width for column sizing (sample first 100 rows, cap at 50 chars)
+        self._max_display_width: int = 0
+        self._sample_count: int = 0
+
     def cache_record(self, key_value: Any, row_dict: Dict[str, Any], ref: str) -> None:
         key_str = str(key_value)
 
@@ -506,6 +513,12 @@ class LinkSource:
         else:
             # No template → use the raw key value (clean, expected)
             display_text = str(key_value)
+
+        # Track max display width for first 100 records (capped at 50 chars)
+        if self._sample_count < 100:
+            display_len = min(len(display_text), 50)
+            self._max_display_width = max(self._max_display_width, display_len)
+            self._sample_count += 1
 
         record = {
             "ref": ref,
@@ -560,6 +573,12 @@ class LinkSource:
                 return None
             display_text = str(key_value)
 
+        # Track max display width for first 100 self-links (capped at 50 chars)
+        if self._sample_count < 100:
+            display_len = min(len(display_text), 50)
+            self._max_display_width = max(self._max_display_width, display_len)
+            self._sample_count += 1
+
         # Generate target
         if mode == "external":
             if self.url_template:
@@ -608,6 +627,16 @@ class LinkSource:
             "target": target,
             "display_text": record["display_text"],
         }
+
+    @property
+    def max_display_width(self) -> int:
+        """
+        Maximum display text width observed across sampled links.
+
+        Samples first 100 records, capped at 50 characters to handle outliers.
+        Used for automatic column width sizing.
+        """
+        return self._max_display_width
 
 
 class LinkedExcelWriter(ExcelWriter):
@@ -872,6 +901,7 @@ class LinkedExcelWriter(ExcelWriter):
             for col_idx, column_name in enumerate(self.columns, 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
+            worksheet.freeze_panes = 'A2'
 
         col_index_map = {name: idx + 1 for idx, name in enumerate(self.columns)}
 
@@ -938,11 +968,21 @@ class LinkedExcelWriter(ExcelWriter):
 
             row_count += 1
 
-        # Apply column widths
-        for col_idx, width in enumerate(column_widths, 1):
-            adjusted_width = min(max(width + 2, 6), 60)
-            column_letter = get_column_letter(col_idx)
-            worksheet.column_dimensions[column_letter].width = adjusted_width
+        # Apply column widths only when writing headers (i.e., creating new sheet)
+        if should_write_headers:
+            for col_idx, width in enumerate(column_widths, 1):
+                col_name = self.columns[col_idx - 1]
+
+                # Use LinkSource width for linked columns, otherwise use sampled width
+                if col_name in link_mapping:
+                    source, _ = link_mapping[col_name]
+                    # Use LinkSource's tracked display width if available
+                    if source.max_display_width > 0:
+                        width = source.max_display_width
+
+                adjusted_width = min(max(width + 2, 6), 60)
+                column_letter = get_column_letter(col_idx)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
 
         return row_count
 
