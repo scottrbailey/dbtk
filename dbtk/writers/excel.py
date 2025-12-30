@@ -433,6 +433,10 @@ class LinkSource:
     missing_text : str, optional
         Fallback text to display when a link target cannot be resolved. If None,
         displays the raw value from the detail row.
+    cache_for_cross_sheet_links : bool, default True
+        If True, cache records for cross-sheet linking. If False, skip caching to save
+        memory when this LinkSource is only used for self-linking (links on the source
+        sheet itself). Memory savings can be significant for large datasets.
 
     Attributes
     ----------
@@ -471,6 +475,19 @@ class LinkSource:
             missing_text="[Unknown Customer]"
         )
 
+    **External-only links (self-linking, no caching)**::
+
+        # For large datasets where you only need links on the source sheet itself
+        movie_link = LinkSource(
+            name="movie",
+            source_sheet="Movies",
+            key_column="movie_id",
+            url_template="https://imdb.com/title/{imdb_id}",
+            text_template="{title} ({year})",
+            cache_for_cross_sheet_links=False  # Skip caching to save memory
+        )
+        # Use with: writer.write_batch(movies, "Movies", links={"title": "movie"})
+
     Notes
     -----
     * The source sheet MUST be written before sheets that reference it
@@ -489,13 +506,15 @@ class LinkSource:
                  key_column: str,
                  url_template: str = None,
                  text_template: str = None,
-                 missing_text: str = None):
+                 missing_text: str = None,
+                 cache_for_cross_sheet_links: bool = True):
         self.name = name
         self.source_sheet = source_sheet
         self.key_column = key_column
         self.url_template = url_template
         self.text_template = text_template
         self.missing_text = missing_text
+        self.cache_for_cross_sheet_links = cache_for_cross_sheet_links
         self._records = {}
 
         # Track display width for column sizing (sample first 100 rows, cap at 50 chars)
@@ -503,6 +522,24 @@ class LinkSource:
         self._sample_count: int = 0
 
     def cache_record(self, key_value: Any, row_dict: Dict[str, Any], ref: str) -> None:
+        """Cache a record for cross-sheet linking (if enabled)."""
+        # Skip caching if this LinkSource is only for self-linking
+        if not self.cache_for_cross_sheet_links:
+            # Still track display width for column sizing
+            if self._sample_count < 100:
+                if self.text_template:
+                    try:
+                        display_text = self.text_template.format_map(row_dict)
+                    except KeyError:
+                        display_text = str(key_value)
+                else:
+                    display_text = str(key_value)
+
+                display_len = min(len(display_text), 50)
+                self._max_display_width = max(self._max_display_width, display_len)
+                self._sample_count += 1
+            return
+
         key_str = str(key_value)
 
         if self.text_template:
