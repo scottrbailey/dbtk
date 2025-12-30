@@ -158,8 +158,9 @@ class ExcelWriter(BatchWriter):
 
     def _clear_worksheet(self, worksheet: 'Worksheet') -> None:
         """Clear all rows from a worksheet."""
-        # Delete all rows from the worksheet
-        worksheet.delete_rows(1, worksheet.max_row)
+        # Simply delete all rows - openpyxl will handle this correctly
+        if worksheet.max_row >= 1:
+            worksheet.delete_rows(1, worksheet.max_row)
 
     def _get_named_style(self, name: str) -> NamedStyle:
         for style in self.workbook.named_styles:
@@ -894,8 +895,11 @@ class LinkedExcelWriter(ExcelWriter):
         width_sample_size = 15
         header_font = Font(bold=True)
 
-        should_write_headers = write_headers and (worksheet.cell(1, 1).value is None)
+        cell_1_1_value = worksheet.cell(1, 1).value
+        should_write_headers = write_headers and (cell_1_1_value is None)
         data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+
+        logger.debug(f"LinkedExcelWriter._write_to_worksheet: sheet={target_sheet}, write_headers={write_headers}, cell(1,1)={cell_1_1_value}, should_write_headers={should_write_headers}, max_row={worksheet.max_row}")
 
         if should_write_headers:
             for col_idx, column_name in enumerate(self.columns, 1):
