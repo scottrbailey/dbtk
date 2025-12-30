@@ -495,6 +495,67 @@ class LinkSource:
 
         self._records[key_str] = record
 
+    def generate_link_from_row(
+        self,
+        row_dict: Dict[str, Any],
+        ref: str,
+        mode: str = "external"
+    ) -> Optional[dict]:
+        """
+        Generate link info directly from row data (for self-linking).
+
+        Used when writing the source sheet itself to create links from current row
+        instead of looking up from cache.
+
+        Parameters
+        ----------
+        row_dict : dict
+            The current row's data as a dictionary
+        ref : str
+            The cell reference for internal links (e.g., "#Movies!A5")
+        mode : str
+            "external" or "internal"
+
+        Returns
+        -------
+        dict or None
+            Dict with "target" and "display_text", or None if link cannot be generated
+        """
+        # Generate display text
+        if self.text_template:
+            try:
+                display_text = self.text_template.format_map(row_dict)
+            except KeyError as e:
+                logger.warning(f"Missing key {e} in text_template for {self.name}")
+                return None
+        else:
+            # No template → use the key value
+            key_value = row_dict.get(self.key_column)
+            if key_value is None:
+                return None
+            display_text = str(key_value)
+
+        # Generate target
+        if mode == "external":
+            if self.url_template:
+                try:
+                    target = self.url_template.format_map(row_dict)
+                except KeyError as e:
+                    logger.warning(f"Missing key {e} in url_template for {self.name}")
+                    # Fallback to internal ref if URL template fails
+                    target = ref
+            else:
+                # No URL template, fall back to internal
+                target = ref
+        else:
+            # Internal mode
+            target = ref
+
+        return {
+            "target": target,
+            "display_text": display_text
+        }
+
     def get_link(
         self,
         key_value: Any,
@@ -812,8 +873,17 @@ class LinkedExcelWriter(ExcelWriter):
                 link_spec = link_mapping.get(col_name)
                 if link_spec:
                     source, mode = link_spec
-                    key_value = row_dict.get(source.key_column, value)
-                    link_info = source.get_link(key_value, mode=mode) if key_value is not None else None
+
+                    # Check if this is self-linking (source sheet == target sheet)
+                    if source.source_sheet == target_sheet:
+                        # Self-linking: generate link from current row data
+                        key_col_letter = get_column_letter(col_index_map[source.key_column])
+                        ref = f"#{target_sheet}!{key_col_letter}{row_idx}"
+                        link_info = source.generate_link_from_row(row_dict, ref, mode=mode)
+                    else:
+                        # Cross-sheet linking: look up from cache
+                        key_value = row_dict.get(source.key_column, value)
+                        link_info = source.get_link(key_value, mode=mode) if key_value is not None else None
 
                     if link_info:
                         cell.hyperlink = link_info["target"]
