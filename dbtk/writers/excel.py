@@ -204,7 +204,7 @@ class ExcelWriter(BatchWriter):
             for col_idx, column_name in enumerate(self.columns, 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
-            worksheet.freeze_panes('A1')
+            worksheet.freeze_panes = 'A2'
 
         # Write data rows
         for row_idx, record in enumerate(self.data_iterator, data_start_row):
