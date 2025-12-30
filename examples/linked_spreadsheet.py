@@ -24,17 +24,25 @@ if __name__ == '__main__':
     #writer.register_link_source(actor_links)
 
     # Get list of movies from titles_subset (loaded in examples/bulk_load_imdb_subset.py)
-    params = {'genre': 'Drama'}
-    cur.execute_file(query_path / 'movie_list.sql', params)
-    writer.write_batch(cur, 'Movies'
-                       , links={'primary_title': 'titles'}
-    )
 
-    cur.execute_file(query_path / 'movie_cast.sql', params)
+    cur.execute_file(query_path / 'movie_list.sql', {'genre': 'Drama'})
+    writer.write_batch(cur, 'Movies',
+                       links={'primary_title': 'titles'})
+    principal_stmt = cur.prepare_file(query_path / 'movie_principals.sql')
+    principal_stmt.execute({'genre': 'Drama', 'incl_roles': ['actor', 'actress'],
+                            'excl_roles': None})
     writer.write_batch(cur, 'Cast',
-                       links={'movie_1_id': 'titles:internal'}
-                       )
-
+                       links={'movie_1': 'titles:internal',
+                              'movie_2': 'titles:internal',
+                              'movie_3': 'titles:internal',
+                              'movie_4': 'titles:internal'})
+    principal_stmt.execute({'genre': 'Drama', 'incl_roles': None,
+                            'excl_roles': ['actor', 'actress', 'director', 'producer']})
+    writer.write_batch(cur, 'Crew',
+                       links={'movie_1': 'titles:internal',
+                              'movie_2': 'titles:internal',
+                              'movie_3': 'titles:internal',
+                              'movie_4': 'titles:internal'})
     writer.close()
 
 
