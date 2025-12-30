@@ -415,28 +415,28 @@ class LinkSource:
     name : str
         Unique identifier for this link source. Used when registering links in
         write_batch() (e.g., ``links={"student_name": "student"}``).
-    source_sheet : str
+    source_sheet : str, optional
         The worksheet name that serves as the authoritative source for this entity.
         Internal links will point to rows in this sheet. This sheet must be written
-        before any sheets that reference it.
-    key_column : str
+        before any sheets that reference it. Not required when external_only=True.
+    key_column : str, optional
         The column name containing unique identifiers for records (e.g., "student_id").
         This column must exist in both the source sheet data and any sheets that
-        create links to it.
+        create links to it. Not required when external_only=True.
     url_template : str, optional
         Python format string for generating external URLs. Uses str.format_map() with
         the full record dict as context. Example: ``"https://app.com/users/{user_id}"``
     text_template : str, optional
         Python format string for generating link display text. Uses str.format_map()
         with the full record dict. Example: ``"{last_name}, {first_name} ({dept})"``
-        If not provided, displays the key_column value.
+        If not provided, uses the column value.
     missing_text : str, optional
         Fallback text to display when a link target cannot be resolved. If None,
         displays the raw value from the detail row.
     external_only : bool, default False
-        If True, this LinkSource only generates external links on its source sheet
-        (self-linking) and skips caching records. Memory savings can be significant
-        for large datasets. If False (default), caches records for cross-sheet linking.
+        If True, this LinkSource generates external links directly from current row data
+        without caching. Can be reused across multiple sheets. source_sheet and key_column
+        are not required. If False (default), caches records for cross-sheet linking.
 
     Attributes
     ----------
@@ -475,18 +475,18 @@ class LinkSource:
             missing_text="[Unknown Customer]"
         )
 
-    **External-only links (self-linking, no caching)**::
+    **External-only links (reusable across sheets)**::
 
-        # For large datasets where you only need links on the source sheet itself
-        movie_link = LinkSource(
-            name="movie",
-            source_sheet="Movies",
-            key_column="movie_id",
-            url_template="https://imdb.com/title/{imdb_id}",
-            text_template="{title} ({year})",
-            external_only=True  # Skip caching to save memory
+        # For external links - reusable on any sheet with required columns
+        imdb_link = LinkSource(
+            name="imdb",
+            url_template="https://imdb.com/title/{tconst}",
+            text_template="{primary_title} ({start_year})",
+            external_only=True  # No source_sheet needed - works on any sheet
         )
-        # Use with: writer.write_batch(movies, "Movies", links={"title": "movie"})
+        # Use on multiple sheets with same columns:
+        writer.write_batch(movies, "Movies", links={"primary_title": "imdb"})
+        writer.write_batch(top_rated, "Top Rated", links={"primary_title": "imdb"})
 
     Notes
     -----
@@ -502,8 +502,8 @@ class LinkSource:
     """
     def __init__(self,
                  name: str,
-                 source_sheet: str,
-                 key_column: str,
+                 source_sheet: str = None,
+                 key_column: str = None,
                  url_template: str = None,
                  text_template: str = None,
                  missing_text: str = None,
@@ -516,6 +516,12 @@ class LinkSource:
         self.missing_text = missing_text
         self.external_only = external_only
         self._records = {}
+
+        # Validation
+        if not external_only and not source_sheet:
+            raise ValueError(f"source_sheet is required when external_only=False for LinkSource '{name}'")
+        if not external_only and not key_column:
+            raise ValueError(f"key_column is required when external_only=False for LinkSource '{name}'")
 
         # Track display width for column sizing (sample first 100 rows, cap at 50 chars)
         self._max_display_width: int = 0
@@ -605,11 +611,15 @@ class LinkSource:
                 logger.warning(f"Missing key {e} in text_template for {self.name}")
                 return None
         else:
-            # No template → use the key value
-            key_value = row_dict.get(self.key_column)
-            if key_value is None:
-                return None
-            display_text = str(key_value)
+            # No template → use the key value if available, or first column value
+            if self.key_column:
+                key_value = row_dict.get(self.key_column)
+                if key_value is None:
+                    return None
+                display_text = str(key_value)
+            else:
+                # For external_only sources without text_template, use first available value
+                display_text = str(next(iter(row_dict.values()), ""))
 
         # Track max display width for first 100 self-links (capped at 50 chars)
         if self._sample_count < 100:
@@ -892,8 +902,10 @@ class LinkedExcelWriter(ExcelWriter):
                 link_mapping[col] = (self.link_sources[source_name], mode)
 
         # Determine if this sheet is a source sheet for any registered LinkSource
+        # Skip external_only sources since they don't cache
         source_for_this_sheet = [
-            src for src in self.link_sources.values() if src.source_sheet == target_sheet
+            src for src in self.link_sources.values()
+            if not src.external_only and src.source_sheet == target_sheet
         ]
 
         row_count = self._write_to_worksheet(
@@ -975,8 +987,10 @@ class LinkedExcelWriter(ExcelWriter):
                 if link_spec:
                     source, mode = link_spec
 
-                    # Check if this is self-linking (source sheet == target sheet)
-                    if source.source_sheet == target_sheet:
+                    if source.external_only:
+                        # External-only: always generate from current row (no caching, reusable)
+                        link_info = source.generate_link_from_row(row_dict, ref="", mode="external")
+                    elif source.source_sheet == target_sheet:
                         # Self-linking: generate link from current row data
                         key_col_letter = get_column_letter(col_index_map[source.key_column])
                         ref = f"#{target_sheet}!{key_col_letter}{row_idx}"
