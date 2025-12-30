@@ -96,6 +96,7 @@ class ExcelWriter(BatchWriter):
         self.output_path = Path(file)
         self.active_sheet: Optional[str] = sheet_name
         self.workbook: Optional[Workbook] = None
+        self._sheets_written_this_session: set = set()  # Track sheets written in this session
 
         self._load_or_create_workbook()
 
@@ -144,6 +145,11 @@ class ExcelWriter(BatchWriter):
             return self.workbook[sheet_name]
         else:
             return self.workbook.create_sheet(sheet_name)
+
+    def _clear_worksheet(self, worksheet: 'Worksheet') -> None:
+        """Clear all rows from a worksheet."""
+        # Delete all rows from the worksheet
+        worksheet.delete_rows(1, worksheet.max_row)
 
     def _get_named_style(self, name: str) -> NamedStyle:
         for style in self.workbook.named_styles:
@@ -231,6 +237,9 @@ class ExcelWriter(BatchWriter):
         """
         Write a batch of data to a sheet.
 
+        If this is the first write to this sheet in the current session, the sheet
+        is cleared first. Subsequent writes to the same sheet append data.
+
         Parameters
         ----------
         data : Iterable[RecordLike]
@@ -246,6 +255,11 @@ class ExcelWriter(BatchWriter):
             self.active_sheet = sheet_name
 
         worksheet = self._get_or_create_worksheet(target_sheet)
+
+        # Clear sheet if this is the first write to it in this session
+        if target_sheet not in self._sheets_written_this_session:
+            self._clear_worksheet(worksheet)
+            self._sheets_written_this_session.add(target_sheet)
 
         row_count = self._write_to_worksheet(
             data=data,
@@ -765,6 +779,9 @@ class LinkedExcelWriter(ExcelWriter):
         """
         Write a batch with optional hyperlinking.
 
+        If this is the first write to this sheet in the current session, the sheet
+        is cleared first. Subsequent writes to the same sheet append data.
+
         links: dict column_name → "source_name" or "source_name:internal"
         """
         target_sheet = sheet_name or self.active_sheet or 'Data'
@@ -772,6 +789,11 @@ class LinkedExcelWriter(ExcelWriter):
             self.active_sheet = target_sheet
 
         worksheet = self._get_or_create_worksheet(target_sheet)
+
+        # Clear sheet if this is the first write to it in this session
+        if target_sheet not in self._sheets_written_this_session:
+            self._clear_worksheet(worksheet)
+            self._sheets_written_this_session.add(target_sheet)
 
         # Parse links dict into resolved mapping: column → (source, mode)
         link_mapping = {}
@@ -799,7 +821,7 @@ class LinkedExcelWriter(ExcelWriter):
         row_count = self._write_to_worksheet(
             data=data,
             worksheet=worksheet,
-            write_headers=self.write_headers and (worksheet.cell(1, 1).value is None),
+            write_headers=self.write_headers,
             link_mapping=link_mapping,
             source_for_this_sheet=source_for_this_sheet,
             target_sheet=target_sheet
@@ -884,6 +906,10 @@ class LinkedExcelWriter(ExcelWriter):
                         # Cross-sheet linking: look up from cache using current column's value
                         # The value in this column IS the foreign key to look up
                         key_value = value
+                        if row_idx == data_start_row:  # Debug first row only
+                            print(f"DEBUG LINK: col={col_name}, key_value={key_value}, cache_size={len(source._records)}")
+                            if key_value:
+                                print(f"  Cache lookup result: {source.get_link(key_value, mode=mode)}")
                         link_info = source.get_link(key_value, mode=mode) if key_value is not None else None
 
                     if link_info:
