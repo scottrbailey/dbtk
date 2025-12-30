@@ -881,8 +881,9 @@ class LinkedExcelWriter(ExcelWriter):
                         ref = f"#{target_sheet}!{key_col_letter}{row_idx}"
                         link_info = source.generate_link_from_row(row_dict, ref, mode=mode)
                     else:
-                        # Cross-sheet linking: look up from cache
-                        key_value = row_dict.get(source.key_column, value)
+                        # Cross-sheet linking: look up from cache using current column's value
+                        # The value in this column IS the foreign key to look up
+                        key_value = value
                         link_info = source.get_link(key_value, mode=mode) if key_value is not None else None
 
                     if link_info:
