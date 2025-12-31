@@ -8,7 +8,7 @@ import pytest
 import json
 from pathlib import Path
 from datetime import date, datetime
-from collections import namedtuple, OrderedDict
+from collections import namedtuple
 
 from dbtk.readers import CSVReader
 from dbtk.writers import (

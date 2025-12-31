@@ -7,7 +7,6 @@ Testing the four nations of data formats with the precision of a master bender.
 import pytest
 from pathlib import Path
 from datetime import date, datetime
-from collections import OrderedDict
 
 from dbtk.readers import (
     CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
@@ -292,12 +291,12 @@ class TestReaderBase:
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
     def test_return_type_dict(self, reader_type, csv_file, excel_file, json_file,
                               ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test return_type='dict' returns OrderedDict objects."""
+        """Test return_type='dict' returns Record objects (legacy parameter name)."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
                              return_type='dict') as reader:
             first = next(reader)
-            assert isinstance(first, OrderedDict), f"{reader_type} should return OrderedDict"
+            assert isinstance(first, Record), f"{reader_type} should return Record"
             assert first['trainee_id'] is not None, "Should support dict access"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
