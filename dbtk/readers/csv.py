@@ -4,7 +4,7 @@
 
 import csv
 from typing import TextIO, List, Any, Iterator, Optional
-from .base import Reader, Clean, ReturnType, logger
+from .base import Reader, Clean, logger
 
 
 class CSVReader(Reader):
@@ -42,8 +42,6 @@ class CSVReader(Reader):
         Number of data rows to skip after headers
     max_records : int, optional
         Maximum records to read, None for all
-    return_type : str, default 'record'
-        'record' for Record objects, 'dict' for OrderedDict
     **kwargs
         Additional arguments passed to csv.reader() like delimiter, quotechar, etc.
 
@@ -77,11 +75,6 @@ class CSVReader(Reader):
             for record in reader:
                 print(record.id, record.name)
 
-        # Return dictionaries instead of Records
-        with readers.CSVReader(open('users.csv'), return_type='dict') as reader:
-            for user_dict in reader:
-                print(user_dict['name'])
-
         # Skip first 10 data rows, read only 100 rows
         with readers.CSVReader(open('large.csv'),
                               skip_rows=10,
@@ -109,7 +102,6 @@ class CSVReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values=None,
                  **kwargs):
         """
@@ -131,8 +123,6 @@ class CSVReader(Reader):
             Data rows to skip after headers
         n_rows : int, optional
             Maximum rows to read
-        return_type : str, default 'record'
-            'record' or 'dict'
         null_values : str, list, tuple, or set, optional
             Values to convert to None (e.g., '\\N' for IMDB files)
         **kwargs
@@ -143,7 +133,7 @@ class CSVReader(Reader):
             kwargs.pop('delimiter')
         super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
                          skip_rows=skip_rows, n_rows=n_rows,
-                         headers=headers, return_type=return_type, null_values=null_values)
+                         headers=headers, null_values=null_values)
         self.fp = fp
         if hasattr(fp, 'encoding') and fp.encoding == 'utf-8':
             # Using the standard utf-8 encoding can cause issues with BOM headers in column names

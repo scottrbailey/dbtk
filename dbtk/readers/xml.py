@@ -4,7 +4,7 @@
 
 import logging
 from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
-from .base import Reader, Clean, ReturnType
+from .base import Reader, Clean
 
 try:
     from lxml import etree
@@ -46,7 +46,6 @@ class XMLReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """
         Initialize XML reader.
@@ -60,12 +59,11 @@ class XMLReader(Reader):
             clean_headers: Header cleaning level (default: Clean.DEFAULT)
             skip_rows: Number of data rows to skip after headers
             n_rows: Maximum number of rows to read, or None for all
-            return_type: Either 'record' for Record objects or 'dict' for OrderedDict
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
         super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
                          skip_rows=skip_rows, n_rows=n_rows,
-                         return_type=return_type, null_values=null_values)
+                         null_values=null_values)
         self.fp = fp
 
         # Set trackable for progress tracking

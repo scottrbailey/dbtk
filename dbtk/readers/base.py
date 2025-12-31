@@ -90,11 +90,6 @@ class Clean:
             return val
 
 
-class ReturnType:
-    """Return type options for readers."""
-    RECORD = 'record'
-    DICT = 'dict'
-    DEFAULT = RECORD
 
 class _Progress:
     __slots__ = ('tell', 'byte_total', 'row_total')
@@ -179,8 +174,6 @@ class Reader(ABC):
         or known bad data at start of file)
     n_rows : int, optional
         Maximum number of rows to read. None (default) reads all rows.
-    return_type : str, default 'record'
-        Return type for records: 'record' for Record objects, 'dict' for OrderedDict
     null_values : str, list, tuple, or set, optional
         Values to convert to None. Can be a single string or a collection of strings.
         Common examples: '\\N' (IMDB files), 'NULL', 'NA', '' (empty string)
@@ -192,18 +185,18 @@ class Reader(ABC):
         # Subclasses implement specific file formats
         from dbtk import readers
 
-        # CSV with default settings
+        # CSV with default settings - returns Record objects
         with readers.CSVReader(open('data.csv')) as reader:
             for record in reader:
-                print(record.name, record.email)
+                print(record.name, record.email)  # attribute access
+                print(record['name'], record['email'])  # or dict-style
 
-        # Skip first 5 rows, read only 100, return dicts
+        # Skip first 5 rows, read only 100 records
         with readers.CSVReader(open('data.csv'),
                               skip_rows=5,
-                              n_rows=100,
-                              return_type='dict') as reader:
+                              n_rows=100) as reader:
             for row in reader:
-                print(row['name'])
+                print(row.name)
 
         # Standardize messy headers
         with readers.CSVReader(open('messy.csv'),
@@ -254,7 +247,6 @@ class Reader(ABC):
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  headers: Optional[List[str]] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values: Union[str, List[str], tuple, set, None] = None
                  ):
         """
@@ -272,8 +264,6 @@ class Reader(ABC):
         n_rows : int, optional
             Maximum number of rows to read, or None for all rows
         headers: Optional list of header names to use instead of reading from row 0
-        return_type : str, default 'record'
-            Either 'record' for Record objects or 'dict' for OrderedDict
         null_values : str, list, tuple, or set, optional
             Values to convert to None. Can be a single string or collection of strings.
             Common examples: '\\N' (IMDB), 'NULL', 'NA', '' (empty string)
@@ -303,7 +293,6 @@ class Reader(ABC):
         self._rows_read = 0
         self.skip_rows = skip_rows
         self.n_rows = n_rows
-        self.return_type = return_type
         self._record_class = None
 
         # Normalize null_values to a set for O(1) lookup
@@ -344,9 +333,8 @@ class Reader(ABC):
         the n_rows limit. Multiple calls to filter() accumulate in a pipeline - all filters
         must return True for a record to be included.
 
-        The filter operates on the final record (Record object or OrderedDict depending on
-        return_type), after null value conversion has been applied. This allows you to filter
-        on clean data rather than raw values.
+        The filter operates on the final Record object, after null value conversion has
+        been applied. This allows you to filter on clean data rather than raw values.
 
         Parameters
         ----------
@@ -603,15 +591,15 @@ class Reader(ABC):
 
         return [None if val in self._null_values else val for val in row_data]
 
-    def _create_record(self, row_data: List[Any]) -> Union[Record, OrderedDict]:
+    def _create_record(self, row_data: List[Any]) -> Record:
         """
-        Create a Record or dict from row data.
+        Create a Record from row data.
 
         Args:
             row_data: List of values for this row
 
         Returns:
-            Record instance or OrderedDict with values populated
+            Record instance with values populated
         """
         if not self._headers_initialized:
             self._setup_record_class()

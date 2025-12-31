@@ -1,7 +1,7 @@
 # dbtk/readers/data_frame.py
 import itertools
 from typing import Iterable, Optional
-from .base import Reader, Record, Clean, ReturnType, logger
+from .base import Reader, Record, Clean, logger
 
 
 class DataFrameReader(Reader):
@@ -9,8 +9,8 @@ class DataFrameReader(Reader):
     Read directly from pandas or polars DataFrames — zero intermediate files.
 
     This reader accepts a pre-loaded DataFrame (from pandas or polars) and streams
-    rows as if reading from a file. It supports all standard Reader features
-    (add_rownum, return_type, skip_records, max_records) while providing accurate
+    rows as Record objects. It supports all standard Reader features
+    (add_rownum, skip_records, max_records) while providing accurate
     progress tracking based on known row count.
 
     No pandas or polars are imported in this module — the user has already imported
@@ -24,8 +24,6 @@ class DataFrameReader(Reader):
         Add '_row_num' field with 1-based row number
     clean_headers: Clean or str, optional
         Header cleaning level. Options: Clean.NOOP (default).
-    return_type : str, default 'record'
-        'record' for Record objects, 'dict' for OrderedDict
     skip_records : int, default 0
         Number of rows to skip from the beginning
     max_records : int, optional
@@ -50,7 +48,6 @@ class DataFrameReader(Reader):
         df,
         add_row_num: bool = True,
         clean_headers: Clean = Clean.NOOP,
-        return_type: str = 'record',
         skip_rows: int = 0,
         n_rows: Optional[int] = None,
         null_values=None
@@ -60,7 +57,6 @@ class DataFrameReader(Reader):
             clean_headers=clean_headers,
             skip_rows=skip_rows,
             n_rows=n_rows,
-            return_type=return_type,
             headers=None,  # we'll set this ourselves
             null_values=null_values
         )
@@ -113,9 +109,8 @@ class DataFrameReader(Reader):
                 raise ValueError("Header '_row_num' already exists.")
             self._headers.append('_row_num')
 
-        if self.return_type == ReturnType.RECORD:
-            self._record_class = type('DataFrameRecord', (Record,), {})
-            self._record_class.set_columns(self._headers)
+        self._record_class = type('DataFrameRecord', (Record,), {})
+        self._record_class.set_columns(self._headers)
 
         self._headers_initialized = True
 

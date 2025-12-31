@@ -5,7 +5,7 @@
 import datetime as dt
 import logging
 from typing import List, Any, Iterator, Optional
-from .base import Reader, Clean, ReturnType
+from .base import Reader, Clean
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ class XLSXReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """Initialize XLSXReader for reading Excel .xlsx files.
 
@@ -47,7 +46,6 @@ class XLSXReader(Reader):
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_rows: Number of data rows to skip after headers (default: 0).
             n_rows: Maximum number of rows to read, or None for all (default: None).
-            return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
 
         Raises:
@@ -57,7 +55,7 @@ class XLSXReader(Reader):
             raise TypeError('worksheet must be of type openpyxl.Worksheet or use XLReader')
         super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
                          skip_rows=skip_rows, n_rows=n_rows,
-                         return_type=return_type, null_values=null_values)
+                         null_values=null_values)
         self.ws = worksheet
         self._trackable = self.ws
         self._total_records = self.ws.max_row + 1
@@ -110,7 +108,6 @@ class XLSReader(Reader):
                  clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """Initialize XLReader for reading Excel .xls files.
 
@@ -121,7 +118,6 @@ class XLSReader(Reader):
             clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_rows: Number of data rows to skip after headers (default: 0).
             n_rows: Maximum number of rows to read, or None for all (default: None).
-            return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
 
         Raises:
@@ -131,7 +127,7 @@ class XLSReader(Reader):
             raise TypeError('worksheet must be of type xlrd.Sheet or use XLSXReader')
         super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
                          skip_rows=skip_rows, n_rows=n_rows,
-                         headers=headers, return_type=return_type, null_values=null_values)
+                         headers=headers, null_values=null_values)
         self.ws = worksheet
         self._trackable = self.ws
         self.datemode = worksheet.book.datemode

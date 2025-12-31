@@ -5,7 +5,7 @@
 import re
 from typing import TextIO, List, Any, Optional, Iterator
 from collections import Counter, defaultdict
-from .base import Reader, Clean, ReturnType
+from .base import Reader, Clean
 from ..etl.transforms.datetime import parse_date, parse_datetime, parse_timestamp
 
 
@@ -42,7 +42,6 @@ class FixedReader(Reader):
                  clean_headers: Clean = Clean.NOOP,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values=None):
         """
         Initializes the instance with the provided file pointer, column definitions, and
@@ -58,12 +57,11 @@ class FixedReader(Reader):
             clean_headers (Clean): Determines the header cleaning level. Default is NOOP.
             skip_rows (int): The number of rows to skip before reading data.
             n_rows (Optional[int]): The maximum number of rows to read.
-            return_type: Either 'record' for Record objects or 'dict' for OrderedDict.
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
         """
         super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
                          skip_rows=skip_rows, n_rows=n_rows,
-                         return_type=return_type, null_values=null_values)
+                         null_values=null_values)
         self.fp = fp
 
         # Set trackable for progress tracking
