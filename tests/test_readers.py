@@ -275,29 +275,17 @@ class TestReaderBase:
             assert len(headers) == 8, f"{reader_type} should have 8 columns without _row_num"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_return_type_record(self, reader_type, csv_file, excel_file, json_file,
-                                ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test return_type='record' returns Record objects."""
+    def test_returns_records(self, reader_type, csv_file, excel_file, json_file,
+                             ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test that all readers return Record objects by default."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns,
-                             return_type='record') as reader:
+                             ndjson_file, xml_file, fixed_file, fixed_columns) as reader:
             first = next(reader)
             assert isinstance(first, Record), f"{reader_type} should return Record objects"
 
             # Test Record access methods
             assert first['trainee_id'] is not None, "Should support dict-style access"
             assert first.monk_name is not None, "Should support attribute access"
-
-    @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_return_type_dict(self, reader_type, csv_file, excel_file, json_file,
-                              ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test return_type='dict' returns Record objects (legacy parameter name)."""
-        with get_test_reader(reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns,
-                             return_type='dict') as reader:
-            first = next(reader)
-            assert isinstance(first, Record), f"{reader_type} should return Record"
-            assert first['trainee_id'] is not None, "Should support dict access"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
     def test_clean_headers_noop(self, reader_type, csv_file, excel_file, json_file,
