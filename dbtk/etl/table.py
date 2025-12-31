@@ -238,7 +238,7 @@ class Table:
         for col, col_def in columns.items():
             # Empty dict shorthand: default field to column name
             if col_def == {}:
-                col_def = {'field': col}
+                col_def['field'] = col
 
             validate_identifier(col)
 
