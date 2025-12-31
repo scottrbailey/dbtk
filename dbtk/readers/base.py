@@ -582,10 +582,9 @@ class Reader(ABC):
                 raise ValueError("Header '_row_num' already exists. Remove it or set add_row_num=False.")
             self._headers.append('_row_num')
 
-        # Create Record subclass only if return_type is 'record'
-        if self.return_type == ReturnType.RECORD:
-            self._record_class = type('FileRecord', (Record,), {})
-            self._record_class.set_columns(self._headers)
+        # Create Record subclass
+        self._record_class = type('FileRecord', (Record,), {})
+        self._record_class.set_columns(self._headers)
 
         self._headers_initialized = True
 
@@ -636,11 +635,8 @@ class Reader(ABC):
         if len(row_data) > len(self._headers):
             row_data = row_data[:len(self._headers)]
 
-        # Return appropriate type
-        if self.return_type == ReturnType.RECORD:
-            return self._record_class(*row_data)
-        else:  # ReturnType.DICT
-            return OrderedDict(zip(self._headers, row_data))
+        # Return Record
+        return self._record_class(*row_data)
 
     @property
     def headers(self) -> List[str]:

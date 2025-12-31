@@ -10,7 +10,7 @@ import logging
 from typing import Dict, Any, Optional, Union, Type, List
 from contextlib import contextmanager
 
-from .cursors import Cursor, RecordCursor, TupleCursor, DictCursor, ParamStyle
+from .cursors import Cursor, ParamStyle
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
@@ -25,33 +25,6 @@ def _hide_password(kwargs):
         if key in ('password', 'PWD', 'passwd'):
             parms[key] = '********'
     return parms
-
-class CursorType:
-    """
-    Cursor type constants for specifying return data structures.
-
-    Used when creating cursors to determine how query results are returned:
-
-    - RECORD: Returns Record objects (attribute, key, and index access)
-    - TUPLE: Returns namedtuples (attribute and index access)
-    - DICT: Returns OrderedDict objects (dictionary interface)
-    - LIST: Returns plain lists (index access only)
-
-    Example
-    -------
-    ::
-        >>> cursor = db.cursor(CursorType.RECORD)  # or just 'record'
-        >>> cursor = db.cursor('tuple')
-    """
-    RECORD = 'record'
-    TUPLE = 'tuple'
-    DICT = 'dict'
-    LIST = 'list'
-
-    @classmethod
-    def values(cls):
-        return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
-
 
 DRIVERS = {
     # PostgreSQL Drivers
@@ -499,14 +472,6 @@ class Database:
         'name', 'placeholder', '_cursor_settings'
     ]
 
-    # Cursor type mapping
-    CURSOR_TYPES = {
-        CursorType.RECORD: RecordCursor,
-        CursorType.TUPLE: TupleCursor,
-        CursorType.DICT: DictCursor,
-        CursorType.LIST: Cursor
-    }
-
     def __init__(self, connection, interface,
                  database_name: Optional[str] = None,
                  cursor_settings: Optional[dict] = None):
@@ -611,91 +576,60 @@ class Database:
         """Context manager exit - close connection."""
         self.close()
 
-    def cursor(self, cursor_type: Union[str, Type] = None,
-               **kwargs) -> Cursor:
+    def cursor(self, **kwargs) -> Cursor:
         """
         Create a cursor for executing database queries.
 
-        Creates a cursor with the specified type, determining how query results are returned.
-        Different cursor types provide different access patterns optimized for various use cases.
+        Returns a cursor that yields Record objects, providing flexible access to query results
+        through attribute, dictionary, and index notation.
 
         Parameters
         ----------
-        cursor_type : str or type, optional
-            Type of cursor to create. Can be:
-
-            * ``'record'`` (default) - Record objects with attribute, key, and index access
-            * ``'tuple'`` - namedtuples with attribute and index access
-            * ``'dict'`` - OrderedDict objects with dictionary interface
-            * ``'list'`` - Plain lists with index access only
-            * Cursor class - Explicit cursor class to instantiate
-
         **kwargs
-            Additional arguments passed to the underlying cursor constructor
+            Optional cursor configuration:
+
+            * ``batch_size`` (int) - Rows to process at once in bulk operations
+            * ``column_case`` (str) - Column name casing: 'lower', 'upper', 'title', or 'preserve'
+            * ``debug`` (bool) - Enable debug output showing queries and bind variables
+            * ``return_cursor`` (bool) - If True, execute() returns cursor for method chaining
 
         Returns
         -------
         Cursor
-            Cursor instance of the requested type
-
-        Raises
-        ------
-        ValueError
-            If cursor_type is invalid
+            Cursor instance that returns Record objects
 
         Example
         -------
         ::
 
-            # Default Record cursor - most flexible
+            # Create cursor - returns Records
             cursor = db.cursor()
-            row = cursor.fetchone()
-            print(row['name'], row.name, row[0])  # All work!
+            cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
+                          {'status': 'active'})
 
-            # Tuple cursor - lightweight namedtuple
-            cursor = db.cursor('tuple')
-            row = cursor.fetchone()
-            print(row.name, row[0])  # Attribute and index access
+            # Record supports multiple access patterns
+            for row in cursor:
+                print(row['name'])    # Dictionary access
+                print(row.name)       # Attribute access
+                print(row[1])         # Index access
+                print(row.get('phone', 'N/A'))  # Safe access with default
 
-            # Dict cursor - dictionary-only access
-            cursor = db.cursor('dict')
-            row = cursor.fetchone()
-            print(row['name'], row.get('email', 'N/A'))
-
-            # List cursor - minimal overhead
-            cursor = db.cursor('list')
-            row = cursor.fetchone()
-            print(row[0], row[1])  # Index access only
+            # With configuration options
+            cursor = db.cursor(debug=True, column_case='upper')
 
         See Also
         --------
-        RecordCursor : Flexible cursor returning Record objects
-        TupleCursor : Lightweight cursor returning namedtuples
-        DictCursor : Dictionary-based cursor
+        Record : Flexible row object with dict, attribute, and index access
+        Database.transaction : Context manager for safe transactions
         """
-        # cursor_type precedence: explicit arg > self._cursor_settings['type'] > settings['default_cursor_type'] > CursorType.RECORD
-        if cursor_type is None:
-            cursor_type = self._cursor_settings.get('type') or settings.get('default_cursor_type', CursorType.RECORD)
-        if isinstance(cursor_type, str):
-            if cursor_type not in CursorType.values():
-                raise ValueError(
-                    f"Invalid cursor type '{cursor_type}'. "
-                    f"Must be one of: {CursorType.values()}"
-                )
-            cursor_class = self.CURSOR_TYPES[cursor_type]
-        elif callable(cursor_type) and hasattr(cursor_type, 'fetchone'):
-            cursor_class = cursor_type
-        else:
-            raise ValueError(f"Invalid cursor type: {cursor_type}")
-
-        # only pass through allowed kwargs
+        # Only pass through allowed kwargs
         filtered_kwargs = dict()
         for key in Cursor.WRAPPER_SETTINGS:
-            if key in kwargs and key != 'type':
+            if key in kwargs:
                 filtered_kwargs[key] = kwargs.pop(key)
             elif key in self._cursor_settings:
                 filtered_kwargs[key] = self._cursor_settings[key]
-        return cursor_class(self, **filtered_kwargs)
+        return Cursor(self, **filtered_kwargs)
 
     @contextmanager
     def transaction(self):
