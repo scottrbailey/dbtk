@@ -756,7 +756,7 @@ class TestDatabaseWriter:
 
         # Create mock cursor with required attributes
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'named'
+        mock_cursor.connection.driver.paramstyle = 'named'
 
         writer = DatabaseWriter(
             data=sample_records,
@@ -775,7 +775,7 @@ class TestDatabaseWriter:
         from dbtk.writers.database import DatabaseWriter
 
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'qmark'
+        mock_cursor.connection.driver.paramstyle = 'qmark'
 
         writer = DatabaseWriter(
             data=sample_records,
@@ -794,7 +794,7 @@ class TestDatabaseWriter:
         from dbtk.writers.database import DatabaseWriter
 
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'named'
+        mock_cursor.connection.driver.paramstyle = 'named'
 
         writer = DatabaseWriter(
             data=sample_records,
@@ -814,7 +814,7 @@ class TestDatabaseWriter:
         from dbtk.writers.database import cursor_to_cursor
 
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'format'
+        mock_cursor.connection.driver.paramstyle = 'format'
 
         # Patch DatabaseWriter.write to avoid actual execution
         with patch('dbtk.writers.database.DatabaseWriter.write', return_value=10):
@@ -835,7 +835,7 @@ class TestDatabaseWriter:
 
         for paramstyle in paramstyles:
             mock_cursor = Mock()
-            mock_cursor.connection.interface.paramstyle = paramstyle
+            mock_cursor.connection.driver.paramstyle = paramstyle
 
             writer = DatabaseWriter(
                 data=sample_dicts,
@@ -900,7 +900,7 @@ class TestDatabaseWriter:
 
         # Create mock cursor with required attributes
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'named'
+        mock_cursor.connection.driver.paramstyle = 'named'
 
         writer = DatabaseWriter(
             data=sample_records,
@@ -919,7 +919,7 @@ class TestDatabaseWriter:
         from dbtk.writers.database import DatabaseWriter
 
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'qmark'
+        mock_cursor.connection.driver.paramstyle = 'qmark'
 
         writer = DatabaseWriter(
             data=sample_records,
@@ -938,7 +938,7 @@ class TestDatabaseWriter:
         from dbtk.writers.database import DatabaseWriter
 
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'named'
+        mock_cursor.connection.driver.paramstyle = 'named'
 
         writer = DatabaseWriter(
             data=sample_records,
@@ -958,7 +958,7 @@ class TestDatabaseWriter:
         from dbtk.writers.database import cursor_to_cursor
 
         mock_cursor = Mock()
-        mock_cursor.connection.interface.paramstyle = 'format'
+        mock_cursor.connection.driver.paramstyle = 'format'
 
         # Patch DatabaseWriter.write to avoid actual execution
         with patch('dbtk.writers.database.DatabaseWriter.write', return_value=10):
@@ -979,7 +979,7 @@ class TestDatabaseWriter:
 
         for paramstyle in paramstyles:
             mock_cursor = Mock()
-            mock_cursor.connection.interface.paramstyle = paramstyle
+            mock_cursor.connection.driver.paramstyle = paramstyle
 
             writer = DatabaseWriter(
                 data=sample_dicts,
