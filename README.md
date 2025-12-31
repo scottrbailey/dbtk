@@ -6,15 +6,15 @@
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
 
-Like the elemental benders of Avatar, this library gives you precise control over data, the world's most rapidly growing element. 
-Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go. 
-This library is designed by and for data integrators. 
+Like the elemental benders of Avatar, this library gives you precise control over data, the world's most rapidly growing element.
+Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go.
+This library is designed by and for data integrators.
 
-DBTK aims to be fast and memory-efficient at every turn. 
-But it was designed to boost your productivity first and foremost. You have dozens, possibly hundreds of interfaces, impossible 
-deadlines, and multiple projects all happening at once. Your environment has three or more different relational databases. 
-You just want to get stuff done instead of writing the same boilerplate code over and over or stressing because that database system
-you hardly ever use is so different from the one you use every day.  
+**DBTK aims to be fast and memory-efficient at every turn.** But it was designed to boost your productivity first and foremost.
+You have dozens (possibly hundreds) of interfaces, impossible deadlines, and multiple projects all happening at once. Your
+environment has three or more different relational databases. You just want to get stuff done instead of writing the same
+boilerplate code over and over or stressing because that database system you hardly ever use is so different from the one
+you use every day.  
 
 **Design philosophy:** Modern databases excel at aggregating and transforming data at scale. DBTK embraces
 this by focusing on what Python does well: flexible record-by-record transformations,
@@ -28,14 +28,14 @@ validated along the way.
 ## Features
 
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
-- **Portable SQL Queries** - Write SQL once with named parameters, run on any database regardless of parameter style
-- **Smart Cursors** - All cursors return results as Record objects. It has the speed and efficiency of a tuple and the functionality of a dict 
+- **Portable SQL Queries** - Write SQL once with named parameters, runs on any database regardless of parameter style
+- **Smart Cursors** - All cursors return Record objects with the speed of tuples and the flexibility of dicts
 - **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
 - **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
 - **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
 - **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning with international support
-- **High-Performance Bulk Operations** - DataSurge for blazing-fast batch INSERT/UPDATE/DELETE/MERGE operations. And BulkSurge for even faster direct loading when your database supports it
+- **High-Performance Bulk Operations** - DataSurge for blazing-fast batch operations; BulkSurge for even faster direct loading when supported
 - **Integration Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
 - **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
 
@@ -83,7 +83,7 @@ with dbtk.connect('fire_nation_db') as db:
         'status': 'active'
     }
 
-    # DBTK auto-detects parameter format and transforms the query and parameters to match the database
+    # DBTK auto-converts parameters to match your database's style
     cursor.execute_file('queries/monthly_report.sql', params)
     monthly_data = cursor.fetchall()
 
@@ -101,10 +101,10 @@ if dbtk.errors_logged():
 ```
 
 **What makes this easy:**
-- Write SQL once with named (`:param`) or pyformat (`%(param)s`) parameters, works on any database
-- Pass the same dict to multiple queries - extra params ignored, missing params = NULL
-- No parameter style conversions needed - DBTK handles it automatically
-- Export to CSV/Excel/JSON with one line
+- Write SQL once with named (`:param`) or pyformat (`%(param)s`) parameters - works on any database
+- Pass the same dict to multiple queries - extra params ignored, missing params become NULL
+- DBTK handles parameter conversion automatically - no manual string formatting needed
+- Export to CSV/Excel/JSON with one line of code
 
 ### Sample Inbound Integration - Import Data
 
@@ -144,14 +144,14 @@ if dbtk.errors_logged():
 ```
 
 **What makes this easy:**
-- Field mapping separates database schema from source data format
-- Built-in transforms (dates, emails, integers) with string shorthand and support for custom transforms and transform pipelines
-- Table class automatically verifies it has the required data to perform the requested operation (select, insert, update, delete, merge)
-- Built-in table lookups and validation with deferred cursor binding and cache control
-- The Reader classes automatically detect file size or number of records and display a progress tracker on large files. So you will never be left wondering if your pipeline has failed
-- Automatic tracking of statistics: records processed, skipped, inserted etc.
-- Automatic logging with global defaults all being overridable when calling `setup_logging`
-- Automatically track if `error` or `critical` has been logged. Optional log splitting that doesn't create error log if no errors were encountered
+- Field mapping separates database schema from source data format - change one without touching the other
+- Built-in transforms (dates, emails, integers) with string shorthand - `'fn': 'date'` instead of importing functions
+- Table class auto-validates required data before operations - no silent failures or cryptic database errors
+- Built-in table lookups and validation with deferred cursor binding and intelligent caching
+- Readers auto-detect file size and show progress on large files - never wonder if your pipeline has stalled
+- Automatic statistics tracking - records processed, skipped, inserted, etc.
+- Automatic logging with sensible global defaults - override per-pipeline when needed
+- Error tracking built-in - `dbtk.errors_logged()` tells you if anything went wrong
 
 ## Documentation
 
@@ -163,7 +163,8 @@ if dbtk.errors_logged():
 
 ## Performance Highlights
 
-If your database driver supports a faster option for execute many (psycopg2 & pyodbc) it is automatically enabled.
+**Driver optimizations enabled automatically** - If your database driver supports faster batch operations (psycopg2, pyodbc), DBTK detects and uses them automatically.
+
 Real-world benchmarks from production systems:
 
 - **DataFrameReader**: 1.3M rec/s reading compressed CSV with polars + transforms
