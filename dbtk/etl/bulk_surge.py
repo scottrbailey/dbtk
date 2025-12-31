@@ -84,7 +84,7 @@ class BulkSurge(BaseSurge):
             BulkSurge.dump() to generate a transformed CSV file with LOAD DATA LOCAL INFILE (often disabled for security reasons). """)
             raise NotImplementedError(msg)
         elif "sqlserver" in db_type or "mssql" in db_type:
-            if self.cursor.connection.interface.__name__ == 'pyodbc':
+            if self.cursor.connection.driver.__name__ == 'pyodbc':
                 msg = "Pyodbc has a very fast executemany implementation. Use DataSurge instead, and skip the hassle of bcp!"
             else:
                 msg = "If you switch to pyodbc, you can use DataSurge for blazing fast speeds. Otherwise, you can call BulkSurge.dump() to generate a CSV to use with bcp."

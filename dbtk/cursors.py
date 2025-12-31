@@ -233,7 +233,7 @@ class Cursor:
             raise TypeError(f'First argument must be a database connection object: {e}')
 
         # Set parameter style info
-        self.paramstyle = self.connection.interface.paramstyle
+        self.paramstyle = self.connection.driver.paramstyle
         if hasattr(self.connection, 'placeholder'):
             self.placeholder = self.connection.placeholder
 
@@ -303,7 +303,7 @@ class Cursor:
 
         Called once per cursor, on first executemany(). Stores in self._bulk_method.
         """
-        adapter = self.connection.interface.__name__
+        adapter = self.connection.driver.__name__
         if adapter == 'psycopg2':
             try:
                 from psycopg2.extras import execute_batch
@@ -496,9 +496,9 @@ class Cursor:
         rows = self.fetchmany(2)
 
         if len(rows) == 0:
-            raise self.connection.interface.DatabaseError('No Data Found.')
+            raise self.connection.driver.DatabaseError('No Data Found.')
         elif len(rows) > 1:
-            raise self.connection.interface.DatabaseError(
+            raise self.connection.driver.DatabaseError(
                 'selectinto() must return one and only one row.'
             )
         else:

@@ -425,7 +425,7 @@ class Database:
 
     Attributes
     ----------
-    interface
+    driver
         The database adapter module (e.g., psycopg2, oracledb)
     database_type : str
         Database type: 'postgres', 'oracle', 'mysql', 'sqlserver', or 'sqlite'
@@ -468,11 +468,11 @@ class Database:
 
     # Attributes stored locally, others delegated to _connection
     _local_attrs = [
-        '_connection', 'database_type', 'database_name', 'interface',
+        '_connection', 'database_type', 'database_name', 'driver',
         'name', 'placeholder', '_cursor_settings'
     ]
 
-    def __init__(self, connection, interface,
+    def __init__(self, connection, driver,
                  database_name: Optional[str] = None,
                  cursor_settings: Optional[dict] = None):
         """
@@ -485,7 +485,7 @@ class Database:
         ----------
         connection
             Underlying database connection object from the adapter
-        interface
+        driver
             Database adapter module (psycopg2, oracledb, mysqlclient, etc.)
         database_name : str, optional
             Name of the database. If None, attempts to extract from connection.
@@ -507,7 +507,7 @@ class Database:
             db = dbtk.database.postgres(user='admin', password='secret', database='mydb')
         """
         self._connection = connection
-        self.interface = interface
+        self.driver = driver
         if database_name is None:
             database_name = (connection.get('database') or
                             connection.get('service_name') or
@@ -517,12 +517,12 @@ class Database:
         self.database_name = database_name
 
         # Set parameter placeholder based on adapter style
-        paramstyle = getattr(interface, 'paramstyle', ParamStyle.DEFAULT)
+        paramstyle = getattr(driver, 'paramstyle', ParamStyle.DEFAULT)
         self.placeholder = ParamStyle.get_placeholder(paramstyle)
 
-        # Determine server type from interface name
-        if interface.__name__ in DRIVERS:
-            self.database_type = DRIVERS[interface.__name__]['database_type']
+        # Determine server type from driver name
+        if driver.__name__ in DRIVERS:
+            self.database_type = DRIVERS[driver.__name__]['database_type']
         else:
             self.database_type = 'unknown'
 
@@ -685,13 +685,13 @@ class Database:
             raise
 
     def param_help(self) -> None:
-        """Print help on this interface's parameter style."""
-        print(f"{self.interface.__name__}'s parameter style is \"{self.interface.paramstyle}\"")
+        """Print help on this driver's parameter style."""
+        print(f"{self.driver.__name__}'s parameter style is \"{self.driver.paramstyle}\"")
         print(f'"SELECT * FROM people WHERE name = {self.placeholder} AND age > {self.placeholder}", ("Smith", 30)')
 
-        if self.interface.paramstyle == ParamStyle.NAMED:
+        if self.driver.paramstyle == ParamStyle.NAMED:
             print(r'"SELECT * FROM people WHERE name = :name AND age > :age", {"name": "Smith", "age": 30}')
-        elif self.interface.paramstyle == ParamStyle.PYFORMAT:
+        elif self.driver.paramstyle == ParamStyle.PYFORMAT:
             print(r'"SELECT * FROM people WHERE name = %(name)s AND age > %(age)s", {"name": "Smith", "age": 30}')
 
     @classmethod

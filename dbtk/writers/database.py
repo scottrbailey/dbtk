@@ -41,7 +41,7 @@ class DatabaseWriter(BaseWriter):
         self.commit_frequency = commit_frequency
 
         # Get parameter style from target connection
-        self.paramstyle = target_cursor.connection.interface.paramstyle
+        self.paramstyle = target_cursor.connection.driver.paramstyle
 
         # Pre-generate INSERT statement and param order
         self.insert_sql, self.param_names = self._create_insert_statement()
@@ -106,7 +106,7 @@ class DatabaseWriter(BaseWriter):
             self.target_cursor.connection.commit()
             logger.info(f"Copy completed: {self._row_num} records inserted into {self.target_table}")
 
-        except self.target_cursor.connection.interface.DatabaseError as e:
+        except self.target_cursor.connection.driver.DatabaseError as e:
             logger.error(f"Error during copy: {e}")
             self.target_cursor.connection.rollback()
             raise

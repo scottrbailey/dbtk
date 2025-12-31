@@ -228,7 +228,7 @@ class Table:
         validate_identifier(name)
         self._name = name
         self._cursor = cursor
-        self._paramstyle = cursor.connection.interface.paramstyle
+        self._paramstyle = cursor.connection.driver.paramstyle
 
         validated_columns = {}
         req_cols = []
@@ -341,7 +341,7 @@ class Table:
     def cursor(self, value: Cursor):
         old_paramstyle = self._paramstyle
         self._cursor = value
-        self._paramstyle = value.connection.interface.paramstyle
+        self._paramstyle = value.connection.driver.paramstyle
 
         if old_paramstyle != self._paramstyle:
             self._reset()
@@ -918,7 +918,7 @@ class Table:
             self._cursor.execute(sql, params)
             self.counts[operation] += 1
             return 0
-        except self._cursor.connection.interface.DatabaseError as e:
+        except self._cursor.connection.driver.DatabaseError as e:
             error_msg = f"SQL failed: {sql}\nParams: {params}\nError: {str(e)}"
             logger.error(error_msg)
             if raise_error:

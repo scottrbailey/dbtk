@@ -91,7 +91,7 @@ class DataSurge(BaseSurge):
                 try:
                     self.cursor.executemany(sql, batch_params)
                     self.table.counts[operation] += len(batch_params)
-                except self.cursor.connection.interface.DatabaseError as e:
+                except self.cursor.connection.driver.DatabaseError as e:
                     logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
                     if raise_error:
                         raise
@@ -144,7 +144,7 @@ class DataSurge(BaseSurge):
         create_sql = f"CREATE TEMPORARY TABLE {temp_name} AS SELECT * FROM {self.table.name} WHERE 1=0"
         try:
             self.cursor.execute(create_sql)
-        except self.cursor.connection.interface.DatabaseError as e:
+        except self.cursor.connection.driver.DatabaseError as e:
             logger.error(f"Failed to create temp table {temp_name}: {e}")
             if raise_error:
                 raise
@@ -187,7 +187,7 @@ class DataSurge(BaseSurge):
             loaded = len(records_list) - errors
             self.table.counts['merge'] += loaded
             logger.info(f"MERGE via temp table → {loaded:,} records into {self.table.name}")
-        except self.cursor.connection.interface.DatabaseError as e:
+        except self.cursor.connection.driver.DatabaseError as e:
             logger.error(f"Merge failed: {e}")
             if raise_error:
                 raise
