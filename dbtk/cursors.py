@@ -101,7 +101,7 @@ class PreparedStatement:
             Cursor if return_cursor=True, else None
         """
         try:
-            params = self._prepare_params(bind_vars)
+            params = self.cursor._prepare_params(self.param_names, bind_vars)
             return self.cursor.execute(self.sql, params)
         except Exception as e:
             source = self.filename or '<query>'
@@ -111,23 +111,6 @@ class PreparedStatement:
                 f"Parameters: {bind_vars}"
             )
             raise
-
-    def _prepare_params(self, bind_vars: dict) -> Any:
-        """
-        Convert dict parameters to format required by cursor's paramstyle.
-
-        Args:
-            bind_vars: Dictionary of named parameters
-
-        Returns:
-            Tuple for positional styles, dict for named styles
-        """
-        if self.cursor.paramstyle in ParamStyle.positional_styles():
-            # Build tuple in param_names order
-            return tuple(bind_vars.get(name) for name in self.param_names)
-        else:
-            # Return dict with only the params we need
-            return {name: bind_vars[name] for name in self.param_names if name in bind_vars}
 
     def __getattr__(self, key: str):
         """Delegate attribute access to underlying cursor."""
@@ -299,6 +282,26 @@ class Cursor:
         else:
             raise StopIteration
 
+    def _prepare_params(self, param_names: list, bind_vars: dict) -> Any:
+        """
+        Convert dict parameters to format required by cursor's paramstyle.
+
+        Args:
+            bind_vars: Dictionary of named parameters
+
+        Returns:
+            Tuple for positional styles, dict for named styles
+        """
+        missing = set(param_names) - set(bind_vars.keys())
+        if missing:
+            logger.info(f"Parameters not provided, defaulting to None: {', '.join(missing)}")
+        if self.paramstyle in ParamStyle.positional_styles():
+            # Build tuple in param_names order
+            return tuple(bind_vars.get(name) for name in param_names)
+        else:
+            # Return dict with only the params we need
+            return {name: bind_vars.get(name) for name in param_names}
+
     def _detect_bulk_method(self) -> Callable:
         """
         Detect and return the fastest bulk execution method for this cursor.
@@ -418,12 +421,9 @@ class Cursor:
 
             # Prepare parameters
             if bind_vars:
-                if self.paramstyle in ParamStyle.positional_styles():
-                    params = tuple(bind_vars.get(name) for name in param_names)
-                else:
-                    params = {name: bind_vars[name] for name in param_names if name in bind_vars}
+                params = self._prepare_params(param_names, bind_vars)
             else:
-                params = () if self.paramstyle in ParamStyle.positional_styles() else {}
+                params = None
 
             return self.execute(transformed_sql, params)
 
