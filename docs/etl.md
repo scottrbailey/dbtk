@@ -4,12 +4,6 @@
 
 **The solution:** DBTK's ETL framework provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
 
-## Quick Start
-
-**The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
-
-**The solution:** DBTK's ETL framework provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
-
 ### SQL File Execution
 
 Write SQL once with named parameters, run it anywhere. DBTK automatically converts between parameter styles, making your queries truly portable across databases.

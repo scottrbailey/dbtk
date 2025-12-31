@@ -6,7 +6,15 @@
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
 
-Like the elemental benders of Avatar, this library gives you precise control over data, the world's most rapidly growing element. Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go. This library is designed by and for data integrators.
+Like the elemental benders of Avatar, this library gives you precise control over data, the world's most rapidly growing element. 
+Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go. 
+This library is designed by and for data integrators. 
+
+DBTK aims to be fast and memory-efficient at every turn. 
+But it was designed to boost your productivity first and foremost. You have dozens, possibly hundreds of interfaces, impossible 
+deadlines, and multiple projects all happening at once. Your environment has three or more different relational databases. 
+You just want to get stuff done instead of writing the same boilerplate code over and over or stressing because that database system
+you hardly ever use is so different from the one you use every day.  
 
 **Design philosophy:** Modern databases excel at aggregating and transforming data at scale. DBTK embraces
 this by focusing on what Python does well: flexible record-by-record transformations,
@@ -21,15 +29,15 @@ validated along the way.
 
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
 - **Portable SQL Queries** - Write SQL once with named parameters, run on any database regardless of parameter style
+- **Smart Cursors** - All cursors return results as Record objects. It has the speed and efficiency of a tuple and the functionality of a dict 
 - **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
 - **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
 - **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
-- **High-Performance Bulk Operations** - DataSurge and BulkSurge classes for blazing-fast batch INSERT/UPDATE/DELETE/MERGE operations
 - **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning with international support
+- **High-Performance Bulk Operations** - DataSurge for blazing-fast batch INSERT/UPDATE/DELETE/MERGE operations. And BulkSurge for even faster direct loading when your database supports it
 - **Integration Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
 - **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
-- **Smart Cursors** - Multiple result formats: Records, named tuples, dictionaries, or plain lists
 
 ## Installation
 
@@ -75,7 +83,7 @@ with dbtk.connect('fire_nation_db') as db:
         'status': 'active'
     }
 
-    # DBTK auto-detects parameter format and converts to match database
+    # DBTK auto-detects parameter format and transforms the query and parameters to match the database
     cursor.execute_file('queries/monthly_report.sql', params)
     monthly_data = cursor.fetchall()
 
@@ -93,10 +101,10 @@ if dbtk.errors_logged():
 ```
 
 **What makes this easy:**
-- Write SQL once with named parameters (`:param`), works on any database
+- Write SQL once with named (`:param`) or pyformat (`%(param)s`) parameters, works on any database
 - Pass the same dict to multiple queries - extra params ignored, missing params = NULL
-- Export to CSV/Excel/JSON with one line
 - No parameter style conversions needed - DBTK handles it automatically
+- Export to CSV/Excel/JSON with one line
 
 ### Sample Inbound Integration - Import Data
 
@@ -105,7 +113,7 @@ Import data with field mapping, transformations, and validation:
 ```python
 import dbtk
 from dbtk.etl import Table
-from dbtk.etl.transforms import parse_date, email_clean, get_int
+from dbtk.etl.transforms import email_clean
 
 dbtk.setup_logging()
 
@@ -114,30 +122,36 @@ with dbtk.connect('fire_nation_db') as db:
 
     # Define table with field mapping and transforms
     soldier_table = Table('soldiers', {
-        'soldier_id': {'field': 'id', 'primary_key': True},
+        'soldier_id': {'field': 'id', 'key': True},
         'name': {'field': 'full_name', 'nullable': False},
-        'rank': {'field': 'officer_rank', 'nullable': False},
-        'email': {'field': 'contact_email', 'default': 'intel@firenation.com', 'fn': email_clean},
-        'enlistment_date': {'field': 'join_date', 'fn': parse_date},
-        'missions_completed': {'field': 'mission_count', 'fn': get_int},
+        'rank': {'field': 'officer_rank', 'nullable': False, 
+                 'fn': 'validate:ranks:rank_code:preload'},
+        'email': {'field': 'contact_email', 'default': 'intel@firenation.com', 
+                  'fn': email_clean},
+        'enlistment_date': {'field': 'join_date', 'fn': 'date'},
+        'missions_completed': {'field': 'mission_count', 'fn': 'int'},
         'status': {'default': 'active'}
     }, cursor=cursor)
 
     # Process incoming data
-    with dbtk.readers.get_reader('incoming/new_recruits.csv') as reader:
-        for record in reader:
-            soldier_table.set_values(record)
-            soldier_table.execute('insert', raise_error=False)
-
-    print(f"Inserted {soldier_table.counts['insert']} rows")
-    db.commit()
+    with dbtk.readers.get_reader('incoming/new_recruits.csv.gz') as reader:
+        surge = dbtk.etl.DataSurge(soldier_table, use_transaction=True)
+        surge.insert(reader)
+        
+if dbtk.errors_logged():
+    # send notification email or call 911
+    print("⚠️  Export completed with errors - check log file")
 ```
 
 **What makes this easy:**
 - Field mapping separates database schema from source data format
-- Built-in transforms (dates, emails, integers) with custom transform support
-- Automatic tracking with `counts` dictionary
-- One connection, multiple tables, all validated and transformed
+- Built-in transforms (dates, emails, integers) with string shorthand and support for custom transforms and transform pipelines
+- Table class automatically verifies it has the required data to perform the requested operation (select, insert, update, delete, merge)
+- Built-in table lookups and validation with deferred cursor binding and cache control
+- The Reader classes automatically detect file size or number of records and display a progress tracker on large files. So you will never be left wondering if your pipeline has failed
+- Automatic tracking of statistics: records processed, skipped, inserted etc.
+- Automatic logging with global defaults all being overridable when calling `setup_logging`
+- Automatically track if `error` or `critical` has been logged. Optional log splitting that doesn't create error log if no errors were encountered
 
 ## Documentation
 
@@ -149,6 +163,7 @@ with dbtk.connect('fire_nation_db') as db:
 
 ## Performance Highlights
 
+If your database driver supports a faster option for execute many (psycopg2 & pyodbc) it is automatically enabled.
 Real-world benchmarks from production systems:
 
 - **DataFrameReader**: 1.3M rec/s reading compressed CSV with polars + transforms
