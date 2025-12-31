@@ -64,7 +64,7 @@ databases:
     port: 5432               # Port (optional, uses driver default)
     database: mydb           # Database name
     user: myuser            # Username
-    password: mypassword    # Plain text (not recommended for production)
+    password: mypassword    # Plaintext works, but encrypt it! See dbtk-encrypt below
 ```
 
 ### Driver-Specific Options
