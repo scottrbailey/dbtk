@@ -26,7 +26,7 @@ Direct connections:
     from dbtk.database import postgres, oracle
 
     db = postgres(user='user', password='pass', database='db')
-    cursor = db.cursor('tuple')  # namedtuple results
+    cursor = db.cursor()  # Returns Record objects
 """
 
 __version__ = '0.8.0'
@@ -34,7 +34,7 @@ __author__ = 'Scott Bailey <scottrbailey@gmail.com>'
 
 from .database import Database
 from .config import connect, set_config_file
-from .cursors import Cursor, RecordCursor, TupleCursor, DictCursor
+from .cursors import Cursor
 from .logging_utils import setup_logging, cleanup_old_logs, errors_logged
 from . import etl
 from . import readers
@@ -45,9 +45,6 @@ __all__ = [
     'connect',
     'Database',
     'Cursor',
-    'RecordCursor',
-    'TupleCursor',
-    'DictCursor',
     'etl',
     'readers',
     'writers',

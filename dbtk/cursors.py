@@ -124,9 +124,8 @@ class Cursor:
     objects and provides a consistent interface plus additional functionality like SQL
     file execution, parameter conversion, and prepared statements.
 
-    The basic Cursor returns results as plain lists (index access only). Most users
-    should use higher-level cursor types like RecordCursor, TupleCursor, or DictCursor
-    which provide more convenient access patterns.
+    Cursor returns Record objects, which provide flexible access via dictionary keys,
+    attributes, or integer indices.
 
     Attributes
     ----------
@@ -159,9 +158,7 @@ class Cursor:
 
     See Also
     --------
-    RecordCursor : Returns Record objects with multiple access patterns
-    TupleCursor : Returns namedtuples
-    DictCursor : Returns OrderedDict objects
+    Record : Flexible data structure supporting dict, attribute, and index access
     """
     # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [

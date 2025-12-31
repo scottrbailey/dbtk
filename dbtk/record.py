@@ -74,9 +74,7 @@ class Record(list):
 
     See Also
     --------
-    RecordCursor : Cursor that returns Record objects
-    TupleCursor : Lighter-weight alternative returning namedtuples
-    DictCursor : Dictionary-only alternative
+    Cursor : Database cursor that returns Record objects
     """
 
     __slots__ = ("_added", "_deleted_fields")
