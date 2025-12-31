@@ -83,7 +83,7 @@ with dbtk.connect('fire_nation_db') as db:
         'status': 'active'
     }
 
-    # DBTK auto-converts parameters to match your database's style
+    # DBTK transforms the query and parameters to match your database's style
     cursor.execute_file('queries/monthly_report.sql', params)
     monthly_data = cursor.fetchall()
 
