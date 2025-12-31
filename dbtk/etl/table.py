@@ -42,9 +42,14 @@ class Table:
     --------------------
         Each column in the columns dict is configured with a dict containing:
 
-        * **field** (str or list of str):
+        **Shorthand:** An empty dict ``{}`` defaults the field name to the column name.
+        For example: ``'email': {}`` is equivalent to ``'email': {'field': 'email'}``.
+
+        * **field** (str or list of str or '*'):
           Source field name(s) from input records. If list, extracts multiple fields
-          as a list value. If omitted, column is populated via 'default' or 'db_expr'.
+          as a list value. If '*', passes the entire record to the transformation
+          function instead of a single field value. If omitted, column is populated
+          via 'default' or 'db_expr'.
 
         * **default** (any, optional):
           Default/constant value to use for this column. Applied when source field
@@ -142,6 +147,16 @@ class Table:
                 # Multiple source fields as list
                 'contact_methods': {
                     'field': ['email', 'phone', 'pigeon']
+                },
+
+                # Empty dict shorthand - field name matches column name
+                'rank': {},  # Equivalent to {'field': 'rank'}
+                'division': {},
+
+                # Whole record access for multi-field decisions
+                'vip_status': {
+                    'field': '*',
+                    'fn': lambda record: 'VIP' if record.get('years_service', 0) > 10 else 'Regular'
                 }
             }, cursor=cursor)
 
@@ -221,6 +236,10 @@ class Table:
         gen_cols = []
 
         for col, col_def in columns.items():
+            # Empty dict shorthand: default field to column name
+            if col_def == {}:
+                col_def = {'field': col}
+
             validate_identifier(col)
 
             if col_def.get('auto_key'):
@@ -782,7 +801,10 @@ class Table:
             val = None
             field = col_def.get('field')
 
-            if isinstance(field, list):
+            if field == '*':
+                # Pass whole record to function - no field extraction
+                val = record
+            elif isinstance(field, list):
                 val = list()
                 for f in field:
                     if f in record:
@@ -794,7 +816,8 @@ class Table:
                     logger.warning(f'Table {self.name}: field "{field}" not in record')
                 val = record.get(field)
 
-            if isinstance(val, str) and val in self.null_values:
+            # Only apply null_values conversion if val is not the whole record
+            if field != '*' and isinstance(val, str) and val in self.null_values:
                 val = None
 
             if val in ('', None) and 'default' in col_def:

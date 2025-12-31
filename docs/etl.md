@@ -164,14 +164,34 @@ columns_config = {
     # Simple field mapping
     'user_id': {'field': 'id', 'primary_key': True},
 
+    # Empty dict shorthand - field name matches column name
+    'first_name': {},  # Equivalent to {'field': 'first_name'}
+    'last_name': {},
+    'email': {},
+
     # Field with transformation
-    'email': {'field': 'email_address', 'fn': email_clean},
+    'email_clean': {'field': 'email_address', 'fn': email_clean},
 
     # Field with validation
     'full_name': {'field': 'name', 'nullable': False},
 
     # Multiple transformations (compose your own function)
     'phone': {'field': 'phone_number', 'fn': lambda x: phone_format(phone_clean(x))},
+
+    # Whole record access for multi-field decisions
+    'vip_status': {
+        'field': '*',  # Asterisk passes entire record to function
+        'fn': lambda record: 'VIP' if record.get('age', 0) > 65 or record.get('purchases', 0) > 100 else 'Regular'
+    },
+
+    # Whole record in pipelines - first function gets record, rest get values
+    'discount': {
+        'field': '*',
+        'fn': [
+            lambda record: 0.25 if record.get('loyalty_years', 0) > 10 else 0.10,
+            lambda x: round(x, 2)
+        ]
+    },
 
     # Static value for all records
     'status': {'default': 'active'},
@@ -196,8 +216,9 @@ columns_config = {
 For each column, `set_values()` processes data in this order:
 
 ### 1. Value Sourcing
-- **field**: Extract from source record.  
+- **field**: Extract from source record.
 - If `field` is a list, value will also be a list.
+- If `field` is `'*'`, the entire record is passed to the transformation function instead of extracting a specific field.
 
 ### 2. Null Conversion
 The value matches any entries in table.null_values it will be set to `None`. 
