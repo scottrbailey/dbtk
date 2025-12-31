@@ -138,7 +138,6 @@ reader = dbtk.readers.CSVReader(
     open('data.csv', encoding='utf-8-sig'), # Use 'utf-8-sig' instead of 'utf-8' to avoid BOM issues
     skip_rows=10,         # Skip N rows after headers (useful for bad data)
     n_rows=100,           # Only read first N rows (useful for testing/sampling)
-    return_type='dict',   # 'record' (default) or 'dict' for OrderedDict
     add_row_num=True,     # Add '_row_num' field to each record (default True)
     clean_headers=dbtk.readers.Clean.LOWER_NOSPACE  # Header cleaning level
 )

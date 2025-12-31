@@ -14,7 +14,6 @@ import time
 
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
-from collections import OrderedDict
 from os import path
 from ..record import Record
 from ..defaults import settings
@@ -339,7 +338,7 @@ class Reader(ABC):
         Parameters
         ----------
         func : callable
-            A function that takes a record (Record or OrderedDict) and returns True to keep it,
+            A function that takes a record and returns True to keep it,
             False to filter it out. The function should accept a single argument (the record).
 
         Returns
@@ -405,7 +404,7 @@ class Reader(ABC):
 
         return self
 
-    def __iter__(self) -> Iterator[Union[Record, OrderedDict]]:
+    def __iter__(self) -> Iterator[Record]:
         """Make reader iterable."""
         return self
 

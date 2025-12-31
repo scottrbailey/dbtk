@@ -734,9 +734,10 @@ class Database:
 
         if db_driver is None:
             raise ImportError(f"No database driver found for database type '{db_type}'")
-        logger.debug(f'parms before _validate: {kwargs}')
+
+        logger.debug(f'parms before _validate: {_hide_password(kwargs)}')
         params = _validate_connection_params(driver_name, **kwargs)
-        logger.debug(f'parms after _validate: {params}')
+        logger.debug(f'parms after _validate: {_hide_password(params)}')
         if not params:
             raise ValueError("The connection parameters were not valid.")
 

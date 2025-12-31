@@ -733,8 +733,6 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     config = config_mgr.get_connection_config(name)
     if password:
         config['password'] = password
-    info = {key:val for key, val in config.items() if key != 'password'}
-    logger.debug(f"Connecting to database {name} with config: {info}")
 
     # Extract database type
     db_type = config.pop('type', None)

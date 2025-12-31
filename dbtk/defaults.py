@@ -5,7 +5,6 @@ settings = {
     'default_batch_size': 1000,
     'default_column_case': 'lower',
     'default_country': 'US',
-    'default_cursor_type': 'record',
     'default_db_type': 'postgres',
     'default_header_clean': 2,  # Clean.LOWER_NOSPACE as int
     'data_dump_dir': '/tmp', # default directory for data dumps

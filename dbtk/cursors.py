@@ -6,7 +6,6 @@ All cursors delegate to the underlying database cursor stored in _cursor.
 
 import logging
 from typing import List, Any, Optional, Iterator, Callable
-from collections import namedtuple, OrderedDict
 
 from .record import Record
 from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
