@@ -2,28 +2,34 @@
 
 import argparse
 import importlib.util
-import importlib.metadata
 import sys
-from pathlib import Path
 from .database import _get_all_drivers
 from . import config
-from .config import diagnose_config
+
+try:
+    from importlib.metadata import metadata, requires
+except ImportError:
+    # backport to older versions
+    from importlib_metadata import metadata, requires
 
 
 def _name_cleanup(name):
     """Cleanup module names for search and display"""
     return name.lower().replace('-', '_')
 
-def _load_toml():
-    if sys.version_info >= (3, 11):
-        import tomllib
-        return tomllib.load
-    try:
-        import tomli
-        return tomli.load
-    except ImportError:
-        print("tomli not installed. Run: pip install \"dbtk[all]\"")
-        return None
+
+def _get_optional_deps(extra_name='recommended'):
+    """ Get optional dependencies for dbtk """
+    reqs = requires('dbtk') or []
+    deps = []
+    # Parse requirements like: 'psycopg2-binary>=2.8; extra == "recommended"'
+    for req in reqs:
+        req = req.replace("'", '"') # quoting changed between versions
+        if f'extra == "{extra_name}"' in req:
+            # Extract just the package name and version spec
+            pkg = req.split(';')[0].strip()
+            deps.append(pkg)
+    return deps
 
 
 def _is_installed(pkg: str) -> bool:
@@ -36,34 +42,15 @@ def _is_installed(pkg: str) -> bool:
     )
 
 def checkup():
-    load_toml = _load_toml()
-    if load_toml is None:
-        return
-
-    toml_path = Path('pyproject.toml')
-    if not toml_path.exists():
-        print("pyproject.toml not found")
-        return
-
-    with open(toml_path, 'rb') as f:
-        toml = load_toml(f)
-
-    # ← EXTRACT RAW DEP STRINGS — NO PARSING
-    raw_deps = toml.get('project', {}) \
-        .get('optional-dependencies', {}) \
-        .get('all', [])
-
-    # ← FILTER: only pure package names (no markers)
+    """ Check which optional dependencies are installed."""
     deps = []
-    for dep in raw_deps:
+    for dep in _get_optional_deps('recommended'):
         if ';' in dep:
             dep = dep.split(';')[0].strip()
         if dep and not dep.startswith('#'):
-            if dep.startswith('tomli') and sys.version_info >= (3, 11):
-                continue
             deps.append(dep.split('>=')[0].split('==')[0].split('<')[0].strip())
 
-    installed = {_name_cleanup(d.name): d.version for d in importlib.metadata.distributions()}
+    installed = {_name_cleanup(d.name): d.version for d in metadata.distributions()}
 
     print(f"{'Package':<20} {'Status':<8} {'Version'}")
     print("-" * 40)
@@ -118,7 +105,7 @@ def checkup():
 
     print("\nConfig Health")
     print("-" * 40)
-    for status, msg in diagnose_config():
+    for status, msg in config.diagnose_config():
         print(f"{status} {msg}")
 
 
@@ -128,6 +115,9 @@ def main():
 
     # checkup
     subparsers.add_parser('checkup', help='Check for dependencies and configuration issues')
+
+    # config-setup
+    subparsers.add_parser('config-setup', help='Interactive configuration setup wizard')
 
     # generate-key
     subparsers.add_parser('generate-key', help='Generate encryption key')
@@ -158,6 +148,8 @@ def main():
 
     if args.command == 'checkup':
         return checkup()
+    elif args.command == 'config-setup':
+        return config.setup_config()
     elif args.command == 'generate-key':
         return config.generate_encryption_key()
     elif args.command == 'store-key':

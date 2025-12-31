@@ -206,12 +206,12 @@ class TestReaderBase:
             assert headers[-1] == '_row_num', f"{reader_type} should add _row_num at the end"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_skip_records(self, reader_type, csv_file, excel_file, json_file,
-                          ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test skip_records skips the correct number of records."""
+    def test_skip_rows(self, reader_type, csv_file, excel_file, json_file,
+                       ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test skip_rows skips the correct number of rows."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             skip_records=10) as reader:
+                             skip_rows=10) as reader:
             records = list(reader)
             assert len(records) == 90, f"{reader_type} should return 90 records after skipping 10"
 
@@ -223,22 +223,22 @@ class TestReaderBase:
                 assert first['trainee_id'] == 11, f"{reader_type} first record should be 11"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_max_records(self, reader_type, csv_file, excel_file, json_file,
-                         ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test max_records limits the number of records returned."""
+    def test_n_rows(self, reader_type, csv_file, excel_file, json_file,
+                    ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test n_rows limits the number of rows returned."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             max_records=25) as reader:
+                             n_rows=25) as reader:
             records = list(reader)
             assert len(records) == 25, f"{reader_type} should return exactly 25 records"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_skip_and_max_combined(self, reader_type, csv_file, excel_file, json_file,
-                                   ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test skip_records and max_records work together."""
+    def test_skip_and_n_rows_combined(self, reader_type, csv_file, excel_file, json_file,
+                                      ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test skip_rows and n_rows work together."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             skip_records=50, max_records=10) as reader:
+                             skip_rows=50, n_rows=10) as reader:
             records = list(reader)
             assert len(records) == 10, f"{reader_type} should return 10 records"
 
@@ -250,12 +250,12 @@ class TestReaderBase:
                 assert first['trainee_id'] == 51, f"{reader_type} first record should be 51"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_add_rownum_true(self, reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test add_rownum=True adds _row_num field."""
+    def test_add_row_num_true(self, reader_type, csv_file, excel_file, json_file,
+                              ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test add_row_num=True adds _row_num field."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             add_rownum=True) as reader:
+                             add_row_num=True) as reader:
             records = list(reader)
             first = records[0]
             assert '_row_num' in first, f"{reader_type} should have _row_num field"
@@ -265,12 +265,12 @@ class TestReaderBase:
             assert last['_row_num'] == 100, f"{reader_type} last _row_num should be 99"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_add_rownum_false(self, reader_type, csv_file, excel_file, json_file,
-                              ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test add_rownum=False excludes _row_num field."""
+    def test_add_row_num_false(self, reader_type, csv_file, excel_file, json_file,
+                               ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test add_row_num=False excludes _row_num field."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
                              ndjson_file, xml_file, fixed_file, fixed_columns,
-                             add_rownum=False) as reader:
+                             add_row_num=False) as reader:
             headers = reader.headers
             assert '_row_num' not in headers, f"{reader_type} should not have _row_num in headers"
             assert len(headers) == 8, f"{reader_type} should have 8 columns without _row_num"
@@ -494,3 +494,117 @@ class TestGetReader:
 
         with pytest.raises(ValueError, match="Unsupported file extension"):
             get_reader(str(unknown_file))
+
+
+class TestReaderFiltering:
+    """Tests for Reader.filter() method."""
+
+    @pytest.fixture
+    def csv_data(self, tmp_path):
+        """Create a CSV file with test data."""
+        csv_file = tmp_path / "test.csv"
+        csv_file.write_text("""name,age,country
+Alice,25,US
+Bob,17,US
+Charlie,30,UK
+Diana,22,US
+Eve,16,UK
+Frank,35,US""")
+        return csv_file
+
+    def test_single_filter(self, csv_data):
+        """Test filtering with a single condition."""
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(lambda r: int(r.age) >= 18)
+            results = list(reader)
+            assert len(results) == 4
+            assert all(int(r.age) >= 18 for r in results)
+            names = [r.name for r in results]
+            assert names == ['Alice', 'Charlie', 'Diana', 'Frank']
+
+    def test_multiple_filters_pipeline(self, csv_data):
+        """Test multiple filters accumulating in a pipeline."""
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(lambda r: int(r.age) >= 18)
+            reader.filter(lambda r: r.country == 'US')
+            results = list(reader)
+            assert len(results) == 3
+            names = [r.name for r in results]
+            assert names == ['Alice', 'Diana', 'Frank']
+
+    def test_filter_with_n_rows(self, csv_data):
+        """Test that n_rows applies after filtering."""
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(lambda r: int(r.age) >= 18)
+            reader.n_rows = 2
+            results = list(reader)
+            assert len(results) == 2
+            names = [r.name for r in results]
+            assert names == ['Alice', 'Charlie']
+
+    def test_filter_no_matches(self, csv_data):
+        """Test filter that matches no records."""
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(lambda r: int(r.age) > 100)
+            results = list(reader)
+            assert len(results) == 0
+
+    def test_filter_all_match(self, csv_data):
+        """Test filter that matches all records."""
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(lambda r: len(r.name) > 0)
+            results = list(reader)
+            assert len(results) == 6
+
+    def test_filter_with_skip_rows(self, csv_data):
+        """Test filter with skip_rows (should work but log warning)."""
+        with CSVReader(open(csv_data), skip_rows=1) as reader:
+            reader.filter(lambda r: int(r.age) >= 18)
+            results = list(reader)
+            # Skipped Bob (row 1 after header), so should get Charlie, Diana, Frank
+            assert len(results) == 3
+            names = [r.name for r in results]
+            assert names == ['Charlie', 'Diana', 'Frank']
+
+    def test_filter_returns_self(self, csv_data):
+        """Test that filter() returns self for chaining."""
+        with CSVReader(open(csv_data)) as reader:
+            result = reader.filter(lambda r: True)
+            assert result is reader
+
+    def test_filter_row_num_field(self, csv_data):
+        """Test that _row_num field is sequential for filtered records."""
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(lambda r: int(r.age) >= 18)
+            results = list(reader)
+            row_nums = [r._row_num for r in results]
+            assert row_nums == [1, 2, 3, 4]  # Sequential, not file row numbers
+
+    def test_filter_invalid_callable(self, csv_data):
+        """Test that filter() rejects non-callable."""
+        with CSVReader(open(csv_data)) as reader:
+            with pytest.raises(TypeError, match="filter\\(\\) requires a callable"):
+                reader.filter("not a callable")
+
+    def test_filter_complex_function(self, csv_data):
+        """Test filter with complex multi-condition function."""
+        def is_young_american(record):
+            return record.country == 'US' and int(record.age) < 25
+
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(is_young_american)
+            results = list(reader)
+            assert len(results) == 2
+            names = [r.name for r in results]
+            # Bob (17) and Diana (22) are both US and < 25
+            assert names == ['Bob', 'Diana']
+
+    def test_rows_read_tracking(self, csv_data):
+        """Test that _rows_read tracks all rows, not just filtered."""
+        with CSVReader(open(csv_data)) as reader:
+            reader.filter(lambda r: int(r.age) >= 18)
+            results = list(reader)
+            # Should have read 6 rows, returned 4
+            assert reader._rows_read == 6
+            assert reader._row_num == 4
+            assert len(results) == 4

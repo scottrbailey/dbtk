@@ -33,7 +33,7 @@ class DatabaseWriter(BaseWriter):
             commit_frequency: How often to commit (in number of records)
         """
         # Call BaseWriter with no filename (we're writing to database)
-        super().__init__(data, filename=None, preserve_types=True)
+        super().__init__(data, file=None)
 
         self.target_cursor = target_cursor
         self.target_table = target_table
@@ -68,7 +68,7 @@ class DatabaseWriter(BaseWriter):
         try:
             for record in self.data_iterator:
                 # Extract values from record
-                values = self._extract_row_values(record)
+                values = self._row_to_tuple(record)
 
                 # Handle parameter style
                 if self.paramstyle in ParamStyle.named_styles():

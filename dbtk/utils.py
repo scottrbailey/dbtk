@@ -5,13 +5,17 @@ Utility functions for dbtk.
 
 import logging
 import re
-
+import datetime as dt
 from typing import Tuple, List, Any, Union, Dict, Iterable
+from .defaults import settings
 try:
     from typing import Mapping
 except ImportError:
     from collections.abc import Mapping
 
+MIDNIGHT = dt.time(0, 0, 0)
+# cache format strings for performance
+_format_cache = None
 
 class ParamStyle:
     """
@@ -78,7 +82,6 @@ class ParamStyle:
         return ''
 
 
-
 class QueryLogger:
     """Simple query logger."""
 
@@ -115,6 +118,82 @@ class QueryLogger:
 
         self.logger.info(message)
 
+def _build_format_strings():
+    """Build format strings for datetime and date objects."""
+    return {
+        'date': settings.get('date_format', '%Y-%m-%d'),
+        'datetime': settings.get('datetime_format', '%Y-%m-%d %H:%M:%S'),
+        'datetime_tz': settings.get('datetime_format', '%Y-%m-%d %H:%M:%S') + \
+                       settings.get('tz_suffix',  '%z'),
+        'timestamp': settings.get('timestamp_format', '%Y-%m-%d %H:%M:%S.%f'),
+        'timestamp_tz': settings.get('timestamp_format', '%Y-%m-%d %H:%M:%S.%f') + \
+                        settings.get('tz_suffix',  '%z'),
+        'time': settings.get('time_format', '%H:%M:%S'),
+        'time_micro': settings.get('time_format', '%H:%M:%S') + '.%f',
+        'time_tz': settings.get('time_format', '%H:%M:%S') + \
+                   settings.get('tz_suffix',  '%z'),
+        'null': settings.get('null_string', ''),
+    }
+
+def reset_format_cache():
+    """Clear format cache to force rebuilding on next call."""
+    global _format_cache
+    _format_cache = None
+
+def _get_format_strings():
+    global _format_cache
+    if _format_cache is None:
+        _format_cache = _build_format_strings()
+    return _format_cache
+
+def to_string(obj: Any) -> str:
+    """
+    Convert a value to string representation.
+
+    Args:
+        obj: Value to convert
+
+    Returns:
+        String representation
+    """
+    fmts = _get_format_strings()
+    if obj is None:
+        return fmts['null']
+    elif isinstance(obj, dt.datetime):
+        if obj.microsecond:
+            if obj.tzinfo:
+                return obj.strftime(fmts['timestamp_tz'])
+            else:
+                return obj.strftime(fmts['timestamp'])
+        else:
+            if obj.tzinfo:
+                return obj.strftime(fmts['datetime_tz'])
+            if obj.time() == MIDNIGHT:
+                return obj.strftime(fmts['date'])
+            else:
+                return obj.strftime(fmts['datetime'])
+    elif isinstance(obj, dt.date):
+        return obj.strftime(fmts['date'])
+    elif isinstance(obj, dt.time):
+        if obj.microsecond:
+            if obj.tzinfo:
+                return obj.strftime(fmts['time_tz'])
+            else:
+                return obj.strftime(fmts['time_micro'])
+        else:
+            if obj.tzinfo:
+                return obj.strftime(fmts['time_tz'])
+            else:
+                return obj.strftime(fmts['time'])
+    elif isinstance(obj, (int, float)):
+        return str(obj)
+    elif isinstance(obj, str):
+        return obj
+    elif hasattr(obj, 'read'):
+        # Handle LOB objects
+        return str(obj.read())
+    else:
+        return str(obj)
 
 def wrap_at_comma(text: str) -> str:
     """Wrap text at commas, avoiding breaks inside parentheses."""
@@ -135,43 +214,69 @@ def wrap_at_comma(text: str) -> str:
 def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, ...]]:
     """
     Process SQL parameters according to the specified paramstyle.
-    Always extracts parameter names; converts SQL format if needed.
+
+    Supports SQL input in either 'named' (:param) or 'pyformat' (%(param)s) format.
+    Auto-detects the input format and converts to the target paramstyle.
 
     Parameters:
-        sql: The SQL query string containing named parameters in the format ':name'.
-        paramstyle: The desired parameter style for the resulting SQL string.
+        sql: SQL query with named (:name) or pyformat (%(name)s) parameters
+        paramstyle: The desired parameter style for the resulting SQL string
 
     Returns:
         A tuple containing the processed SQL query string and a tuple of all named parameters
         extracted in the order in which they appear in the original query.
 
     Raises:
-        ValueError: If the provided paramstyle is not supported.
-    """
-    # Extract parameter names in order of appearance
-    param_names = tuple(re.findall(r':(\w+)', sql))
+        ValueError: If the SQL contains mixed parameter formats or unsupported paramstyle.
 
+    Examples:
+        >>> # Named input, convert to pyformat
+        >>> process_sql_parameters("SELECT * FROM users WHERE id = :user_id", "pyformat")
+        ("SELECT * FROM users WHERE id = %(user_id)s", ('user_id',))
+
+        >>> # Pyformat input, convert to qmark
+        >>> process_sql_parameters("SELECT * FROM users WHERE id = %(user_id)s", "qmark")
+        ("SELECT * FROM users WHERE id = ?", ('user_id',))
+    """
+    # Detect input format
+    # Use negative lookbehind (?<!:) to exclude PostgreSQL :: cast syntax
+    has_named = bool(re.search(r'(?<!:):(\w+)', sql))
+    has_pyformat = bool(re.search(r'%\((\w+)\)s', sql))
+
+    if has_named and has_pyformat:
+        raise ValueError(
+            "SQL contains mixed parameter formats. "
+            "Use either :named or %(pyformat)s, not both."
+        )
+
+    # Determine source pattern
+    if has_pyformat:
+        source_pattern = r'%\((\w+)\)s'
+    elif has_named:
+        source_pattern = r'(?<!:):(\w+)'
+    else:
+        # No parameters found - return as-is
+        return sql, tuple()
+
+    # Extract parameter names using detected pattern
+    param_names = tuple(re.findall(source_pattern, sql))
+
+    # Convert to target paramstyle
     if paramstyle == ParamStyle.NAMED:
-        # No conversion needed
-        return sql, param_names
+        sql = re.sub(source_pattern, r':\1', sql)
     elif paramstyle == ParamStyle.PYFORMAT:
-        # Convert :param to %(param)s
-        new_sql = re.sub(r':(\w+)', r'%(\1)s', sql)
-        return new_sql, param_names
+        sql = re.sub(source_pattern, r'%(\1)s', sql)
     elif paramstyle == ParamStyle.QMARK:
-        # Convert :param to ?
-        new_sql = re.sub(r':(\w+)', r'?', sql)
-        return new_sql, param_names
+        sql = re.sub(source_pattern, r'?', sql)
     elif paramstyle == ParamStyle.FORMAT:
-        # Convert :param to %s
-        new_sql = re.sub(r':(\w+)', r'%s', sql)
-        return new_sql, param_names
+        sql = re.sub(source_pattern, r'%s', sql)
     elif paramstyle == ParamStyle.NUMERIC:
         counter = iter(range(1, len(param_names) + 1))
-        new_sql = re.sub(r':(\w+)', lambda m: f':{next(counter)}', sql)
-        return new_sql, param_names
+        sql = re.sub(source_pattern, lambda m: f':{next(counter)}', sql)
     else:
         raise ValueError(f"Unsupported paramstyle: {paramstyle}")
+
+    return sql, param_names
 
 def validate_identifier(identifier: str, max_length: int = 64) -> str:
     """

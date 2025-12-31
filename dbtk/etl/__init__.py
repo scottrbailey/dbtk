@@ -28,7 +28,10 @@ Example
 """
 
 from .table import Table
-from .bulk import DataSurge
+from .data_surge import DataSurge
+from .bulk_surge import BulkSurge
+from .managers import EntityManager, ValidationCollector
 from .config_generators import column_defs_from_db
 
-__all__ = ['Table', 'DataSurge', 'column_defs_from_db']
+__all__ = ['Table', 'DataSurge', 'BulkSurge', 'EntityManager', 'ValidationCollector',
+           'column_defs_from_db']

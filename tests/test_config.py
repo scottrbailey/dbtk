@@ -111,14 +111,12 @@ class TestConfigManager:
 class TestEncryption:
     """Test encryption functionality."""
 
-    @patch('dbtk.config.HAS_CRYPTO', True)
     def test_generate_encryption_key(self):
         """Test encryption key generation."""
         key = _generate_encryption_key()
         assert key is not None
         assert len(key) > 20  # Fernet keys are base64 encoded, should be longer
 
-    @patch('dbtk.config.HAS_CRYPTO', True)
     @patch('dbtk.config.Fernet')
     def test_encrypt_password_cli(self, mock_fernet):
         """Test CLI password encryption."""

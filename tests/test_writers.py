@@ -48,7 +48,7 @@ def sample_records(excel_file):
 
     reader_class = XLSXReader if ws.__class__.__name__ == 'Worksheet' else XLSReader
 
-    with reader_class(ws, add_rownum=False) as reader:
+    with reader_class(ws, add_row_num=False) as reader:
         records = []
         for i, record in enumerate(reader):
             if i >= 10:
@@ -99,7 +99,7 @@ class TestBaseWriter:
         to_csv(sample_records, output_file)
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records = list(reader)
             assert len(records) == 10
             assert records[0]['trainee_id'] == '1'
@@ -111,7 +111,7 @@ class TestBaseWriter:
         to_csv(sample_dicts, output_file)
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records = list(reader)
             assert len(records) == 10
             assert 'trainee_id' in records[0]
@@ -123,7 +123,7 @@ class TestBaseWriter:
         to_csv(sample_namedtuples, output_file)
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records = list(reader)
             assert len(records) == 10
 
@@ -131,32 +131,32 @@ class TestBaseWriter:
         """Test writing from list of lists with explicit columns."""
         output_file = tmp_path / "output.csv"
 
-        writer = CSVWriter(sample_lists, output_file, columns=sample_columns)
-        writer.write()
+        with CSVWriter(output_file, sample_lists, columns=sample_columns) as writer:
+            writer.write()
 
         # Read back and verify
-        with CSVReader(open(output_file, encoding='utf-8'), add_rownum=False) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
             records = list(reader)
             assert len(records) == 10
             assert reader.headers == sample_columns
 
-    def test_include_headers_true(self, tmp_path, sample_records):
-        """Test include_headers=True writes header row."""
+    def test_write_headers_true(self, tmp_path, sample_records):
+        """Test write_headers=True writes header row."""
         output_file = tmp_path / "output.csv"
 
-        to_csv(sample_records, output_file, include_headers=True)
+        to_csv(sample_records, output_file, write_headers=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()
             assert 'trainee_id' in first_line
 
-    def test_include_headers_false(self, tmp_path, sample_records):
-        """Test include_headers=False omits header row."""
+    def test_write_headers_false(self, tmp_path, sample_records):
+        """Test write_headers=False omits header row."""
         output_file = tmp_path / "output.csv"
 
-        to_csv(sample_records, output_file, include_headers=False)
+        to_csv(sample_records, output_file, write_headers=False)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline().strip()
             # First line should be data, not headers
             assert first_line.startswith('1,') or first_line.startswith('"1"')
@@ -164,7 +164,7 @@ class TestBaseWriter:
     def test_to_string_date(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles dates correctly."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_date = date(2024, 12, 25)
         result = writer.to_string(test_date)
@@ -173,7 +173,7 @@ class TestBaseWriter:
     def test_to_string_datetime_no_microseconds(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles datetime without microseconds."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_datetime = datetime(2024, 12, 25, 15, 30, 45)
         result = writer.to_string(test_datetime)
@@ -182,7 +182,7 @@ class TestBaseWriter:
     def test_to_string_datetime_with_microseconds(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles datetime with microseconds."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_datetime = datetime(2024, 12, 25, 15, 30, 45, 123456)
         result = writer.to_string(test_datetime)
@@ -191,7 +191,7 @@ class TestBaseWriter:
     def test_to_string_datetime_at_midnight(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles datetime at midnight as date."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         test_datetime = datetime(2024, 12, 25, 0, 0, 0)
         result = writer.to_string(test_datetime)
@@ -200,7 +200,7 @@ class TestBaseWriter:
     def test_to_string_none(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles None."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         result = writer.to_string(None)
         assert result == ''
@@ -208,7 +208,7 @@ class TestBaseWriter:
     def test_to_string_number(self, tmp_path, sample_records):
         """Test BaseWriter.to_string() handles numbers."""
         output_file = tmp_path / "output.csv"
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
 
         assert writer.to_string(42) == '42'
         assert writer.to_string(3.14) == '3.14'
@@ -217,7 +217,7 @@ class TestBaseWriter:
         """Test that row_count is correctly tracked."""
         output_file = tmp_path / "output.csv"
 
-        writer = CSVWriter(sample_records, output_file)
+        writer = CSVWriter(output_file, sample_records)
         count = writer.write()
 
         assert count == 10
@@ -233,7 +233,7 @@ class TestCSVWriter:
 
         to_csv(sample_records, output_file, delimiter='\t')
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             assert '\t' in first_line
 
@@ -243,7 +243,7 @@ class TestCSVWriter:
 
         to_csv(sample_records, output_file, delimiter='|')
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             assert '|' in first_line
 
@@ -264,13 +264,62 @@ class TestCSVWriter:
         to_csv(sample_records, output_file)
 
         # Read back
-        with CSVReader(open(output_file, encoding='utf-8')) as reader:
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
             records_back = list(reader)
 
         # Compare (values will be strings after CSV round-trip)
         assert len(records_back) == len(sample_records)
         assert str(sample_records[0]['trainee_id']) == records_back[0]['trainee_id']
         assert sample_records[0]['monk_name'] == records_back[0]['monk_name']
+
+    def test_csv_write_batch_multiple_calls(self, tmp_path, sample_records):
+        """Test CSVWriter.write_batch() called multiple times."""
+        output_file = tmp_path / "output.csv"
+
+        with CSVWriter(data=None, file=output_file) as writer:
+            # Write in batches
+            writer.write_batch(sample_records[:5])
+            writer.write_batch(sample_records[5:])
+
+        # Read back
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
+            records_back = list(reader)
+
+        assert len(records_back) == 10
+
+    def test_csv_write_batch_headers_only_once(self, tmp_path, sample_records):
+        """Test CSV headers written only on first batch."""
+        output_file = tmp_path / "output.csv"
+
+        with CSVWriter(data=None, file=output_file) as writer:
+            writer.write_batch(sample_records[:3])
+            writer.write_batch(sample_records[3:6])
+            writer.write_batch(sample_records[6:])
+
+        # Check file content
+        with open(output_file, encoding='utf-8-sig') as f:
+            lines = f.readlines()
+
+        # Should have 1 header line + 10 data lines
+        assert len(lines) == 11
+        assert 'trainee_id' in lines[0]
+
+    def test_csv_write_batch_streaming(self, tmp_path, sample_records):
+        """Test CSV streaming with batches."""
+        output_file = tmp_path / "output.csv"
+
+        # Open file handle and use streaming mode
+        with open(output_file, 'w', encoding='utf-8-sig', newline='') as fp:
+            writer = CSVWriter(data=None, file=fp)
+            for i in range(0, len(sample_records), 2):
+                batch = sample_records[i:i+2]
+                writer.write_batch(batch)
+
+        # Read back and verify
+        with CSVReader(open(output_file, encoding='utf-8-sig')) as reader:
+            records_back = list(reader)
+
+        assert len(records_back) == 10
 
 
 class TestExcelWriter:
@@ -322,23 +371,6 @@ class TestExcelWriter:
         assert 'First' in wb.sheetnames
         assert 'Second' in wb.sheetnames
 
-    def test_overwrite_sheet_true(self, tmp_path, sample_records):
-        """Test overwrite_sheet=True replaces existing sheet."""
-        output_file = tmp_path / "output.xlsx"
-
-        # Write initial data
-        to_excel(sample_records, output_file, sheet='Data')
-
-        # Overwrite with less data
-        to_excel(sample_records[:3], output_file, sheet='Data', overwrite_sheet=True)
-
-        from openpyxl import load_workbook
-        wb = load_workbook(output_file)
-        ws = wb['Data']
-
-        # Should have 3 data rows + 1 header
-        assert ws.max_row == 4
-
     def test_date_type_preservation(self, tmp_path, sample_records):
         """Test that dates are written as date types in Excel."""
         output_file = tmp_path / "output.xlsx"
@@ -355,6 +387,130 @@ class TestExcelWriter:
         # Should be a datetime object, not string
         assert isinstance(birth_date_cell.value, datetime)
 
+    def test_write_batch_multiple_calls_same_sheet(self, tmp_path, sample_records):
+        """Test calling write_batch multiple times appends to same sheet."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(file=output_file) as writer:
+            # Write first batch
+            writer.write_batch(sample_records[:5], sheet_name='Data')
+            # Write second batch
+            writer.write_batch(sample_records[5:], sheet_name='Data')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+        ws = wb['Data']
+
+        # Should have headers + 10 data rows
+        assert ws.max_row == 11
+        assert ws.cell(1, 1).value == 'trainee_id'
+        assert ws.cell(2, 1).value == 1
+        assert ws.cell(11, 1).value == 10
+
+    def test_write_batch_multiple_sheets(self, tmp_path, sample_records):
+        """Test write_batch to multiple different sheets in one workbook."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(file=output_file) as writer:
+            writer.write_batch(sample_records[:5], sheet_name='First')
+            writer.write_batch(sample_records[5:], sheet_name='Second')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'First' in wb.sheetnames
+        assert 'Second' in wb.sheetnames
+
+        # Check row counts
+        assert wb['First'].max_row == 6  # headers + 5 data
+        assert wb['Second'].max_row == 6  # headers + 5 data
+
+    def test_write_batch_headers_only_once(self, tmp_path, sample_records):
+        """Test that headers are written only on first batch, not subsequent."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(file=output_file) as writer:
+            writer.write_batch(sample_records[:3], sheet_name='Data')
+            writer.write_batch(sample_records[3:6], sheet_name='Data')
+            writer.write_batch(sample_records[6:], sheet_name='Data')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+        ws = wb['Data']
+
+        # Should have exactly 1 header row + 10 data rows
+        assert ws.max_row == 11
+
+        # Check first row is headers
+        assert ws.cell(1, 1).value == 'trainee_id'
+
+        # Check second row is data (not duplicate headers)
+        assert ws.cell(2, 1).value == 1
+
+    def test_write_batch_streaming_mode(self, tmp_path, sample_records):
+        """Test streaming mode with write_batch (data=None in init)."""
+        output_file = tmp_path / "output.xlsx"
+
+        # Simulate streaming: no data in __init__
+        with ExcelWriter(file=output_file) as writer:
+            # Write in batches
+            for i in range(0, len(sample_records), 3):
+                batch = sample_records[i:i+3]
+                writer.write_batch(batch, sheet_name='Stream')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+        ws = wb['Stream']
+
+        # Should have all records
+        assert ws.max_row == 11  # headers + 10 data rows
+
+    def test_write_batch_append_to_existing_workbook(self, tmp_path, sample_records):
+        """Test appending new sheet to existing workbook."""
+        output_file = tmp_path / "output.xlsx"
+
+        # First session: create workbook with one sheet
+        with ExcelWriter(file=output_file) as writer:
+            writer.write_batch(sample_records[:5], sheet_name='FirstRun')
+
+        # Second session: append another sheet
+        with ExcelWriter(file=output_file) as writer:
+            writer.write_batch(sample_records[5:], sheet_name='SecondRun')
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'FirstRun' in wb.sheetnames
+        assert 'SecondRun' in wb.sheetnames
+        assert wb['FirstRun'].max_row == 6
+        assert wb['SecondRun'].max_row == 6
+
+    def test_write_batch_default_sheet_name(self, tmp_path, sample_records):
+        """Test that default sheet name 'Data' is used when not specified."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(file=output_file) as writer:
+            writer.write_batch(sample_records)
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'Data' in wb.sheetnames
+
+    def test_write_batch_custom_active_sheet(self, tmp_path, sample_records):
+        """Test using sheet_name parameter in __init__ as default."""
+        output_file = tmp_path / "output.xlsx"
+
+        with ExcelWriter(file=output_file, sheet_name='MySheet') as writer:
+            # Don't specify sheet_name - should use 'MySheet'
+            writer.write_batch(sample_records)
+
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+
+        assert 'MySheet' in wb.sheetnames
+        assert wb['MySheet'].max_row == 11
+
 
 class TestFixedWidthWriter:
     """Tests specific to fixed-width writer."""
@@ -369,7 +525,7 @@ class TestFixedWidthWriter:
         assert output_file.exists()
 
         # Read back and check structure
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             # Line should be sum of column widths
             assert len(first_line.rstrip('\n')) == sum(column_widths)
@@ -381,7 +537,7 @@ class TestFixedWidthWriter:
 
         to_fixed_width(sample_records, column_widths, output_file, right_align_numbers=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             # trainee_id (int) should be right-aligned in first 5 chars
             trainee_id = first_line[:5]
@@ -396,7 +552,7 @@ class TestFixedWidthWriter:
 
         to_fixed_width(sample_records, column_widths, output_file, right_align_numbers=False)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
             # trainee_id should be left-aligned
             trainee_id = first_line[:5]
@@ -446,7 +602,7 @@ class TestJSONWriter:
         assert output_file.exists()
 
         # Parse and verify
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             data = json.load(f)
 
         assert isinstance(data, list)
@@ -459,7 +615,7 @@ class TestJSONWriter:
 
         to_json(sample_records, output_file, indent=2)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should have newlines and indentation
@@ -472,7 +628,7 @@ class TestJSONWriter:
 
         to_json(sample_records, output_file, indent=None)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should be mostly on one line (no pretty printing)
@@ -485,7 +641,7 @@ class TestJSONWriter:
 
         to_json(sample_records, output_file)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             data = json.load(f)
 
         # Dates should be strings
@@ -505,7 +661,7 @@ class TestNDJSONWriter:
         assert output_file.exists()
 
         # Parse and verify - each line should be valid JSON
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             lines = f.readlines()
 
         assert len(lines) == 10
@@ -520,7 +676,7 @@ class TestNDJSONWriter:
 
         to_ndjson(sample_records, output_file)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             first_line = f.readline()
 
         # Should be compact (no indentation within the line)
@@ -567,7 +723,7 @@ class TestXMLWriter:
 
         to_xml(sample_records, output_file, pretty=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should have indentation
@@ -711,7 +867,7 @@ class TestDatabaseWriter:
 
         to_xml(sample_records, output_file, pretty=True)
 
-        with open(output_file, encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8-sig') as f:
             content = f.read()
 
         # Should have indentation

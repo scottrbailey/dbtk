@@ -324,8 +324,8 @@ class TestDataProcessing:
             'home_temple': 'Air Temple Island'
         }
         airbender_table.set_values(complete_data)
-        assert airbender_table.reqs_met is True
-        assert len(airbender_table.reqs_missing) == 0
+        assert airbender_table.reqs_met('insert')  is True
+        assert len(airbender_table.reqs_missing('insert')) == 0
 
         # Incomplete data
         incomplete_data = {
@@ -333,9 +333,9 @@ class TestDataProcessing:
             'monk_name': 'Meelo'
         }
         airbender_table.set_values(incomplete_data)
-        assert airbender_table.reqs_met is False
+        assert airbender_table.reqs_met('insert') is False
         temple_bind_name = airbender_table.columns['temple']['bind_name']
-        assert temple_bind_name in airbender_table.reqs_missing
+        assert temple_bind_name in airbender_table.reqs_missing('insert')
 
 
 class TestDatabaseOperations:
@@ -349,7 +349,7 @@ class TestDatabaseOperations:
             'home_temple': 'Air Temple Island'
         })
 
-        result = airbender_table.exec_insert()
+        result = airbender_table.execute('insert')
 
         assert result == 0
         cursor.connection.commit()
@@ -370,12 +370,12 @@ class TestDatabaseOperations:
         })
 
         # First insert succeeds
-        result = airbender_table.exec_insert()
+        result = airbender_table.execute('insert')
         assert result == 0
         cursor.connection.commit()
 
         # Second insert with same key fails
-        result = airbender_table.exec_insert(raise_error=False)
+        result = airbender_table.execute('insert', raise_error=False)
         assert result == 1
 
     def test_exec_update_success(self, airbender_table, cursor):
@@ -386,7 +386,7 @@ class TestDatabaseOperations:
             'monk_name': 'Aang',
             'home_temple': 'Southern Air Temple'
         })
-        airbender_table.exec_insert()
+        airbender_table.execute('insert')
         cursor.connection.commit()
 
         # Update the record
@@ -395,7 +395,7 @@ class TestDatabaseOperations:
             'monk_name': 'Avatar Aang',
             'home_temple': 'All Temples'
         })
-        result = airbender_table.exec_update()
+        result = airbender_table.execute('update')
 
         assert result == 0
         cursor.connection.commit()
@@ -412,8 +412,8 @@ class TestDatabaseOperations:
             'trainee_id': 'INCOMPLETE001'
         })
 
-        with pytest.raises(ValueError, match="required columns"):
-            airbender_table.exec_update(raise_error=True)
+        with pytest.raises(ValueError, match="requirements not met"):
+            airbender_table.execute('update', raise_error=True)
 
     def test_exec_update_missing_requirements_graceful(self, airbender_table):
         """Test update logs and tracks incomplete when requirements not met."""
@@ -421,7 +421,7 @@ class TestDatabaseOperations:
             'trainee_id': 'INCOMPLETE001'
         })
 
-        result = airbender_table.exec_update(raise_error=False)
+        result = airbender_table.execute('update', raise_error=False)
 
         assert result == 1  # Error code
         assert airbender_table.counts['incomplete'] == 1
@@ -435,12 +435,12 @@ class TestDatabaseOperations:
             'monk_name': 'Rohan',
             'home_temple': 'Air Temple Island'
         })
-        airbender_table.exec_insert()
+        airbender_table.execute('insert')
         cursor.connection.commit()
 
         # Delete the record
         airbender_table.set_values({'trainee_id': 'ROHAN001'})
-        result = airbender_table.exec_delete()
+        result = airbender_table.execute('delete')
 
         assert result == 0
         cursor.connection.commit()
@@ -459,7 +459,7 @@ class TestDatabaseOperations:
             'military_rank': 'Royal Guard',
             'flame_intensity': '7'
         })
-        fire_nation_table.exec_insert()
+        fire_nation_table.execute('insert')
         cursor.connection.commit()
 
         # Fetch the record
@@ -491,7 +491,7 @@ class TestIncompleteTracking:
             'monk_name': 'Incomplete Nomad'
         })
 
-        result = airbender_table.exec_insert(raise_error=False)
+        result = airbender_table.execute('insert', raise_error=False)
 
         assert result == 1
         assert airbender_table.counts['incomplete'] == 1
@@ -503,7 +503,7 @@ class TestIncompleteTracking:
             'trainee_id': 'INC002'
         })
 
-        result = airbender_table.exec_update(raise_error=False)
+        result = airbender_table.execute('update', raise_error=False)
 
         assert result == 1
         assert airbender_table.counts['incomplete'] == 1
@@ -516,7 +516,7 @@ class TestIncompleteTracking:
             'monk_name': 'Incomplete Merge'
         })
 
-        result = airbender_table.exec_merge(raise_error=False)
+        result = airbender_table.execute('merge', raise_error=False)
 
         assert result == 1
         assert airbender_table.counts['incomplete'] == 1
@@ -529,7 +529,7 @@ class TestIncompleteTracking:
             'home_temple': 'Unknown Temple'
         })
 
-        result = airbender_table.exec_select(raise_error=False)
+        result = airbender_table.execute('select', raise_error=False)
 
         assert result == 1
         assert airbender_table.counts['incomplete'] == 1
@@ -542,7 +542,7 @@ class TestIncompleteTracking:
             'home_temple': 'Unknown Temple'
         })
 
-        result = airbender_table.exec_delete(raise_error=False)
+        result = airbender_table.execute('delete', raise_error=False)
 
         assert result == 1
         assert airbender_table.counts['incomplete'] == 1
@@ -555,142 +555,25 @@ class TestIncompleteTracking:
             'trainee_id': 'INC004',
             'monk_name': 'First Incomplete'
         })
-        airbender_table.exec_insert(raise_error=False)
+        airbender_table.execute('insert', raise_error=False)
 
         # Second incomplete update
         airbender_table.set_values({
             'trainee_id': 'INC005'
         })
-        airbender_table.exec_update(raise_error=False)
+        airbender_table.execute('update', raise_error=False)
 
         # Third incomplete merge
         airbender_table.set_values({
             'trainee_id': 'INC006',
             'monk_name': 'Third Incomplete'
         })
-        airbender_table.exec_merge(raise_error=False)
+        airbender_table.execute('merge', raise_error=False)
 
         assert airbender_table.counts['incomplete'] == 3
         assert airbender_table.counts['insert'] == 0
         assert airbender_table.counts['update'] == 0
         assert airbender_table.counts['merge'] == 0
-
-
-class TestReqsCheckedParameter:
-    """Test reqs_checked parameter to skip redundant validation."""
-
-    def test_insert_with_reqs_checked(self, airbender_table, cursor):
-        """Test insert with reqs_checked=True skips validation."""
-        airbender_table.set_values({
-            'trainee_id': 'CHECK001',
-            'monk_name': 'Pre-Checked Nomad',
-            'home_temple': 'Validated Temple'
-        })
-
-        # Verify requirements before calling
-        assert airbender_table.reqs_met
-
-        # Execute with reqs_checked=True
-        result = airbender_table.exec_insert(reqs_checked=True)
-
-        assert result == 0
-        assert airbender_table.counts['insert'] == 1
-        assert airbender_table.counts['incomplete'] == 0
-
-    def test_update_with_reqs_checked(self, airbender_table, cursor):
-        """Test update with reqs_checked=True skips validation."""
-        # Insert initial record
-        airbender_table.set_values({
-            'trainee_id': 'CHECK002',
-            'monk_name': 'Checkable Nomad',
-            'home_temple': 'Validation Temple'
-        })
-        airbender_table.exec_insert()
-        cursor.connection.commit()
-
-        # Update with pre-validation
-        airbender_table.set_values({
-            'trainee_id': 'CHECK002',
-            'monk_name': 'Updated Nomad',
-            'home_temple': 'New Temple'
-        })
-
-        assert airbender_table.reqs_met
-
-        result = airbender_table.exec_update(reqs_checked=True)
-
-        assert result == 0
-        assert airbender_table.counts['update'] == 1
-
-    def test_select_with_reqs_checked(self, airbender_table, cursor):
-        """Test select with reqs_checked=True skips key validation."""
-        # Insert record first
-        airbender_table.set_values({
-            'trainee_id': 'CHECK003',
-            'monk_name': 'Selectable Nomad',
-            'home_temple': 'Select Temple'
-        })
-        airbender_table.exec_insert()
-        cursor.connection.commit()
-
-        # Select with pre-validation
-        airbender_table.set_values({
-            'trainee_id': 'CHECK003',
-            'monk_name': 'Any Name',
-            'home_temple': 'Any Temple'
-        })
-
-        assert airbender_table.has_all_keys
-
-        result = airbender_table.exec_select(reqs_checked=True)
-
-        assert result == 0
-        assert airbender_table.counts['select'] == 1
-
-    def test_optional_table_pattern(self, cursor):
-        """Test optional table pattern with explicit requirement checking."""
-        # Create an optional address table
-        cursor.execute("""
-                       CREATE TABLE optional_addresses
-                       (
-                           nomad_id TEXT PRIMARY KEY,
-                           street   TEXT NOT NULL,
-                           city     TEXT NOT NULL
-                       )
-                       """)
-        cursor.connection.commit()
-
-        address_table = Table('optional_addresses', {
-            'nomad_id': {'field': 'id', 'primary_key': True},
-            'street': {'field': 'address_line', 'nullable': False},
-            'city': {'field': 'city_name', 'nullable': False}
-        }, cursor=cursor)
-
-        # Record with complete address
-        complete_record = {
-            'id': 'ADDR001',
-            'address_line': '123 Air Temple Way',
-            'city_name': 'Southern Air Temple'
-        }
-
-        address_table.set_values(complete_record)
-        if address_table.reqs_met:
-            result = address_table.exec_insert(reqs_checked=True)
-            assert result == 0
-
-        # Record without address (optional)
-        incomplete_record = {
-            'id': 'ADDR002'
-        }
-
-        address_table.set_values(incomplete_record)
-        if address_table.reqs_met:
-            address_table.exec_insert(reqs_checked=True)
-        # If not met, don't insert - this is expected
-
-        # Should have inserted 1, skipped 1
-        assert address_table.counts['insert'] == 1
-        assert address_table.counts['incomplete'] == 0  # We never called exec
 
 
 class TestUpdateExclusions:
@@ -847,7 +730,7 @@ class TestAutomaticUpdateExcludes:
             'home_temple': 'Auto Temple',
             'mastery_rank': '5'
         })
-        airbender_table.exec_insert()
+        airbender_table.execute('insert')
         cursor.connection.commit()
 
         # Create new table instance to simulate fresh start
@@ -881,7 +764,7 @@ class TestAutomaticUpdateExcludes:
         assert not new_table._update_excludes_calculated
 
         # Execute update - should automatically call calc_update_excludes()
-        result = new_table.exec_update()
+        result = new_table.execute('update')
         assert result == 0
 
         # _update_excludes should now be calculated
@@ -915,7 +798,7 @@ class TestAutomaticUpdateExcludes:
         assert not airbender_table._update_excludes_calculated
 
         # Execute merge - should automatically call calc_update_excludes()
-        result = airbender_table.exec_merge()
+        result = airbender_table.execute('merge')
         assert result == 0
 
         # _update_excludes should now be calculated
@@ -937,7 +820,7 @@ class TestAutomaticUpdateExcludes:
             'home_temple': 'Redundant Temple',
             'mastery_rank': '4'
         })
-        airbender_table.exec_insert()
+        airbender_table.execute('insert')
         cursor.connection.commit()
 
         # Create new table and set values
@@ -964,7 +847,7 @@ class TestAutomaticUpdateExcludes:
         new_table.set_values(update_data)
 
         # Execute first update
-        new_table.exec_update()
+        new_table.execute('update')
         assert new_table._update_excludes_calculated
 
         # Store the excludes set
@@ -972,7 +855,7 @@ class TestAutomaticUpdateExcludes:
 
         # Execute another update without calling set_values again
         new_table.values['name'] = 'Another Update'
-        new_table.exec_update()
+        new_table.execute('update')
 
         # Excludes should be the same (not recalculated)
         assert new_table._update_excludes == first_excludes
@@ -1084,7 +967,7 @@ class TestSpecialColumnNames:
             'realm': 'Spirit World',
             'last_encounter': '99 AG'
         })
-        special_chars_table.exec_insert()
+        special_chars_table.execute('insert')
         cursor.connection.commit()
 
         # Now update
@@ -1130,6 +1013,181 @@ class TestSpecialColumnNames:
         assert 'spirit_name' in param_names
         assert 'power_level' in param_names
 
+    def test_select_with_special_column_names(self, special_chars_table, cursor):
+        """Test SELECT with special column names uses sanitized bind parameters."""
+        # Insert a record first
+        special_chars_table.set_values({
+            'id': 'SPIRIT004',
+            'name': 'Raava',
+            'power': '10',
+            'realm': 'Spirit World',
+            'last_encounter': '0 AG'
+        })
+        special_chars_table.execute('insert')
+        cursor.connection.commit()
+
+        # Now select it
+        special_chars_table.set_values({'id': 'SPIRIT004'})
+
+        # Generate and examine SELECT SQL
+        sql = special_chars_table.get_sql('select')
+
+        # Column names should be quoted in SQL
+        assert '"spirit-id"' in sql or 'spirit-id' in sql
+        assert '"spirit name"' in sql or 'spirit_name' in sql
+
+        # But bind parameters should use sanitized names
+        param_names = special_chars_table._param_config['select']
+        assert 'spirit_id' in param_names
+
+        # Execute the select
+        result = special_chars_table.execute('select')
+        assert result == 0
+        row = cursor.fetchone()
+        # Cursor returns sanitized field names, not original column names
+        assert row['spirit_id'] == 'SPIRIT004'
+        assert row['spirit_name'] == 'Raava'
+
+    def test_delete_with_special_column_names(self, special_chars_table, cursor):
+        """Test DELETE with special column names uses sanitized bind parameters.
+
+        This test specifically catches the bug where _create_delete() was
+        iterating over _key_cols (bind_names) but treating them as column names.
+        """
+        # Insert a record first
+        special_chars_table.set_values({
+            'id': 'SPIRIT005',
+            'name': 'Vaatu',
+            'power': '10',
+            'realm': 'Spirit World',
+            'last_encounter': '0 AG'
+        })
+        special_chars_table.execute('insert')
+        cursor.connection.commit()
+
+        # Now delete it
+        special_chars_table.set_values({'id': 'SPIRIT005'})
+
+        # Generate and examine DELETE SQL
+        sql = special_chars_table.get_sql('delete')
+
+        # Column names should be quoted in SQL
+        assert '"spirit-id"' in sql or 'spirit-id' in sql
+
+        # But bind parameters should use sanitized names
+        param_names = special_chars_table._param_config['delete']
+        assert 'spirit_id' in param_names
+
+        # Execute the delete
+        result = special_chars_table.execute('delete')
+        assert result == 0
+        cursor.connection.commit()
+
+        # Verify deletion
+        cursor.execute("SELECT COUNT(*) as cnt FROM spirit_world_records WHERE \"spirit-id\" = 'SPIRIT005'")
+        row = cursor.fetchone()
+        assert row['cnt'] == 0
+
+
+class TestReadinessTracking:
+    """Test the is_ready() and refresh_readiness() refactored functionality."""
+
+    def test_is_ready_for_all_operations(self, airbender_table):
+        """Test is_ready() method for all operation types."""
+        # Set complete record with all required fields
+        airbender_table.set_values({
+            'trainee_id': 'TEST001',
+            'monk_name': 'Test Monk',
+            'home_temple': 'Test Temple',
+            'mastery_rank': '5'
+        })
+
+        # With key + required fields, all operations should be ready
+        assert airbender_table.is_ready('insert')
+        assert airbender_table.is_ready('select')
+        assert airbender_table.is_ready('update')
+        assert airbender_table.is_ready('delete')
+        assert airbender_table.is_ready('merge')
+
+    def test_is_ready_partial_data(self, airbender_table):
+        """Test is_ready() with partial data (only key fields)."""
+        # Set only key field
+        airbender_table.set_values({
+            'trainee_id': 'TEST002'
+        })
+
+        # Only select and delete should be ready (they only need key)
+        assert not airbender_table.is_ready('insert')  # Needs required temple field
+        assert airbender_table.is_ready('select')      # Only needs key
+        assert not airbender_table.is_ready('update')  # Needs required fields
+        assert airbender_table.is_ready('delete')      # Only needs key
+        assert not airbender_table.is_ready('merge')   # Needs required fields
+
+    def test_is_ready_insert_only(self, airbender_table):
+        """Test is_ready() with data sufficient for insert but not update."""
+        # Set required fields but not key (for insert-only scenario)
+        airbender_table.set_values({
+            'monk_name': 'No ID Monk',
+            'home_temple': 'Orphan Temple'
+        })
+
+        # This has required nullable=False fields but missing primary key
+        # So insert could work but not operations requiring keys
+        assert not airbender_table.is_ready('select')
+        assert not airbender_table.is_ready('update')
+        assert not airbender_table.is_ready('delete')
+
+    def test_refresh_readiness_auto_called(self, airbender_table):
+        """Test that refresh_readiness() is automatically called by set_values()."""
+        # Initially no data
+        airbender_table.set_values({})
+        assert not airbender_table.is_ready('insert')
+
+        # Set complete data - refresh_readiness should be called automatically
+        airbender_table.set_values({
+            'trainee_id': 'TEST003',
+            'monk_name': 'Auto Refresh',
+            'home_temple': 'Auto Temple'
+        })
+
+        # Should now be ready without manual refresh_readiness() call
+        assert airbender_table.is_ready('insert')
+        assert airbender_table.is_ready('update')
+
+    def test_refresh_readiness_manual_call(self, airbender_table):
+        """Test manual refresh_readiness() call."""
+        # Set incomplete data
+        airbender_table.set_values({'trainee_id': 'TEST004'})
+        assert not airbender_table.is_ready('insert')
+
+        # Manually modify values (bypassing set_values)
+        airbender_table.values['name'] = 'Manual Test'
+        airbender_table.values['temple'] = 'Manual Temple'
+
+        # Still not ready until we refresh
+        assert not airbender_table.is_ready('insert')
+
+        # Manually call refresh
+        airbender_table.refresh_readiness()
+
+        # Now should be ready
+        assert airbender_table.is_ready('insert')
+
+    def test_readiness_bitflag_performance(self, airbender_table):
+        """Test that readiness check uses O(1) bitflag operations."""
+        # Set complete data
+        airbender_table.set_values({
+            'trainee_id': 'PERF001',
+            'monk_name': 'Performance Test',
+            'home_temple': 'Speed Temple'
+        })
+
+        # Multiple checks should be fast (O(1))
+        for _ in range(1000):
+            assert airbender_table.is_ready('insert')
+            assert airbender_table.is_ready('select')
+            assert airbender_table.is_ready('update')
+
 
 class TestAdvancedFeatures:
     """Test advanced ETL features."""
@@ -1147,14 +1205,14 @@ class TestAdvancedFeatures:
 
         airbender_table.set_values(recruit_data)
 
-        assert airbender_table.reqs_met
+        assert airbender_table.reqs_met('insert')
 
         # Check if record exists (should be None)
         existing = airbender_table.fetch()
         assert existing is None
 
         # Insert new record
-        result = airbender_table.exec_insert()
+        result = airbender_table.execute('insert')
         assert result == 0
         cursor.connection.commit()
 

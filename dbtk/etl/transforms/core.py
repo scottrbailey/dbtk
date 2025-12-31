@@ -6,6 +6,7 @@ Includes text processing, type conversion, and basic utility functions.
 """
 
 import re
+from .datetime import parse_datetime, parse_date, parse_time, parse_timestamp
 from typing import Any, List, Optional, Union
 
 # Number regex patterns
@@ -419,6 +420,10 @@ def fn_resolver(shorthand: str):
         'bool'           → get_bool
         'digits'         → get_digits
         'number'         → to_number
+        'date'           → parse_date
+        'datetime'       → parse_datetime
+        'time'           → parse_time
+        'timestamp'      → parse_timestamp
 
     String manipulation
         'lower', 'upper', 'strip' → str.lower / upper / strip
@@ -483,6 +488,10 @@ def fn_resolver(shorthand: str):
         'upper': str.upper,
         'strip': str.strip,
         'indicator': indicator,
+        'date': parse_date,
+        'datetime': parse_datetime,
+        'time': parse_time,
+        'timestamp': parse_timestamp
     }
     if shorthand in direct:
         return direct[shorthand]
