@@ -181,6 +181,7 @@ MIT License - see LICENSE file for details.
 ## Acknowledgments
 
 Documentation, testing and architectural improvements assisted by [Claude](https://claude.ai) (Anthropic).
+Architectural review and witty banter by [Grok](https://grok.com/) (xAI).
 
 ## Support
 
