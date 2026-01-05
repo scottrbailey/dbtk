@@ -115,30 +115,31 @@ import dbtk
 from dbtk.etl import Table
 from dbtk.etl.transforms import email_clean
 
-dbtk.setup_logging()
+dbtk.setup_logging()  # Timestamped logs with auto-cleanup
 
 with dbtk.connect('fire_nation_db') as db:
     cursor = db.cursor()
 
-    # Define table with field mapping and transforms
+    # Define table schema with field mapping and transformations
     soldier_table = Table('soldiers', {
-        'soldier_id': {'field': 'id', 'key': True},
-        'name': {'field': 'full_name', 'nullable': False},
-        'rank': {'field': 'officer_rank', 'nullable': False, 
-                 'fn': 'validate:ranks:rank_code:preload'},
-        'email': {'field': 'contact_email', 'default': 'intel@firenation.com', 
-                  'fn': email_clean},
-        'enlistment_date': {'field': 'join_date', 'fn': 'date'},
-        'missions_completed': {'field': 'mission_count', 'fn': 'int'},
-        'status': {'default': 'active'}
+        'soldier_id': {'field': 'id', 'key': True},  # Maps CSV 'id' to DB 'soldier_id', marks as primary key
+        'name': {'field': 'full_name', 'nullable': False},  # Required field, will error if missing
+        'rank': {'field': 'officer_rank', 'nullable': False,
+                 'fn': 'validate:ranks:rank_code:preload'},  # Validates against 'ranks' table, preloads cache
+        'email': {'field': 'contact_email', 'default': 'intel@firenation.com',
+                  'fn': email_clean},  # Cleans/validates email, uses default if missing
+        'enlistment_date': {'field': 'join_date', 'fn': 'date'},  # Parses various date formats
+        'missions_completed': {'field': 'mission_count', 'fn': 'int'},  # Converts to integer, NULL if fails
+        'status': {'default': 'active'}  # Sets default, no source field needed
     }, cursor=cursor)
 
-    # Process incoming data
-    with dbtk.readers.get_reader('incoming/new_recruits.csv.gz') as reader:
-        surge = dbtk.etl.DataSurge(soldier_table, use_transaction=True)
-        surge.insert(reader)
-        
-if dbtk.errors_logged():
+    # Process incoming compressed CSV
+    with dbtk.readers.get_reader('incoming/new_recruits.csv.gz') as reader:  # Auto-detects .gz, decompresses
+        # DataSurge batches inserts, uses fastest method for this database driver
+        surge = dbtk.etl.DataSurge(soldier_table, use_transaction=True)  # Wraps in transaction
+        surge.insert(reader)  # Auto-shows progress bar for large files
+
+if dbtk.errors_logged():  # Check global error flag
     # send notification email or call 911
     print("⚠️  Export completed with errors - check log file")
 ```
