@@ -511,8 +511,8 @@ class TestExcelWriter:
         assert 'MySheet' in wb.sheetnames
         assert wb['MySheet'].max_row == 11
 
-    def test_columns_parameter_override(self, tmp_path):
-        """Test that columns parameter overrides detected field names."""
+    def test_headers_parameter_override(self, tmp_path):
+        """Test that headers parameter overrides detected field names in header row."""
         from dbtk.record import Record
 
         # Create records with lowercase field names (simulating cursor normalization)
@@ -526,21 +526,21 @@ class TestExcelWriter:
 
         output_file = tmp_path / "output.xlsx"
 
-        # Write with custom column names (original database column names)
-        original_columns = ['USER_ID', 'USER_NAME', 'EMAIL_ADDRESS']
-        to_excel(records, output_file, columns=original_columns)
+        # Write with custom header names (original database column names)
+        original_headers = ['USER_ID', 'USER_NAME', 'EMAIL_ADDRESS']
+        to_excel(records, output_file, headers=original_headers)
 
         # Read back and verify headers
         from openpyxl import load_workbook
         wb = load_workbook(output_file)
         ws = wb.active
 
-        # Check that headers match the provided columns, not the Record field names
+        # Check that headers match the provided headers, not the Record field names
         assert ws.cell(1, 1).value == 'USER_ID'
         assert ws.cell(1, 2).value == 'USER_NAME'
         assert ws.cell(1, 3).value == 'EMAIL_ADDRESS'
 
-        # Check data values
+        # Check data values are still extracted correctly from Record fields
         assert ws.cell(2, 1).value == 1
         assert ws.cell(2, 2).value == 'Alice'
         assert ws.cell(2, 3).value == 'alice@example.com'

@@ -73,7 +73,7 @@ class ExcelWriter(BatchWriter):
         file: Optional[Union[str, Path]] = None,
         data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
-        columns: Optional[List[str]] = None,
+        headers: Optional[List[str]] = None,
         write_headers: bool = True,
     ):
         """
@@ -87,17 +87,18 @@ class ExcelWriter(BatchWriter):
             Initial data to write. If None, use write_batch() for streaming mode.
         sheet_name : str, optional
             Default/active sheet name to use for write_batch() calls without explicit sheet_name
-        columns : List[str], optional
-            Column names to override detected headers. Useful when Record field names
-            have been normalized (e.g., lowercased) but you want original database
-            column names in the Excel file. If None, uses detected field names.
+        headers : List[str], optional
+            Header row text. If None, checks data.description for original column names,
+            then falls back to detected column names. Useful when Record field names have been
+            normalized (e.g., lowercased) but you want original database column names in Excel.
         write_headers : bool, default True
             Whether to write column headers (only when sheet is empty)
         """
         if file is None:
             raise ValueError("ExcelWriter requires an output file path")
 
-        super().__init__(data=data, file=file, columns=columns, write_headers=write_headers)
+        super().__init__(data=data, file=file, write_headers=write_headers)
+        self.headers = headers
 
         self.output_path = Path(file)
         self.active_sheet: Optional[str] = sheet_name
@@ -207,7 +208,15 @@ class ExcelWriter(BatchWriter):
         data_start_row = 2 if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
-            for col_idx, column_name in enumerate(self.columns, 1):
+            # Determine header row: explicit headers → data.description → column names
+            if self.headers:
+                header_row = self.headers
+            elif hasattr(data, 'description') and data.description:
+                header_row = [col[0] for col in data.description]
+            else:
+                header_row = self.columns
+
+            for col_idx, column_name in enumerate(header_row, 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
             worksheet.freeze_panes = 'A2'
@@ -313,8 +322,16 @@ class ExcelWriter(BatchWriter):
         data_start_row = 2 if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
+            # Determine header row: explicit headers → data.description → column names
+            if self.headers:
+                header_row = self.headers
+            elif hasattr(self.data_iterator, 'description') and self.data_iterator.description:
+                header_row = [col[0] for col in self.data_iterator.description]
+            else:
+                header_row = self.columns
+
             header_font = Font(bold=True)
-            for col_idx, column_name in enumerate(self.columns, 1):
+            for col_idx, column_name in enumerate(header_row, 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
             worksheet.freeze_panes = 'A2'
@@ -387,7 +404,7 @@ def to_excel(
     data,
     filename: Union[str, Path],
     sheet: str = 'Data',
-    columns: Optional[List[str]] = None,
+    headers: Optional[List[str]] = None,
     write_headers: bool = True,
 ) -> None:
     """
@@ -401,14 +418,22 @@ def to_excel(
         Output Excel filename (.xlsx)
     sheet : str, default 'Data'
         Sheet name to write to
-    columns : List[str], optional
-        Column names to override detected headers
+    headers : List[str], optional
+        Header row text. If None, uses cursor.description or detected column names
     write_headers : bool, default True
         Whether to write column headers
 
+    Examples
+    --------
+    # Write cursor with original database column names
+    to_excel(cursor, 'report.xlsx')
+
+    # Override header names
+    to_excel(cursor, 'report.xlsx', headers=['User ID', 'Full Name', 'Email'])
+
     For multi-sheet or advanced reports, use ExcelWriter as a context manager with write_batch().
     """
-    with ExcelWriter(data=None, file=filename, columns=columns, write_headers=write_headers) as writer:
+    with ExcelWriter(data=None, file=filename, headers=headers, write_headers=write_headers) as writer:
         writer.write_batch(data=data, sheet_name=sheet)
 
 
@@ -879,10 +904,10 @@ class LinkedExcelWriter(ExcelWriter):
         file: Optional[Union[str, Path]] = None,
         data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
-        columns: Optional[List[str]] = None,
+        headers: Optional[List[str]] = None,
         write_headers: bool = True,
     ):
-        super().__init__(file=file, data=data, sheet_name=sheet_name, columns=columns, write_headers=write_headers)
+        super().__init__(file=file, data=data, sheet_name=sheet_name, headers=headers, write_headers=write_headers)
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:
