@@ -3,14 +3,15 @@
 Excel writer for database results using openpyxl.
 """
 import logging
-from typing import Any, Union, List, Optional, Iterable
+from typing import Any, Union, List, Optional, Iterable, Dict, TYPE_CHECKING
 from pathlib import Path
 from datetime import datetime, date, time
 from zipfile import BadZipFile
-from typing import Any, Optional, Dict
-from openpyxl.worksheet.worksheet import Worksheet
 
 from .base import BatchWriter, RecordLike
+
+if TYPE_CHECKING:
+    from openpyxl.worksheet.worksheet import Worksheet
 
 try:
     from openpyxl import Workbook, load_workbook
@@ -72,6 +73,7 @@ class ExcelWriter(BatchWriter):
         file: Optional[Union[str, Path]] = None,
         data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
+        columns: Optional[List[str]] = None,
         write_headers: bool = True,
     ):
         """
@@ -85,13 +87,17 @@ class ExcelWriter(BatchWriter):
             Initial data to write. If None, use write_batch() for streaming mode.
         sheet_name : str, optional
             Default/active sheet name to use for write_batch() calls without explicit sheet_name
+        columns : List[str], optional
+            Column names to override detected headers. Useful when Record field names
+            have been normalized (e.g., lowercased) but you want original database
+            column names in the Excel file. If None, uses detected field names.
         write_headers : bool, default True
             Whether to write column headers (only when sheet is empty)
         """
         if file is None:
             raise ValueError("ExcelWriter requires an output file path")
 
-        super().__init__(data=data, file=file, write_headers=write_headers)
+        super().__init__(data=data, file=file, columns=columns, write_headers=write_headers)
 
         self.output_path = Path(file)
         self.active_sheet: Optional[str] = sheet_name
@@ -162,7 +168,7 @@ class ExcelWriter(BatchWriter):
         if worksheet.max_row >= 1:
             worksheet.delete_rows(1, worksheet.max_row)
 
-    def _get_named_style(self, name: str) -> NamedStyle:
+    def _get_named_style(self, name: str) -> 'NamedStyle':
         for style in self.workbook.named_styles:
             if style.name == name:
                 return style
@@ -381,14 +387,28 @@ def to_excel(
     data,
     filename: Union[str, Path],
     sheet: str = 'Data',
+    columns: Optional[List[str]] = None,
     write_headers: bool = True,
 ) -> None:
     """
     Legacy convenience function — writes a single sheet.
 
+    Parameters
+    ----------
+    data : Iterable[RecordLike]
+        Data to write (cursor, list of Records, etc.)
+    filename : str or Path
+        Output Excel filename (.xlsx)
+    sheet : str, default 'Data'
+        Sheet name to write to
+    columns : List[str], optional
+        Column names to override detected headers
+    write_headers : bool, default True
+        Whether to write column headers
+
     For multi-sheet or advanced reports, use ExcelWriter as a context manager with write_batch().
     """
-    with ExcelWriter(data=None, file=filename, write_headers=write_headers) as writer:
+    with ExcelWriter(data=None, file=filename, columns=columns, write_headers=write_headers) as writer:
         writer.write_batch(data=data, sheet_name=sheet)
 
 
@@ -859,9 +879,10 @@ class LinkedExcelWriter(ExcelWriter):
         file: Optional[Union[str, Path]] = None,
         data: Optional[Iterable[RecordLike]] = None,
         sheet_name: Optional[str] = None,
+        columns: Optional[List[str]] = None,
         write_headers: bool = True,
     ):
-        super().__init__(file=file, data=data, sheet_name=sheet_name, write_headers=write_headers)
+        super().__init__(file=file, data=data, sheet_name=sheet_name, columns=columns, write_headers=write_headers)
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:
@@ -935,12 +956,12 @@ class LinkedExcelWriter(ExcelWriter):
     def _write_to_worksheet(
         self,
         data: Iterable[RecordLike],
-        worksheet: Worksheet,
+        worksheet: 'Worksheet',
         columns: Optional[List[str]] = None,
         write_headers: bool = True,
         link_mapping: Optional[Dict[str, tuple]] = None,
         source_for_this_sheet: Optional[list] = None,
-        target_sheet: Optional[Worksheet] = None
+        target_sheet: Optional[str] = None
     ) -> int:
         link_mapping = link_mapping or {}
         source_for_this_sheet = source_for_this_sheet or []

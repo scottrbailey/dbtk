@@ -511,6 +511,40 @@ class TestExcelWriter:
         assert 'MySheet' in wb.sheetnames
         assert wb['MySheet'].max_row == 11
 
+    def test_columns_parameter_override(self, tmp_path):
+        """Test that columns parameter overrides detected field names."""
+        from dbtk.record import Record
+
+        # Create records with lowercase field names (simulating cursor normalization)
+        RecordClass = type('TestRecord', (Record,), {})
+        RecordClass.set_columns(['user_id', 'user_name', 'email_address'])
+
+        records = [
+            RecordClass(1, 'Alice', 'alice@example.com'),
+            RecordClass(2, 'Bob', 'bob@example.com'),
+        ]
+
+        output_file = tmp_path / "output.xlsx"
+
+        # Write with custom column names (original database column names)
+        original_columns = ['USER_ID', 'USER_NAME', 'EMAIL_ADDRESS']
+        to_excel(records, output_file, columns=original_columns)
+
+        # Read back and verify headers
+        from openpyxl import load_workbook
+        wb = load_workbook(output_file)
+        ws = wb.active
+
+        # Check that headers match the provided columns, not the Record field names
+        assert ws.cell(1, 1).value == 'USER_ID'
+        assert ws.cell(1, 2).value == 'USER_NAME'
+        assert ws.cell(1, 3).value == 'EMAIL_ADDRESS'
+
+        # Check data values
+        assert ws.cell(2, 1).value == 1
+        assert ws.cell(2, 2).value == 'Alice'
+        assert ws.cell(2, 3).value == 'alice@example.com'
+
 
 class TestFixedWidthWriter:
     """Tests specific to fixed-width writer."""
