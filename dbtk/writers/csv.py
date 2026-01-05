@@ -38,8 +38,7 @@ class CSVWriter(BatchWriter):
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, file, columns, write_headers=write_headers, **csv_kwargs)
-        self.headers = headers
+        super().__init__(data, file, columns, headers=headers, write_headers=write_headers, **csv_kwargs)
         self.null_string = null_string or settings.get('null_string_csv', '')
 
     def to_string(self, obj: Any) -> str:
@@ -59,15 +58,7 @@ class CSVWriter(BatchWriter):
 
         # Write headers if requested
         if self.write_headers and not self._headers_written:
-            # Determine header row: explicit headers → cursor.description → column names
-            if self.headers:
-                header_row = self.headers
-            elif hasattr(self.data_iterator, 'description') and self.data_iterator.description:
-                header_row = [col[0] for col in self.data_iterator.description]
-            else:
-                header_row = self.columns
-
-            writer.writerow(header_row)
+            writer.writerow(self._get_headers())
             self._headers_written = True
 
         # Write data rows

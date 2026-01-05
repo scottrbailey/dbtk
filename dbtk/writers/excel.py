@@ -97,8 +97,7 @@ class ExcelWriter(BatchWriter):
         if file is None:
             raise ValueError("ExcelWriter requires an output file path")
 
-        super().__init__(data=data, file=file, write_headers=write_headers)
-        self.headers = headers
+        super().__init__(data=data, file=file, headers=headers, write_headers=write_headers)
 
         self.output_path = Path(file)
         self.active_sheet: Optional[str] = sheet_name
@@ -208,15 +207,7 @@ class ExcelWriter(BatchWriter):
         data_start_row = 2 if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
-            # Determine header row: explicit headers → data.description → column names
-            if self.headers:
-                header_row = self.headers
-            elif hasattr(data, 'description') and data.description:
-                header_row = [col[0] for col in data.description]
-            else:
-                header_row = self.columns
-
-            for col_idx, column_name in enumerate(header_row, 1):
+            for col_idx, column_name in enumerate(self._get_headers(data), 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
             worksheet.freeze_panes = 'A2'
@@ -322,16 +313,8 @@ class ExcelWriter(BatchWriter):
         data_start_row = 2 if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
-            # Determine header row: explicit headers → data.description → column names
-            if self.headers:
-                header_row = self.headers
-            elif hasattr(self.data_iterator, 'description') and self.data_iterator.description:
-                header_row = [col[0] for col in self.data_iterator.description]
-            else:
-                header_row = self.columns
-
             header_font = Font(bold=True)
-            for col_idx, column_name in enumerate(header_row, 1):
+            for col_idx, column_name in enumerate(self._get_headers(), 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
                 cell.font = header_font
             worksheet.freeze_panes = 'A2'
