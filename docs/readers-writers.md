@@ -133,13 +133,12 @@ settings['compressed_file_buffer_size'] = 2 * 1024 * 1024  # 2MB buffer
 All readers support these parameters for controlling input processing:
 
 ```python
-# Skip first 10 data rows, read only 100 rows, return dicts instead of Records
+# Skip first 10 data rows, read only 100 rows
 reader = dbtk.readers.CSVReader(
     open('data.csv', encoding='utf-8-sig'), # Use 'utf-8-sig' instead of 'utf-8' to avoid BOM issues
     skip_rows=10,         # Skip N rows after headers (useful for bad data)
     n_rows=100,           # Only read first N rows (useful for testing/sampling)
     add_row_num=True,     # Add '_row_num' field to each record (default True)
-    clean_headers=dbtk.readers.Clean.LOWER_NOSPACE  # Header cleaning level
 )
 
 # Row numbers track position in source file
@@ -148,27 +147,40 @@ with dbtk.readers.get_reader('data.csv', skip_rows=5) as reader:
         print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
 ```
 
-### Header Cleaning for Messy Data
+### Dual Field Name Access
 
-Real-world data has messy headers. DBTK can standardize them automatically:
+DBTK automatically handles messy field names by providing dual access - original names are preserved while normalized versions are auto-generated for convenient attribute access:
 
 ```python
-from dbtk.readers import Clean
+# Original headers from file: ["ID #", "Student Name", "Residency Code", "GPA Score", "Has Holds?"]
 
-headers = ["ID #", "Student Name", "Residency Code", "GPA Score", "Has Holds?"]
+with dbtk.readers.CSVReader(open('data.csv')) as reader:
+    for record in reader:
+        # Access by original field names (preserved exactly as they appear)
+        print(record['ID #'], record['Student Name'])
 
-# Clean headers
-[Clean.normalize(h, Clean.LOWER_NOSPACE) for h in headers]
-# ['id_#', 'student_name', 'residency_code', 'gpa_score', 'has_holds?']
+        # Access by normalized field names (lowercased, underscored)
+        print(record.id, record.student_name)
 
-[Clean.normalize(h, Clean.STANDARDIZE) for h in headers]
-# ['id', 'studentname', 'residency', 'gpascore', 'hasholds']
+        # Both access the same data
+        assert record['ID #'] == record.id
+        assert record['Student Name'] == record.student_name
 
-# Apply when opening a reader
-reader = dbtk.readers.CSVReader(fp, clean_headers=Clean.STANDARDIZE)
+# Normalization rules:
+# - Lowercase conversion
+# - Non-alphanumeric characters → underscore
+# - Leading underscores preserved (_row_num stays _row_num)
+# - Trailing underscores removed
+
+# Examples:
+# "ID #" → id (attribute access)
+# "Student Name" → student_name
+# "GPA Score" → gpa_score
+# "Has Holds?" → has_holds
+# "_row_num" → _row_num (preserved)
 ```
 
-This is particularly useful when processing similar files from multiple vendors - standardize the headers and your downstream code stays simple.
+This is particularly useful when processing files from multiple vendors - use normalized attribute access in your code while original names are preserved for exports.
 
 ## Data Writers
 
