@@ -285,9 +285,16 @@ class Reader(ABC):
                         yield line.strip().split(',')
         """
         self.add_row_num = add_row_num
-        if clean_headers is None:
-            clean_headers = settings.get('default_header_clean', Clean.LOWER_NOSPACE)
-        self.clean_headers = Clean.from_string(clean_headers)
+        # clean_headers parameter is deprecated and ignored
+        # Normalization is now automatic via Record.set_fields()
+        if clean_headers is not None:
+            import warnings
+            warnings.warn(
+                "clean_headers parameter is deprecated and will be removed in a future version. "
+                "Field names are now automatically normalized for attribute access while preserving originals.",
+                DeprecationWarning,
+                stacklevel=2
+            )
         self._row_num = 0
         self._rows_read = 0
         self.skip_rows = skip_rows
@@ -553,25 +560,26 @@ class Reader(ABC):
         pass
 
     def _setup_record_class(self):
-        """Initialize headers and create Record subclass if needed."""
+        """Initialize headers and create Record subclass with original field names."""
         if self._headers_initialized:
             return
 
-        # Read raw headers from file
+        # Read raw headers from file (original field names)
         raw_headers = self._read_headers()
 
-        # Clean headers
-        self._headers = [Clean.normalize(h, self.clean_headers) for h in raw_headers]
+        # Store original headers (no normalization - Record.set_fields() handles it)
+        self._headers = raw_headers[:]
 
-        # Add self.add_row_num if requested and not already present
+        # Add _row_num if requested and not already present
         if self.add_row_num:
             if '_row_num' in self._headers:
                 raise ValueError("Header '_row_num' already exists. Remove it or set add_row_num=False.")
             self._headers.append('_row_num')
 
-        # Create Record subclass
+        # Create Record subclass and set fields
+        # set_fields() will automatically normalize for attribute access
         self._record_class = type('FileRecord', (Record,), {})
-        self._record_class.set_columns(self._headers)
+        self._record_class.set_fields(self._headers)
 
         self._headers_initialized = True
 

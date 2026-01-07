@@ -97,11 +97,11 @@ class DataFrameReader(Reader):
         return self._total_rows if self._total_rows > 0 else None
 
     def _setup_record_class(self):
-        """Override: use pre-detected columns instead of reading from file."""
+        """Override: use pre-detected columns from DataFrame (original names)."""
         if self._headers_initialized:
             return
 
-        # Use columns we already detected from DataFrame
+        # Use original column names from DataFrame
         self._headers = self.columns[:]
 
         if self.add_row_num:
@@ -109,8 +109,10 @@ class DataFrameReader(Reader):
                 raise ValueError("Header '_row_num' already exists.")
             self._headers.append('_row_num')
 
+        # Create Record subclass with original field names
+        # set_fields() will automatically normalize for attribute access
         self._record_class = type('DataFrameRecord', (Record,), {})
-        self._record_class.set_columns(self._headers)
+        self._record_class.set_fields(self._headers)
 
         self._headers_initialized = True
 
