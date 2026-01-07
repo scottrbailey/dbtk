@@ -141,7 +141,7 @@ class Record(list):
             # 1. Runtime-added fields
             if self._added and key in self._added:
                 return self._added[key]
-            # 2. Deleted fields
+            # 2. Deleted fields (check by original name)
             if key in self._deleted_fields:
                 raise KeyError(f"Column '{key}' has been deleted")
             # 3. Original field names
@@ -151,7 +151,11 @@ class Record(list):
                 pass
             # 4. Normalized field names
             try:
-                return super().__getitem__(self._fields_normalized.index(key))
+                idx = self._fields_normalized.index(key)
+                # Check if the corresponding original field was deleted
+                if self._fields[idx] in self._deleted_fields:
+                    raise KeyError(f"Column '{key}' has been deleted")
+                return super().__getitem__(idx)
             except ValueError:
                 raise KeyError(f"Column '{key}' not found")
         return super().__getitem__(key)
