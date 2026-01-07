@@ -256,59 +256,55 @@ class Record(list):
 
         cls._fields_normalized = normalized
 
-    @classmethod
-    def set_columns(cls, columns: List[str]) -> None:
-        """Deprecated: Use set_fields() instead."""
-        cls.set_fields(columns)
 
     # ------------------------------------------------------------------ #
     # Dict-like interface
     # ------------------------------------------------------------------ #
 
-    def keys(self, prefer_original: bool = True) -> List[str]:
+    def keys(self, normalized: bool = False) -> List[str]:
         """
         Get list of field names.
 
         Args:
-            prefer_original: If True (default), return original field names.
-                           If False, return normalized field names.
+            normalized: If True, return normalized field names.
+                       If False (default), return original field names.
 
         Returns:
             List of field names
         """
-        if prefer_original:
-            base = [f for f in self._fields if f not in self._deleted_fields]
-        else:
+        if normalized:
             # Return normalized names for non-deleted fields
             base = [self._fields_normalized[i] for i, f in enumerate(self._fields)
                     if f not in self._deleted_fields]
+        else:
+            base = [f for f in self._fields if f not in self._deleted_fields]
         if self._added:
             base.extend(self._added.keys())
         return base
 
     def values(self) -> Tuple[Any, ...]:
         """Get list of field values (in original field order)."""
-        return tuple(self[k] for k in self.keys(prefer_original=True))
+        return tuple(self[k] for k in self.keys(normalized=False))
 
-    def items(self, prefer_original: bool = True) -> Iterator[Tuple[str, Any]]:
+    def items(self, normalized: bool = False) -> Iterator[Tuple[str, Any]]:
         """
         Get (field_name, value) pairs.
 
         Args:
-            prefer_original: If True (default), use original field names.
-                           If False, use normalized field names.
+            normalized: If True, use normalized field names.
+                       If False (default), use original field names.
 
         Yields:
             Tuples of (field_name, value)
         """
-        if prefer_original:
-            for field in self._fields:
-                if field not in self._deleted_fields:
-                    yield field, self[field]
-        else:
+        if normalized:
             for i, field in enumerate(self._fields):
                 if field not in self._deleted_fields:
                     yield self._fields_normalized[i], self[field]
+        else:
+            for field in self._fields:
+                if field not in self._deleted_fields:
+                    yield field, self[field]
         if self._added:
             yield from self._added.items()
 
@@ -360,13 +356,13 @@ class Record(list):
         for k, v in kwargs.items():
             self[k] = v
 
-    def to_dict(self, use_original: bool = True) -> dict:
+    def to_dict(self, normalized: bool = False) -> dict:
         """
         Convert Record to dictionary.
 
         Args:
-            use_original: If True (default), use original field names as keys.
-                        If False, use normalized field names.
+            normalized: If True, use normalized field names as keys.
+                       If False (default), use original field names.
 
         Returns:
             Dictionary representation of the record
@@ -376,10 +372,10 @@ class Record(list):
             >>> rec.set_fields(['Start Year', 'End Year'])
             >>> rec.to_dict()
             {'Start Year': 2020, 'End Year': 2025}
-            >>> rec.to_dict(use_original=False)
+            >>> rec.to_dict(normalized=True)
             {'start_year': 2020, 'end_year': 2025}
         """
-        return dict(self.items(prefer_original=use_original))
+        return dict(self.items(normalized=normalized))
 
     # ------------------------------------------------------------------ #
     # Utilities
@@ -402,15 +398,22 @@ class Record(list):
     def __dir__(self) -> List[str]:
         return sorted(set(super().__dir__()) | set(self.keys()))
 
-    def pprint(self) -> None:
-        """Pretty-print the record with aligned columns."""
-        if not self.keys():
+    def pprint(self, normalized: bool = False) -> None:
+        """
+        Pretty-print the record with aligned columns.
+
+        Args:
+            normalized: If True, use normalized field names.
+                       If False (default), use original field names.
+        """
+        keys_to_use = self.keys(normalized=normalized)
+        if not keys_to_use:
             print("<Empty Record>")
             return
 
-        width = max(len(k) for k in self.keys())
+        width = max(len(k) for k in keys_to_use)
         template = f"{{:<{width}}} : {{}}"
 
-        for key in self.keys():
+        for key in keys_to_use:
             value = self[key]
             print(template.format(key, to_string(value)))

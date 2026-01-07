@@ -611,8 +611,8 @@ class BatchWriter(BaseWriter):
                 # For lists/iterables, peek at first record
                 first = next(iter(source), None)
                 if first is not None and hasattr(first, 'keys'):
-                    # Use keys(prefer_original=True) to get original field names
-                    return list(first.keys(prefer_original=True))
+                    # Use keys(normalized=False) to get original field names
+                    return list(first.keys(normalized=False))
             except (StopIteration, TypeError):
                 pass
 
