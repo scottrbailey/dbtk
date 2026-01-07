@@ -571,13 +571,14 @@ class BatchWriter(BaseWriter):
 
     def _get_headers(self, data: Optional[Iterable[RecordLike]] = None) -> List[str]:
         """
-        Get header row text with three-level fallback logic.
+        Get header row text with multi-level fallback logic.
 
         Returns header text to write to the header row for formats that support it
         (CSV, Excel). The fallback priority is:
         1. Explicit headers parameter (user override)
         2. data.description (original column names from cursor)
-        3. self.columns (detected field names)
+        3. Record._fields (original field names from materialized records)
+        4. self.columns (detected field names)
 
         Parameters
         ----------
@@ -598,10 +599,25 @@ class BatchWriter(BaseWriter):
 
         # Check provided data first, then fall back to self.data_iterator
         source = data if data is not None else self.data_iterator
+
+        # Try cursor.description (live cursor)
         if hasattr(source, 'description') and source.description:
             return [col[0] for col in source.description]
-        else:
-            return self.columns
+
+        # Try Record._fields (materialized records)
+        # Peek at first record to check if it has original field names
+        if hasattr(source, '__iter__'):
+            try:
+                # For lists/iterables, peek at first record
+                first = next(iter(source), None)
+                if first is not None and hasattr(first, 'keys'):
+                    # Use keys(prefer_original=True) to get original field names
+                    return list(first.keys(prefer_original=True))
+            except (StopIteration, TypeError):
+                pass
+
+        # Fallback to detected column names
+        return self.columns
 
     def write(self) -> int:
         """
