@@ -605,16 +605,12 @@ class BatchWriter(BaseWriter):
             return [col[0] for col in source.description]
 
         # Try Record._fields (materialized records)
-        # Peek at first record to check if it has original field names
-        if hasattr(source, '__iter__'):
-            try:
-                # For lists/iterables, peek at first record
-                first = next(iter(source), None)
-                if first is not None and hasattr(first, 'keys'):
-                    # Use keys(normalized=False) to get original field names
-                    return list(first.keys(normalized=False))
-            except (StopIteration, TypeError):
-                pass
+        # Only peek at sequences (list/tuple), not iterators
+        if isinstance(source, (list, tuple)) and source:
+            first = source[0]
+            if hasattr(first, 'keys'):
+                # Use keys(normalized=False) to get original field names
+                return list(first.keys(normalized=False))
 
         # Fallback to detected column names
         return self.columns
