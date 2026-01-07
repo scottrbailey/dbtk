@@ -284,7 +284,7 @@ class Record(list):
 
     def values(self) -> Tuple[Any, ...]:
         """Get list of field values (in original field order)."""
-        return tuple(self[k] for k in self.keys(normalized=False))
+        return tuple(self[k] for k in self.keys())
 
     def items(self, normalized: bool = False) -> Iterator[Tuple[str, Any]]:
         """
