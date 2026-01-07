@@ -13,7 +13,8 @@ def normalize_field_name(name: str) -> str:
     Normalize field name for attribute access.
 
     Converts to lowercase, replaces non-alphanumeric characters with underscores,
-    collapses consecutive underscores, and strips leading/trailing underscores.
+    collapses consecutive underscores, and strips trailing underscores.
+    Leading underscores are preserved to maintain Python's convention for private/internal fields.
 
     Args:
         name: Original field name
@@ -29,7 +30,9 @@ def normalize_field_name(name: str) -> str:
         >>> normalize_field_name('!Status')
         'status'
         >>> normalize_field_name('__id__')
-        'id'
+        '__id'
+        >>> normalize_field_name('_row_num')
+        '_row_num'
         >>> normalize_field_name('#Term Code')
         'term_code'
     """
@@ -42,8 +45,8 @@ def normalize_field_name(name: str) -> str:
     # 2. Replace all non-alphanumeric with underscore (consecutive become single _)
     name = re.sub(r'[^a-z0-9]+', '_', name)
 
-    # 3. Strip leading/trailing underscores
-    name = name.strip('_')
+    # 3. Strip trailing underscores only (preserve leading for Python convention)
+    name = name.rstrip('_')
 
     # 4. Ensure not empty
     return name or 'col'
