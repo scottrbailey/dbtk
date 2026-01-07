@@ -517,7 +517,7 @@ class TestExcelWriter:
 
         # Create records with lowercase field names (simulating cursor normalization)
         RecordClass = type('TestRecord', (Record,), {})
-        RecordClass.set_columns(['user_id', 'user_name', 'email_address'])
+        RecordClass.set_fields(['user_id', 'user_name', 'email_address'])
 
         records = [
             RecordClass(1, 'Alice', 'alice@example.com'),
