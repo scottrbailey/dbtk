@@ -152,11 +152,11 @@ class JSONReader(Reader):
                 else:
                     all_keys.update(obj.keys())
 
-        # Clean and sort the keys
+        # Sort the keys (normalization happens in Record.set_fields())
         if not all_keys:
             raise ValueError("No keys discovered in NDJSON file")
         self._keys = sorted(all_keys)
-        self._column_cache = [Clean.normalize(key, self.clean_headers) for key in self._keys]
+        self._column_cache = self._keys[:]
 
         return self._column_cache
 
@@ -261,11 +261,11 @@ class NDJSONReader(Reader):
         # Restore original position
         self.fp.seek(current_pos)
 
-        # Store original keys and create cleaned headers
+        # Store original keys (normalization happens in Record.set_fields())
         if not all_keys:
             raise ValueError("No keys discovered in NDJSON file")
         self._original_keys = all_keys
-        self._column_cache = [Clean.normalize(key, self.clean_headers) for key in all_keys]
+        self._column_cache = all_keys[:]
 
         return self._column_cache
 

@@ -126,10 +126,9 @@ class XMLReader(Reader):
                     if col_name not in custom_names and col_name not in discovered_elements:  # Don't duplicate custom columns
                         discovered_elements.append(col_name)
 
-        # Add discovered columns as XMLColumn objects with cleaned names
+        # Add discovered columns as XMLColumn objects (normalization happens in Record.set_fields())
         for element_name in discovered_elements:
-            cleaned_name = Clean.normalize(element_name, self.clean_headers)
-            self._all_columns.append(XMLColumn(cleaned_name))
+            self._all_columns.append(XMLColumn(element_name))
 
         # Extract just the names for the column cache
         self._column_cache = [col.name for col in self._all_columns]
