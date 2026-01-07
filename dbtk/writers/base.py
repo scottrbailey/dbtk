@@ -325,7 +325,32 @@ class BaseWriter(ABC):
 
             return iter(data), data_columns
 
-        return None, None
+        # Iterator or other iterable - peek at first item and put it back
+        try:
+            data_iter = iter(data)
+            first_item = next(data_iter)
+
+            # Dict or Record with keys
+            if hasattr(first_item, "keys"):
+                data_columns = list(first_item.keys())
+            # Named tuple
+            elif hasattr(first_item, "_fields"):
+                data_columns = list(first_item._fields)
+            # List of lists
+            else:
+                if columns:
+                    if len(columns) != len(first_item):
+                        raise ValueError(
+                            f"Column count ({len(columns)}) must match data width ({len(first_item)})"
+                        )
+                    data_columns = columns
+                else:
+                    data_columns = [f"col_{x:03d}" for x in range(1, len(first_item) + 1)]
+
+            # Put first item back using chain
+            return itertools.chain([first_item], data_iter), data_columns
+        except (StopIteration, TypeError):
+            return None, None
 
     def to_string(self, obj: Any) -> str:
         """
