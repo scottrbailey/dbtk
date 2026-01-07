@@ -43,7 +43,6 @@ class XMLReader(Reader):
                  columns: Optional[List[XMLColumn]] = None,
                  sample_size: int = 10,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -56,12 +55,11 @@ class XMLReader(Reader):
             columns: List of XMLColumn definitions for custom extraction
             sample_size: Number of records to sample for column discovery
             add_row_num: Add _row_num to each record
-            clean_headers: Header cleaning level (default: Clean.DEFAULT)
             skip_rows: Number of data rows to skip after headers
             n_rows: Maximum number of rows to read, or None for all
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.fp = fp

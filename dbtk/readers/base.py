@@ -165,9 +165,6 @@ class Reader(ABC):
     ----------
     add_row_num : bool, default True
         Add a '_row_num' field to each record containing the 1-based row number
-    clean_headers : Clean or str, optional
-        Header cleaning level. Options: Clean.LOWER_NOSPACE (default), Clean.STANDARDIZE,
-        Clean.NONE. Can also pass string like 'lower_nospace'.
     skip_rows : int, default 0
         Number of data rows to skip after headers (useful for skipping footer rows
         or known bad data at start of file)
@@ -197,12 +194,13 @@ class Reader(ABC):
             for row in reader:
                 print(row.name)
 
-        # Standardize messy headers
-        with readers.CSVReader(open('messy.csv'),
-                              clean_headers=readers.Clean.STANDARDIZE) as reader:
-            # Headers like "ID #", "Student Name" become "id", "studentname"
+        # Access fields with original or normalized names
+        with readers.CSVReader(open('messy.csv')) as reader:
+            # Headers like "ID #", "Student Name" preserved as originals
+            # but also accessible as normalized: id_hash, student_name
             for record in reader:
-                print(record.id, record.studentname)
+                print(record['ID #'], record['Student Name'])  # original
+                print(record.id, record.student_name)  # normalized
 
         # Filter records with custom function
         with readers.CSVReader(open('data.csv')) as reader:
@@ -242,7 +240,6 @@ class Reader(ABC):
 
     def __init__(self,
                  add_row_num: bool = True,
-                 clean_headers: Clean = None,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  headers: Optional[List[str]] = None,
@@ -255,9 +252,6 @@ class Reader(ABC):
         ----------
         add_row_num : bool, default True
             Add a '_row_num' field to each record containing the 1-based row number
-        clean_headers : Clean or str, optional
-            Header cleaning level from Clean enum or string. If None, uses
-            default_header_clean from settings (default: Clean.LOWER_NOSPACE)
         skip_rows : int, default 0
             Number of data rows to skip after headers
         n_rows : int, optional
@@ -285,16 +279,6 @@ class Reader(ABC):
                         yield line.strip().split(',')
         """
         self.add_row_num = add_row_num
-        # clean_headers parameter is deprecated and ignored
-        # Normalization is now automatic via Record.set_fields()
-        if clean_headers is not None:
-            import warnings
-            warnings.warn(
-                "clean_headers parameter is deprecated and will be removed in a future version. "
-                "Field names are now automatically normalized for attribute access while preserving originals.",
-                DeprecationWarning,
-                stacklevel=2
-            )
         self._row_num = 0
         self._rows_read = 0
         self.skip_rows = skip_rows

@@ -27,8 +27,6 @@ class JSONReader(Reader):
         becomes ``{"user.name": "Bob"}``. Arrays are preserved as-is.
     add_rownum : bool, default True
         Add _row_num field to each record
-    clean_headers : Clean, default Clean.DEFAULT
-        Header cleaning level
     skip_records : int, default 0
         Number of records to skip
     max_records : int, optional
@@ -78,12 +76,11 @@ class JSONReader(Reader):
                  fp: TextIO,
                  flatten: bool = True,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None,
                  **kwargs):
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.fp = fp
@@ -194,7 +191,6 @@ class NDJSONReader(Reader):
     def __init__(self,
                  fp: TextIO,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -204,12 +200,11 @@ class NDJSONReader(Reader):
         Args:
             fp: File pointer to NDJSON file (one JSON object per line)
             add_row_num: Add _row_num to each record
-            clean_headers: Header cleaning level
             skip_rows: Number of rows to skip from the beginning
             n_rows: Maximum number of rows to read (None = unlimited)
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.fp = fp

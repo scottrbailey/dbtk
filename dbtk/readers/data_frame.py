@@ -22,8 +22,6 @@ class DataFrameReader(Reader):
         pandas.DataFrame or polars.DataFrame containing the data
     add_rownum : bool, default True
         Add '_row_num' field with 1-based row number
-    clean_headers: Clean or str, optional
-        Header cleaning level. Options: Clean.NOOP (default).
     skip_records : int, default 0
         Number of rows to skip from the beginning
     max_records : int, optional
@@ -47,14 +45,12 @@ class DataFrameReader(Reader):
         self,
         df,
         add_row_num: bool = True,
-        clean_headers: Clean = Clean.NOOP,
         skip_rows: int = 0,
         n_rows: Optional[int] = None,
         null_values=None
     ):
         super().__init__(
             add_row_num=add_row_num,
-            clean_headers=clean_headers,
             skip_rows=skip_rows,
             n_rows=n_rows,
             headers=None,  # we'll set this ourselves

@@ -39,7 +39,6 @@ class FixedReader(Reader):
                  columns: List[FixedColumn],
                  auto_trim: bool = True,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.NOOP,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -54,12 +53,11 @@ class FixedReader(Reader):
             auto_trim (bool): Determines whether to automatically trim whitespace
                 from field values. Default is True.
             add_row_num (bool): Determines whether to add a row number attribute
-            clean_headers (Clean): Determines the header cleaning level. Default is NOOP.
             skip_rows (int): The number of rows to skip before reading data.
             n_rows (Optional[int]): The maximum number of rows to read.
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
         """
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.fp = fp
