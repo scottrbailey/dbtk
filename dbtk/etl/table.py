@@ -794,7 +794,15 @@ class Table:
         warn_missing = self.counts['records'] == 1
         if not self._record_fields:
             # Cache fields so we can calculate missing fields to exclude from updates/merges
-            self._record_fields = set(record.keys())
+            # Include both original and normalized field names for dual access support
+            self._record_fields = set(record.keys())  # Original names
+            if hasattr(record, 'keys') and callable(record.keys):
+                try:
+                    # Add normalized names if Record supports it
+                    self._record_fields.update(record.keys(normalized=True))
+                except TypeError:
+                    # Not a Record object or doesn't support normalized parameter
+                    pass
 
         values = {}
         for col, col_def in self.columns.items():
