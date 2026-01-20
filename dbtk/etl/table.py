@@ -8,13 +8,12 @@ parameterized SQL statements for common operations.
 """
 
 import logging
-from collections.abc import Mapping
 from textwrap import dedent
 from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
 from ..database import ParamStyle
-from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier
+from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike
 from .transforms.core import fn_resolver
 from .transforms.database import _DeferredTransform
 
@@ -789,7 +788,7 @@ class Table:
         else:
             return filtered_values
 
-    def set_values(self, record: Mapping[str, Any]):
+    def set_values(self, record: RecordLike):
         self.counts['records'] += 1
 
         warn_missing = self.counts['records'] == 1
