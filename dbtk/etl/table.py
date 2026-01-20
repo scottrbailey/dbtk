@@ -666,7 +666,7 @@ class Table:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols} FROM dual"
-            table_alias = "AS s"
+            table_alias = "s"
 
             update_assignments = []
             for col, ident in update_cols:
@@ -686,7 +686,7 @@ class Table:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols}"
-            table_alias = "AS s"
+            table_alias = "s"
 
             update_assignments = []
             for col, ident in update_cols:
