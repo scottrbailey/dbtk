@@ -8,6 +8,7 @@ parameterized SQL statements for common operations.
 """
 
 import logging
+from collections.abc import Mapping
 from textwrap import dedent
 from typing import Union, Tuple, Optional, Set, Dict, Any
 
@@ -788,7 +789,7 @@ class Table:
         else:
             return filtered_values
 
-    def set_values(self, record: Dict[str, Any]):
+    def set_values(self, record: Mapping[str, Any]):
         self.counts['records'] += 1
 
         warn_missing = self.counts['records'] == 1
