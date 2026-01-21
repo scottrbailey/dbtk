@@ -533,6 +533,20 @@ class Database:
         else:
             self._cursor_settings = dict()
 
+    @property
+    def DatabaseError(self):
+        """
+        Get the DatabaseError exception class for this driver.
+
+        Handles the quirk where oracledb has moved DatabaseError to
+        the exceptions submodule, while other drivers expose it at
+        the module level.
+        """
+        if self.driver.__name__ == 'oracledb':
+            return self.driver.exceptions.DatabaseError
+        else:
+            return self.driver.DatabaseError
+
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying connection."""
         if key == '__name__':
