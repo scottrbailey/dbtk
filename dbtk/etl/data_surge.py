@@ -175,6 +175,9 @@ class DataSurge(BaseSurge):
             self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
             return errors
 
+        # Transfer record fields from temp table to main table for proper merge column exclusion
+        self.table.calc_update_excludes(temp_table._record_fields)
+
         merge_sql = self.table.get_sql('merge')
 
         # Replace the USING clause to point to temp table and store modified version
