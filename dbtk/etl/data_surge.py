@@ -137,16 +137,18 @@ class DataSurge(BaseSurge):
                 f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
             )
         elif db_type == 'oracle':
-            temp_name = f"GTT_{self.table.name}"
-            create_sql = dedent("""\
-            CREATE GLOBAL TEMPORARY TABLE {temp_name} AS
+            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
+            create_sql = dedent(f"""\
+            CREATE GLOBAL TEMPORARY TABLE {temp_name} ON COMMIT PRESERVE ROWS AS
             SELECT * FROM {self.table.name} WHERE 1=0
-            ON COMMIT PRESERVE ROWS""")
+            """)
 
         if db_type == 'sqlserver':
-            temp_name = f"##{self.table.name}"
+            temp_name = re.sub(r'[^A-Z0-9]+','_', f"##{self.table.name.upper()}")
             create_sql = dedent(f"SELECT * INTO {temp_name} FROM {self.table.name} WHERE 1=0")
         try:
+            logger.debug(f"Exception class: {self.cursor.connection.DatabaseError}")
+            logger.debug(f"Has DatabaseError: {hasattr(self.cursor.connection, 'DatabaseError')}")
             self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
         except self.cursor.connection.DatabaseError as e:
             self.cursor.execute(create_sql)
