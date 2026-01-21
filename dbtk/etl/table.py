@@ -868,12 +868,16 @@ class Table:
         """
         Introspect database table columns to get type information.
 
-        Executes a query against the database table for the columns defined
-        in this Table object and returns type information from cursor.description.
+        Executes a SELECT * query against the database table and returns type
+        information for columns defined in this Table object. Validates that
+        all Table columns exist in the database.
 
         Returns:
             List of tuples: (column_name, type_obj, internal_size, precision, scale)
             where type_obj is the database driver's type object.
+
+        Raises:
+            ValueError: If a column defined in this Table doesn't exist in the database
 
         Example:
             >>> table = Table('users', {'id': {}, 'email': {}}, cursor=cursor)
@@ -881,13 +885,26 @@ class Table:
             >>> for name, type_obj, size, prec, scale in col_defs:
             ...     print(f"{name}: {type_obj}")
         """
-        column_list = ', '.join(self._columns.keys())
-        self._cursor.execute(f"SELECT {column_list} FROM {self._name} WHERE 1=0")
+        # Query all columns from database table
+        self._cursor.execute(f"SELECT * FROM {self._name} WHERE 1=0")
 
-        return [
-            (desc[0], desc[1], desc[3], desc[4], desc[5])
+        # Build map of column name to type info
+        db_columns = {
+            desc[0]: (desc[1], desc[3], desc[4], desc[5])
             for desc in self._cursor.description
-        ]
+        }
+
+        # Validate and collect type info for Table-defined columns
+        result = []
+        for col_name in self._columns.keys():
+            if col_name not in db_columns:
+                raise ValueError(
+                    f"Column '{col_name}' defined in Table but not found in database table '{self._name}'"
+                )
+            type_obj, internal_size, precision, scale = db_columns[col_name]
+            result.append((col_name, type_obj, internal_size, precision, scale))
+
+        return result
 
     def bind_name_column(self, bind_name):
         return self._bind_name_map.get(bind_name)
