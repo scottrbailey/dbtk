@@ -138,10 +138,43 @@ class DataSurge(BaseSurge):
             )
         elif db_type == 'oracle':
             temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
-            create_sql = dedent(f"""\
-            CREATE GLOBAL TEMPORARY TABLE {temp_name} ON COMMIT PRESERVE ROWS AS
-            SELECT * FROM {self.table.name} WHERE 1=0
-            """)
+
+            # Build column list from table definition
+            column_list = ', '.join(self.table.columns.keys())
+
+            # Execute query to get column types from cursor.description
+            self.cursor.execute(f"SELECT {column_list} FROM {self.table.name} WHERE 1=0")
+
+            # Build column definitions from cursor.description
+            col_defs = []
+            for desc in self.cursor.description:
+                col_name = desc[0]
+                type_obj = desc[1]
+                internal_size = desc[3]
+                precision = desc[4]
+                scale = desc[5]
+
+                # Map oracledb type objects to SQL type names
+                if hasattr(type_obj, 'name'):
+                    type_name = type_obj.name.upper()
+
+                    # Add size/precision/scale as appropriate
+                    if 'VARCHAR' in type_name or 'CHAR' in type_name:
+                        if internal_size:
+                            type_name = f"{type_name}({internal_size})"
+                    elif type_name == 'NUMBER':
+                        if precision and scale:
+                            type_name = f"NUMBER({precision},{scale})"
+                        elif precision:
+                            type_name = f"NUMBER({precision})"
+                else:
+                    # Fallback to generic type
+                    type_name = "VARCHAR2(4000)"
+
+                col_defs.append(f"{col_name} {type_name}")
+
+            col_defs_str = ', '.join(col_defs)
+            create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
 
         if db_type == 'sqlserver':
             temp_name = re.sub(r'[^A-Z0-9]+','_', f"##{self.table.name.upper()}")
