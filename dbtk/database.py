@@ -508,6 +508,12 @@ class Database:
         """
         self._connection = connection
         self.driver = driver
+
+        # Normalize oracledb exception structure to match DB-API 2.0 spec
+        # oracledb moved DatabaseError to exceptions submodule unlike other drivers
+        if driver.__name__ == 'oracledb' and not hasattr(driver, 'DatabaseError'):
+            driver.DatabaseError = driver.exceptions.DatabaseError
+
         if database_name is None:
             database_name = (connection.get('database') or
                             connection.get('service_name') or
@@ -532,20 +538,6 @@ class Database:
                                      if key in Cursor.WRAPPER_SETTINGS}
         else:
             self._cursor_settings = dict()
-
-    @property
-    def DatabaseError(self):
-        """
-        Get the DatabaseError exception class for this driver.
-
-        Handles the quirk where oracledb has moved DatabaseError to
-        the exceptions submodule, while other drivers expose it at
-        the module level.
-        """
-        if self.driver.__name__ == 'oracledb':
-            return self.driver.exceptions.DatabaseError
-        else:
-            return self.driver.DatabaseError
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying connection."""
