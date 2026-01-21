@@ -864,6 +864,31 @@ class Table:
         if not err:
             return self._cursor.fetchone()
 
+    def get_column_definitions(self) -> list:
+        """
+        Introspect database table columns to get type information.
+
+        Executes a query against the database table for the columns defined
+        in this Table object and returns type information from cursor.description.
+
+        Returns:
+            List of tuples: (column_name, type_obj, internal_size, precision, scale)
+            where type_obj is the database driver's type object.
+
+        Example:
+            >>> table = Table('users', {'id': {}, 'email': {}}, cursor=cursor)
+            >>> col_defs = table.get_column_definitions()
+            >>> for name, type_obj, size, prec, scale in col_defs:
+            ...     print(f"{name}: {type_obj}")
+        """
+        column_list = ', '.join(self._columns.keys())
+        self._cursor.execute(f"SELECT {column_list} FROM {self._name} WHERE 1=0")
+
+        return [
+            (desc[0], desc[1], desc[3], desc[4], desc[5])
+            for desc in self._cursor.description
+        ]
+
     def bind_name_column(self, bind_name):
         return self._bind_name_map.get(bind_name)
 

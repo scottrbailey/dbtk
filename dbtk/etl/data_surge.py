@@ -139,21 +139,12 @@ class DataSurge(BaseSurge):
         elif db_type == 'oracle':
             temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
 
-            # Build column list from table definition
-            column_list = ', '.join(self.table.columns.keys())
+            # Get column type information from database
+            col_info = self.table.get_column_definitions()
 
-            # Execute query to get column types from cursor.description
-            self.cursor.execute(f"SELECT {column_list} FROM {self.table.name} WHERE 1=0")
-
-            # Build column definitions from cursor.description
+            # Build column definitions for Oracle
             col_defs = []
-            for desc in self.cursor.description:
-                col_name = desc[0]
-                type_obj = desc[1]
-                internal_size = desc[3]
-                precision = desc[4]
-                scale = desc[5]
-
+            for col_name, type_obj, internal_size, precision, scale in col_info:
                 # Map oracledb type objects to SQL type names
                 if hasattr(type_obj, 'name'):
                     type_name = type_obj.name.upper()
@@ -179,23 +170,13 @@ class DataSurge(BaseSurge):
         if db_type == 'sqlserver':
             temp_name = re.sub(r'[^A-Z0-9]+', '_', f"##{self.table.name.upper()}")
 
-            # Build column list from table definition
-            column_list = ', '.join(self.table.columns.keys())
+            # Get column type information from database
+            col_info = self.table.get_column_definitions()
 
-            # Execute query to get column types from cursor.description
-            self.cursor.execute(f"SELECT {column_list} FROM {self.table.name} WHERE 1=0")
-
-            # Build column definitions from cursor.description
+            # Build column definitions for SQL Server
             col_defs = []
-            for desc in self.cursor.description:
-                col_name = desc[0]
-                type_code = desc[1]
-                internal_size = desc[3]
-                precision = desc[4]
-                scale = desc[5]
-
+            for col_name, type_code, internal_size, precision, scale in col_info:
                 # Map type codes to SQL Server type names
-                # This is a simplified mapping - may need refinement
                 type_name_map = {
                     str: 'VARCHAR',
                     int: 'INT',
