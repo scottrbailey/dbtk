@@ -888,21 +888,23 @@ class Table:
         # Query all columns from database table
         self._cursor.execute(f"SELECT * FROM {self._name} WHERE 1=0")
 
-        # Build map of column name to type info
+        # Build case-insensitive map of column name to type info
         db_columns = {
-            desc[0]: (desc[1], desc[3], desc[4], desc[5])
+            desc[0].upper(): (desc[0], desc[1], desc[3], desc[4], desc[5])
             for desc in self._cursor.description
         }
 
         # Validate and collect type info for Table-defined columns
         result = []
         for col_name in self._columns.keys():
-            if col_name not in db_columns:
+            col_name_upper = col_name.upper()
+            if col_name_upper not in db_columns:
                 raise ValueError(
                     f"Column '{col_name}' defined in Table but not found in database table '{self._name}'"
                 )
-            type_obj, internal_size, precision, scale = db_columns[col_name]
-            result.append((col_name, type_obj, internal_size, precision, scale))
+            db_col_name, type_obj, internal_size, precision, scale = db_columns[col_name_upper]
+            # Return with database's actual column name for accurate SQL generation
+            result.append((db_col_name, type_obj, internal_size, precision, scale))
 
         return result
 
