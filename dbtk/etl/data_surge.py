@@ -177,8 +177,50 @@ class DataSurge(BaseSurge):
             create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
 
         if db_type == 'sqlserver':
-            temp_name = re.sub(r'[^A-Z0-9]+','_', f"##{self.table.name.upper()}")
-            create_sql = dedent(f"SELECT * INTO {temp_name} FROM {self.table.name} WHERE 1=0")
+            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"##{self.table.name.upper()}")
+
+            # Build column list from table definition
+            column_list = ', '.join(self.table.columns.keys())
+
+            # Execute query to get column types from cursor.description
+            self.cursor.execute(f"SELECT {column_list} FROM {self.table.name} WHERE 1=0")
+
+            # Build column definitions from cursor.description
+            col_defs = []
+            for desc in self.cursor.description:
+                col_name = desc[0]
+                type_code = desc[1]
+                internal_size = desc[3]
+                precision = desc[4]
+                scale = desc[5]
+
+                # Map type codes to SQL Server type names
+                # This is a simplified mapping - may need refinement
+                type_name_map = {
+                    str: 'VARCHAR',
+                    int: 'INT',
+                    float: 'FLOAT',
+                    bytes: 'VARBINARY'
+                }
+
+                type_name = type_name_map.get(type_code, 'VARCHAR')
+
+                # Add size/precision/scale as appropriate
+                if type_name in ('VARCHAR', 'CHAR', 'VARBINARY'):
+                    if internal_size and internal_size > 0:
+                        type_name = f"{type_name}({internal_size})"
+                    else:
+                        type_name = f"{type_name}(MAX)"
+                elif type_name == 'DECIMAL' and precision:
+                    if scale:
+                        type_name = f"DECIMAL({precision},{scale})"
+                    else:
+                        type_name = f"DECIMAL({precision})"
+
+                col_defs.append(f"[{col_name}] {type_name} NULL")
+
+            col_defs_str = ', '.join(col_defs)
+            create_sql = f"CREATE TABLE {temp_name} ({col_defs_str})"
         try:
             logger.debug(f"Exception class: {self.cursor.connection.DatabaseError}")
             logger.debug(f"Has DatabaseError: {hasattr(self.cursor.connection, 'DatabaseError')}")
