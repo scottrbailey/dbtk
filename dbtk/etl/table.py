@@ -819,7 +819,10 @@ class Table:
                         logger.warning(f'Table {self.name}: field "{f}" not found in record')
             elif field:
                 if warn_missing and field not in record:
-                    logger.warning(f'Table {self.name}: field "{field}" not in record')
+                    if col_def.get('bind_name') in self._req_cols:
+                        raise ValueError(f'Table {self.name}: field "{field}" is required but was not found in record')
+                    else:
+                        logger.warning(f'Table {self.name}: field "{field}" not in record')
                 val = record.get(field)
 
             # Only apply null_values conversion if val is not the whole record
