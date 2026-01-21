@@ -511,9 +511,9 @@ class Database:
 
         # Normalize oracledb exception structure to match DB-API 2.0 spec
         # oracledb moved DatabaseError to exceptions submodule unlike other drivers
-        if driver.__name__ == 'oracledb' and not hasattr(connection, 'DatabaseError'):
+        if driver.__name__ == 'oracledb':
             from oracledb import exceptions
-            connection.DatabaseError = exceptions.DatabaseError
+            self.__dict__['DatabaseError'] = exceptions.DatabaseError
 
         if database_name is None:
             database_name = (connection.get('database') or
