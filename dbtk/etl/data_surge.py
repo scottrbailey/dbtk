@@ -175,9 +175,7 @@ class DataSurge(BaseSurge):
             self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
             return errors
 
-        # Generate MERGE SQL if not already done
-        self.table.generate_sql('merge')
-        merge_sql = self.table.sql_statements['merge']
+        merge_sql = self.table.get_sql('merge')
 
         # Replace the USING clause to point to temp table and store modified version
         modified_merge = re.sub(
