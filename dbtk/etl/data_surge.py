@@ -205,8 +205,8 @@ class DataSurge(BaseSurge):
             errors += len(records_list) - errors
         finally:
             try:
-                self.cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
+                self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
             except Exception as e:
-                logger.warning(f"Failed to drop temp table {temp_name}: {e}")
+                logger.warning(f"Failed to truncate temp table {temp_name}: {e}")
 
         return errors
