@@ -873,8 +873,8 @@ class Table:
         all Table columns exist in the database.
 
         Returns:
-            List of tuples: (column_name, type_obj, internal_size, precision, scale)
-            where type_obj is the database driver's type object.
+            List of tuples: (column_name, type_obj, internal_size, precision, scale, sql_type_def)
+            where sql_type_def is the SQL type string like 'VARCHAR2(100)' or 'NUMBER(10,2)'
 
         Raises:
             ValueError: If a column defined in this Table doesn't exist in the database
@@ -882,8 +882,8 @@ class Table:
         Example:
             >>> table = Table('users', {'id': {}, 'email': {}}, cursor=cursor)
             >>> col_defs = table.get_column_definitions()
-            >>> for name, type_obj, size, prec, scale in col_defs:
-            ...     print(f"{name}: {type_obj}")
+            >>> for name, type_obj, size, prec, scale, sql_type in col_defs:
+            ...     print(f"{name}: {sql_type}")
         """
         # Query all columns from database table
         self._cursor.execute(f"SELECT * FROM {self._name} WHERE 1=0")
@@ -894,6 +894,9 @@ class Table:
             for desc in self._cursor.description
         }
 
+        # Get database type for type mapping
+        db_type = self._cursor.connection.database_type
+
         # Validate and collect type info for Table-defined columns
         result = []
         for col_name in self._columns.keys():
@@ -903,10 +906,91 @@ class Table:
                     f"Column '{col_name}' defined in Table but not found in database table '{self._name}'"
                 )
             db_col_name, type_obj, internal_size, precision, scale = db_columns[col_name_upper]
+
+            # Generate SQL type definition string based on database type
+            sql_type_def = self._generate_sql_type(db_type, type_obj, internal_size, precision, scale)
+
             # Return with database's actual column name for accurate SQL generation
-            result.append((db_col_name, type_obj, internal_size, precision, scale))
+            result.append((db_col_name, type_obj, internal_size, precision, scale, sql_type_def))
 
         return result
+
+    def _generate_sql_type(self, db_type: str, type_obj, internal_size, precision, scale) -> str:
+        """Generate SQL type definition string based on database type."""
+        if db_type == 'oracle':
+            return self._generate_oracle_type(type_obj, internal_size, precision, scale)
+        elif db_type == 'sqlserver':
+            return self._generate_sqlserver_type(type_obj, internal_size, precision, scale)
+        else:
+            # Generic fallback
+            return "VARCHAR(255)"
+
+    def _generate_oracle_type(self, type_obj, internal_size, precision, scale) -> str:
+        """Generate Oracle SQL type definition."""
+        if hasattr(type_obj, 'name'):
+            db_type_name = type_obj.name
+
+            if 'VARCHAR' in db_type_name:
+                return f"VARCHAR2({internal_size})" if internal_size else "VARCHAR2(4000)"
+            elif 'CHAR' in db_type_name and 'VARCHAR' not in db_type_name:
+                return f"CHAR({internal_size})" if internal_size else "CHAR(1)"
+            elif 'NUMBER' in db_type_name:
+                if precision and scale:
+                    return f"NUMBER({precision},{scale})"
+                elif precision:
+                    return f"NUMBER({precision})"
+                else:
+                    return "NUMBER"
+            elif 'DATE' in db_type_name:
+                return "DATE"
+            elif 'TIMESTAMP' in db_type_name:
+                return "TIMESTAMP"
+            elif 'CLOB' in db_type_name:
+                return "CLOB"
+            elif 'BLOB' in db_type_name:
+                return "BLOB"
+
+        # Fallback
+        return "VARCHAR2(4000)"
+
+    def _generate_sqlserver_type(self, type_obj, internal_size, precision, scale) -> str:
+        """Generate SQL Server SQL type definition."""
+        type_str = str(type_obj).upper() if type_obj else 'VARCHAR'
+
+        if 'STRING' in type_str or 'VARCHAR' in type_str or 'CHAR' in type_str:
+            if internal_size and internal_size > 0:
+                return f"VARCHAR({internal_size})"
+            else:
+                return "VARCHAR(MAX)"
+        elif 'INT' in type_str or 'LONG' in type_str:
+            if precision and precision > 9:
+                return "BIGINT"
+            else:
+                return "INT"
+        elif 'DECIMAL' in type_str or 'NUMERIC' in type_str or 'NUMBER' in type_str:
+            if precision and scale is not None:
+                return f"DECIMAL({precision},{scale})"
+            elif precision:
+                return f"DECIMAL({precision})"
+            else:
+                return "DECIMAL(18,0)"
+        elif 'FLOAT' in type_str or 'REAL' in type_str or 'DOUBLE' in type_str:
+            return "FLOAT"
+        elif 'DATE' in type_str or 'TIME' in type_str:
+            if 'DATETIME' in type_str:
+                return "DATETIME"
+            else:
+                return "DATE"
+        elif 'BINARY' in type_str or 'BLOB' in type_str:
+            if internal_size and internal_size > 0:
+                return f"VARBINARY({internal_size})"
+            else:
+                return "VARBINARY(MAX)"
+        elif 'TEXT' in type_str or 'CLOB' in type_str:
+            return "VARCHAR(MAX)"
+
+        # Fallback
+        return "VARCHAR(MAX)"
 
     def bind_name_column(self, bind_name):
         return self._bind_name_map.get(bind_name)

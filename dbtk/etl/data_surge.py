@@ -139,98 +139,18 @@ class DataSurge(BaseSurge):
         elif db_type == 'oracle':
             temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
 
-            # Get column type information from database
+            # Get column definitions from table
             col_info = self.table.get_column_definitions()
-
-            # Build column definitions for Oracle
-            col_defs = []
-            for col_name, type_obj, internal_size, precision, scale in col_info:
-                # Map oracledb DbType objects to SQL type names
-                if hasattr(type_obj, 'name'):
-                    db_type_name = type_obj.name
-
-                    # Map DB_TYPE_* to Oracle SQL types
-                    if 'VARCHAR' in db_type_name:
-                        type_name = f"VARCHAR2({internal_size})" if internal_size else "VARCHAR2(4000)"
-                    elif 'CHAR' in db_type_name and 'VARCHAR' not in db_type_name:
-                        type_name = f"CHAR({internal_size})" if internal_size else "CHAR(1)"
-                    elif 'NUMBER' in db_type_name:
-                        if precision and scale:
-                            type_name = f"NUMBER({precision},{scale})"
-                        elif precision:
-                            type_name = f"NUMBER({precision})"
-                        else:
-                            type_name = "NUMBER"
-                    elif 'DATE' in db_type_name:
-                        type_name = "DATE"
-                    elif 'TIMESTAMP' in db_type_name:
-                        type_name = "TIMESTAMP"
-                    elif 'CLOB' in db_type_name:
-                        type_name = "CLOB"
-                    elif 'BLOB' in db_type_name:
-                        type_name = "BLOB"
-                    else:
-                        # Fallback to generic type
-                        type_name = "VARCHAR2(4000)"
-                else:
-                    # Fallback if no name attribute
-                    type_name = "VARCHAR2(4000)"
-
-                col_defs.append(f"{col_name} {type_name}")
-
+            col_defs = [f"{col_name} {sql_type}" for col_name, _, _, _, _, sql_type in col_info]
             col_defs_str = ', '.join(col_defs)
             create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
 
         if db_type == 'sqlserver':
             temp_name = re.sub(r'[^A-Z0-9]+', '_', f"##{self.table.name.upper()}")
 
-            # Get column type information from database
+            # Get column definitions from table
             col_info = self.table.get_column_definitions()
-
-            # Build column definitions for SQL Server
-            col_defs = []
-            for col_name, type_obj, internal_size, precision, scale in col_info:
-                # Get string representation of type for mapping
-                type_str = str(type_obj).upper() if type_obj else 'VARCHAR'
-
-                # Map to SQL Server type names based on type object string
-                if 'STRING' in type_str or 'VARCHAR' in type_str or 'CHAR' in type_str:
-                    if internal_size and internal_size > 0:
-                        type_name = f"VARCHAR({internal_size})"
-                    else:
-                        type_name = "VARCHAR(MAX)"
-                elif 'INT' in type_str or 'LONG' in type_str:
-                    if precision and precision > 9:
-                        type_name = "BIGINT"
-                    else:
-                        type_name = "INT"
-                elif 'DECIMAL' in type_str or 'NUMERIC' in type_str or 'NUMBER' in type_str:
-                    if precision and scale is not None:
-                        type_name = f"DECIMAL({precision},{scale})"
-                    elif precision:
-                        type_name = f"DECIMAL({precision})"
-                    else:
-                        type_name = "DECIMAL(18,0)"
-                elif 'FLOAT' in type_str or 'REAL' in type_str or 'DOUBLE' in type_str:
-                    type_name = "FLOAT"
-                elif 'DATE' in type_str or 'TIME' in type_str:
-                    if 'DATETIME' in type_str:
-                        type_name = "DATETIME"
-                    else:
-                        type_name = "DATE"
-                elif 'BINARY' in type_str or 'BLOB' in type_str:
-                    if internal_size and internal_size > 0:
-                        type_name = f"VARBINARY({internal_size})"
-                    else:
-                        type_name = "VARBINARY(MAX)"
-                elif 'TEXT' in type_str or 'CLOB' in type_str:
-                    type_name = "VARCHAR(MAX)"
-                else:
-                    # Fallback to VARCHAR
-                    type_name = "VARCHAR(MAX)"
-
-                col_defs.append(f"[{col_name}] {type_name} NULL")
-
+            col_defs = [f"[{col_name}] {sql_type} NULL" for col_name, _, _, _, _, sql_type in col_info]
             col_defs_str = ', '.join(col_defs)
             create_sql = f"CREATE TABLE {temp_name} ({col_defs_str})"
         try:
@@ -252,7 +172,7 @@ class DataSurge(BaseSurge):
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
-            self.cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
+            self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
             return errors
 
         # Generate MERGE SQL if not already done
