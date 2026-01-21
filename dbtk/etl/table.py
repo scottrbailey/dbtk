@@ -309,7 +309,11 @@ class Table:
             elif isinstance(new_fn, (list, tuple)):
                 pipeline = []
                 for f in new_fn:
-                    if isinstance(f, _DeferredTransform):
+                    if isinstance(f, str) and f.startswith(('lookup:', 'validate:')):
+                        xt = _DeferredTransform.from_string(f)
+                        xt.bind(self._cursor)
+                        pipeline.append(xt)
+                    elif isinstance(f, _DeferredTransform):
                         pipeline.append(f.bind(self._cursor))
                     elif isinstance(f, str):
                         pipeline.append(fn_resolver(f))
