@@ -145,21 +145,35 @@ class DataSurge(BaseSurge):
             # Build column definitions for Oracle
             col_defs = []
             for col_name, type_obj, internal_size, precision, scale in col_info:
-                # Map oracledb type objects to SQL type names
+                # Map oracledb DbType objects to SQL type names
                 if hasattr(type_obj, 'name'):
-                    type_name = type_obj.name.upper()
+                    db_type_name = type_obj.name
 
-                    # Add size/precision/scale as appropriate
-                    if 'VARCHAR' in type_name or 'CHAR' in type_name:
-                        if internal_size:
-                            type_name = f"{type_name}({internal_size})"
-                    elif type_name == 'NUMBER':
+                    # Map DB_TYPE_* to Oracle SQL types
+                    if 'VARCHAR' in db_type_name:
+                        type_name = f"VARCHAR2({internal_size})" if internal_size else "VARCHAR2(4000)"
+                    elif 'CHAR' in db_type_name and 'VARCHAR' not in db_type_name:
+                        type_name = f"CHAR({internal_size})" if internal_size else "CHAR(1)"
+                    elif 'NUMBER' in db_type_name:
                         if precision and scale:
                             type_name = f"NUMBER({precision},{scale})"
                         elif precision:
                             type_name = f"NUMBER({precision})"
+                        else:
+                            type_name = "NUMBER"
+                    elif 'DATE' in db_type_name:
+                        type_name = "DATE"
+                    elif 'TIMESTAMP' in db_type_name:
+                        type_name = "TIMESTAMP"
+                    elif 'CLOB' in db_type_name:
+                        type_name = "CLOB"
+                    elif 'BLOB' in db_type_name:
+                        type_name = "BLOB"
+                    else:
+                        # Fallback to generic type
+                        type_name = "VARCHAR2(4000)"
                 else:
-                    # Fallback to generic type
+                    # Fallback if no name attribute
                     type_name = "VARCHAR2(4000)"
 
                 col_defs.append(f"{col_name} {type_name}")
@@ -175,28 +189,45 @@ class DataSurge(BaseSurge):
 
             # Build column definitions for SQL Server
             col_defs = []
-            for col_name, type_code, internal_size, precision, scale in col_info:
-                # Map type codes to SQL Server type names
-                type_name_map = {
-                    str: 'VARCHAR',
-                    int: 'INT',
-                    float: 'FLOAT',
-                    bytes: 'VARBINARY'
-                }
+            for col_name, type_obj, internal_size, precision, scale in col_info:
+                # Get string representation of type for mapping
+                type_str = str(type_obj).upper() if type_obj else 'VARCHAR'
 
-                type_name = type_name_map.get(type_code, 'VARCHAR')
-
-                # Add size/precision/scale as appropriate
-                if type_name in ('VARCHAR', 'CHAR', 'VARBINARY'):
+                # Map to SQL Server type names based on type object string
+                if 'STRING' in type_str or 'VARCHAR' in type_str or 'CHAR' in type_str:
                     if internal_size and internal_size > 0:
-                        type_name = f"{type_name}({internal_size})"
+                        type_name = f"VARCHAR({internal_size})"
                     else:
-                        type_name = f"{type_name}(MAX)"
-                elif type_name == 'DECIMAL' and precision:
-                    if scale:
+                        type_name = "VARCHAR(MAX)"
+                elif 'INT' in type_str or 'LONG' in type_str:
+                    if precision and precision > 9:
+                        type_name = "BIGINT"
+                    else:
+                        type_name = "INT"
+                elif 'DECIMAL' in type_str or 'NUMERIC' in type_str or 'NUMBER' in type_str:
+                    if precision and scale is not None:
                         type_name = f"DECIMAL({precision},{scale})"
-                    else:
+                    elif precision:
                         type_name = f"DECIMAL({precision})"
+                    else:
+                        type_name = "DECIMAL(18,0)"
+                elif 'FLOAT' in type_str or 'REAL' in type_str or 'DOUBLE' in type_str:
+                    type_name = "FLOAT"
+                elif 'DATE' in type_str or 'TIME' in type_str:
+                    if 'DATETIME' in type_str:
+                        type_name = "DATETIME"
+                    else:
+                        type_name = "DATE"
+                elif 'BINARY' in type_str or 'BLOB' in type_str:
+                    if internal_size and internal_size > 0:
+                        type_name = f"VARBINARY({internal_size})"
+                    else:
+                        type_name = "VARBINARY(MAX)"
+                elif 'TEXT' in type_str or 'CLOB' in type_str:
+                    type_name = "VARCHAR(MAX)"
+                else:
+                    # Fallback to VARCHAR
+                    type_name = "VARCHAR(MAX)"
 
                 col_defs.append(f"[{col_name}] {type_name} NULL")
 
