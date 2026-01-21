@@ -292,17 +292,28 @@ class Table:
             if fn is None:
                 continue
 
+            # Convert strings to transform functions
             if isinstance(fn, str):
                 try:
-                    fn_def = fn.strip()
-                    if fn_def.startswith(('lookup:', 'validate:')):
-                        col_def['fn'] = _DeferredTransform.from_string(fn_def)
-                    else:
-                        col_def['fn'] = fn_resolver(fn_def)
+                    col_def['fn'] = fn_resolver(fn.strip())
                 except ValueError as e:
                     logger.debug(f"Column {col_name}: {e}")
                     continue
+            elif isinstance(fn, (list, tuple)):
+                # Process list/tuple of transforms
+                pipeline = []
+                for f in fn:
+                    if isinstance(f, str):
+                        try:
+                            pipeline.append(fn_resolver(f.strip()))
+                        except ValueError as e:
+                            logger.debug(f"Column {col_name}: {e}")
+                            continue
+                    else:
+                        pipeline.append(f)
+                col_def['fn'] = pipeline
 
+            # Bind any deferred transforms (lookup/validate) to cursor
             new_fn = col_def['fn']
             if isinstance(new_fn, _DeferredTransform):
                 col_def['fn'] = new_fn.bind(self._cursor)
@@ -315,8 +326,6 @@ class Table:
                         pipeline.append(xt)
                     elif isinstance(f, _DeferredTransform):
                         pipeline.append(f.bind(self._cursor))
-                    elif isinstance(f, str):
-                        pipeline.append(fn_resolver(f))
                     else:
                         pipeline.append(f)
                 col_def['fn'] = pipeline
