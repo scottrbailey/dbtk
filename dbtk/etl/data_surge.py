@@ -2,7 +2,7 @@
 
 import logging
 import re
-import time
+from textwrap import dedent
 from typing import Iterable, Optional
 
 from .base_surge import BaseSurge
@@ -136,19 +136,21 @@ class DataSurge(BaseSurge):
             raise NotImplementedError(
                 f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
             )
+        elif db_type == 'oracle':
+            temp_name = f"GTT_{self.table.name}"
+            create_sql = dedent("""\
+            CREATE GLOBAL TEMPORARY TABLE {temp_name} AS
+            SELECT * FROM {self.table.name} WHERE 1=0
+            ON COMMIT PRESERVE ROWS""")
 
-        temp_name = f"tmp_{self.table.name}_{int(time.time())}"
         if db_type == 'sqlserver':
-            temp_name = f"#{temp_name}"
-
-        create_sql = f"CREATE TEMPORARY TABLE {temp_name} AS SELECT * FROM {self.table.name} WHERE 1=0"
+            temp_name = f"##{self.table.name}"
+            create_sql = dedent(f"SELECT * INTO {temp_name} FROM {self.table.name} WHERE 1=0")
         try:
+            self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+        except self.cursor.connection.DatabaseError as e:
             self.cursor.execute(create_sql)
-        except self.cursor.connection.driver.DatabaseError as e:
-            logger.error(f"Failed to create temp table {temp_name}: {e}")
-            if raise_error:
-                raise
-            return len(records_list)
+            logger.debug(f"Created TEMP TABLE: {create_sql}")
 
         # Use temporary table for bulk insert
         from .table import Table
@@ -176,7 +178,7 @@ class DataSurge(BaseSurge):
             flags=re.DOTALL
         )
         self._sql_statements['merge'] = modified_merge
-
+        logger.debug(f"Modified merge sql: {modified_merge}")
         try:
             if self.use_transaction:
                 with self.cursor.connection.transaction():
