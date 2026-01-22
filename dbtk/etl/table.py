@@ -295,7 +295,7 @@ class Table:
             # Convert strings to transform functions
             if isinstance(fn, str):
                 try:
-                    col_def['fn'] = fn_resolver(fn.strip())
+                    col_def['fn'] = fn_resolver(fn)
                 except ValueError as e:
                     logger.debug(f"Column {col_name}: {e}")
                     continue
@@ -305,7 +305,7 @@ class Table:
                 for f in fn:
                     if isinstance(f, str):
                         try:
-                            pipeline.append(fn_resolver(f.strip()))
+                            pipeline.append(fn_resolver(f))
                         except ValueError as e:
                             logger.debug(f"Column {col_name}: {e}")
                             continue
