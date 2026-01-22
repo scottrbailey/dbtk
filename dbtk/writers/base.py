@@ -325,7 +325,32 @@ class BaseWriter(ABC):
 
             return iter(data), data_columns
 
-        return None, None
+        # Iterator or other iterable - peek at first item and put it back
+        try:
+            data_iter = iter(data)
+            first_item = next(data_iter)
+
+            # Dict or Record with keys
+            if hasattr(first_item, "keys"):
+                data_columns = list(first_item.keys())
+            # Named tuple
+            elif hasattr(first_item, "_fields"):
+                data_columns = list(first_item._fields)
+            # List of lists
+            else:
+                if columns:
+                    if len(columns) != len(first_item):
+                        raise ValueError(
+                            f"Column count ({len(columns)}) must match data width ({len(first_item)})"
+                        )
+                    data_columns = columns
+                else:
+                    data_columns = [f"col_{x:03d}" for x in range(1, len(first_item) + 1)]
+
+            # Put first item back using chain
+            return itertools.chain([first_item], data_iter), data_columns
+        except (StopIteration, TypeError):
+            return None, None
 
     def to_string(self, obj: Any) -> str:
         """
@@ -480,6 +505,7 @@ class BatchWriter(BaseWriter):
             data: Optional[Iterable[RecordLike]] = None,
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
+            headers: Optional[List[str]] = None,
             encoding: Optional[str] = 'utf-8-sig',
             write_headers: bool = True,
             **fmt_kwargs,
@@ -495,13 +521,29 @@ class BatchWriter(BaseWriter):
             Output destination.
         columns : List[str], optional
             Explicit column names. If not provided, inferred from data.
+        headers : List[str], optional
+            Header row text for CSV/Excel writers. If None, checks data.description
+            for original column names, then falls back to detected column names.
+            Only used by writers that have header rows (CSV, Excel).
         encoding : str, default 'utf-8'
             File encoding
         write_headers : bool, default True
             Include header row in output
         **fmt_kwargs
             Format-specific options
+
+        Raises
+        ------
+        ValueError
+            If headers provided but write_headers=False
         """
+        # Validate headers + write_headers combination
+        if headers is not None and not write_headers:
+            raise ValueError(
+                "Cannot specify 'headers' parameter when write_headers=False. "
+                "Either remove the 'headers' parameter or set write_headers=True."
+            )
+
         self.file = file
         self.write_headers = write_headers
         self.encoding = encoding
@@ -511,6 +553,7 @@ class BatchWriter(BaseWriter):
         self._initialized = False
 
         self.columns = columns
+        self.headers = headers
         self.data_iterator: Optional[Iterator] = None
 
         # Set up file handle for streaming
@@ -550,6 +593,52 @@ class BatchWriter(BaseWriter):
             raise ValueError("Could not determine columns from data")
 
         self._initialized = True
+
+    def _get_headers(self, data: Optional[Iterable[RecordLike]] = None) -> List[str]:
+        """
+        Get header row text with multi-level fallback logic.
+
+        Returns header text to write to the header row for formats that support it
+        (CSV, Excel). The fallback priority is:
+        1. Explicit headers parameter (user override)
+        2. data.description (original column names from cursor)
+        3. Record._fields (original field names from materialized records)
+        4. self.columns (detected field names)
+
+        Parameters
+        ----------
+        data : Iterable[RecordLike], optional
+            Data source to check for description. If None, uses self.data_iterator.
+
+        Returns
+        -------
+        List[str]
+            Header row text
+
+        Notes
+        -----
+        Only used by CSV and Excel writers. Other formats ignore this method.
+        """
+        if self.headers:
+            return self.headers
+
+        # Check provided data first, then fall back to self.data_iterator
+        source = data if data is not None else self.data_iterator
+
+        # Try cursor.description (live cursor)
+        if hasattr(source, 'description') and source.description:
+            return [col[0] for col in source.description]
+
+        # Try Record._fields (materialized records)
+        # Only peek at sequences (list/tuple), not iterators
+        if isinstance(source, (list, tuple)) and source:
+            first = source[0]
+            if hasattr(first, 'keys'):
+                # Use keys(normalized=False) to get original field names
+                return list(first.keys(normalized=False))
+
+        # Fallback to detected column names
+        return self.columns
 
     def write(self) -> int:
         """

@@ -325,16 +325,20 @@ class Cursor:
         return lambda cur, sql, argslist: cur.executemany(sql, argslist)
 
     def _create_record_factory(self) -> None:
-        """Create Record subclass with current columns."""
+        """Create Record subclass with original column names from description."""
         self._row_factory_invalid = False
-        columns = self.columns()
 
-        # Create dynamic Record subclass
-        self.record_factory = type(
-            'Record',
-            (Record,),
-            {'_fields': columns}
-        )
+        # Get original column names from description (no transformation)
+        if not self.description:
+            original_columns = []
+        else:
+            original_columns = [col[0] for col in self.description]
+
+        # Create dynamic Record subclass and set fields
+        # set_fields() will handle normalization automatically
+        RecordClass = type('Record', (Record,), {})
+        RecordClass.set_fields(original_columns)
+        self.record_factory = RecordClass
 
     def columns(self, case: Optional[str] = None) -> List[str]:
         """Return list of column names."""
@@ -366,7 +370,9 @@ class Cursor:
         elif self._row_factory_invalid:
             # Check if columns have changed since last query
             if hasattr(self.record_factory, '_fields'):
-                if self.record_factory._fields != self.columns():
+                # Get current original column names from description
+                current_columns = [col[0] for col in self.description] if self.description else []
+                if self.record_factory._fields != current_columns:
                     self._create_record_factory()
                 else:
                     self._row_factory_invalid = False

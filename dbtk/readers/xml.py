@@ -43,7 +43,6 @@ class XMLReader(Reader):
                  columns: Optional[List[XMLColumn]] = None,
                  sample_size: int = 10,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -56,12 +55,11 @@ class XMLReader(Reader):
             columns: List of XMLColumn definitions for custom extraction
             sample_size: Number of records to sample for column discovery
             add_row_num: Add _row_num to each record
-            clean_headers: Header cleaning level (default: Clean.DEFAULT)
             skip_rows: Number of data rows to skip after headers
             n_rows: Maximum number of rows to read, or None for all
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
         """
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.fp = fp
@@ -126,10 +124,9 @@ class XMLReader(Reader):
                     if col_name not in custom_names and col_name not in discovered_elements:  # Don't duplicate custom columns
                         discovered_elements.append(col_name)
 
-        # Add discovered columns as XMLColumn objects with cleaned names
+        # Add discovered columns as XMLColumn objects (normalization happens in Record.set_fields())
         for element_name in discovered_elements:
-            cleaned_name = Clean.normalize(element_name, self.clean_headers)
-            self._all_columns.append(XMLColumn(cleaned_name))
+            self._all_columns.append(XMLColumn(element_name))
 
         # Extract just the names for the column cache
         self._column_cache = [col.name for col in self._all_columns]

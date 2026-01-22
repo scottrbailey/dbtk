@@ -408,9 +408,6 @@ def fn_resolver(shorthand: str):
 
     This is the heart of dbtk's zero-lambda column definitions.
 
-    Used automatically by Table when ``fn`` is a string that does *not* start
-    with ``lookup:`` or ``validate:``.
-
     Supported shorthands
     --------------------
     Basic type conversion
@@ -429,6 +426,8 @@ def fn_resolver(shorthand: str):
         'lower', 'upper', 'strip' → str.lower / upper / strip
         'maxlen:50'      → truncate to 50 characters
         'maxlen:255'     → (most common in your life)
+        'rjust:9:0'      → right-justify to width 9, padding with '0'
+        'ljust:10: '     → left-justify to width 10, padding with space
 
     List / delimited strings
         'split:,'        → split on comma (default)
@@ -445,6 +444,12 @@ def fn_resolver(shorthand: str):
         'indicator:Y/N'  → True → 'Y', False → 'N'
         'indicator:1/0'  → True → '1', False → '0'
 
+    Database lookups and validation
+        'lookup:states:code:state'              → lookup state from code
+        'lookup:states:code:state:2'            → lookup with preload cache
+        'validate:regions:name'                 → validate name exists in regions
+        'validate:regions:name:no_cache'        → validate without caching
+
     Examples
     --------
     ::
@@ -459,11 +464,15 @@ def fn_resolver(shorthand: str):
     'supercalif'
     >>> fn_resolver('indicator:inv')(False)
     'Y'
+    >>> fn_resolver('rjust:9:0')('123')
+    '000000123'
 
     Returns
     -------
-    callable
+    callable or _DeferredTransform
         A function that takes a single value and returns the transformed result.
+        For 'lookup:' and 'validate:', returns a _DeferredTransform that must
+        be bound to a cursor before use.
 
     Raises
     ------
@@ -472,10 +481,16 @@ def fn_resolver(shorthand: str):
 
     Note
     ----
-    This function is deliberately small, fast, and pure. It knows nothing about
-    databases — that's what ``lookup:`` and ``validate:`` are for.
+    This function now handles ALL transform shorthands, including database
+    lookups and validations. The Table class simply calls fn_resolver for
+    any string transform.
     """
     shorthand = shorthand.lstrip()  # using strip will remove some delimiters (\t for instance)
+
+    # Handle database transforms - these return _DeferredTransform objects
+    if shorthand.startswith(('lookup:', 'validate:')):
+        from .database import _DeferredTransform
+        return _DeferredTransform.from_string(shorthand)
 
     # Direct mappings
     direct = {
@@ -542,6 +557,38 @@ def fn_resolver(shorthand: str):
         except ValueError:
             raise ValueError(f"Invalid length in {shorthand}")
         return lambda x, n=n: str(x or '')[:n]
+
+    # rjust:width:char
+    if shorthand.startswith('rjust:'):
+        parts = shorthand[6:].split(':', 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid rjust spec: '{shorthand}'. Expected 'rjust:width:char'")
+        try:
+            width = int(parts[0])
+            if width < 0:
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"Invalid width in rjust: {shorthand}")
+        fillchar = parts[1]
+        if len(fillchar) != 1:
+            raise ValueError(f"Fill character must be exactly 1 character: {shorthand}")
+        return lambda x, w=width, c=fillchar: str(x or '').rjust(w, c)
+
+    # ljust:width:char
+    if shorthand.startswith('ljust:'):
+        parts = shorthand[6:].split(':', 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid ljust spec: '{shorthand}'. Expected 'ljust:width:char'")
+        try:
+            width = int(parts[0])
+            if width < 0:
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"Invalid width in ljust: {shorthand}")
+        fillchar = parts[1]
+        if len(fillchar) != 1:
+            raise ValueError(f"Fill character must be exactly 1 character: {shorthand}")
+        return lambda x, w=width, c=fillchar: str(x or '').ljust(w, c)
 
     raise ValueError(f"Unrecognized fn shorthand: '{shorthand}'. "
                      f"See dbtk.etl.transforms.core.fn() docstring for valid options.")

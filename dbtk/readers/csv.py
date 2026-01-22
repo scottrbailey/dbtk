@@ -36,8 +36,6 @@ class CSVReader(Reader):
         CSV has no header row or you want to rename columns.
     add_rownum : bool, default True
         Add '_row_num' field to each record with 1-based row number
-    clean_headers : Clean, default Clean.DEFAULT
-        Header cleaning level. See Clean enum for options.
     skip_records : int, default 0
         Number of data rows to skip after headers
     max_records : int, optional
@@ -99,7 +97,6 @@ class CSVReader(Reader):
                  dialect=csv.excel,
                  headers: Optional[List[str]] = None,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None,
@@ -117,8 +114,6 @@ class CSVReader(Reader):
             Custom headers to use instead of reading from file
         add_row_num : bool, default True
             Add _row_num field to records
-        clean_headers : Clean, default Clean.DEFAULT
-            Header cleaning level
         skip_rows : int, default 0
             Data rows to skip after headers
         n_rows : int, optional
@@ -131,7 +126,7 @@ class CSVReader(Reader):
         if kwargs.get('delimiter') == '\t' and dialect == csv.excel:
             dialect = csv.excel_tab
             kwargs.pop('delimiter')
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          headers=headers, null_values=null_values)
         self.fp = fp

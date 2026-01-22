@@ -33,7 +33,6 @@ class XLSXReader(Reader):
                  worksheet,
                  headers: Optional[List[str]] = None,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -43,7 +42,6 @@ class XLSXReader(Reader):
             worksheet: openpyxl.Worksheet object to read from.
             headers: Optional list of header names to use instead of reading from row 1.
             add_row_num: If True, adds a _row_num field to each record (default: True).
-            clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_rows: Number of data rows to skip after headers (default: 0).
             n_rows: Maximum number of rows to read, or None for all (default: None).
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
@@ -53,7 +51,7 @@ class XLSXReader(Reader):
         """
         if worksheet.__class__.__name__ != 'Worksheet':
             raise TypeError('worksheet must be of type openpyxl.Worksheet or use XLReader')
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.ws = worksheet
@@ -105,7 +103,6 @@ class XLSReader(Reader):
                  worksheet,
                  headers: Optional[List[str]] = None,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -115,7 +112,6 @@ class XLSReader(Reader):
             worksheet: xlrd.Sheet object to read from.
             headers: Optional list of header names to use instead of reading from row 0.
             add_row_num: If True, adds a _row_num field to each record (default: True).
-            clean_headers: Header cleaning level from Clean enum (default: Clean.DEFAULT).
             skip_rows: Number of data rows to skip after headers (default: 0).
             n_rows: Maximum number of rows to read, or None for all (default: None).
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
@@ -125,7 +121,7 @@ class XLSReader(Reader):
         """
         if worksheet.__class__.__name__ != 'Sheet':
             raise TypeError('worksheet must be of type xlrd.Sheet or use XLSXReader')
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          headers=headers, null_values=null_values)
         self.ws = worksheet

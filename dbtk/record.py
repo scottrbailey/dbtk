@@ -3,8 +3,54 @@
 Record classes for database result sets.
 """
 
+import re
 from typing import List, Any, Iterator, Tuple, Union
 from .utils import to_string
+
+
+def normalize_field_name(name: str) -> str:
+    """
+    Normalize field name for attribute access.
+
+    Converts to lowercase, replaces non-alphanumeric characters with underscores,
+    collapses consecutive underscores, and strips trailing underscores.
+    Leading underscores are preserved to maintain Python's convention for private/internal fields.
+
+    Args:
+        name: Original field name
+
+    Returns:
+        Normalized field name suitable for Python attribute access
+
+    Examples:
+        >>> normalize_field_name('Start Year')
+        'start_year'
+        >>> normalize_field_name('Start Year!')
+        'start_year'
+        >>> normalize_field_name('!Status')
+        'status'
+        >>> normalize_field_name('__id__')
+        '__id'
+        >>> normalize_field_name('_row_num')
+        '_row_num'
+        >>> normalize_field_name('#Term Code')
+        'term_code'
+    """
+    if not name:
+        return 'col'
+
+    # 1. Lowercase and strip whitespace
+    name = str(name).lower().strip()
+
+    # 2. Replace all non-alphanumeric with underscore (consecutive become single _)
+    name = re.sub(r'[^a-z0-9]+', '_', name)
+
+    # 3. Strip trailing underscores only (preserve leading for Python convention)
+    name = name.rstrip('_')
+
+    # 4. Ensure not empty
+    return name or 'col'
+
 
 class Record(list):
     """
@@ -78,7 +124,8 @@ class Record(list):
     """
 
     __slots__ = ("_added", "_deleted_fields")
-    _fields: List[str] = []
+    _fields: List[str] = []  # Original field names (e.g., 'Start Year')
+    _fields_normalized: List[str] = []  # Normalized for access (e.g., 'start_year')
 
     def __init__(self, *values: Any) -> None:
         # Fast path: initialize list directly in C code — no __setitem__ calls
@@ -97,22 +144,37 @@ class Record(list):
             # 1. Runtime-added fields
             if self._added and key in self._added:
                 return self._added[key]
-            # 2. Deleted fields
+            # 2. Deleted fields (check by original name)
             if key in self._deleted_fields:
                 raise KeyError(f"Column '{key}' has been deleted")
-            # 3. Original columns
+            # 3. Original field names
             try:
                 return super().__getitem__(self._fields.index(key))
+            except ValueError:
+                pass
+            # 4. Normalized field names
+            try:
+                idx = self._fields_normalized.index(key)
+                # Check if the corresponding original field was deleted
+                if self._fields[idx] in self._deleted_fields:
+                    raise KeyError(f"Column '{key}' has been deleted")
+                return super().__getitem__(idx)
             except ValueError:
                 raise KeyError(f"Column '{key}' not found")
         return super().__getitem__(key)
 
     def __setitem__(self, key: Union[int, str, slice], value: Any) -> None:
         if isinstance(key, str):
+            # Try original field names first
             if key in self._fields:
                 # Existing column — revive if deleted
                 self._deleted_fields.discard(key)
                 super().__setitem__(self._fields.index(key), value)
+            # Then try normalized field names
+            elif key in self._fields_normalized:
+                idx = self._fields_normalized.index(key)
+                self._deleted_fields.discard(self._fields[idx])
+                super().__setitem__(idx, value)
             else:
                 # New column — store in _added
                 if self._added is None:
@@ -131,8 +193,11 @@ class Record(list):
         # Called only when normal attribute lookup fails
         if self._added and name in self._added:
             return self._added[name]
-        if name in self._fields and name not in self._deleted_fields:
-            return self[name]
+        # Check normalized field names for attribute access
+        if name in self._fields_normalized:
+            idx = self._fields_normalized.index(name)
+            if self._fields[idx] not in self._deleted_fields:
+                return super(Record, self).__getitem__(idx)
         raise AttributeError(f"'Record' object has no attribute '{name}'")
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -148,31 +213,101 @@ class Record(list):
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, str):
             return False
-        return (key in self._fields and key not in self._deleted_fields) or \
-            (self._added and key in self._added)
+        # Check original fields
+        if key in self._fields:
+            return key not in self._deleted_fields
+        # Check normalized fields
+        if key in self._fields_normalized:
+            idx = self._fields_normalized.index(key)
+            return self._fields[idx] not in self._deleted_fields
+        # Check runtime-added fields
+        return self._added and key in self._added
 
     @classmethod
-    def set_columns(cls, columns: List[str]) -> None:
-        """Set the column names for this Record class."""
-        cls._fields = columns
+    def set_fields(cls, fields: List[str]) -> None:
+        """
+        Set the field names for this Record class.
+
+        Stores original field names and generates normalized versions for attribute access.
+        Handles collisions by appending _2, _3, etc. to duplicate normalized names.
+
+        Args:
+            fields: Original field names (e.g., ['Start Year', 'End Date'])
+
+        Examples:
+            >>> rec.set_fields(['Start Year', 'End Date'])
+            >>> rec._fields
+            ['Start Year', 'End Date']
+            >>> rec._fields_normalized
+            ['start_year', 'end_date']
+        """
+        cls._fields = fields
+
+        # Normalize and handle collisions
+        normalized = []
+        seen = {}
+        for field in fields:
+            norm = normalize_field_name(field)
+            if norm in seen:
+                # Collision: append _2, _3, etc.
+                count = seen[norm] + 1
+                seen[norm] = count
+                norm = f"{norm}_{count}"
+            else:
+                seen[norm] = 1
+            normalized.append(norm)
+
+        cls._fields_normalized = normalized
+
 
     # ------------------------------------------------------------------ #
     # Dict-like interface
     # ------------------------------------------------------------------ #
 
-    def keys(self) -> List[str]:
-        base = [f for f in self._fields if f not in self._deleted_fields]
+    def keys(self, normalized: bool = False) -> List[str]:
+        """
+        Get list of field names.
+
+        Args:
+            normalized: If True, return normalized field names.
+                       If False (default), return original field names.
+
+        Returns:
+            List of field names
+        """
+        if normalized:
+            # Return normalized names for non-deleted fields
+            base = [self._fields_normalized[i] for i, f in enumerate(self._fields)
+                    if f not in self._deleted_fields]
+        else:
+            base = [f for f in self._fields if f not in self._deleted_fields]
         if self._added:
             base.extend(self._added.keys())
         return base
 
     def values(self) -> Tuple[Any, ...]:
+        """Get list of field values (in original field order)."""
         return tuple(self[k] for k in self.keys())
 
-    def items(self) -> Iterator[Tuple[str, Any]]:
-        for field in self._fields:
-            if field not in self._deleted_fields:
-                yield field, self[field]
+    def items(self, normalized: bool = False) -> Iterator[Tuple[str, Any]]:
+        """
+        Get (field_name, value) pairs.
+
+        Args:
+            normalized: If True, use normalized field names.
+                       If False (default), use original field names.
+
+        Yields:
+            Tuples of (field_name, value)
+        """
+        if normalized:
+            for i, field in enumerate(self._fields):
+                if field not in self._deleted_fields:
+                    yield self._fields_normalized[i], self[field]
+        else:
+            for field in self._fields:
+                if field not in self._deleted_fields:
+                    yield field, self[field]
         if self._added:
             yield from self._added.items()
 
@@ -190,14 +325,22 @@ class Record(list):
         if self._added and key in self._added:
             return self._added.pop(key)
 
-        # 2. Already deleted original field?
-        if key in self._deleted_fields:
-            raise KeyError(key)
-
-        # 3. Original field — delete and return
+        # 2. Try original field names
         if key in self._fields:
+            if key in self._deleted_fields:
+                raise KeyError(key)
             value = self[key]
             self._deleted_fields.add(key)
+            return value
+
+        # 3. Try normalized field names
+        if key in self._fields_normalized:
+            idx = self._fields_normalized.index(key)
+            original_name = self._fields[idx]
+            if original_name in self._deleted_fields:
+                raise KeyError(key)
+            value = super(Record, self).__getitem__(idx)
+            self._deleted_fields.add(original_name)
             return value
 
         # 4. Not found
@@ -216,8 +359,26 @@ class Record(list):
         for k, v in kwargs.items():
             self[k] = v
 
-    def to_dict(self) -> dict:
-        return dict(self.items())
+    def to_dict(self, normalized: bool = False) -> dict:
+        """
+        Convert Record to dictionary.
+
+        Args:
+            normalized: If True, use normalized field names as keys.
+                       If False (default), use original field names.
+
+        Returns:
+            Dictionary representation of the record
+
+        Examples:
+            >>> rec = Record(2020, 2025)
+            >>> rec.set_fields(['Start Year', 'End Year'])
+            >>> rec.to_dict()
+            {'Start Year': 2020, 'End Year': 2025}
+            >>> rec.to_dict(normalized=True)
+            {'start_year': 2020, 'end_year': 2025}
+        """
+        return dict(self.items(normalized=normalized))
 
     # ------------------------------------------------------------------ #
     # Utilities
@@ -240,15 +401,22 @@ class Record(list):
     def __dir__(self) -> List[str]:
         return sorted(set(super().__dir__()) | set(self.keys()))
 
-    def pprint(self) -> None:
-        """Pretty-print the record with aligned columns."""
-        if not self.keys():
+    def pprint(self, normalized: bool = False) -> None:
+        """
+        Pretty-print the record with aligned columns.
+
+        Args:
+            normalized: If True, use normalized field names.
+                       If False (default), use original field names.
+        """
+        keys_to_use = self.keys(normalized=normalized)
+        if not keys_to_use:
             print("<Empty Record>")
             return
 
-        width = max(len(k) for k in self.keys())
+        width = max(len(k) for k in keys_to_use)
         template = f"{{:<{width}}} : {{}}"
 
-        for key in self.keys():
+        for key in keys_to_use:
             value = self[key]
             print(template.format(key, to_string(value)))
