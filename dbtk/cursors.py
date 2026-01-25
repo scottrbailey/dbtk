@@ -161,16 +161,15 @@ class Cursor:
     """
     # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [
-        'connection', 'column_case', 'debug', 'return_cursor',
+        'connection', 'debug', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', 'batch_size',
         '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
     # Attributes that are allowed to be passed in from the connection/configuration layer
-    WRAPPER_SETTINGS = ('batch_size', 'column_case', 'debug', 'return_cursor')
+    WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor')
 
     def __init__(self,
                  connection,
-                 column_case: Optional[str] = None,
                  batch_size: Optional[int] = None,
                  debug: Optional[bool] = False,
                  return_cursor: Optional[bool] = False,
@@ -182,8 +181,6 @@ class Cursor:
         ----------
         connection : Database
             Database connection object
-        column_case : str, optional
-            How to handle column name casing: 'lower', 'upper', 'title', or None (default)
         batch_size: int, optional
             How many rows to process at a time when using executemany() or bulk operations in DataSurge
         debug : bool, default False
@@ -212,9 +209,6 @@ class Cursor:
         self.record_factory = None
         self._row_factory_invalid = True
         self.return_cursor = return_cursor
-        if column_case is None:
-            column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
-        self.column_case = column_case
         if batch_size is None:
             batch_size = settings.get('default_batch_size', 1000)
         self.batch_size = batch_size
@@ -340,11 +334,39 @@ class Cursor:
         RecordClass.set_fields(original_columns)
         self.record_factory = RecordClass
 
-    def columns(self, case: Optional[str] = None) -> List[str]:
-        """Return list of column names."""
+    def columns(self, normalized: bool = False) -> List[str]:
+        """
+        Return list of column names.
+
+        Parameters
+        ----------
+        normalized : bool, default False
+            If True, return normalized column names (sanitized for Python identifiers).
+            If False, return original column names from database.
+
+        Returns
+        -------
+        List[str]
+            Column names in order
+
+        Example
+        -------
+        ::
+
+            cursor.execute("SELECT 'First Name', 'User ID' FROM ...")
+            cursor.columns()                 # ['First Name', 'User ID']
+            cursor.columns(normalized=True)  # ['first_name', 'user_id']
+        """
         if not self.description:
             return []
-        return [c[0] for c in self.description]
+
+        if normalized:
+            # Return normalized column names
+            original_columns = [c[0] for c in self.description]
+            return [sanitize_identifier(col, idx) for idx, col in enumerate(original_columns)]
+        else:
+            # Return original column names
+            return [c[0] for c in self.description]
 
     def _is_ready(self) -> bool:
         """Check if ready and update record factory if columns changed."""
