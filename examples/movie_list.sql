@@ -1,12 +1,12 @@
 SELECT t.tconst,
-  trim(t.primary_title) primary_title,
-  t.title_type,
-  t.start_year,
-  array_to_string(t.genres, ', ') genres,
-  t.avg_rating,
-  t.num_votes,
-  dp.produced_by,
-  dp.directed_by
+  trim(t.primary_title) "Primary Title",
+  t.title_type          "Type",
+  t.start_year          "Start Year",
+  array_to_string(t.genres, ', ') "Genres",
+  t.avg_rating          "Avg Rating",
+  t.num_votes           "Num Votes",
+  dp.produced_by        "Produced By",
+  dp.directed_by        "Directed By"
 FROM titles_subset t
 LEFT JOIN (
   SELECT sub.tconst,
@@ -26,4 +26,4 @@ LEFT JOIN (
 ) dp ON t.tconst = dp.tconst
 WHERE %(genre)s = ANY(t.genres)
   AND t.start_year BETWEEN 2020 AND 2022
-ORDER BY primary_title
+ORDER BY "Primary Title"

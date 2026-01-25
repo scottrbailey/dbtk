@@ -344,22 +344,7 @@ class Cursor:
         """Return list of column names."""
         if not self.description:
             return []
-
-        if case not in (ColumnCase.values()):
-            case = self.column_case
-
-        # Apply case transformation
-        if case == ColumnCase.LOWER:
-            cols = [c[0].lower() for c in self.description]
-        elif case == ColumnCase.UPPER:
-            cols = [c[0].upper() for c in self.description]
-        elif case == ColumnCase.TITLE:
-            cols = [c[0].title() for c in self.description]
-        else:
-            cols = [c[0] for c in self.description]
-
-        # Sanitize column names
-        return [sanitize_identifier(cols[i], i) for i in range(len(cols))]
+        return [c[0] for c in self.description]
 
     def _is_ready(self) -> bool:
         """Check if ready and update record factory if columns changed."""
