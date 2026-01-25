@@ -12,33 +12,7 @@ from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
-__all__ = ['Cursor', 'ColumnCase', 'PreparedStatement']
-
-
-class ColumnCase:
-    """
-    Column name case transformation options for result sets.
-
-    Controls how column names from database queries are transformed:
-
-    - UPPER: Convert to uppercase (USER_ID)
-    - LOWER: Convert to lowercase (user_id) [default]
-    - TITLE: Convert to title case (User_Id)
-    - PRESERVE: Keep original case from database
-
-    Example:
-        >>> cursor = db.cursor(column_case=ColumnCase.UPPER)
-        >>> cursor = db.cursor(column_case='preserve')
-    """
-    UPPER = 'upper'
-    LOWER = 'lower'
-    TITLE = 'title'
-    PRESERVE = 'preserve'
-    DEFAULT = LOWER
-
-    @classmethod
-    def values(cls):
-        return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
+__all__ = ['Cursor', 'PreparedStatement']
 
 
 class PreparedStatement:
