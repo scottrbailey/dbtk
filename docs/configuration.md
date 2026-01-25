@@ -4,7 +4,7 @@ DBTK uses YAML configuration files to manage database connections and keep crede
 
 ## Quick Start
 
-Create a `dbtk.yml` file:
+Running the `dbtk config-setup` command line is the quickest way to get started. It will set up an encryption key (if keyring) is installed and copy the sample config file to your `~/.config` directory. 
 
 ```yaml
 databases:

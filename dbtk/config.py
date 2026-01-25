@@ -116,7 +116,8 @@ def diagnose_config(config_file: Optional[str] = None) -> List[Tuple[str, str]]:
         1 for p in mgr.config.get('passwords', {}).values()
         if 'password' in p and not(p.get('password', '').startswith('${'))
     )
-    results.append(("✗", f"{uenc_count} unencrypted passwords!") if uenc_count else ('✓', "No unencrypted passwords"))
+    results.append(("✗", f"{uenc_count} unencrypted passwords! (run `dbtk encrypt-config` to fix)") \
+                       if uenc_count else ('✓', "No unencrypted passwords"))
     return results
 
 

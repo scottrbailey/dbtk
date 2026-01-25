@@ -44,14 +44,14 @@ validated along the way.
 ```bash
 pip install dbtk
 
-# For encrypted passwords
-pip install dbtk[encryption]  # installs cryptography and keyring
+# installs keyring, lxml, openpyxl, phone address and date helpers
+pip install dbtk[recommended] 
 
 # For reading/writing XML and Excel files
 pip install dbtk[formats]     # lxml and openpyxl
 
 # Full functionality
-pip install dbtk[all]         # all optional dependencies
+pip install dbtk[all]         # all optional dependencies - database adapters
 
 # Database adapters (install as needed)
 pip install psycopg2          # PostgreSQL
@@ -104,7 +104,7 @@ if dbtk.errors_logged():
 - Write SQL once with named (`:param`) or pyformat (`%(param)s`) parameters - works on any database
 - Pass the same dict to multiple queries - extra params ignored, missing params become NULL
 - DBTK handles parameter conversion automatically - no manual string formatting needed
-- Export to CSV/Excel/JSON with one line of code
+- Export to CSV/Excel/JSON/NDJSON/XML with one line of code
 
 ### Sample Inbound Integration - Import Data
 
@@ -169,11 +169,11 @@ if dbtk.errors_logged():  # Check global error flag
 Real-world benchmarks from production systems:
 
 - **DataFrameReader**: 1.3M rec/s reading compressed CSV with polars + transforms
-- **BulkSurge (Postgres)**: 220K rec/s transforming, validating, and bulk loading
+- **BulkSurge (Postgres/Oracle)**: 220K rec/s transforming, validating, and bulk loading
 - **DataSurge (Oracle/SQL Server/MySQL)**: 90-120K rec/s with native executemany
 - **IMDB Dataset**: 132K rec/s loading 12M titles with transforms and validation
 
-These aren't toy benchmarks - they're real ETL pipelines with field mapping, data validation, type conversions, and database constraints.
+These aren't toy benchmarks - they're real ETL pipelines with field mapping, data validation, type conversions, and database constraints. See the examples in the example folder.
 
 ## License
 
