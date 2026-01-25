@@ -305,7 +305,11 @@ class TestDataProcessing:
         """Test handling missing fields in Air Nomad data."""
         incomplete_data = {
             'trainee_id': 'JINORA001',
-            'monk_name': 'Jinora'
+            'monk_name': 'Jinora',
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         }
 
         airbender_table.set_values(incomplete_data)
@@ -330,7 +334,11 @@ class TestDataProcessing:
         # Incomplete data
         incomplete_data = {
             'trainee_id': 'MEELO001',
-            'monk_name': 'Meelo'
+            'monk_name': 'Meelo',
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         }
         airbender_table.set_values(incomplete_data)
         assert airbender_table.reqs_met('insert') is False
@@ -409,7 +417,12 @@ class TestDatabaseOperations:
     def test_exec_update_missing_requirements_strict(self, airbender_table):
         """Test update raises error when requirements not met and raise_error=True."""
         airbender_table.set_values({
-            'trainee_id': 'INCOMPLETE001'
+            'trainee_id': 'INCOMPLETE001',
+            'monk_name': None,
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         with pytest.raises(ValueError, match="requirements not met"):
@@ -418,7 +431,12 @@ class TestDatabaseOperations:
     def test_exec_update_missing_requirements_graceful(self, airbender_table):
         """Test update logs and tracks incomplete when requirements not met."""
         airbender_table.set_values({
-            'trainee_id': 'INCOMPLETE001'
+            'trainee_id': 'INCOMPLETE001',
+            'monk_name': None,
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         result = airbender_table.execute('update', raise_error=False)
@@ -488,7 +506,11 @@ class TestIncompleteTracking:
         # Missing required temple field
         airbender_table.set_values({
             'trainee_id': 'INC001',
-            'monk_name': 'Incomplete Nomad'
+            'monk_name': 'Incomplete Nomad',
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         result = airbender_table.execute('insert', raise_error=False)
@@ -500,7 +522,12 @@ class TestIncompleteTracking:
     def test_update_incomplete_tracking(self, airbender_table):
         """Test incomplete tracking for update operations."""
         airbender_table.set_values({
-            'trainee_id': 'INC002'
+            'trainee_id': 'INC002',
+            'monk_name': None,
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         result = airbender_table.execute('update', raise_error=False)
@@ -513,7 +540,11 @@ class TestIncompleteTracking:
         """Test incomplete tracking for merge operations."""
         airbender_table.set_values({
             'trainee_id': 'INC003',
-            'monk_name': 'Incomplete Merge'
+            'monk_name': 'Incomplete Merge',
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         result = airbender_table.execute('merge', raise_error=False)
@@ -525,8 +556,12 @@ class TestIncompleteTracking:
     def test_select_incomplete_tracking(self, airbender_table):
         """Test incomplete tracking for select operations with missing keys."""
         airbender_table.set_values({
+            'trainee_id': None,
             'monk_name': 'No ID Nomad',
-            'home_temple': 'Unknown Temple'
+            'home_temple': 'Unknown Temple',
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         result = airbender_table.execute('select', raise_error=False)
@@ -538,8 +573,12 @@ class TestIncompleteTracking:
     def test_delete_incomplete_tracking(self, airbender_table):
         """Test incomplete tracking for delete operations with missing keys."""
         airbender_table.set_values({
+            'trainee_id': None,
             'monk_name': 'No ID Nomad',
-            'home_temple': 'Unknown Temple'
+            'home_temple': 'Unknown Temple',
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         result = airbender_table.execute('delete', raise_error=False)
@@ -553,20 +592,33 @@ class TestIncompleteTracking:
         # First incomplete insert
         airbender_table.set_values({
             'trainee_id': 'INC004',
-            'monk_name': 'First Incomplete'
+            'monk_name': 'First Incomplete',
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
         airbender_table.execute('insert', raise_error=False)
 
         # Second incomplete update
         airbender_table.set_values({
-            'trainee_id': 'INC005'
+            'trainee_id': 'INC005',
+            'monk_name': None,
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
         airbender_table.execute('update', raise_error=False)
 
         # Third incomplete merge
         airbender_table.set_values({
             'trainee_id': 'INC006',
-            'monk_name': 'Third Incomplete'
+            'monk_name': 'Third Incomplete',
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
         airbender_table.execute('merge', raise_error=False)
 
@@ -662,7 +714,14 @@ class TestReset:
     def test_reset_clears_all_state(self, airbender_table):
         """Test that reset clears all cached state."""
         airbender_table.generate_sql('insert')
-        airbender_table.set_values({'trainee_id': 'TEST001', 'monk_name': 'Test'})
+        airbender_table.set_values({
+            'trainee_id': 'TEST001',
+            'monk_name': 'Test',
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
+        })
         airbender_table.counts['insert'] = 5
         airbender_table.counts['incomplete'] = 3
         airbender_table._update_excludes.add('test_col')
@@ -1113,7 +1172,12 @@ class TestReadinessTracking:
         """Test is_ready() with partial data (only key fields)."""
         # Set only key field
         airbender_table.set_values({
-            'trainee_id': 'TEST002'
+            'trainee_id': 'TEST002',
+            'monk_name': None,
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         # Only select and delete should be ready (they only need key)
@@ -1127,8 +1191,12 @@ class TestReadinessTracking:
         """Test is_ready() with data sufficient for insert but not update."""
         # Set required fields but not key (for insert-only scenario)
         airbender_table.set_values({
+            'trainee_id': None,
             'monk_name': 'No ID Monk',
-            'home_temple': 'Orphan Temple'
+            'home_temple': 'Orphan Temple',
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
         })
 
         # This has required nullable=False fields but missing primary key
@@ -1140,7 +1208,14 @@ class TestReadinessTracking:
     def test_refresh_readiness_auto_called(self, airbender_table):
         """Test that refresh_readiness() is automatically called by set_values()."""
         # Initially no data
-        airbender_table.set_values({})
+        airbender_table.set_values({
+            'trainee_id': None,
+            'monk_name': None,
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
+        })
         assert not airbender_table.is_ready('insert')
 
         # Set complete data - refresh_readiness should be called automatically
@@ -1157,7 +1232,14 @@ class TestReadinessTracking:
     def test_refresh_readiness_manual_call(self, airbender_table):
         """Test manual refresh_readiness() call."""
         # Set incomplete data
-        airbender_table.set_values({'trainee_id': 'TEST004'})
+        airbender_table.set_values({
+            'trainee_id': 'TEST004',
+            'monk_name': None,
+            'home_temple': None,
+            'mastery_rank': None,
+            'bison_companion': None,
+            'daily_meditation': None
+        })
         assert not airbender_table.is_ready('insert')
 
         # Manually modify values (bypassing set_values)
