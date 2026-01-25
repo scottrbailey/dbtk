@@ -831,28 +831,11 @@ class Table:
                     elif warn_missing:
                         logger.warning(f'Table {self.name}: field "{f}" not found in record')
             elif field:
-                if field not in record:
-                    # Field is missing from this record
-                    if warn_missing:
-                        # First record - warn if required, but don't raise yet
-                        # (might just be an incomplete first record)
-                        if col_def.get('bind_name') in self._req_cols:
-                            logger.warning(
-                                f'Table {self.name}: required field "{field}" missing from first record'
-                            )
-                        else:
-                            logger.warning(f'Table {self.name}: field "{field}" not in record')
+                if warn_missing and field not in record:
+                    if col_def.get('bind_name') in self._req_cols:
+                        raise ValueError(f'Table {self.name}: field "{field}" is required but was not found in record')
                     else:
-                        # Not first record - check if this is a structural issue
-                        if field not in self._record_fields and col_def.get('bind_name') in self._req_cols:
-                            # Field was never in the source structure (not even in first record)
-                            # This indicates a configuration error - source is missing required column
-                            raise ValueError(
-                                f'Table {self.name}: required field "{field}" not found in source data. '
-                                f'Verify that source document has this column/field.'
-                            )
-                        # else: field exists in structure (_record_fields) but just missing from this record
-                        # This is a data quality issue, not structural - allow it to be skipped
+                        logger.warning(f'Table {self.name}: field "{field}" not in record')
                 val = record.get(field)
 
             # Only apply null_values conversion if val is not the whole record
