@@ -43,6 +43,47 @@ class DataSurge(BaseSurge):
         # Swap to positional parameters if named to save memory in bind parameters
         self.table.force_positional()
         self._sql_statements = {}  # Only for modified SQL (merge temp table hack)
+        self._fast_executemany_disabled = self._should_disable_fast_executemany()
+
+    def _should_disable_fast_executemany(self) -> bool:
+        """
+        Check if fast_executemany should be disabled for this table.
+
+        SQL Server's fast_executemany has a known issue with TEXT, NTEXT,
+        VARCHAR(MAX), and NVARCHAR(MAX) columns, causing MemoryError.
+        This includes JSON columns which are internally NVARCHAR(MAX).
+
+        Returns:
+            True if fast_executemany should be disabled, False otherwise
+        """
+        # Only applies to SQL Server with pyodbc
+        db_type = self.cursor.connection.database_type
+        if 'sqlserver' not in db_type and 'mssql' not in db_type:
+            return False
+
+        if self.cursor.connection.driver.__name__ != 'pyodbc':
+            return False
+
+        # Check if table has problematic column types
+        try:
+            col_defs = self.table.get_column_definitions()
+            for col_name, type_obj, internal_size, precision, scale, sql_type in col_defs:
+                type_upper = sql_type.upper()
+                # Check for problematic types
+                if any(prob_type in type_upper for prob_type in [
+                    'VARCHAR(MAX)', 'NVARCHAR(MAX)', 'TEXT', 'NTEXT', 'VARBINARY(MAX)'
+                ]):
+                    logger.info(
+                        f"Table {self.table.name} has {sql_type} column '{col_name}' - "
+                        "disabling fast_executemany to avoid MemoryError"
+                    )
+                    return True
+        except Exception as e:
+            # If we can't determine column types, play it safe and don't disable
+            logger.debug(f"Could not check column types for fast_executemany: {e}")
+            return False
+
+        return False
 
     def get_sql(self, operation: str) -> str:
         """Get SQL for operation, checking local modifications first."""
@@ -78,24 +119,39 @@ class DataSurge(BaseSurge):
         errors = 0
         skipped = 0
 
-        for batch in batch_iterable(records, self.batch_size):
-            batch_params = []
-            for record in batch:
-                params = self._transform_row(record)
-                if params is None:
-                    skipped += 1
-                    continue
-                batch_params.append(params)
+        # Handle fast_executemany for problematic column types
+        fast_executemany_was_enabled = False
+        if self._fast_executemany_disabled:
+            cursor_obj = self.cursor._cursor
+            if hasattr(cursor_obj, 'fast_executemany') and cursor_obj.fast_executemany:
+                fast_executemany_was_enabled = True
+                cursor_obj.fast_executemany = False
+                logger.debug(f"Temporarily disabled fast_executemany for {self.table.name}")
 
-            if batch_params:
-                try:
-                    self.cursor.executemany(sql, batch_params)
-                    self.table.counts[operation] += len(batch_params)
-                except self.cursor.connection.driver.DatabaseError as e:
-                    logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
-                    if raise_error:
-                        raise
-                    errors += len(batch_params)
+        try:
+            for batch in batch_iterable(records, self.batch_size):
+                batch_params = []
+                for record in batch:
+                    params = self._transform_row(record)
+                    if params is None:
+                        skipped += 1
+                        continue
+                    batch_params.append(params)
+
+                if batch_params:
+                    try:
+                        self.cursor.executemany(sql, batch_params)
+                        self.table.counts[operation] += len(batch_params)
+                    except self.cursor.connection.driver.DatabaseError as e:
+                        logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
+                        if raise_error:
+                            raise
+                        errors += len(batch_params)
+        finally:
+            # Re-enable fast_executemany if we disabled it
+            if fast_executemany_was_enabled:
+                self.cursor._cursor.fast_executemany = True
+                logger.debug(f"Re-enabled fast_executemany for {self.table.name}")
 
         return errors, skipped
 
