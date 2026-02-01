@@ -63,8 +63,7 @@ connections:
   sqlserver_dev:
     driver: pyodbc_sqlserver
     type: sqlserver
-    host: localhost\SQLEXPRESS  # Use instance name if applicable
-    port: 1433
+    host: localhost\SQLEXPRESS  # Use instance name; omit port when using instance names
     database: myapp_dev
     user: dev_user
     password: prompt
