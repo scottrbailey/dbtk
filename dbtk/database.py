@@ -768,6 +768,8 @@ class Database:
 
         if connection:
             db = cls(connection, db_driver, kwargs.get('database'), cursor_settings=cursor_settings)
+            if db.database_type == 'unknown':
+                db.database_type = db_type
             return db
 
 
