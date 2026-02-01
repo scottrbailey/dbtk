@@ -140,7 +140,7 @@ class Cursor:
         '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
     # Attributes that are allowed to be passed in from the connection/configuration layer
-    WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor')
+    WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor', 'fast_executemany')
 
     def __init__(self,
                  connection,
@@ -199,6 +199,17 @@ class Cursor:
                 self._cursor = self.connection.cursor(**filtered_kwargs)
         except Exception as e:
             raise TypeError(f'First argument must be a database connection object: {e}')
+
+        # Handle fast_executemany configuration for pyodbc
+        if 'fast_executemany' in kwargs:
+            if hasattr(self._cursor, 'fast_executemany'):
+                self._cursor.fast_executemany = kwargs['fast_executemany']
+        elif hasattr(self.connection, 'driver_name') and self.connection.driver_name == 'pyodbc_sqlserver':
+            logger.info(
+                "pyodbc with SQL Server detected. Consider setting cursor: {fast_executemany: true} "
+                "in your connection config for better bulk insert performance. Note: fast_executemany "
+                "may cause MemoryError with TEXT/NVARCHAR(MAX)/JSON columns - use VARCHAR types instead."
+            )
 
         # Set parameter style info
         self.paramstyle = self.connection.driver.paramstyle
@@ -284,10 +295,6 @@ class Cursor:
                 return psycopg_batch
             except ImportError:
                 logger.debug("psycopg2.extras not available — using native executemany")
-        elif adapter == 'pyodbc':
-            if hasattr(self._cursor, 'fast_executemany') and not getattr(self._cursor, 'fast_executemany', False):
-                self._cursor.fast_executemany = True
-                logger.debug("pyodbc: enabled fast_executemany for bulk operations")
 
         # Fallback for everything else (SQLite, MySQL, etc.)
         return lambda cur, sql, argslist: cur.executemany(sql, argslist)
