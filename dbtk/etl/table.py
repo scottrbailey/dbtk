@@ -187,6 +187,7 @@ class Table:
             columns: Dict[str, Dict[str, Any]],
             cursor: Cursor,
             null_values: Tuple[str, ...] = ('', 'NULL', '<null>', r'\N'),
+            is_temp: bool = False,
     ):
         """
         Initialize Table with schema configuration and database cursor.
@@ -210,6 +211,9 @@ class Table:
                 When set_values() encounters these strings, they are converted to None.
                 Default: ('', 'NULL', '<null>', '\\N')
 
+            is_temp: If True, allows underscore or hash prefix for temporary table names.
+                Default: False
+
         Raises:
             ValueError: If table name or column names are invalid SQL identifiers.
 
@@ -225,7 +229,7 @@ class Table:
                 'created': {'db_expr': 'CURRENT_TIMESTAMP'}
             }, cursor=cursor)
         """
-        validate_identifier(name)
+        validate_identifier(name, allow_temp=is_temp)
         self._name = name
         self._cursor = cursor
         self._paramstyle = cursor.connection.driver.paramstyle

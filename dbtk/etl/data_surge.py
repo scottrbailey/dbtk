@@ -166,7 +166,8 @@ class DataSurge(BaseSurge):
         temp_table = Table(
             name=temp_name,
             columns=self.table.columns,
-            cursor=self.cursor
+            cursor=self.cursor,
+            is_temp=True
         )
         temp_surge = DataSurge(temp_table, batch_size=self.batch_size)
         errors = temp_surge.insert(records_list, raise_error=raise_error)
