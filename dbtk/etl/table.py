@@ -733,7 +733,7 @@ class Table:
             UPDATE SET {update_set}
         WHEN NOT MATCHED THEN
             INSERT ({insert_cols})
-            VALUES ({insert_values})""")
+            VALUES ({insert_values});""")
 
         logger.debug(f"Generated merge SQL for {self._name}:\n{sql}")
         return sql
