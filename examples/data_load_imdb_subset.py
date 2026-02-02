@@ -331,7 +331,8 @@ if __name__ == '__main__':
     new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]
     if new_genre:
         ph = db.placeholder
-        genre_insert = f'INSERT INTO genres (genre, title) VALUES ({ph}, {ph})'
+        placeholders = ', '.join(f':{i+1}' if ph == ':1' else ph for i in range(2))
+        genre_insert = f'INSERT INTO genres (genre, title) VALUES ({placeholders})'
         cur.executemany(genre_insert, new_genre)
     db.commit()
     et = time.monotonic()
