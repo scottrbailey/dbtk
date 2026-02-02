@@ -60,6 +60,20 @@ connections:
     user: imdb_user
     encrypted_password: gAAAAABh...
 
+  sqlserver_dev:
+    driver: pyodbc_sqlserver
+    type: sqlserver
+    host: localhost\SQLEXPRESS  # Use instance name; omit port when using instance names
+    database: myapp_dev
+    user: dev_user
+    password: prompt
+    cursor:
+      fast_executemany: true  # Recommended for bulk operations; disable if using TEXT/NVARCHAR(MAX)/JSON columns
+
+states_db:
+    type: sqlite
+    database: /data/test_states.db
+
 # Encrypted passwords (optional)
 passwords:
   openai_key:

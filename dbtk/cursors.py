@@ -12,33 +12,7 @@ from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
-__all__ = ['Cursor', 'ColumnCase', 'PreparedStatement']
-
-
-class ColumnCase:
-    """
-    Column name case transformation options for result sets.
-
-    Controls how column names from database queries are transformed:
-
-    - UPPER: Convert to uppercase (USER_ID)
-    - LOWER: Convert to lowercase (user_id) [default]
-    - TITLE: Convert to title case (User_Id)
-    - PRESERVE: Keep original case from database
-
-    Example:
-        >>> cursor = db.cursor(column_case=ColumnCase.UPPER)
-        >>> cursor = db.cursor(column_case='preserve')
-    """
-    UPPER = 'upper'
-    LOWER = 'lower'
-    TITLE = 'title'
-    PRESERVE = 'preserve'
-    DEFAULT = LOWER
-
-    @classmethod
-    def values(cls):
-        return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
+__all__ = ['Cursor', 'PreparedStatement']
 
 
 class PreparedStatement:
@@ -161,16 +135,15 @@ class Cursor:
     """
     # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [
-        'connection', 'column_case', 'debug', 'return_cursor',
+        'connection', 'debug', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', 'batch_size',
         '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
     # Attributes that are allowed to be passed in from the connection/configuration layer
-    WRAPPER_SETTINGS = ('batch_size', 'column_case', 'debug', 'return_cursor')
+    WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor', 'fast_executemany')
 
     def __init__(self,
                  connection,
-                 column_case: Optional[str] = None,
                  batch_size: Optional[int] = None,
                  debug: Optional[bool] = False,
                  return_cursor: Optional[bool] = False,
@@ -182,8 +155,6 @@ class Cursor:
         ----------
         connection : Database
             Database connection object
-        column_case : str, optional
-            How to handle column name casing: 'lower', 'upper', 'title', or None (default)
         batch_size: int, optional
             How many rows to process at a time when using executemany() or bulk operations in DataSurge
         debug : bool, default False
@@ -212,9 +183,6 @@ class Cursor:
         self.record_factory = None
         self._row_factory_invalid = True
         self.return_cursor = return_cursor
-        if column_case is None:
-            column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
-        self.column_case = column_case
         if batch_size is None:
             batch_size = settings.get('default_batch_size', 1000)
         self.batch_size = batch_size
@@ -231,6 +199,17 @@ class Cursor:
                 self._cursor = self.connection.cursor(**filtered_kwargs)
         except Exception as e:
             raise TypeError(f'First argument must be a database connection object: {e}')
+
+        # Handle fast_executemany configuration for pyodbc
+        if 'fast_executemany' in kwargs:
+            if hasattr(self._cursor, 'fast_executemany'):
+                self._cursor.fast_executemany = kwargs['fast_executemany']
+        elif hasattr(self.connection, 'driver_name') and self.connection.driver_name == 'pyodbc_sqlserver':
+            logger.info(
+                "pyodbc with SQL Server detected. Consider setting cursor: {fast_executemany: true} "
+                "in your connection config for better bulk insert performance. Note: fast_executemany "
+                "may cause MemoryError with TEXT/NVARCHAR(MAX)/JSON columns - use VARCHAR types instead."
+            )
 
         # Set parameter style info
         self.paramstyle = self.connection.driver.paramstyle
@@ -316,10 +295,6 @@ class Cursor:
                 return psycopg_batch
             except ImportError:
                 logger.debug("psycopg2.extras not available — using native executemany")
-        elif adapter == 'pyodbc':
-            if hasattr(self._cursor, 'fast_executemany') and not getattr(self._cursor, 'fast_executemany', False):
-                self._cursor.fast_executemany = True
-                logger.debug("pyodbc: enabled fast_executemany for bulk operations")
 
         # Fallback for everything else (SQLite, MySQL, etc.)
         return lambda cur, sql, argslist: cur.executemany(sql, argslist)
@@ -340,26 +315,39 @@ class Cursor:
         RecordClass.set_fields(original_columns)
         self.record_factory = RecordClass
 
-    def columns(self, case: Optional[str] = None) -> List[str]:
-        """Return list of column names."""
+    def columns(self, normalized: bool = False) -> List[str]:
+        """
+        Return list of column names.
+
+        Parameters
+        ----------
+        normalized : bool, default False
+            If True, return normalized column names (sanitized for Python identifiers).
+            If False, return original column names from database.
+
+        Returns
+        -------
+        List[str]
+            Column names in order
+
+        Example
+        -------
+        ::
+
+            cursor.execute("SELECT 'First Name', 'User ID' FROM ...")
+            cursor.columns()                 # ['First Name', 'User ID']
+            cursor.columns(normalized=True)  # ['first_name', 'user_id']
+        """
         if not self.description:
             return []
 
-        if case not in (ColumnCase.values()):
-            case = self.column_case
-
-        # Apply case transformation
-        if case == ColumnCase.LOWER:
-            cols = [c[0].lower() for c in self.description]
-        elif case == ColumnCase.UPPER:
-            cols = [c[0].upper() for c in self.description]
-        elif case == ColumnCase.TITLE:
-            cols = [c[0].title() for c in self.description]
+        if normalized:
+            # Return normalized column names
+            original_columns = [c[0] for c in self.description]
+            return [sanitize_identifier(col, idx) for idx, col in enumerate(original_columns)]
         else:
-            cols = [c[0] for c in self.description]
-
-        # Sanitize column names
-        return [sanitize_identifier(cols[i], i) for i in range(len(cols))]
+            # Return original column names
+            return [c[0] for c in self.description]
 
     def _is_ready(self) -> bool:
         """Check if ready and update record factory if columns changed."""
