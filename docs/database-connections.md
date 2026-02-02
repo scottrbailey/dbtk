@@ -14,33 +14,44 @@ db = dbtk.connect('production_db')
 from dbtk.database import postgres, oracle, mysql, sqlserver, sqlite
 
 db = postgres(user='admin', password='secret', database='mydb', host='localhost')
-db = oracle(user='admin', password='secret', service_name='ORCL')
+db = oracle(user='admin', password='secret', database='ORCL', host='localhost')
 db = mysql(user='admin', password='secret', database='mydb')
-db = sqlserver(user='admin', password='secret', database='mydb', server='localhost')
+db = sqlserver(user='admin', password='secret', database='mydb', host='localhost')
 db = sqlite('path/to/database.db')
 ```
 
 ## Supported Databases
 
-| Database | Driver | Connection Function |
-|----------|--------|-------------------|
-| PostgreSQL | `psycopg2` | `dbtk.database.postgres()` |
-| Oracle | `oracledb` | `dbtk.database.oracle()` |
-| MySQL | `mysqlclient` | `dbtk.database.mysql()` |
-| SQL Server | `pyodbc` / `pymssql` | `dbtk.database.sqlserver()` |
-| SQLite | `sqlite3` | `dbtk.database.sqlite()` |
+DBTK supports multiple database adapters with automatic detection and fallback:
+
+| Database | Driver | Install Command | Notes |
+|----------|--------|-----------------|-------|
+| PostgreSQL | psycopg2 | `pip install psycopg2-binary` | Recommended, most mature |
+| PostgreSQL | psycopg (3) | `pip install psycopg-binary` | Newest version, async support |
+| PostgreSQL | pgdb | `pip install pgdb` | DB-API compliant |
+| Oracle | oracledb | `pip install oracledb` | Thin mode - no Oracle client required |
+| Oracle | cx_Oracle | `pip install cx_Oracle` | Requires Oracle client installation |
+| MySQL | mysqlclient | `pip install mysqlclient` | Fastest option, C extension |
+| MySQL | mysql.connector | `pip install mysql-connector-python` | Official MySQL connector |
+| MySQL | pymysql | `pip install pymysql` | Pure Python, lightweight |
+| SQL Server | pyodbc | `pip install pyodbc` | ODBC driver required on system |
+| SQL Server | pymssql | `pip install pymssql` | Lightweight, no ODBC needed |
+| SQLite | sqlite3 | Built-in | No installation needed |
+
+**Driver priority:** DBTK automatically selects the best available driver. Override with `driver='driver_name'` in your connection config or function call.
 
 ## The Database Object
 
-The `Database` class wraps database connections and provides a consistent interface regardless of the underlying driver:
+The `Database` class wraps database connections and provides a consistent interface:
 
 ```python
 db = dbtk.connect('my_database')
 
 # Connection info
-print(db.database_type)  # 'postgres', 'oracle', 'mysql', etc.
+print(db.database_type)  # 'postgres', 'oracle', 'mysql', 'sqlserver', 'sqlite'
 print(db.database_name)  # Database/schema name
 print(db.driver)         # The underlying driver module (psycopg2, oracledb, etc.)
+print(db.placeholder)    # Parameter placeholder for this driver
 
 # Create cursors
 cursor = db.cursor()
@@ -49,11 +60,12 @@ cursor = db.cursor()
 db.commit()
 db.rollback()
 db.close()
+
+# Parameter style help
+db.param_help()  # Shows this driver's parameter style with examples
 ```
 
 ### Context Managers
-
-Use context managers for automatic cleanup:
 
 ```python
 # Connection automatically closed
@@ -62,16 +74,34 @@ with dbtk.connect('production_db') as db:
     cursor.execute("SELECT * FROM users")
     users = cursor.fetchall()
 
-# Transaction automatically committed or rolled back
+# Transaction - auto-commit on success, rollback on exception
 with db.transaction():
     cursor.execute("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
     cursor.execute("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
-    # Commits on success, rolls back on exception
+```
+
+## Access the Full Stack
+
+DBTK maintains a clean reference hierarchy for accessing the underlying driver:
+
+```python
+# The Database holds the driver module
+print(db.driver.__name__)       # 'psycopg2', 'oracledb', etc.
+print(db.driver.paramstyle)     # 'named', 'qmark', etc.
+
+# Access the wrapped connection
+raw_conn = db._connection
+
+# Use driver exceptions
+try:
+    cursor.execute(sql)
+except db.driver.DatabaseError as e:
+    logger.error(f"Database error: {e}")
 ```
 
 ## Cursors and Records
 
-All DBTK cursors return **Record** objects by default - a flexible data structure supporting multiple access patterns:
+All DBTK cursors return **Record** objects - a flexible data structure supporting multiple access patterns:
 
 ```python
 cursor = db.cursor()
@@ -88,39 +118,71 @@ for user in cursor:
     # Index access
     user_id = user[0]
 
-    # Tuple unpacking
-    uid, name, email = user
+    # Safe access with default
+    phone = user.get('phone', 'N/A')
+
+    # Slicing
+    first_three = user[:3]
+
+    # Iteration and joining
+    print('\t'.join(str(v) for v in user))
+
+    # Conversion
+    row_dict = dict(user)
+    row_tuple = tuple(user)
 ```
 
-### Column Name Normalization
+### Column Name Handling
 
-By default, column names are normalized to lowercase for consistency across databases:
-
-```python
-# Oracle returns "USER_ID", Postgres returns "user_id"
-# Both become accessible as:
-record.user_id
-record['user_id']
-```
-
-Control this behavior with `column_case`:
+Column names are lowercased by default for consistency across databases. Control with `column_case`:
 
 ```python
-from dbtk.cursors import ColumnCase
+# Force lowercase (default)
+cursor = db.cursor(column_case='lower')
 
 # Preserve database casing
-cursor = db.cursor(column_case=ColumnCase.PRESERVE)
+cursor = db.cursor(column_case='preserve')
 
 # Force uppercase
-cursor = db.cursor(column_case=ColumnCase.UPPER)
+cursor = db.cursor(column_case='upper')
 
-# Force lowercase (default)
-cursor = db.cursor(column_case=ColumnCase.LOWER)
+# Title case
+cursor = db.cursor(column_case='title')
+```
+
+### Cursor Configuration
+
+```python
+cursor = db.cursor(
+    column_case='preserve',    # Column name casing
+    batch_size=5000,           # Rows per batch in bulk operations
+    debug=True,                # Print SQL queries and bind variables
+    return_cursor=True,        # execute() returns cursor for chaining
+)
+
+# With return_cursor=True, you can chain calls
+cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
+```
+
+Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`:
+
+```yaml
+connections:
+  my_database:
+    type: postgres
+    host: localhost
+    database: mydb
+    user: myuser
+    cursor:
+      batch_size: 4000
+      column_case: preserve
+      debug: false
+      return_cursor: true
 ```
 
 ## Parameter Styles
 
-DBTK handles different parameter styles automatically:
+DBTK handles different parameter styles automatically. You can use named parameters (`:name`) with any database - DBTK converts to the driver's native style:
 
 ```python
 # Named parameters (recommended - works everywhere)
@@ -128,26 +190,19 @@ cursor.execute(
     "SELECT * FROM users WHERE name = :name AND age > :age",
     {'name': 'Alice', 'age': 25}
 )
-
-# Positional parameters (qmark style)
-cursor.execute(
-    "SELECT * FROM users WHERE name = ? AND age > ?",
-    ('Alice', 25)
-)
-
-# Check your database's style
-db.param_help()
 ```
 
-### Parameter Style by Database
+### Native Parameter Styles
 
-- **PostgreSQL**: `pyformat` - `%(name)s`
-- **Oracle**: `named` - `:name`
-- **MySQL**: `format` - `%s`
-- **SQL Server**: `qmark` - `?`
-- **SQLite**: `qmark` - `?`
+| Database | Native Style | Placeholder |
+|----------|-------------|-------------|
+| PostgreSQL | pyformat | `%(name)s` |
+| Oracle | named | `:name` |
+| MySQL | format | `%s` |
+| SQL Server (pyodbc) | qmark | `?` |
+| SQLite | qmark | `?` |
 
-DBTK's unified parameter handling lets you use named parameters (`:name` or `%(name)s`) with any database.
+DBTK's `execute_file()` method converts named parameters to whatever your driver needs, making SQL truly portable across databases.
 
 ## Cursor Methods
 
@@ -157,7 +212,7 @@ DBTK's unified parameter handling lets you use named parameters (`:name` or `%(n
 # Single query
 cursor.execute("SELECT * FROM users WHERE id = :id", {'id': 42})
 
-# Multiple queries (batch)
+# Multiple rows (batch)
 cursor.executemany(
     "INSERT INTO users (name, email) VALUES (:name, :email)",
     [
@@ -166,8 +221,8 @@ cursor.executemany(
     ]
 )
 
-# Execute from SQL file
-cursor.executefile('queries/create_schema.sql')
+# Execute from SQL file with portable parameter conversion
+cursor.execute_file('queries/create_schema.sql', {'status': 'active'})
 ```
 
 ### Fetching Results
@@ -193,8 +248,9 @@ user = cursor.selectinto("SELECT * FROM users WHERE id = :id", {'id': 42})
 ### Cursor Properties
 
 ```python
-# Column names
-columns = cursor.columns()
+# Column names (after executing a query)
+columns = cursor.columns()                   # Original names
+normalized = cursor.columns(normalized=True) # Sanitized for Python identifiers
 
 # Row count (if available)
 count = cursor.rowcount
@@ -220,95 +276,45 @@ except Exception:
 ### Context Manager Transactions
 
 ```python
-# Automatic commit/rollback
 with db.transaction():
     cursor.execute("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
     cursor.execute("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
     # Commits automatically on success, rolls back on exception
 ```
 
-### Nested Transactions
+## Direct Connection Functions
+
+Each database type has a convenience function with appropriate defaults:
 
 ```python
-with db.transaction():
-    cursor.execute("INSERT INTO orders (user_id) VALUES (1)")
+from dbtk.database import postgres, oracle, mysql, sqlserver, sqlite
 
-    with db.transaction():
-        cursor.execute("INSERT INTO order_items (order_id, product_id) VALUES (1, 100)")
-        # Inner transaction commits
+# PostgreSQL (default port: 5432)
+db = postgres(user='admin', password='secret', database='mydb',
+              host='localhost', port=5432)
 
-    # Outer transaction commits
+# Oracle (default port: 1521)
+db = oracle(user='admin', password='secret', database='ORCL',
+            host='localhost', port=1521)
+
+# MySQL (default port: 3306)
+db = mysql(user='admin', password='secret', database='mydb',
+           host='localhost', port=3306)
+
+# SQL Server (default port: 1433)
+db = sqlserver(user='admin', password='secret', database='mydb',
+               host='localhost', port=1433)
+
+# SQLite (no host/user/password needed)
+db = sqlite('path/to/database.db')
+db = sqlite(':memory:')  # In-memory database
 ```
 
-## Connection Pooling
-
-For production applications with connection pooling libraries:
-
-```python
-from dbtk.database import Database
-import psycopg2.pool
-
-# Create pool
-pool = psycopg2.pool.SimpleConnectionPool(1, 20,
-    host='localhost',
-    database='mydb',
-    user='admin',
-    password='secret'
-)
-
-# Get connection from pool
-conn = pool.getconn()
-db = Database(conn, psycopg2, 'mydb')
-
-# Use it
-cursor = db.cursor()
-cursor.execute("SELECT * FROM users")
-
-# Return to pool
-pool.putconn(conn)
-```
-
-## Advanced Connection Options
-
-### Custom Cursor Settings
-
-Set default cursor behavior for all cursors from a connection:
-
-```python
-db = dbtk.connect('production_db', cursor_settings={
-    'column_case': 'preserve',
-    'batch_size': 5000,
-    'debug': True
-})
-
-# All cursors from this connection inherit these settings
-cursor = db.cursor()
-```
-
-### Direct Driver Access
-
-Access underlying driver features when needed:
-
-```python
-# Access the wrapped connection
-raw_conn = db._connection
-
-# Access the driver module
-driver = db.driver
-print(driver.paramstyle)
-print(driver.apilevel)
-
-# Call driver-specific methods
-if db.database_type == 'oracle':
-    # Oracle-specific feature
-    cursor.setinputsizes(...)
-```
+All functions accept `**kwargs` for driver-specific parameters.
 
 ## Error Handling
 
 ```python
-from dbtk.database import Database
-
 try:
     cursor.execute("SELECT * FROM nonexistent_table")
 except db.driver.DatabaseError as e:
@@ -320,37 +326,11 @@ except db.driver.IntegrityError as e:
 ## Best Practices
 
 1. **Use context managers** - Ensures connections are properly closed
-2. **Use named parameters** - More readable and works across all databases
-3. **Iterate large result sets** - Don't fetchall() millions of rows
-4. **Handle transactions explicitly** - Use `transaction()` context manager
-5. **Normalize column names** - Default lowercase makes code portable
-6. **Use configuration files** - Keep credentials out of code
-
-## Configuration File Connections
-
-The recommended approach for production is to use YAML configuration files:
-
-```yaml
-# config.yml
-databases:
-  production_db:
-    driver: postgres
-    host: db.example.com
-    database: mydb
-    user: app_user
-    password: !encrypted AQECAHi...  # Use dbtk-encrypt
-```
-
-Then connect with:
-
-```python
-import dbtk
-
-dbtk.set_config_file('config.yml')
-db = dbtk.connect('production_db')
-```
-
-See [Configuration & Security](configuration.md) for details on encrypted passwords and config file management.
+2. **Use named parameters** - More readable and portable across databases
+3. **Iterate large result sets** - Don't `fetchall()` millions of rows
+4. **Use `transaction()` context manager** - Safe commit/rollback handling
+5. **Use configuration files** - Keep credentials out of code
+6. **Use `execute_file()`** - Portable SQL with automatic parameter conversion
 
 ## See Also
 

@@ -3,11 +3,11 @@
 ## Multiple Configuration Locations
 
 DBTK searches for configuration files in this order:
-1. `./dbtk.yml` (project-specific)
-2. `~/.config/dbtk.yml` (user-specific)
-3. Custom path via `set_config_file()`
+1. Explicitly set path via `dbtk.set_config_file('path/to/config.yml')`
+2. `./dbtk.yml` or `./dbtk.yaml` (project-specific)
+3. `~/.config/dbtk.yml` or `~/.config/dbtk.yaml` (user-specific)
 
-This lets you maintain per-project configurations while having a fallback for personal databases.
+This lets you maintain per-project configurations while having a fallback for personal databases. If no config is found, a sample is created at `~/.config/dbtk.yml`.
 
 ## Custom Driver Registration
 
