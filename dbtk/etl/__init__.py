@@ -6,7 +6,7 @@ This module provides tools for managing database tables and performing bulk oper
 
 - Table: Schema-aware table operations with SQL generation
 - DataSurge: High-performance bulk INSERT, UPDATE, DELETE, and MERGE operations
-- generate_table_config: Generate table configuration from database schema
+- column_defs_from_db: Generate column definitions from database schema
 
 Example
 -------
@@ -16,13 +16,13 @@ Example
 
     # Define table structure
     table = Table('users', columns={
-        'id': {'type': 'int', 'key': True},
-        'name': {'type': 'str'},
-        'email': {'type': 'str'}
+        'id': {'field': 'id', 'key': True},
+        'name': {'field': 'full_name', 'nullable': False},
+        'email': {'field': 'email', 'fn': 'email'}
     }, cursor=cursor)
 
     # Bulk operations
-    surge = DataSurge(cursor, table, batch_size=500)
+    surge = DataSurge(table, batch_size=500)
     surge.insert(records)
     surge.merge(records)
 """

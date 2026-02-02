@@ -40,7 +40,7 @@ DBTK searches for config files in this order:
 2. Current directory: `./dbtk.yml` or `./dbtk.yaml`
 3. User config: `~/.config/dbtk.yml` or `~/.config/dbtk.yaml`
 
-If no config file is found, a sample is automatically created at `~/.config/dbtk.yml`.
+If no config file is found, a sample is automatically created at `~/.config/dbtk_sample.yml`.
 
 ```python
 import dbtk

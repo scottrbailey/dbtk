@@ -93,7 +93,7 @@ from dbtk.database import ParamStyle
 
 cursor = dbtk.connect('intel_prod')
 # Auto-generate configuration from existing table
-config = dbtk.etl.generate_table_config(cursor, 'soldier_training', add_comments=True)
+config = dbtk.etl.column_defs_from_db(cursor, 'soldier_training')
 
 # Define ETL mapping with transformations
 phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
@@ -329,16 +329,16 @@ from dbtk.etl import DataSurge
 recruit_table = dbtk.etl.Table('fire_nation_soldiers', columns_config, cursor)
 
 # Create DataSurge instance for bulk operations
-bulk_writer = DataSurge(recruit_table)
+bulk_writer = DataSurge(recruit_table, batch_size=2000)
 
 # Bulk insert with batching
 with dbtk.readers.get_reader('massive_conscript_list.csv') as reader:
-    errors = bulk_writer.insert(cursor, reader, batch_size=2000)
+    errors = bulk_writer.insert(reader)
     print(f"Inserted {recruit_table.counts['insert']} records with {errors} errors")
 
 # Bulk merge (upsert) operations
 with dbtk.readers.get_reader('soldier_updates.csv') as reader:
-    errors = bulk_writer.merge(cursor, reader, batch_size=1000)
+    errors = bulk_writer.merge(reader)
 ```
 
 **DataSurge features:**
@@ -360,13 +360,15 @@ from dbtk.etl import transforms as tx
 # Date and time parsing with flexible formats
 tx.parse_date("Year 100 AG, Day 15")
 tx.parse_datetime("100 AG Summer Solstice T14:30:00Z")  # With timezone support
-tx.parse_timestamp("1642262200")  # Unix timestamp support
 
 # International phone number handling (requires phonenumbers library)
 tx.phone_clean("5551234567")              # -> "(555) 123-4567"
-tx.phone_format("+44 20 7946 0958", tx.PhoneFormat.NATIONAL)  # UK format
 tx.phone_validate("+1-800-AVATAR")        # Validation
-tx.phone_get_type("+1-800-CABBAGES")      # -> "toll_free"
+
+# For advanced phone operations, import from the submodule
+from dbtk.etl.transforms.phone import phone_format, phone_get_type, PhoneFormat
+phone_format("+44 20 7946 0958", PhoneFormat.NATIONAL)  # UK format
+phone_get_type("+1-800-CABBAGES")      # -> "toll_free"
 
 # Email validation and cleaning
 tx.email_validate("guru.pathik@eastern.air.temple")  # -> True
