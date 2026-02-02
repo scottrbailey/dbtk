@@ -157,7 +157,7 @@ class DataSurge(BaseSurge):
         # Drop temp table if it exists from previous run, then create fresh
         try:
             self.cursor.execute(f"DROP TABLE {temp_name}")
-        except self.cursor.connection.DatabaseError:
+        except self.cursor.connection.driver.DatabaseError:
             pass  # Table doesn't exist yet, which is fine
 
         self.cursor.execute(create_sql)
