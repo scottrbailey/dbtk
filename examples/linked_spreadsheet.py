@@ -1,6 +1,3 @@
-import dbtk
-from pathlib import Path
-
 """
 LinkedExcelWriter Example: Multi-Sheet Excel Report with Hyperlinks
 
@@ -46,7 +43,7 @@ Generates examples/output/linked_spreadsheet.xlsx with:
 
 Prerequisites
 -------------
-- IMDB sample data loaded via examples/bulk_load_imdb_subset.py
+- IMDB sample data loaded via examples/bulk_load_imdb_subset_pg.py or data_load_imdb_subset.py
 - Database connection configured in dbtk config
 
 See Also
@@ -54,6 +51,11 @@ See Also
 - movie_list.sql: Query for Drama movies
 - movie_principals.sql: Query for cast/crew with role filtering
 """
+
+import dbtk
+from pathlib import Path
+
+
 if __name__ == '__main__':
     dbtk.setup_logging()
     db = dbtk.connect('imdb')
@@ -61,7 +63,7 @@ if __name__ == '__main__':
     output_path = Path.cwd()  /  'output'
     output_path.mkdir(parents=True, exist_ok=True)
     query_path = Path.cwd()
-    with dbtk.writers.LinkedExcelWriter(str(output_path / 'linked_spreadsheet.xlsx')) as writer:
+    with dbtk.writers.LinkedExcelWriter(str(output_path / 'IMDB_Linked.xlsx')) as writer:
         # title_links will be used both to create external links on the "Movies" tab
         # and create internal links from "Cast" and "Crew" tabs to that movie on the "Movies" tab
         title_links = dbtk.writers.LinkSource('titles',
@@ -80,26 +82,26 @@ if __name__ == '__main__':
                                               external_only=True)
         writer.register_link_source(name_links)
 
-        # Get list of movies from titles_subset (loaded in examples/bulk_load_imdb_subset.py)
+        # Get list of movies from titles_subset (loaded in examples/bulk_load_imdb_subset_pg.py)
         cur.execute_file(query_path / 'movie_list.sql', {'genre': 'Drama'})
         writer.write_batch(cur, 'Movies',
-                           links={'primary_title': 'titles'})
+                           links={'Primary Title': 'titles'})
 
         # Create a PreparedStatement from a query file
         principal_stmt = cur.prepare_file(query_path / 'movie_principals.sql')
         principal_stmt.execute({'genre': 'Drama', 'incl_roles': ['actor', 'actress'],
                                 'excl_roles': None})
         writer.write_batch(cur, 'Cast',
-                           links={'name': 'names',
-                                  'movie_1': 'titles:internal',
-                                  'movie_2': 'titles:internal',
-                                  'movie_3': 'titles:internal',
-                                  'movie_4': 'titles:internal'})
+                           links={'Name': 'names',
+                                  'Movie 1': 'titles:internal',
+                                  'Movie 2': 'titles:internal',
+                                  'Movie 3': 'titles:internal',
+                                  'Movie 4': 'titles:internal'})
         principal_stmt.execute({'genre': 'Drama', 'incl_roles': None,
                                 'excl_roles': ['actor', 'actress', 'director', 'producer']})
         writer.write_batch(cur, 'Crew',
-                           links={'name': 'names',
-                                  'movie_1': 'titles:internal',
-                                  'movie_2': 'titles:internal',
-                                  'movie_3': 'titles:internal',
-                                  'movie_4': 'titles:internal'})
+                           links={'Name': 'names',
+                                  'Movie 1': 'titles:internal',
+                                  'Movie 2': 'titles:internal',
+                                  'Movie 3': 'titles:internal',
+                                  'Movie 4': 'titles:internal'})

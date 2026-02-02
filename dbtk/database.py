@@ -490,7 +490,7 @@ class Database:
         database_name : str, optional
             Name of the database. If None, attempts to extract from connection.
         cursor_settings : dict, optional
-            Values passed to the cursor constructor. e.g. {'type': 'dict', 'batch_size': 2000}
+            Values passed to the cursor constructor. e.g. {'batch_size': 2000}
 
         Example
         -------
@@ -508,12 +508,6 @@ class Database:
         """
         self._connection = connection
         self.driver = driver
-
-        # Normalize oracledb exception structure to match DB-API 2.0 spec
-        # oracledb moved DatabaseError to exceptions submodule unlike other drivers
-        if driver.__name__ == 'oracledb':
-            from oracledb import exceptions
-            self.__dict__['DatabaseError'] = exceptions.DatabaseError
 
         if database_name is None:
             database_name = (connection.get('database') or
@@ -768,6 +762,8 @@ class Database:
 
         if connection:
             db = cls(connection, db_driver, kwargs.get('database'), cursor_settings=cursor_settings)
+            if db.database_type == 'unknown':
+                db.database_type = db_type
             return db
 
 

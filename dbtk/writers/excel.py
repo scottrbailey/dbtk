@@ -997,7 +997,7 @@ class LinkedExcelWriter(ExcelWriter):
         col_index_map = {name: idx + 1 for idx, name in enumerate(self.columns)}
 
         for row_idx, record in enumerate(self.data_iterator, data_start_row):
-            row_dict = dict(zip(self.columns, self._row_to_tuple(record)))
+            row_dict = record #dict(zip(self.columns, self._row_to_tuple(record)))
             values = self._row_to_tuple(record)
 
             for col_idx, value in enumerate(values, 1):
