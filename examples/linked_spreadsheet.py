@@ -1,6 +1,3 @@
-import dbtk
-from pathlib import Path
-
 """
 LinkedExcelWriter Example: Multi-Sheet Excel Report with Hyperlinks
 
@@ -46,7 +43,7 @@ Generates examples/output/linked_spreadsheet.xlsx with:
 
 Prerequisites
 -------------
-- IMDB sample data loaded via examples/bulk_load_imdb_subset.py
+- IMDB sample data loaded via examples/bulk_load_imdb_subset_pg.py or data_load_imdb_subset.py
 - Database connection configured in dbtk config
 
 See Also
@@ -54,6 +51,11 @@ See Also
 - movie_list.sql: Query for Drama movies
 - movie_principals.sql: Query for cast/crew with role filtering
 """
+
+import dbtk
+from pathlib import Path
+
+
 if __name__ == '__main__':
     dbtk.setup_logging()
     db = dbtk.connect('imdb')
@@ -80,7 +82,7 @@ if __name__ == '__main__':
                                               external_only=True)
         writer.register_link_source(name_links)
 
-        # Get list of movies from titles_subset (loaded in examples/bulk_load_imdb_subset.py)
+        # Get list of movies from titles_subset (loaded in examples/bulk_load_imdb_subset_pg.py)
         cur.execute_file(query_path / 'movie_list.sql', {'genre': 'Drama'})
         writer.write_batch(cur, 'Movies',
                            links={'Primary Title': 'titles'})

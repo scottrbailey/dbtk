@@ -1,9 +1,3 @@
-import dbtk
-import polars as pl
-from dbtk.etl.manager import ValidationCollector
-from dbtk.etl.transforms import TableLookup
-from dbtk.readers import DataFrameReader
-
 """
 Loads the first 100,000 rows of name.basics.tsv.gz from the IMDB dataset into a Postgres database.
 The name.basics.tsv dataset has over 14M records and is over 280MB compressed.
@@ -23,6 +17,13 @@ CREATE TABLE professions (
    title       VARCHAR(30)
 );
 """
+
+import dbtk
+import polars as pl
+from dbtk.etl.managers import ValidationCollector
+from dbtk.etl.transforms import TableLookup
+from dbtk.readers import DataFrameReader
+
 
 def wrap_array(val) -> str:
     """Wrap comma separated string or list with '{}' for postgres"""

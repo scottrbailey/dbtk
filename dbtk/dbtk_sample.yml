@@ -70,6 +70,10 @@ connections:
     cursor:
       fast_executemany: true  # Recommended for bulk operations; disable if using TEXT/NVARCHAR(MAX)/JSON columns
 
+states_db:
+    type: sqlite
+    database: /data/test_states.db
+
 # Encrypted passwords (optional)
 passwords:
   openai_key:

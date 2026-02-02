@@ -490,7 +490,7 @@ class Database:
         database_name : str, optional
             Name of the database. If None, attempts to extract from connection.
         cursor_settings : dict, optional
-            Values passed to the cursor constructor. e.g. {'type': 'dict', 'batch_size': 2000}
+            Values passed to the cursor constructor. e.g. {'batch_size': 2000}
 
         Example
         -------
