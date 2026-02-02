@@ -62,7 +62,6 @@ The config file has three main sections: `settings`, `connections`, and optional
 ```yaml
 settings:
   default_batch_size: 1000
-  default_column_case: lower        # 'lower', 'upper', 'title', or 'preserve'
   default_country: US
   default_header_clean: 2
   default_timezone: UTC
@@ -129,7 +128,6 @@ connections:
     password: secret
     cursor:
       batch_size: 4000          # Rows to process at once in bulk operations
-      column_case: preserve     # 'lower', 'upper', 'title', or 'preserve'
       debug: false              # Print SQL queries and bind variables
       return_cursor: true       # execute() returns cursor for method chaining
       fast_executemany: true    # For pyodbc SQL Server bulk inserts

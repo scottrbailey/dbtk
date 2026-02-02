@@ -134,27 +134,24 @@ for user in cursor:
 
 ### Column Name Handling
 
-Column names are lowercased by default for consistency across databases. Control with `column_case`:
+Record objects store both the original column names from the database and normalized (lowercased, cleaned) names. You can access fields using either form:
 
 ```python
-# Force lowercase (default)
-cursor = db.cursor(column_case='lower')
+cursor.execute("SELECT Employee_ID, FULL_NAME FROM users")
+for row in cursor:
+    row.employee_id       # Normalized name access
+    row['Employee_ID']    # Original name access
+    row['employee_id']    # Normalized also works in dict access
 
-# Preserve database casing
-cursor = db.cursor(column_case='preserve')
-
-# Force uppercase
-cursor = db.cursor(column_case='upper')
-
-# Title case
-cursor = db.cursor(column_case='title')
+# See both forms
+columns = cursor.columns()                    # Original names
+normalized = cursor.columns(normalized=True)  # Normalized names
 ```
 
 ### Cursor Configuration
 
 ```python
 cursor = db.cursor(
-    column_case='preserve',    # Column name casing
     batch_size=5000,           # Rows per batch in bulk operations
     debug=True,                # Print SQL queries and bind variables
     return_cursor=True,        # execute() returns cursor for chaining
@@ -175,7 +172,6 @@ connections:
     user: myuser
     cursor:
       batch_size: 4000
-      column_case: preserve
       debug: false
       return_cursor: true
 ```

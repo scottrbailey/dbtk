@@ -1,7 +1,5 @@
 settings:
-  default_column_case: lower
   default_country: US
-  default_cursor_type: record
   default_header_clean: 2  # Clean.LOWER_NOSPACE
   default_timezone: UTC
   lookup_preload_threshold: 500  # if table size > threshold, preload all values for transforms.CodeLookup
