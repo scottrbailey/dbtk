@@ -146,20 +146,22 @@ class DataSurge(BaseSurge):
             create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
 
         if db_type == 'sqlserver':
-            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"##{self.table.name.upper()}")
+            temp_name = f"#{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}"
 
             # Get column definitions from table
             col_info = self.table.get_column_definitions()
             col_defs = [f"[{col_name}] {sql_type} NULL" for col_name, _, _, _, _, sql_type in col_info]
             col_defs_str = ', '.join(col_defs)
             create_sql = f"CREATE TABLE {temp_name} ({col_defs_str})"
+
+        # Drop temp table if it exists from previous run, then create fresh
         try:
-            logger.debug(f"Exception class: {self.cursor.connection.DatabaseError}")
-            logger.debug(f"Has DatabaseError: {hasattr(self.cursor.connection, 'DatabaseError')}")
-            self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
-        except self.cursor.connection.DatabaseError as e:
-            self.cursor.execute(create_sql)
-            logger.debug(f"Created TEMP TABLE: {create_sql}")
+            self.cursor.execute(f"DROP TABLE {temp_name}")
+        except self.cursor.connection.DatabaseError:
+            pass  # Table doesn't exist yet, which is fine
+
+        self.cursor.execute(create_sql)
+        logger.debug(f"Created temp table: {create_sql}")
 
         # Use temporary table for bulk insert
         from .table import Table
@@ -173,7 +175,7 @@ class DataSurge(BaseSurge):
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
-            self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+            self.cursor.execute(f"DROP TABLE {temp_name}")
             return errors
 
         # Transfer record fields from temp table to main table for proper merge column exclusion
@@ -207,8 +209,8 @@ class DataSurge(BaseSurge):
             errors += len(records_list) - errors
         finally:
             try:
-                self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+                self.cursor.execute(f"DROP TABLE {temp_name}")
             except Exception as e:
-                logger.warning(f"Failed to truncate temp table {temp_name}: {e}")
+                logger.warning(f"Failed to drop temp table {temp_name}: {e}")
 
         return errors
