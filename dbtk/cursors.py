@@ -27,7 +27,7 @@ class PreparedStatement:
 
     def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8-sig'):
         """
-        Create a prepared statement from a SQL file. It
+        Create a prepared statement from a SQL file.
 
         Args:
             cursor: The cursor that will execute this statement

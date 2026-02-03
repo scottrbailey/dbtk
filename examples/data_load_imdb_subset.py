@@ -93,7 +93,7 @@ Four populated tables with referential integrity maintained:
 
 Performance
 -----------
-Processes 132M+ rows in approximately **30 seconds** (typical hardware), demonstrating
+Processes 132M+ rows in approximately **30-50 seconds** (depending on database), demonstrating
 the raw power of dbtk's bulk loading combined with Polars' lazy evaluation.
 
 Prerequisites
@@ -165,6 +165,7 @@ import time
 from pathlib import Path
 from dbtk.etl import DataSurge, Table, ValidationCollector
 from dbtk.etl.transforms import TableLookup
+from dbtk.utils import ParamStyle, process_sql_parameters
 
 def array_to_json(val):
     if val is None:
@@ -177,7 +178,7 @@ def array_to_json(val):
 
 if __name__ == '__main__':
     dbtk.setup_logging()
-    db = dbtk.connect('imdb_sqlite')
+    db = dbtk.connect('imdb_mysql')
     cur = db.cursor()
     if db.database_type == 'sqlite':
         cur.execute('DELETE FROM titles_subset')
@@ -330,8 +331,10 @@ if __name__ == '__main__':
     # ----------------------------------------------------------------------------------------------
     new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]
     if new_genre:
-        genre_insert = 'INSERT INTO genres (genre, title) VALUES (?, ?)'
+        genre_insert = 'INSERT INTO genres (genre, title) VALUES (:genre, :title)'
+        # convert query to match databases paramstyle, forcing positional
+        genre_insert, _ = process_sql_parameters(genre_insert, ParamStyle.get_positional_style(cur.paramstyle))
         cur.executemany(genre_insert, new_genre)
     db.commit()
     et = time.monotonic()
-    print(f'Read through and filtered over 121 million rows, loaded into database in {et-st:.01f} seconds.')
+    print(f'Read through and filtered over 132 million rows, loaded into database in {et-st:.01f} seconds.')

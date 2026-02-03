@@ -1,26 +1,27 @@
 # Configuration & Security
 
-DBTK uses YAML configuration files to manage database connections and keep credentials secure with encryption.
+DBTK uses YAML configuration files to manage database connections and keep credentials secure with encryption. Running `dbtk checkup` will copy a well commented sample config file to _~/.config/dbtk_sample.yml_. 
+DBTK also has several [command line tools](#command-line-tools) to assist with configuration and encryption.
 
 ## Quick Start
 
-Create a `dbtk.yml` file:
+Create a `dbtk.yml` file in your project folder or in ~/.config folder:
 
 ```yaml
-databases:
+connections:
   dev_db:
-    driver: postgres
+    type: postgres
     host: localhost
     database: myapp_dev
     user: developer
     password: dev_password
 
   prod_db:
-    driver: postgres
+    type: postgres
     host: db.example.com
     database: myapp_prod
     user: app_user
-    password: !encrypted AQECAHi7L5...  # Use dbtk-encrypt
+    encrypted_password: gAAAAABh...  # Use dbtk encrypt-password
 ```
 
 Connect from code:
@@ -28,8 +29,10 @@ Connect from code:
 ```python
 import dbtk
 
-# Uses dbtk.yml in current directory by default
 db = dbtk.connect('prod_db')
+# or with context manager
+with dbtk.connect('prod_db') as db:
+    cur = db.cursor()
 ```
 
 ## Configuration File Locations
@@ -37,9 +40,10 @@ db = dbtk.connect('prod_db')
 DBTK searches for config files in this order:
 
 1. Explicitly set path: `dbtk.set_config_file('path/to/config.yml')`
-2. Current directory: `./dbtk.yml`
-3. User home: `~/.dbtk/dbtk.yml`
-4. System-wide: `/etc/dbtk/dbtk.yml` (Unix/Linux)
+2. Current directory: `./dbtk.yml` or `./dbtk.yaml`
+3. User config: `~/.config/dbtk.yml` or `~/.config/dbtk.yaml`
+
+If no config file is found, a sample is automatically created at `~/.config/dbtk_sample.yml`.
 
 ```python
 import dbtk
@@ -54,447 +58,325 @@ db = dbtk.connect('database_name')
 
 ## Configuration File Structure
 
-### Basic Database Connection
+The config file has three main sections: `settings`, `connections`, and optionally `passwords` and `drivers`.
+
+### Settings
 
 ```yaml
-databases:
-  my_database:
-    driver: postgres           # Database type
-    host: localhost           # Server hostname
-    port: 5432               # Port (optional, uses driver default)
-    database: mydb           # Database name
-    user: myuser            # Username
-    password: mypassword    # Plaintext works, but encrypt it! See dbtk-encrypt below
+settings:
+  default_batch_size: 1000
+  default_country: US
+  default_timezone: UTC
+
+  # Logging configuration for integration scripts
+  logging:
+    directory: ./logs
+    level: INFO
+    format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    timestamp_format: '%Y-%m-%d %H:%M:%S'
+    filename_format: '%Y%m%d_%H%M%S'
+    split_errors: true  # If True, separate error log will be created (only if critical or errors are encountered
+    console: true
+    retention_days: 30
 ```
 
-### Driver-Specific Options
+### Database Connections
 
-**PostgreSQL:**
+Each connection is defined under the `connections:` key with a `type` field indicating the database type:
+
 ```yaml
-databases:
-  postgres_db:
-    driver: postgres
+connections:
+  my_database:
+    type: postgres              # Database type: postgres, oracle, mysql, sqlserver, sqlite
+    host: localhost             # Server hostname
+    port: 5432                  # Port (optional, uses driver default)
+    database: mydb              # Database name
+    user: myuser                # Username
+    password: mypassword        # Plaintext - encrypt it! See below
+    encrypted_password: gAAAAABh... #Use `dbtk encrypt-password mypassword` 
+```
+
+**Driver selection:**
+
+You can optionally specify a `driver` field to choose a specific database adapter. If omitted, DBTK automatically selects the best available driver by priority. If you specify `driver`, `type` is optional since DBTK can infer it from the driver name.
+
+```yaml
+connections:
+  # Use psycopg (v3) instead of default psycopg2
+  pg_v3:
+    driver: psycopg
     host: localhost
     database: mydb
     user: myuser
-    password: secret
-    # Optional psycopg2 parameters
-    connect_timeout: 10
-    sslmode: require
+    encrypted_password: gAAAAABh...
+
+  # ODBC connection with DSN
+  odbc_db:
+    driver: pyodbc_postgres
+    dsn: MY_DSN
+    password: '${MY_PASSWORD}'    # Pull from environment variable
+```
+
+### Cursor Settings
+
+Set default cursor behavior for all cursors created from a connection:
+
+```yaml
+connections:
+  my_database:
+    type: postgres
+    host: localhost
+    database: mydb
+    user: myuser
+    encrypted_password: gAAAAABh...
+    cursor:
+      batch_size: 4000          # Rows to process at once in bulk operations
+      debug: false              # Print SQL queries and bind variables
+      return_cursor: true       # execute() returns cursor for method chaining
+      fast_executemany: true    # For pyodbc SQL Server bulk inserts
+```
+
+### Driver-Specific Examples
+
+**PostgreSQL:**
+```yaml
+connections:
+  postgres_db:
+    type: postgres
+    host: localhost
+    port: 5432
+    database: mydb
+    user: myuser
+    encrypted_password: gAAAAABh...
 ```
 
 **Oracle:**
 ```yaml
-databases:
+connections:
   oracle_db:
-    driver: oracle
-    user: myuser
-    password: secret
-    # Choose one connection method:
-    service_name: ORCL              # TNS service name
-    # OR
-    host: localhost
+    type: oracle
+    host: oracle.company.com
     port: 1521
-    sid: ORCL
-    # OR
-    dsn: "(DESCRIPTION=...)"        # Full TNS string
+    database: prod.company.com   # Service name
+    user: app_user
+    encrypted_password: gAAAAABh...
 ```
 
 **MySQL:**
 ```yaml
-databases:
+connections:
   mysql_db:
-    driver: mysql
+    type: mysql
     host: localhost
+    port: 3306
     database: mydb
     user: myuser
     password: secret
-    charset: utf8mb4
-    connect_timeout: 10
 ```
 
 **SQL Server:**
 ```yaml
-databases:
+connections:
   sqlserver_db:
-    driver: sqlserver
-    server: localhost           # Note: 'server' not 'host'
+    driver: pyodbc_sqlserver
+    type: sqlserver
+    host: localhost\SQLEXPRESS    # Instance name supported
     database: mydb
     user: myuser
     password: secret
-    # Optional
-    driver_name: "ODBC Driver 17 for SQL Server"
-    TrustServerCertificate: yes
+    cursor:
+      fast_executemany: true     # Recommended for bulk operations
 ```
 
 **SQLite:**
 ```yaml
-databases:
+connections:
   sqlite_db:
-    driver: sqlite
+    type: sqlite
     database: /path/to/database.db
-    # SQLite doesn't need host/user/password
-```
-
-### Default Cursor Settings
-
-Set default cursor behavior for all connections:
-
-```yaml
-databases:
-  my_database:
-    driver: postgres
-    host: localhost
-    database: mydb
-    user: myuser
-    password: secret
-    cursor_settings:
-      column_case: preserve      # 'lower', 'upper', 'preserve'
-      batch_size: 5000          # Batch size for executemany
-      debug: false              # Print SQL queries
 ```
 
 ## Password Encryption
 
-### Encrypting Passwords
+DBTK uses Fernet symmetric encryption (from the `cryptography` library) for password storage. Before you can begin encrypting and decrypting passwords, you must generate and store an encryption key.
+If system keyring is available, this is as easy as running `dbtk store-key`. See [Command-Line Tools](#command-line-tools) and [Programatic Encryption](#programmatic-encryption) sections for help.
 
-Use the `dbtk-encrypt` command-line tool to encrypt passwords:
-
-```bash
-# Encrypt a password
-$ dbtk-encrypt mypassword
-!encrypted AQECAHi7L5WLo...
-
-# Generate a new encryption key
-$ dbtk-encrypt --new-key
-New encryption key: fernet:d09af5b3c...
-
-# Encrypt with specific key
-$ dbtk-encrypt --key fernet:d09af5b3c... mypassword
-!encrypted AQECAHi7L5WLo...
-```
-
-### Using Encrypted Passwords
-
-Add the encrypted password to your config file with the `!encrypted` tag:
-
-```yaml
-databases:
-  prod_db:
-    driver: postgres
-    host: db.example.com
-    database: production
-    user: app_user
-    password: !encrypted AQECAHi7L5WLo4Kg8ZYE...
-```
-
-### Encryption Keys
+### Encryption Key Management
 
 DBTK looks for encryption keys in this order:
 
 1. Environment variable: `DBTK_ENCRYPTION_KEY`
-2. Key file: `~/.dbtk/encryption.key`
-3. System keyring (if available)
+2. System keyring: service `dbtk`, key `encryption_key` (requires `keyring` library)
 
-**Recommended setup for production:**
+### Command-Line Tools
+
+All encryption operations use the `dbtk` CLI with subcommands:
 
 ```bash
-# Generate key
-$ dbtk-encrypt --new-key > ~/.dbtk/encryption.key
-$ chmod 600 ~/.dbtk/encryption.key
+# Generate a new encryption key
+$ dbtk generate-key              # Generate a key to manually store in environmental variable
 
-# Encrypt password
-$ dbtk-encrypt --key-file ~/.dbtk/encryption.key mypassword
-!encrypted AQECAHi7L5WLo...
+# Store key in system keyring (requires keyring library)
+$ dbtk store-key [key]            # Store provided key or generate new one
+$ dbtk store-key --force          # Overwrite existing key
 
-# Set environment variable (optional, for containers/CI)
-$ export DBTK_ENCRYPTION_KEY=fernet:d09af5b3c...
+# Encrypt a single password
+$ dbtk encrypt-password mypassword
+gAAAAABh...
+
+# Encrypt all passwords in a config file
+# Finds plaintext 'password:' entries and converts to 'encrypted_password:'
+$ dbtk encrypt-config dbtk.yml
+
+# Migrate config to a new encryption key
+$ dbtk migrate-config old_config.yml new_config.yml --new-key "new_key_here"
+
+# Check dependencies, drivers, and configuration
+$ dbtk checkup
+
+# Interactive configuration setup wizard
+$ dbtk config-setup
 ```
 
-**Security best practices:**
+### Using Encrypted Passwords
 
-1. Never commit encryption keys to version control
-2. Use different keys for dev/staging/production
-3. Rotate keys periodically
-4. Store keys in secure key management systems (AWS KMS, HashiCorp Vault, etc.)
-5. Use environment variables in containerized environments
+In your config file, use `encrypted_password` instead of `password`:
 
-## Multiple Configuration Files
-
-Maintain separate configs for different environments:
-
-**development.yml:**
 ```yaml
-databases:
-  app_db:
-    driver: postgres
-    host: localhost
-    database: myapp_dev
-    user: developer
-    password: dev_password
-```
-
-**production.yml:**
-```yaml
-databases:
-  app_db:
-    driver: postgres
+connections:
+  prod_db:
+    type: postgres
     host: db.example.com
-    database: myapp_prod
+    database: production
     user: app_user
-    password: !encrypted AQECAHi...
+    encrypted_password: gAAAAABh...
 ```
 
-**In your application:**
-```python
-import os
-import dbtk
-
-# Load environment-specific config
-env = os.getenv('ENVIRONMENT', 'development')
-dbtk.set_config_file(f'{env}.yml')
-
-db = dbtk.connect('app_db')
-```
-
-## Connection String Format
-
-For simple cases, you can use connection strings instead of config files:
+### Programmatic Encryption
 
 ```python
-from dbtk.database import postgres, oracle, mysql
+from dbtk import config
 
-# PostgreSQL
-db = postgres('postgresql://user:pass@localhost/mydb')
+# Generate encryption key
+key = config.generate_encryption_key()
 
-# Oracle
-db = oracle('oracle://user:pass@localhost:1521/ORCL')
+# Encrypt/decrypt passwords
+cfg = config.ConfigManager()
+encrypted = cfg.encrypt_password('my_secret')
+decrypted = cfg.decrypt_password(encrypted)
 
-# MySQL
-db = mysql('mysql://user:pass@localhost/mydb')
+# Encrypt all passwords in a config file
+config.encrypt_config_file('dbtk.yml')
+
+# Store key in system keyring
+config.store_key(key, force=True)
 ```
 
-## Environment Variables
+### Environment Variables in Connection Config
 
-Override config values with environment variables:
+Reference environment variables in any connection parameter using `${VAR_NAME}` syntax. You can also provide a default value with `${VAR_NAME:default}`:
 
 ```yaml
-databases:
-  app_db:
-    driver: postgres
-    host: ${DB_HOST:localhost}           # Default to localhost
-    database: ${DB_NAME}                 # Required
-    user: ${DB_USER}
-    password: !encrypted ${DB_PASSWORD}  # Can encrypt env vars too
+connections:
+  # Required env var (fails if not set)
+  prod_db:
+    type: postgres
+    host: '${PROD_HOST}'
+    password: '${PROD_PASSWORD}'
+
+  # With defaults (uses default if env var not set)
+  dev_db:
+    type: postgres
+    host: '${DB_HOST:localhost}'
+    port: '${DB_PORT:5432}'
+    database: '${DB_NAME:myapp_dev}'
+    user: '${DB_USER:developer}'
+    password: '${DB_PASSWORD:dev_password}'
 ```
+
+This is especially useful for Docker/CI environments where you want a config that works both locally (using defaults) and in production (using env vars).
+
+### Recommended Setup for Production
 
 ```bash
-export DB_HOST=db.example.com
-export DB_NAME=production
-export DB_USER=app_user
-export DB_PASSWORD=AQECAHi7L5WLo...
+# 1. Generate encryption key
+$ dbtk generate-key
+# Output: kL7xP9... (your Fernet key)
+
+# 2. Store key securely
+$ export DBTK_ENCRYPTION_KEY=kL7xP9...   # For containers/CI
+# OR
+$ dbtk store-key kL7xP9...               # For workstations with keyring
+
+# 3. Encrypt passwords in config
+$ dbtk encrypt-config dbtk.yml
 ```
 
-## Connection Aliases
-
-Create shortcuts for common connections:
-
-```yaml
-databases:
-  # Full definitions
-  prod_warehouse:
-    driver: postgres
-    host: warehouse.example.com
-    database: analytics
-    user: etl_user
-    password: !encrypted AQECAHi...
-
-  prod_app:
-    driver: postgres
-    host: app.example.com
-    database: myapp
-    user: app_user
-    password: !encrypted AQECAHi...
-
-  # Alias for convenience
-  default: prod_app
-  warehouse: prod_warehouse
-```
-
-```python
-# These are equivalent
-db = dbtk.connect('prod_app')
-db = dbtk.connect('default')
-```
-
-## Advanced Configuration
-
-### Connection Pooling
-
-Configure connection pool settings:
-
-```yaml
-databases:
-  app_db:
-    driver: postgres
-    host: localhost
-    database: mydb
-    user: myuser
-    password: secret
-    pool:
-      min_size: 2
-      max_size: 20
-      timeout: 30
-```
-
-### Read-Only Connections
-
-Ensure connections are read-only:
-
-```yaml
-databases:
-  reporting_db:
-    driver: postgres
-    host: replica.example.com
-    database: analytics
-    user: readonly_user
-    password: !encrypted AQECAHi...
-    options:
-      read_only: true
-```
-
-### Custom Driver Parameters
-
-Pass any driver-specific parameters:
-
-```yaml
-databases:
-  oracle_db:
-    driver: oracle
-    user: myuser
-    password: !encrypted AQECAHi...
-    service_name: ORCL
-    # Oracle-specific parameters
-    threaded: true
-    events: true
-    encoding: UTF-8
-```
-
-## Validation and Testing
-
-### Validate Configuration
-
-```python
-import dbtk
-
-# Test connection
-try:
-    db = dbtk.connect('prod_db')
-    cursor = db.cursor()
-    cursor.execute("SELECT 1")
-    print("✓ Connection successful")
-    db.close()
-except Exception as e:
-    print(f"✗ Connection failed: {e}")
-```
-
-### Configuration Linting
-
-Use `dbtk-validate` to check config files:
+**Key rotation:**
 
 ```bash
-$ dbtk-validate dbtk.yml
-✓ Configuration valid
-✓ 3 database connections defined
-⚠ Warning: 'dev_db' uses unencrypted password
+export DBTK_ENCRYPTION_KEY="current_key"
+NEW_KEY=$(dbtk generate-key)
+dbtk migrate-config dbtk.yml dbtk_new.yml --new-key "$NEW_KEY"
+export DBTK_ENCRYPTION_KEY="$NEW_KEY"
+mv dbtk_new.yml dbtk.yml
 ```
 
-## Migration from Other Tools
+## Standalone Passwords
 
-### From SQLAlchemy
+Store non-database credentials (API keys, etc.) in the `passwords` section:
 
-```python
-# SQLAlchemy
-from sqlalchemy import create_engine
-engine = create_engine('postgresql://user:pass@localhost/mydb')
-
-# DBTK equivalent
-import dbtk
-db = dbtk.database.postgres(user='user', password='pass',
-                            host='localhost', database='mydb')
+```yaml
+passwords:
+  openai_key:
+    description: "OpenAI API key for data processing"
+    encrypted_password: gAAAAABh...
 ```
 
-### From Django
+## Custom Driver Registration
+
+Register custom database drivers in the config file:
+
+```yaml
+drivers:
+  firebird:
+    database_type: firebird
+    module: firebird.driver        # Only needed if name doesn't match module
+    priority: 1
+    param_map: {}                  # Map non-standard parameter names
+    required_params: [{'host', 'database', 'user'}, {'dsn'}]
+    optional_params: {'port', 'password'}
+    connection_method: kwargs
+    default_port: 3050
+```
+
+Or register programmatically:
 
 ```python
-# Django settings.py
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'mydb',
-        'USER': 'user',
-        'PASSWORD': 'pass',
-        'HOST': 'localhost',
+from dbtk.database import register_user_drivers
+
+register_user_drivers({
+    'my_driver': {
+        'database_type': 'postgres',
+        'priority': 10,
+        'param_map': {'database': 'dbname'},
+        'required_params': [{'host', 'database', 'user'}],
+        'optional_params': {'port', 'password'},
+        'connection_method': 'kwargs',
+        'default_port': 5432
     }
-}
-
-# DBTK config.yml
-databases:
-  default:
-    driver: postgres
-    database: mydb
-    user: user
-    password: !encrypted AQECAHi...
-    host: localhost
+})
 ```
 
-## Troubleshooting
+## Security Best Practices
 
-### Connection Fails
-
-```python
-# Enable debug logging
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-import dbtk
-db = dbtk.connect('my_database')  # Will show detailed connection info
-```
-
-### Encryption Key Not Found
-
-```bash
-# Check key location
-$ cat ~/.dbtk/encryption.key
-
-# Or set environment variable
-$ export DBTK_ENCRYPTION_KEY=fernet:d09af5b3c...
-```
-
-### Config File Not Found
-
-```python
-import dbtk
-
-# Show config search paths
-print(dbtk.config.get_config_paths())
-
-# Use explicit path
-dbtk.set_config_file('/absolute/path/to/config.yml')
-```
-
-## Security Checklist
-
-- [ ] Use encrypted passwords in production config files
-- [ ] Never commit encryption keys to version control
-- [ ] Set restrictive permissions on config files (`chmod 600`)
-- [ ] Use environment variables for sensitive values in CI/CD
-- [ ] Rotate encryption keys periodically
-- [ ] Use separate configs for dev/staging/production
-- [ ] Store encryption keys in secure key management systems
-- [ ] Enable SSL/TLS for database connections
-- [ ] Use read-only users where appropriate
-- [ ] Audit database access logs regularly
+1. Use `encrypted_password` in production config files
+2. Never commit encryption keys to version control
+3. Use `DBTK_ENCRYPTION_KEY` environment variable in containerized environments
+4. Use system keyring on workstations (`dbtk store-key`)
+5. Rotate keys periodically with `dbtk migrate-config`
+6. Set restrictive permissions on config files (`chmod 600`)
+7. Use separate configs for dev/staging/production
 
 ## See Also
 
