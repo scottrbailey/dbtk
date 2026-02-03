@@ -50,6 +50,13 @@ connections:
     user: missinguser
     password: '${MISSING_VAR}'
 
+  env_default_db:
+    type: postgres
+    host: '${TEST_HOST:localhost}'
+    database: '${TEST_DATABASE:defaultdb}'
+    user: '${TEST_USER:defaultuser}'
+    password: '${TEST_PASSWORD:defaultpass}'
+
 passwords:
   api_key:
     description: Test API key

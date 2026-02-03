@@ -272,17 +272,29 @@ config.encrypt_config_file('dbtk.yml')
 config.store_key(key, force=True)
 ```
 
-### Environment Variable Passwords
+### Environment Variables in Connection Config
 
-Reference environment variables in config using `${VAR_NAME}` syntax:
+Reference environment variables in any connection parameter using `${VAR_NAME}` syntax. You can also provide a default value with `${VAR_NAME:default}`:
 
 ```yaml
 connections:
-  env_db:
-    driver: pyodbc_postgres
-    dsn: MY_DSN
-    password: '${MY_DB_PASSWORD}'
+  # Required env var (fails if not set)
+  prod_db:
+    type: postgres
+    host: '${PROD_HOST}'
+    password: '${PROD_PASSWORD}'
+
+  # With defaults (uses default if env var not set)
+  dev_db:
+    type: postgres
+    host: '${DB_HOST:localhost}'
+    port: '${DB_PORT:5432}'
+    database: '${DB_NAME:myapp_dev}'
+    user: '${DB_USER:developer}'
+    password: '${DB_PASSWORD:dev_password}'
 ```
+
+This is especially useful for Docker/CI environments where you want a config that works both locally (using defaults) and in production (using env vars).
 
 ### Recommended Setup for Production
 
