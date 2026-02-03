@@ -418,11 +418,7 @@ class ConfigManager:
                     raise ValueError("Keyring entry exists but is empty")
             except Exception as e:
                 logger.warning(f"Keyring access failed: {e}")
-                raise ValueError(
-                    "Encryption key not found in keyring and DBTK_ENCRYPTION_KEY not set.\n"
-                    "Run: python -c \"import dbtk.config as c, keyring; "
-                    "keyring.set_password('dbtk', 'encryption_key', c.generate_encryption_key())\""
-                )
+
 
         if HAS_KEYRING:
             msg = dedent("""\

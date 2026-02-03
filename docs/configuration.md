@@ -1,10 +1,11 @@
 # Configuration & Security
 
-DBTK uses YAML configuration files to manage database connections and keep credentials secure with encryption.
+DBTK uses YAML configuration files to manage database connections and keep credentials secure with encryption. Running `dbtk checkup` will copy a well commented sample config file to _~/.config/dbtk_sample.yml_. 
+DBTK also has several [command line tools](#command-line-tools) to assist with configuration and encryption.
 
 ## Quick Start
 
-Create a `dbtk.yml` file:
+Create a `dbtk.yml` file in your project folder or in ~/.config folder:
 
 ```yaml
 connections:
@@ -28,8 +29,10 @@ Connect from code:
 ```python
 import dbtk
 
-# Uses dbtk.yml in current directory by default
 db = dbtk.connect('prod_db')
+# or with context manager
+with dbtk.connect('prod_db') as db:
+    cur = db.cursor()
 ```
 
 ## Configuration File Locations
@@ -63,7 +66,6 @@ The config file has three main sections: `settings`, `connections`, and optional
 settings:
   default_batch_size: 1000
   default_country: US
-  default_header_clean: 2
   default_timezone: UTC
 
   # Logging configuration for integration scripts
@@ -73,7 +75,7 @@ settings:
     format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
     timestamp_format: '%Y-%m-%d %H:%M:%S'
     filename_format: '%Y%m%d_%H%M%S'
-    split_errors: true
+    split_errors: true  # If True, separate error log will be created (only if criticcal or errors are encountered
     console: true
     retention_days: 30
 ```
@@ -91,6 +93,7 @@ connections:
     database: mydb              # Database name
     user: myuser                # Username
     password: mypassword        # Plaintext - encrypt it! See below
+    encrypted_password: gAAAAABh... #Use `dbtk encrypt-password mypassword` 
 ```
 
 **Driver selection:**
@@ -105,7 +108,7 @@ connections:
     host: localhost
     database: mydb
     user: myuser
-    password: secret
+    encrypted_password: gAAAAABh...
 
   # ODBC connection with DSN
   odbc_db:
@@ -125,7 +128,7 @@ connections:
     host: localhost
     database: mydb
     user: myuser
-    password: secret
+    encrypted_password: gAAAAABh...
     cursor:
       batch_size: 4000          # Rows to process at once in bulk operations
       debug: false              # Print SQL queries and bind variables
@@ -144,7 +147,7 @@ connections:
     port: 5432
     database: mydb
     user: myuser
-    password: secret
+    encrypted_password: gAAAAABh...
 ```
 
 **Oracle:**
@@ -195,7 +198,8 @@ connections:
 
 ## Password Encryption
 
-DBTK uses Fernet symmetric encryption (from the `cryptography` library) for password storage.
+DBTK uses Fernet symmetric encryption (from the `cryptography` library) for password storage. Before you can begin encrypting and decrypting passwords, you must generate and store an encryption key.
+If system keyring is available, this is as easy as running `dbtk store-key`. See [Command-Line Tools](#command-line-tools) and [Programatic Encryption](#programmatic-encryption) sections for help.
 
 ### Encryption Key Management
 
@@ -210,7 +214,7 @@ All encryption operations use the `dbtk` CLI with subcommands:
 
 ```bash
 # Generate a new encryption key
-$ dbtk generate-key
+$ dbtk generate-key              # Generate a key to manually store in environmental variable
 
 # Store key in system keyring (requires keyring library)
 $ dbtk store-key [key]            # Store provided key or generate new one

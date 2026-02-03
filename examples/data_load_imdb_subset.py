@@ -332,7 +332,7 @@ if __name__ == '__main__':
     new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]
     if new_genre:
         genre_insert = 'INSERT INTO genres (genre, title) VALUES (:genre, :title)'
-        # convert query to match databases paramstyle while forcing positional
+        # convert query to match databases paramstyle, forcing positional
         genre_insert, _ = process_sql_parameters(genre_insert, ParamStyle.get_positional_style(cur.paramstyle))
         cur.executemany(genre_insert, new_genre)
     db.commit()
