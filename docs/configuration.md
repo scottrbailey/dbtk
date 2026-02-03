@@ -75,7 +75,7 @@ settings:
     format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
     timestamp_format: '%Y-%m-%d %H:%M:%S'
     filename_format: '%Y%m%d_%H%M%S'
-    split_errors: true  # If True, separate error log will be created (only if criticcal or errors are encountered
+    split_errors: true  # If True, separate error log will be created (only if critical or errors are encountered
     console: true
     retention_days: 30
 ```
