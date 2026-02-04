@@ -13,7 +13,7 @@ from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
 from ..database import ParamStyle
-from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier
+from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike
 from .transforms.core import fn_resolver
 from .transforms.database import _DeferredTransform
 
@@ -42,9 +42,14 @@ class Table:
     --------------------
         Each column in the columns dict is configured with a dict containing:
 
-        * **field** (str or list of str):
+        **Shorthand:** An empty dict ``{}`` defaults the field name to the column name.
+        For example: ``'email': {}`` is equivalent to ``'email': {'field': 'email'}``.
+
+        * **field** (str or list of str or '*'):
           Source field name(s) from input records. If list, extracts multiple fields
-          as a list value. If omitted, column is populated via 'default' or 'db_expr'.
+          as a list value. If '*', passes the entire record to the transformation
+          function instead of a single field value. If omitted, column is populated
+          via 'default' or 'db_expr'.
 
         * **default** (any, optional):
           Default/constant value to use for this column. Applied when source field
@@ -142,6 +147,16 @@ class Table:
                 # Multiple source fields as list
                 'contact_methods': {
                     'field': ['email', 'phone', 'pigeon']
+                },
+
+                # Empty dict shorthand - field name matches column name
+                'rank': {},  # Equivalent to {'field': 'rank'}
+                'division': {},
+
+                # Whole record access for multi-field decisions
+                'vip_status': {
+                    'field': '*',
+                    'fn': lambda record: 'VIP' if record.get('years_service', 0) > 10 else 'Regular'
                 }
             }, cursor=cursor)
 
@@ -172,6 +187,7 @@ class Table:
             columns: Dict[str, Dict[str, Any]],
             cursor: Cursor,
             null_values: Tuple[str, ...] = ('', 'NULL', '<null>', r'\N'),
+            is_temp: bool = False,
     ):
         """
         Initialize Table with schema configuration and database cursor.
@@ -195,6 +211,9 @@ class Table:
                 When set_values() encounters these strings, they are converted to None.
                 Default: ('', 'NULL', '<null>', '\\N')
 
+            is_temp: If True, allows underscore or hash prefix for temporary table names.
+                Default: False
+
         Raises:
             ValueError: If table name or column names are invalid SQL identifiers.
 
@@ -210,10 +229,10 @@ class Table:
                 'created': {'db_expr': 'CURRENT_TIMESTAMP'}
             }, cursor=cursor)
         """
-        validate_identifier(name)
+        validate_identifier(name, allow_temp=is_temp)
         self._name = name
         self._cursor = cursor
-        self._paramstyle = cursor.connection.interface.paramstyle
+        self._paramstyle = cursor.connection.driver.paramstyle
 
         validated_columns = {}
         req_cols = []
@@ -221,6 +240,10 @@ class Table:
         gen_cols = []
 
         for col, col_def in columns.items():
+            # Empty dict shorthand: default field to column name
+            if col_def == {}:
+                col_def['field'] = col
+
             validate_identifier(col)
 
             if col_def.get('auto_key'):
@@ -273,27 +296,40 @@ class Table:
             if fn is None:
                 continue
 
+            # Convert strings to transform functions
             if isinstance(fn, str):
                 try:
-                    fn_def = fn.strip()
-                    if fn_def.startswith(('lookup:', 'validate:')):
-                        col_def['fn'] = _DeferredTransform.from_string(fn_def)
-                    else:
-                        col_def['fn'] = fn_resolver(fn_def)
+                    col_def['fn'] = fn_resolver(fn)
                 except ValueError as e:
                     logger.debug(f"Column {col_name}: {e}")
                     continue
+            elif isinstance(fn, (list, tuple)):
+                # Process list/tuple of transforms
+                pipeline = []
+                for f in fn:
+                    if isinstance(f, str):
+                        try:
+                            pipeline.append(fn_resolver(f))
+                        except ValueError as e:
+                            logger.debug(f"Column {col_name}: {e}")
+                            continue
+                    else:
+                        pipeline.append(f)
+                col_def['fn'] = pipeline
 
+            # Bind any deferred transforms (lookup/validate) to cursor
             new_fn = col_def['fn']
             if isinstance(new_fn, _DeferredTransform):
                 col_def['fn'] = new_fn.bind(self._cursor)
             elif isinstance(new_fn, (list, tuple)):
                 pipeline = []
                 for f in new_fn:
-                    if isinstance(f, _DeferredTransform):
+                    if isinstance(f, str) and f.startswith(('lookup:', 'validate:')):
+                        xt = _DeferredTransform.from_string(f)
+                        xt.bind(self._cursor)
+                        pipeline.append(xt)
+                    elif isinstance(f, _DeferredTransform):
                         pipeline.append(f.bind(self._cursor))
-                    elif isinstance(f, str):
-                        pipeline.append(fn_resolver(f))
                     else:
                         pipeline.append(f)
                 col_def['fn'] = pipeline
@@ -322,7 +358,7 @@ class Table:
     def cursor(self, value: Cursor):
         old_paramstyle = self._paramstyle
         self._cursor = value
-        self._paramstyle = value.connection.interface.paramstyle
+        self._paramstyle = value.connection.driver.paramstyle
 
         if old_paramstyle != self._paramstyle:
             self._reset()
@@ -560,16 +596,16 @@ class Table:
             placeholders_str = wrap_at_comma(placeholders_str)
 
         if db_type == 'mysql':
-            # MySQL: INSERT ... ON DUPLICATE KEY UPDATE
+            # MySQL/MariaDB: INSERT ... ON DUPLICATE KEY UPDATE
+            # Use VALUES(col) syntax for compatibility with both MySQL and MariaDB
             update_assignments = []
             for col, ident, bind_name, db_expr in update_cols:
                 if db_expr and '#' in db_expr:
-                    # Use alias syntax for MySQL 8.0.19+
-                    assignment = f"{ident} = {db_expr.replace('#', f'new_vals.{ident}')}"
+                    assignment = f"{ident} = {db_expr.replace('#', f'VALUES({ident})')}"
                 elif db_expr:
                     assignment = f"{ident} = {db_expr}"
                 else:
-                    assignment = f"{ident} = new_vals.{ident}"
+                    assignment = f"{ident} = VALUES({ident})"
                 update_assignments.append(assignment)
 
             update_clause = ', '.join(update_assignments)
@@ -578,7 +614,7 @@ class Table:
 
             sql = dedent(f"""\
             INSERT INTO {table_name} ({cols_str})
-            VALUES ({placeholders_str}) AS new_vals
+            VALUES ({placeholders_str})
             ON DUPLICATE KEY UPDATE {update_clause}""")
 
         elif db_type in ('postgres', 'sqlite'):
@@ -647,7 +683,7 @@ class Table:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols} FROM dual"
-            table_alias = "AS s"
+            table_alias = "s"
 
             update_assignments = []
             for col, ident in update_cols:
@@ -667,7 +703,7 @@ class Table:
                 source_cols = wrap_at_comma(source_cols)
 
             source_clause = f"SELECT {source_cols}"
-            table_alias = "AS s"
+            table_alias = "s"
 
             update_assignments = []
             for col, ident in update_cols:
@@ -697,7 +733,7 @@ class Table:
             UPDATE SET {update_set}
         WHEN NOT MATCHED THEN
             INSERT ({insert_cols})
-            VALUES ({insert_values})""")
+            VALUES ({insert_values});""")
 
         logger.debug(f"Generated merge SQL for {self._name}:\n{sql}")
         return sql
@@ -769,20 +805,29 @@ class Table:
         else:
             return filtered_values
 
-    def set_values(self, record: Dict[str, Any]):
+    def set_values(self, record: RecordLike):
         self.counts['records'] += 1
 
         warn_missing = self.counts['records'] == 1
         if not self._record_fields:
             # Cache fields so we can calculate missing fields to exclude from updates/merges
-            self._record_fields = set(record.keys())
+            # Include both original and normalized field names for dual access support
+            try:
+                # Union of original and normalized field names
+                self._record_fields = set(record.keys()) | set(record.keys(normalized=True))
+            except TypeError:
+                # Not a Record object or doesn't support normalized parameter
+                self._record_fields = set(record.keys())
 
         values = {}
         for col, col_def in self.columns.items():
             val = None
             field = col_def.get('field')
 
-            if isinstance(field, list):
+            if field == '*':
+                # Pass whole record to function - no field extraction
+                val = record
+            elif isinstance(field, list):
                 val = list()
                 for f in field:
                     if f in record:
@@ -791,10 +836,14 @@ class Table:
                         logger.warning(f'Table {self.name}: field "{f}" not found in record')
             elif field:
                 if warn_missing and field not in record:
-                    logger.warning(f'Table {self.name}: field "{field}" not in record')
+                    if col_def.get('bind_name') in self._req_cols:
+                        raise ValueError(f'Table {self.name}: field "{field}" is required but was not found in record')
+                    else:
+                        logger.warning(f'Table {self.name}: field "{field}" not in record')
                 val = record.get(field)
 
-            if isinstance(val, str) and val in self.null_values:
+            # Only apply null_values conversion if val is not the whole record
+            if field != '*' and isinstance(val, str) and val in self.null_values:
                 val = None
 
             if val in ('', None) and 'default' in col_def:
@@ -834,6 +883,134 @@ class Table:
         err = self.execute('select')
         if not err:
             return self._cursor.fetchone()
+
+    def get_column_definitions(self) -> list:
+        """
+        Introspect database table columns to get type information.
+
+        Executes a SELECT * query against the database table and returns type
+        information for columns defined in this Table object. Validates that
+        all Table columns exist in the database.
+
+        Returns:
+            List of tuples: (column_name, type_obj, internal_size, precision, scale, sql_type_def)
+            where sql_type_def is the SQL type string like 'VARCHAR2(100)' or 'NUMBER(10,2)'
+
+        Raises:
+            ValueError: If a column defined in this Table doesn't exist in the database
+
+        Example:
+            >>> table = Table('users', {'id': {}, 'email': {}}, cursor=cursor)
+            >>> col_defs = table.get_column_definitions()
+            >>> for name, type_obj, size, prec, scale, sql_type in col_defs:
+            ...     print(f"{name}: {sql_type}")
+        """
+        # Query all columns from database table
+        self._cursor.execute(f"SELECT * FROM {self._name} WHERE 1=0")
+
+        # Build case-insensitive map of column name to type info
+        db_columns = {
+            desc[0].upper(): (desc[0], desc[1], desc[3], desc[4], desc[5])
+            for desc in self._cursor.description
+        }
+
+        # Get database type for type mapping
+        db_type = self._cursor.connection.database_type
+
+        # Validate and collect type info for Table-defined columns
+        result = []
+        for col_name in self._columns.keys():
+            col_name_upper = col_name.upper()
+            if col_name_upper not in db_columns:
+                raise ValueError(
+                    f"Column '{col_name}' defined in Table but not found in database table '{self._name}'"
+                )
+            db_col_name, type_obj, internal_size, precision, scale = db_columns[col_name_upper]
+
+            # Generate SQL type definition string based on database type
+            sql_type_def = self._generate_sql_type(db_type, type_obj, internal_size, precision, scale)
+
+            # Return with database's actual column name for accurate SQL generation
+            result.append((db_col_name, type_obj, internal_size, precision, scale, sql_type_def))
+
+        return result
+
+    def _generate_sql_type(self, db_type: str, type_obj, internal_size, precision, scale) -> str:
+        """Generate SQL type definition string based on database type."""
+        if db_type == 'oracle':
+            return self._generate_oracle_type(type_obj, internal_size, precision, scale)
+        elif db_type == 'sqlserver':
+            return self._generate_sqlserver_type(type_obj, internal_size, precision, scale)
+        else:
+            # Generic fallback
+            return "VARCHAR(255)"
+
+    def _generate_oracle_type(self, type_obj, internal_size, precision, scale) -> str:
+        """Generate Oracle SQL type definition."""
+        if hasattr(type_obj, 'name'):
+            db_type_name = type_obj.name
+
+            if 'VARCHAR' in db_type_name:
+                return f"VARCHAR2({internal_size})" if internal_size else "VARCHAR2(4000)"
+            elif 'CHAR' in db_type_name and 'VARCHAR' not in db_type_name:
+                return f"CHAR({internal_size})" if internal_size else "CHAR(1)"
+            elif 'NUMBER' in db_type_name:
+                if precision and scale:
+                    return f"NUMBER({precision},{scale})"
+                elif precision:
+                    return f"NUMBER({precision})"
+                else:
+                    return "NUMBER"
+            elif 'DATE' in db_type_name:
+                return "DATE"
+            elif 'TIMESTAMP' in db_type_name:
+                return "TIMESTAMP"
+            elif 'CLOB' in db_type_name:
+                return "CLOB"
+            elif 'BLOB' in db_type_name:
+                return "BLOB"
+
+        # Fallback
+        return "VARCHAR2(4000)"
+
+    def _generate_sqlserver_type(self, type_obj, internal_size, precision, scale) -> str:
+        """Generate SQL Server SQL type definition."""
+        type_str = str(type_obj).upper() if type_obj else 'VARCHAR'
+
+        if 'STRING' in type_str or 'VARCHAR' in type_str or 'CHAR' in type_str:
+            if internal_size and internal_size > 0:
+                return f"VARCHAR({internal_size})"
+            else:
+                return "VARCHAR(MAX)"
+        elif 'INT' in type_str or 'LONG' in type_str:
+            if precision and precision > 9:
+                return "BIGINT"
+            else:
+                return "INT"
+        elif 'DECIMAL' in type_str or 'NUMERIC' in type_str or 'NUMBER' in type_str:
+            if precision and scale is not None:
+                return f"DECIMAL({precision},{scale})"
+            elif precision:
+                return f"DECIMAL({precision})"
+            else:
+                return "DECIMAL(18,0)"
+        elif 'FLOAT' in type_str or 'REAL' in type_str or 'DOUBLE' in type_str:
+            return "FLOAT"
+        elif 'DATE' in type_str or 'TIME' in type_str:
+            if 'DATETIME' in type_str:
+                return "DATETIME"
+            else:
+                return "DATE"
+        elif 'BINARY' in type_str or 'BLOB' in type_str:
+            if internal_size and internal_size > 0:
+                return f"VARBINARY({internal_size})"
+            else:
+                return "VARBINARY(MAX)"
+        elif 'TEXT' in type_str or 'CLOB' in type_str:
+            return "VARCHAR(MAX)"
+
+        # Fallback
+        return "VARCHAR(MAX)"
 
     def bind_name_column(self, bind_name):
         return self._bind_name_map.get(bind_name)
@@ -895,7 +1072,7 @@ class Table:
             self._cursor.execute(sql, params)
             self.counts[operation] += 1
             return 0
-        except self._cursor.connection.interface.DatabaseError as e:
+        except self._cursor.connection.driver.DatabaseError as e:
             error_msg = f"SQL failed: {sql}\nParams: {params}\nError: {str(e)}"
             logger.error(error_msg)
             if raise_error:

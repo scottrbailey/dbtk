@@ -1,7 +1,5 @@
 settings:
-  default_column_case: lower
   default_country: US
-  default_cursor_type: record
   default_header_clean: 2  # Clean.LOWER_NOSPACE
   default_timezone: UTC
   lookup_preload_threshold: 500  # if table size > threshold, preload all values for transforms.CodeLookup
@@ -21,7 +19,7 @@ settings:
 connections:
   states_db:
     type: sqlite
-    database: fixtures/test_states.db
+    database: tests/fixtures/test_states.db
 
   test_db:
     type: postgres
@@ -51,6 +49,13 @@ connections:
     database: missingdb
     user: missinguser
     password: '${MISSING_VAR}'
+
+  env_default_db:
+    type: postgres
+    host: '${TEST_HOST:localhost}'
+    database: '${TEST_DATABASE:defaultdb}'
+    user: '${TEST_USER:defaultuser}'
+    password: '${TEST_PASSWORD:defaultpass}'
 
 passwords:
   api_key:

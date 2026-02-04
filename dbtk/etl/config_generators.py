@@ -7,7 +7,6 @@ that can be copied into Table() constructor calls.
 """
 
 from typing import Dict, Any
-from ..cursors import DictCursor
 
 
 def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> str:
@@ -43,10 +42,6 @@ def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> 
         ...     'created_at': {'db_fn': 'CURRENT_TIMESTAMP'}
         ... }, cursor=cursor)
     """
-    # Swap DictCursor for RecordCursor to allow positional access in metadata functions
-    if isinstance(cursor, DictCursor):
-        cursor = cursor.connection.cursor()  # Default is RecordCursor
-
     db_type = cursor.connection.database_type
 
     # Dispatch to database-specific metadata extractor

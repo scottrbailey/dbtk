@@ -7,10 +7,10 @@ from .database import _get_all_drivers
 from . import config
 
 try:
-    from importlib.metadata import metadata, requires
+    from importlib.metadata import metadata, distributions, requires
 except ImportError:
     # backport to older versions
-    from importlib_metadata import metadata, requires
+    from importlib_metadata import metadata, distributions, requires
 
 
 def _name_cleanup(name):
@@ -38,7 +38,7 @@ def _is_installed(pkg: str) -> bool:
     return (
         importlib.util.find_spec(pkg) is not None
         or pkg in sys.modules
-        or pkg in {_name_cleanup(d.name) for d in importlib.metadata.distributions()}
+        or pkg in {_name_cleanup(d.name) for d in distributions()}
     )
 
 def checkup():
@@ -50,7 +50,7 @@ def checkup():
         if dep and not dep.startswith('#'):
             deps.append(dep.split('>=')[0].split('==')[0].split('<')[0].strip())
 
-    installed = {_name_cleanup(d.name): d.version for d in metadata.distributions()}
+    installed = {_name_cleanup(d.name): d.version for d in distributions()}
 
     print(f"{'Package':<20} {'Status':<8} {'Version'}")
     print("-" * 40)

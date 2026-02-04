@@ -28,6 +28,39 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _expand_env_var(value: str) -> str:
+    """
+    Expand environment variable reference with optional default.
+
+    Syntax:
+        ${VAR_NAME} - required, raises ValueError if not set
+        ${VAR_NAME:default} - use default if VAR_NAME not set
+        ${VAR_NAME:} - use empty string if VAR_NAME not set
+
+    Args:
+        value: String potentially containing ${VAR} or ${VAR:default}
+
+    Returns:
+        Expanded value, or original value if not an env var reference
+
+    Raises:
+        ValueError: If env var not set and no default provided
+    """
+    if not (isinstance(value, str) and value.startswith('${') and value.endswith('}')):
+        return value
+
+    content = value[2:-1]  # Strip ${ and }
+
+    if ':' in content:
+        var_name, default = content.split(':', 1)
+        return os.environ.get(var_name, default)
+    else:
+        result = os.environ.get(content)
+        if result is None:
+            raise ValueError(f"Environment variable {content} not set")
+        return result
+
+
 def _ensure_sample_config():
     """Copy sample config to ~/.config if no config exists and sample doesn't exist there."""
     import shutil
@@ -116,7 +149,8 @@ def diagnose_config(config_file: Optional[str] = None) -> List[Tuple[str, str]]:
         1 for p in mgr.config.get('passwords', {}).values()
         if 'password' in p and not(p.get('password', '').startswith('${'))
     )
-    results.append(("✗", f"{uenc_count} unencrypted passwords!") if uenc_count else ('✓', "No unencrypted passwords"))
+    results.append(("✗", f"{uenc_count} unencrypted passwords! (run `dbtk encrypt-config` to fix)") \
+                       if uenc_count else ('✓', "No unencrypted passwords"))
     return results
 
 
@@ -418,11 +452,7 @@ class ConfigManager:
                     raise ValueError("Keyring entry exists but is empty")
             except Exception as e:
                 logger.warning(f"Keyring access failed: {e}")
-                raise ValueError(
-                    "Encryption key not found in keyring and DBTK_ENCRYPTION_KEY not set.\n"
-                    "Run: python -c \"import dbtk.config as c, keyring; "
-                    "keyring.set_password('dbtk', 'encryption_key', c.generate_encryption_key())\""
-                )
+
 
         if HAS_KEYRING:
             msg = dedent("""\
@@ -471,18 +501,16 @@ class ConfigManager:
 
         config = connections[name].copy()
 
-        # Handle password decryption
+        # Handle password decryption first (before env var expansion)
         if 'encrypted_password' in config:
             config['password'] = self.decrypt_password(config['encrypted_password'])
             del config['encrypted_password']
 
-        # Handle environment variable substitution for password
-        if 'password' in config and isinstance(config['password'], str):
-            if config['password'].startswith('${') and config['password'].endswith('}'):
-                env_var = config['password'][2:-1]
-                config['password'] = os.environ.get(env_var)
-                if config['password'] is None:
-                    raise ValueError(f"Environment variable {env_var} not set")
+        # Expand environment variables in all string connection params
+        # Supports ${VAR} and ${VAR:default} syntax
+        for key, value in config.items():
+            if isinstance(value, str):
+                config[key] = _expand_env_var(value)
 
         return config
 
@@ -518,17 +546,9 @@ class ConfigManager:
         if 'encrypted_password' in password_entry:
             return self.decrypt_password(password_entry['encrypted_password'])
 
-        # Handle plain text passwords
+        # Handle plain text passwords (with env var expansion)
         if 'password' in password_entry:
-            password = password_entry['password']
-            # Handle environment variable substitution
-            if isinstance(password, str) and password.startswith('${') and password.endswith('}'):
-                env_var = password[2:-1]
-                env_password = os.environ.get(env_var)
-                if env_password is None:
-                    raise ValueError(f"Environment variable {env_var} not set")
-                return env_password
-            return password
+            return _expand_env_var(password_entry['password'])
 
         raise ValueError(f"Invalid password entry '{name}': no password or encrypted_password found")
 
@@ -733,8 +753,6 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     config = config_mgr.get_connection_config(name)
     if password:
         config['password'] = password
-    info = {key:val for key, val in config.items() if key != 'password'}
-    logger.debug(f"Connecting to database {name} with config: {info}")
 
     # Extract database type
     db_type = config.pop('type', None)

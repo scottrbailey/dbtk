@@ -8,7 +8,7 @@ import logging
 from typing import Any, Union, List, Optional, Callable
 
 from ...utils import quote_identifier, validate_identifier
-from ...cursors import PreparedStatement, DictCursor
+from ...cursors import PreparedStatement
 
 logger = logging.getLogger(__name__)
 
@@ -115,11 +115,7 @@ class TableLookup:
                 f"Use TableLookup.CACHE_NONE (0), TableLookup.CACHE_LAZY (1), or TableLookup.CACHE_PRELOAD (2)"
             )
 
-        # Handle DictCursor by getting a regular cursor
-        if isinstance(cursor, DictCursor):
-            self._cursor = cursor.connection.cursor()
-        else:
-            self._cursor = cursor
+        self._cursor = cursor
 
         # Validate and quote identifiers
         validate_identifier(table)

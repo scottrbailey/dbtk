@@ -55,7 +55,7 @@ Quick Start
             for record in reader:
                 table.set_values(record)
                 # Use raise_error=False to track incomplete records
-                table.exec_insert(raise_error=False)
+                table.execute('insert', raise_error=False)
 
         print(f"Inserted: {table.counts['insert']}")
         print(f"Skipped: {table.counts['incomplete']}")
@@ -64,6 +64,12 @@ Quick Start
    :maxdepth: 2
    :caption: Contents:
 
+   record
+   configuration
+   database-connections
+   readers-writers
+   etl
+   advanced
    api
 
 Indices and tables

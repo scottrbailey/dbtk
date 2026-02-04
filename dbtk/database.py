@@ -10,7 +10,7 @@ import logging
 from typing import Dict, Any, Optional, Union, Type, List
 from contextlib import contextmanager
 
-from .cursors import Cursor, RecordCursor, TupleCursor, DictCursor, ParamStyle
+from .cursors import Cursor, ParamStyle
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
@@ -25,33 +25,6 @@ def _hide_password(kwargs):
         if key in ('password', 'PWD', 'passwd'):
             parms[key] = '********'
     return parms
-
-class CursorType:
-    """
-    Cursor type constants for specifying return data structures.
-
-    Used when creating cursors to determine how query results are returned:
-
-    - RECORD: Returns Record objects (attribute, key, and index access)
-    - TUPLE: Returns namedtuples (attribute and index access)
-    - DICT: Returns OrderedDict objects (dictionary interface)
-    - LIST: Returns plain lists (index access only)
-
-    Example
-    -------
-    ::
-        >>> cursor = db.cursor(CursorType.RECORD)  # or just 'record'
-        >>> cursor = db.cursor('tuple')
-    """
-    RECORD = 'record'
-    TUPLE = 'tuple'
-    DICT = 'dict'
-    LIST = 'list'
-
-    @classmethod
-    def values(cls):
-        return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
-
 
 DRIVERS = {
     # PostgreSQL Drivers
@@ -119,9 +92,19 @@ DRIVERS = {
         'connection_method': 'kwargs',
         'default_port': 3306
     },
-    'mysql.connector': {
+    'mariadb': {
         'database_type': 'mysql',
         'priority': 12,
+        'param_map': {},
+        'required_params': [{'host', 'database', 'user'}],
+        'optional_params': {'port', 'password', 'unix_socket', 'ssl', 'tls_version',
+                           'autocommit', 'converter', 'connect_timeout'},
+        'connection_method': 'kwargs',
+        'default_port': 3306
+    },
+    'mysql.connector': {
+        'database_type': 'mysql',
+        'priority': 13,
         'param_map': {},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'port', 'password', 'charset', 'collation', 'autocommit', 'time_zone',
@@ -132,7 +115,7 @@ DRIVERS = {
     },
     'pymysql': {
         'database_type': 'mysql',
-        'priority': 13,
+        'priority': 14,
         'param_map': {'database': 'db', 'password': 'passwd'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'port', 'password', 'charset', 'sql_mode', 'read_default_file',
@@ -143,7 +126,7 @@ DRIVERS = {
     },
     'MySQLdb': {
         'database_type': 'mysql',
-        'priority': 14,
+        'priority': 15,
         'param_map': {'database': 'db', 'password': 'passwd'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'port', 'password', 'charset', 'use_unicode', 'sql_mode', 'read_default_file',
@@ -190,7 +173,7 @@ DRIVERS = {
     'pyodbc_mysql': {
         'database_type': 'mysql',
         'module': 'pyodbc',
-        'priority': 15,
+        'priority': 16,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'password', 'port'},
@@ -452,7 +435,7 @@ class Database:
 
     Attributes
     ----------
-    interface
+    driver
         The database adapter module (e.g., psycopg2, oracledb)
     database_type : str
         Database type: 'postgres', 'oracle', 'mysql', 'sqlserver', or 'sqlite'
@@ -495,19 +478,11 @@ class Database:
 
     # Attributes stored locally, others delegated to _connection
     _local_attrs = [
-        '_connection', 'database_type', 'database_name', 'interface',
+        '_connection', 'database_type', 'database_name', 'driver',
         'name', 'placeholder', '_cursor_settings'
     ]
 
-    # Cursor type mapping
-    CURSOR_TYPES = {
-        CursorType.RECORD: RecordCursor,
-        CursorType.TUPLE: TupleCursor,
-        CursorType.DICT: DictCursor,
-        CursorType.LIST: Cursor
-    }
-
-    def __init__(self, connection, interface,
+    def __init__(self, connection, driver,
                  database_name: Optional[str] = None,
                  cursor_settings: Optional[dict] = None):
         """
@@ -520,12 +495,12 @@ class Database:
         ----------
         connection
             Underlying database connection object from the adapter
-        interface
+        driver
             Database adapter module (psycopg2, oracledb, mysqlclient, etc.)
         database_name : str, optional
             Name of the database. If None, attempts to extract from connection.
         cursor_settings : dict, optional
-            Values passed to the cursor constructor. e.g. {'type': 'dict', 'batch_size': 2000}
+            Values passed to the cursor constructor. e.g. {'batch_size': 2000}
 
         Example
         -------
@@ -542,7 +517,8 @@ class Database:
             db = dbtk.database.postgres(user='admin', password='secret', database='mydb')
         """
         self._connection = connection
-        self.interface = interface
+        self.driver = driver
+
         if database_name is None:
             database_name = (connection.get('database') or
                             connection.get('service_name') or
@@ -552,12 +528,12 @@ class Database:
         self.database_name = database_name
 
         # Set parameter placeholder based on adapter style
-        paramstyle = getattr(interface, 'paramstyle', ParamStyle.DEFAULT)
+        paramstyle = getattr(driver, 'paramstyle', ParamStyle.DEFAULT)
         self.placeholder = ParamStyle.get_placeholder(paramstyle)
 
-        # Determine server type from interface name
-        if interface.__name__ in DRIVERS:
-            self.database_type = DRIVERS[interface.__name__]['database_type']
+        # Determine server type from driver name
+        if driver.__name__ in DRIVERS:
+            self.database_type = DRIVERS[driver.__name__]['database_type']
         else:
             self.database_type = 'unknown'
 
@@ -611,91 +587,59 @@ class Database:
         """Context manager exit - close connection."""
         self.close()
 
-    def cursor(self, cursor_type: Union[str, Type] = None,
-               **kwargs) -> Cursor:
+    def cursor(self, **kwargs) -> Cursor:
         """
         Create a cursor for executing database queries.
 
-        Creates a cursor with the specified type, determining how query results are returned.
-        Different cursor types provide different access patterns optimized for various use cases.
+        Returns a cursor that yields Record objects, providing flexible access to query results
+        through attribute, dictionary, and index notation.
 
         Parameters
         ----------
-        cursor_type : str or type, optional
-            Type of cursor to create. Can be:
-
-            * ``'record'`` (default) - Record objects with attribute, key, and index access
-            * ``'tuple'`` - namedtuples with attribute and index access
-            * ``'dict'`` - OrderedDict objects with dictionary interface
-            * ``'list'`` - Plain lists with index access only
-            * Cursor class - Explicit cursor class to instantiate
-
         **kwargs
-            Additional arguments passed to the underlying cursor constructor
+            Optional cursor configuration:
+
+            * ``batch_size`` (int) - Rows to process at once in bulk operations
+            * ``debug`` (bool) - Enable debug output showing queries and bind variables
+            * ``return_cursor`` (bool) - If True, execute() returns cursor for method chaining
 
         Returns
         -------
         Cursor
-            Cursor instance of the requested type
-
-        Raises
-        ------
-        ValueError
-            If cursor_type is invalid
+            Cursor instance that returns Record objects
 
         Example
         -------
         ::
 
-            # Default Record cursor - most flexible
+            # Create cursor - returns Records
             cursor = db.cursor()
-            row = cursor.fetchone()
-            print(row['name'], row.name, row[0])  # All work!
+            cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
+                          {'status': 'active'})
 
-            # Tuple cursor - lightweight namedtuple
-            cursor = db.cursor('tuple')
-            row = cursor.fetchone()
-            print(row.name, row[0])  # Attribute and index access
+            # Record supports multiple access patterns
+            for row in cursor:
+                print(row['name'])    # Dictionary access
+                print(row.name)       # Attribute access
+                print(row[1])         # Index access
+                print(row.get('phone', 'N/A'))  # Safe access with default
 
-            # Dict cursor - dictionary-only access
-            cursor = db.cursor('dict')
-            row = cursor.fetchone()
-            print(row['name'], row.get('email', 'N/A'))
-
-            # List cursor - minimal overhead
-            cursor = db.cursor('list')
-            row = cursor.fetchone()
-            print(row[0], row[1])  # Index access only
+            # With configuration options
+            cursor = db.cursor(debug=True)
 
         See Also
         --------
-        RecordCursor : Flexible cursor returning Record objects
-        TupleCursor : Lightweight cursor returning namedtuples
-        DictCursor : Dictionary-based cursor
+        Record : Flexible row object with dict, attribute, and index access
+        Database.transaction : Context manager for safe transactions
         """
-        # cursor_type precedence: explicit arg > self._cursor_settings['type'] > settings['default_cursor_type'] > CursorType.RECORD
-        if cursor_type is None:
-            cursor_type = self._cursor_settings.get('type') or settings.get('default_cursor_type', CursorType.RECORD)
-        if isinstance(cursor_type, str):
-            if cursor_type not in CursorType.values():
-                raise ValueError(
-                    f"Invalid cursor type '{cursor_type}'. "
-                    f"Must be one of: {CursorType.values()}"
-                )
-            cursor_class = self.CURSOR_TYPES[cursor_type]
-        elif callable(cursor_type) and hasattr(cursor_type, 'fetchone'):
-            cursor_class = cursor_type
-        else:
-            raise ValueError(f"Invalid cursor type: {cursor_type}")
-
-        # only pass through allowed kwargs
+        # Only pass through allowed kwargs
         filtered_kwargs = dict()
         for key in Cursor.WRAPPER_SETTINGS:
-            if key in kwargs and key != 'type':
+            if key in kwargs:
                 filtered_kwargs[key] = kwargs.pop(key)
             elif key in self._cursor_settings:
                 filtered_kwargs[key] = self._cursor_settings[key]
-        return cursor_class(self, **filtered_kwargs)
+        return Cursor(self, **filtered_kwargs)
 
     @contextmanager
     def transaction(self):
@@ -751,13 +695,13 @@ class Database:
             raise
 
     def param_help(self) -> None:
-        """Print help on this interface's parameter style."""
-        print(f"{self.interface.__name__}'s parameter style is \"{self.interface.paramstyle}\"")
+        """Print help on this driver's parameter style."""
+        print(f"{self.driver.__name__}'s parameter style is \"{self.driver.paramstyle}\"")
         print(f'"SELECT * FROM people WHERE name = {self.placeholder} AND age > {self.placeholder}", ("Smith", 30)')
 
-        if self.interface.paramstyle == ParamStyle.NAMED:
+        if self.driver.paramstyle == ParamStyle.NAMED:
             print(r'"SELECT * FROM people WHERE name = :name AND age > :age", {"name": "Smith", "age": 30}')
-        elif self.interface.paramstyle == ParamStyle.PYFORMAT:
+        elif self.driver.paramstyle == ParamStyle.PYFORMAT:
             print(r'"SELECT * FROM people WHERE name = %(name)s AND age > %(age)s", {"name": "Smith", "age": 30}')
 
     @classmethod
@@ -800,9 +744,10 @@ class Database:
 
         if db_driver is None:
             raise ImportError(f"No database driver found for database type '{db_type}'")
-        logger.debug(f'parms before _validate: {kwargs}')
+
+        logger.debug(f'parms before _validate: {_hide_password(kwargs)}')
         params = _validate_connection_params(driver_name, **kwargs)
-        logger.debug(f'parms after _validate: {params}')
+        logger.debug(f'parms after _validate: {_hide_password(params)}')
         if not params:
             raise ValueError("The connection parameters were not valid.")
 
@@ -826,6 +771,8 @@ class Database:
 
         if connection:
             db = cls(connection, db_driver, kwargs.get('database'), cursor_settings=cursor_settings)
+            if db.database_type == 'unknown':
+                db.database_type = db_type
             return db
 
 

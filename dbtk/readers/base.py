@@ -14,7 +14,6 @@ import time
 
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, List, Optional, Union
-from collections import OrderedDict
 from os import path
 from ..record import Record
 from ..defaults import settings
@@ -90,11 +89,6 @@ class Clean:
             return val
 
 
-class ReturnType:
-    """Return type options for readers."""
-    RECORD = 'record'
-    DICT = 'dict'
-    DEFAULT = RECORD
 
 class _Progress:
     __slots__ = ('tell', 'byte_total', 'row_total')
@@ -171,16 +165,11 @@ class Reader(ABC):
     ----------
     add_row_num : bool, default True
         Add a '_row_num' field to each record containing the 1-based row number
-    clean_headers : Clean or str, optional
-        Header cleaning level. Options: Clean.LOWER_NOSPACE (default), Clean.STANDARDIZE,
-        Clean.NONE. Can also pass string like 'lower_nospace'.
     skip_rows : int, default 0
         Number of data rows to skip after headers (useful for skipping footer rows
         or known bad data at start of file)
     n_rows : int, optional
         Maximum number of rows to read. None (default) reads all rows.
-    return_type : str, default 'record'
-        Return type for records: 'record' for Record objects, 'dict' for OrderedDict
     null_values : str, list, tuple, or set, optional
         Values to convert to None. Can be a single string or a collection of strings.
         Common examples: '\\N' (IMDB files), 'NULL', 'NA', '' (empty string)
@@ -192,25 +181,26 @@ class Reader(ABC):
         # Subclasses implement specific file formats
         from dbtk import readers
 
-        # CSV with default settings
+        # CSV with default settings - returns Record objects
         with readers.CSVReader(open('data.csv')) as reader:
             for record in reader:
-                print(record.name, record.email)
+                print(record.name, record.email)  # attribute access
+                print(record['name'], record['email'])  # or dict-style
 
-        # Skip first 5 rows, read only 100, return dicts
+        # Skip first 5 rows, read only 100 records
         with readers.CSVReader(open('data.csv'),
                               skip_rows=5,
-                              n_rows=100,
-                              return_type='dict') as reader:
+                              n_rows=100) as reader:
             for row in reader:
-                print(row['name'])
+                print(row.name)
 
-        # Standardize messy headers
-        with readers.CSVReader(open('messy.csv'),
-                              clean_headers=readers.Clean.STANDARDIZE) as reader:
-            # Headers like "ID #", "Student Name" become "id", "studentname"
+        # Access fields with original or normalized names
+        with readers.CSVReader(open('messy.csv')) as reader:
+            # Headers like "ID #", "Student Name" preserved as originals
+            # but also accessible as normalized: id_hash, student_name
             for record in reader:
-                print(record.id, record.studentname)
+                print(record['ID #'], record['Student Name'])  # original
+                print(record.id, record.student_name)  # normalized
 
         # Filter records with custom function
         with readers.CSVReader(open('data.csv')) as reader:
@@ -250,11 +240,9 @@ class Reader(ABC):
 
     def __init__(self,
                  add_row_num: bool = True,
-                 clean_headers: Clean = None,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  headers: Optional[List[str]] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values: Union[str, List[str], tuple, set, None] = None
                  ):
         """
@@ -264,16 +252,11 @@ class Reader(ABC):
         ----------
         add_row_num : bool, default True
             Add a '_row_num' field to each record containing the 1-based row number
-        clean_headers : Clean or str, optional
-            Header cleaning level from Clean enum or string. If None, uses
-            default_header_clean from settings (default: Clean.LOWER_NOSPACE)
         skip_rows : int, default 0
             Number of data rows to skip after headers
         n_rows : int, optional
             Maximum number of rows to read, or None for all rows
         headers: Optional list of header names to use instead of reading from row 0
-        return_type : str, default 'record'
-            Either 'record' for Record objects or 'dict' for OrderedDict
         null_values : str, list, tuple, or set, optional
             Values to convert to None. Can be a single string or collection of strings.
             Common examples: '\\N' (IMDB), 'NULL', 'NA', '' (empty string)
@@ -296,14 +279,10 @@ class Reader(ABC):
                         yield line.strip().split(',')
         """
         self.add_row_num = add_row_num
-        if clean_headers is None:
-            clean_headers = settings.get('default_header_clean', Clean.LOWER_NOSPACE)
-        self.clean_headers = Clean.from_string(clean_headers)
         self._row_num = 0
         self._rows_read = 0
         self.skip_rows = skip_rows
         self.n_rows = n_rows
-        self.return_type = return_type
         self._record_class = None
 
         # Normalize null_values to a set for O(1) lookup
@@ -344,14 +323,13 @@ class Reader(ABC):
         the n_rows limit. Multiple calls to filter() accumulate in a pipeline - all filters
         must return True for a record to be included.
 
-        The filter operates on the final record (Record object or OrderedDict depending on
-        return_type), after null value conversion has been applied. This allows you to filter
-        on clean data rather than raw values.
+        The filter operates on the final Record object, after null value conversion has
+        been applied. This allows you to filter on clean data rather than raw values.
 
         Parameters
         ----------
         func : callable
-            A function that takes a record (Record or OrderedDict) and returns True to keep it,
+            A function that takes a record and returns True to keep it,
             False to filter it out. The function should accept a single argument (the record).
 
         Returns
@@ -417,7 +395,7 @@ class Reader(ABC):
 
         return self
 
-    def __iter__(self) -> Iterator[Union[Record, OrderedDict]]:
+    def __iter__(self) -> Iterator[Record]:
         """Make reader iterable."""
         return self
 
@@ -566,26 +544,26 @@ class Reader(ABC):
         pass
 
     def _setup_record_class(self):
-        """Initialize headers and create Record subclass if needed."""
+        """Initialize headers and create Record subclass with original field names."""
         if self._headers_initialized:
             return
 
-        # Read raw headers from file
+        # Read raw headers from file (original field names)
         raw_headers = self._read_headers()
 
-        # Clean headers
-        self._headers = [Clean.normalize(h, self.clean_headers) for h in raw_headers]
+        # Store original headers (no normalization - Record.set_fields() handles it)
+        self._headers = raw_headers[:]
 
-        # Add self.add_row_num if requested and not already present
+        # Add _row_num if requested and not already present
         if self.add_row_num:
             if '_row_num' in self._headers:
                 raise ValueError("Header '_row_num' already exists. Remove it or set add_row_num=False.")
             self._headers.append('_row_num')
 
-        # Create Record subclass only if return_type is 'record'
-        if self.return_type == ReturnType.RECORD:
-            self._record_class = type('FileRecord', (Record,), {})
-            self._record_class.set_columns(self._headers)
+        # Create Record subclass and set fields
+        # set_fields() will automatically normalize for attribute access
+        self._record_class = type('FileRecord', (Record,), {})
+        self._record_class.set_fields(self._headers)
 
         self._headers_initialized = True
 
@@ -604,15 +582,15 @@ class Reader(ABC):
 
         return [None if val in self._null_values else val for val in row_data]
 
-    def _create_record(self, row_data: List[Any]) -> Union[Record, OrderedDict]:
+    def _create_record(self, row_data: List[Any]) -> Record:
         """
-        Create a Record or dict from row data.
+        Create a Record from row data.
 
         Args:
             row_data: List of values for this row
 
         Returns:
-            Record instance or OrderedDict with values populated
+            Record instance with values populated
         """
         if not self._headers_initialized:
             self._setup_record_class()
@@ -636,11 +614,8 @@ class Reader(ABC):
         if len(row_data) > len(self._headers):
             row_data = row_data[:len(self._headers)]
 
-        # Return appropriate type
-        if self.return_type == ReturnType.RECORD:
-            return self._record_class(*row_data)
-        else:  # ReturnType.DICT
-            return OrderedDict(zip(self._headers, row_data))
+        # Return Record
+        return self._record_class(*row_data)
 
     @property
     def headers(self) -> List[str]:

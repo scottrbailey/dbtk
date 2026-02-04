@@ -66,6 +66,16 @@ class ParamStyle:
         return (cls.NAMED, cls.PYFORMAT)
 
     @classmethod
+    def get_positional_style(cls, paramstyle: str) -> str:
+        """ Return a positional paramstyle, mapping named style to the corresponding positional style if needed. """
+        if paramstyle == cls.NAMED:
+            return cls.NUMERIC
+        elif paramstyle == cls.PYFORMAT:
+            return cls.FORMAT
+        else:
+            return paramstyle
+
+    @classmethod
     def get_placeholder(cls, paramstyle: str) -> str:
         if paramstyle == cls.QMARK:
             return '?'
@@ -278,22 +288,31 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
 
     return sql, param_names
 
-def validate_identifier(identifier: str, max_length: int = 64) -> str:
+def validate_identifier(identifier: str, max_length: int = 64, allow_temp: bool = False) -> str:
     """
     Validate that an identifier is safe for use (even if it needs quoting).
     Returns the identifier if valid, raises ValueError if invalid.
+
+    Args:
+        identifier: The identifier to validate
+        max_length: Maximum length for identifier
+        allow_temp: If True, allow underscore or hash prefix for temp tables
     """
     if '.' in identifier:
         # Split and recursively validate each part
         parts = identifier.split('.')
-        validated_parts = [validate_identifier(part, max_length) for part in parts]
+        validated_parts = [validate_identifier(part, max_length, allow_temp) for part in parts]
         return '.'.join(validated_parts)
 
     # Single identifier validation
     if not identifier:
         raise ValueError("Invalid identifier: cannot be empty")
     if not identifier[0].isalpha():
-        raise ValueError(f"Invalid identifier: must start with a letter: {identifier}")
+        # Allow underscore or hash prefix for temp tables
+        if allow_temp and identifier[0] in ('_', '#'):
+            pass  # Valid temp table prefix
+        else:
+            raise ValueError(f"Invalid identifier: must start with a letter: {identifier}")
     if len(identifier) > max_length:
         raise ValueError(f"Invalid identifier: exceeds max length of {max_length}")
 

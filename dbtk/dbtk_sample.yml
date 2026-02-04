@@ -3,9 +3,7 @@
 
 settings:
   default_batch_size: 1000
-  default_column_case: lower
   default_country: US
-  default_cursor_type: record
   default_header_clean: 2  # Clean.LOWER_NOSPACE
   default_timezone: UTC
 
@@ -32,9 +30,7 @@ connections:
     database: myapp_dev
     user: developer
     cursor:                 # These settings will be passed down when creating a cursor
-      type: dict
       batch_size: 4000
-      column_case: preserve
       debug: False
       return_cursor: True
     # password: prompt  # Will prompt for password
@@ -60,6 +56,20 @@ connections:
     database: imdb
     user: imdb_user
     encrypted_password: gAAAAABh...
+
+  sqlserver_dev:
+    driver: pyodbc_sqlserver
+    type: sqlserver
+    host: localhost\SQLEXPRESS  # Use instance name; omit port when using instance names
+    database: myapp_dev
+    user: dev_user
+    password: prompt
+    cursor:
+      fast_executemany: true  # Recommended for bulk operations; disable if using TEXT/NVARCHAR(MAX)/JSON columns
+
+states_db:
+    type: sqlite
+    database: /data/test_states.db
 
 # Encrypted passwords (optional)
 passwords:

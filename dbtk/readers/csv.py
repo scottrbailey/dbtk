@@ -4,7 +4,7 @@
 
 import csv
 from typing import TextIO, List, Any, Iterator, Optional
-from .base import Reader, Clean, ReturnType, logger
+from .base import Reader, Clean, logger
 
 
 class CSVReader(Reader):
@@ -36,14 +36,10 @@ class CSVReader(Reader):
         CSV has no header row or you want to rename columns.
     add_rownum : bool, default True
         Add '_row_num' field to each record with 1-based row number
-    clean_headers : Clean, default Clean.DEFAULT
-        Header cleaning level. See Clean enum for options.
     skip_records : int, default 0
         Number of data rows to skip after headers
     max_records : int, optional
         Maximum records to read, None for all
-    return_type : str, default 'record'
-        'record' for Record objects, 'dict' for OrderedDict
     **kwargs
         Additional arguments passed to csv.reader() like delimiter, quotechar, etc.
 
@@ -77,11 +73,6 @@ class CSVReader(Reader):
             for record in reader:
                 print(record.id, record.name)
 
-        # Return dictionaries instead of Records
-        with readers.CSVReader(open('users.csv'), return_type='dict') as reader:
-            for user_dict in reader:
-                print(user_dict['name'])
-
         # Skip first 10 data rows, read only 100 rows
         with readers.CSVReader(open('large.csv'),
                               skip_rows=10,
@@ -106,10 +97,8 @@ class CSVReader(Reader):
                  dialect=csv.excel,
                  headers: Optional[List[str]] = None,
                  add_row_num: bool = True,
-                 clean_headers: Clean = Clean.DEFAULT,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
-                 return_type: str = ReturnType.DEFAULT,
                  null_values=None,
                  **kwargs):
         """
@@ -125,14 +114,10 @@ class CSVReader(Reader):
             Custom headers to use instead of reading from file
         add_row_num : bool, default True
             Add _row_num field to records
-        clean_headers : Clean, default Clean.DEFAULT
-            Header cleaning level
         skip_rows : int, default 0
             Data rows to skip after headers
         n_rows : int, optional
             Maximum rows to read
-        return_type : str, default 'record'
-            'record' or 'dict'
         null_values : str, list, tuple, or set, optional
             Values to convert to None (e.g., '\\N' for IMDB files)
         **kwargs
@@ -141,9 +126,9 @@ class CSVReader(Reader):
         if kwargs.get('delimiter') == '\t' and dialect == csv.excel:
             dialect = csv.excel_tab
             kwargs.pop('delimiter')
-        super().__init__(add_row_num=add_row_num, clean_headers=clean_headers,
+        super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
-                         headers=headers, return_type=return_type, null_values=null_values)
+                         headers=headers, null_values=null_values)
         self.fp = fp
         if hasattr(fp, 'encoding') and fp.encoding == 'utf-8':
             # Using the standard utf-8 encoding can cause issues with BOM headers in column names

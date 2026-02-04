@@ -4,12 +4,6 @@
 
 **The solution:** DBTK's ETL framework provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
 
-## Quick Start
-
-**The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
-
-**The solution:** DBTK's ETL framework provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
-
 ### SQL File Execution
 
 Write SQL once with named parameters, run it anywhere. DBTK automatically converts between parameter styles, making your queries truly portable across databases.
@@ -99,7 +93,7 @@ from dbtk.database import ParamStyle
 
 cursor = dbtk.connect('intel_prod')
 # Auto-generate configuration from existing table
-config = dbtk.etl.generate_table_config(cursor, 'soldier_training', add_comments=True)
+config = dbtk.etl.column_defs_from_db(cursor, 'soldier_training')
 
 # Define ETL mapping with transformations
 phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
@@ -164,14 +158,34 @@ columns_config = {
     # Simple field mapping
     'user_id': {'field': 'id', 'primary_key': True},
 
+    # Empty dict shorthand - field name matches column name
+    'first_name': {},  # Equivalent to {'field': 'first_name'}
+    'last_name': {},
+    'email': {},
+
     # Field with transformation
-    'email': {'field': 'email_address', 'fn': email_clean},
+    'email_clean': {'field': 'email_address', 'fn': email_clean},
 
     # Field with validation
     'full_name': {'field': 'name', 'nullable': False},
 
     # Multiple transformations (compose your own function)
     'phone': {'field': 'phone_number', 'fn': lambda x: phone_format(phone_clean(x))},
+
+    # Whole record access for multi-field decisions
+    'vip_status': {
+        'field': '*',  # Asterisk passes entire record to function
+        'fn': lambda record: 'VIP' if record.get('age', 0) > 65 or record.get('purchases', 0) > 100 else 'Regular'
+    },
+
+    # Whole record in pipelines - first function gets record, rest get values
+    'discount': {
+        'field': '*',
+        'fn': [
+            lambda record: 0.25 if record.get('loyalty_years', 0) > 10 else 0.10,
+            lambda x: round(x, 2)
+        ]
+    },
 
     # Static value for all records
     'status': {'default': 'active'},
@@ -196,8 +210,9 @@ columns_config = {
 For each column, `set_values()` processes data in this order:
 
 ### 1. Value Sourcing
-- **field**: Extract from source record.  
+- **field**: Extract from source record.
 - If `field` is a list, value will also be a list.
+- If `field` is `'*'`, the entire record is passed to the transformation function instead of extracting a specific field.
 
 ### 2. Null Conversion
 The value matches any entries in table.null_values it will be set to `None`. 
@@ -314,16 +329,16 @@ from dbtk.etl import DataSurge
 recruit_table = dbtk.etl.Table('fire_nation_soldiers', columns_config, cursor)
 
 # Create DataSurge instance for bulk operations
-bulk_writer = DataSurge(recruit_table)
+bulk_writer = DataSurge(recruit_table, batch_size=2000)
 
 # Bulk insert with batching
 with dbtk.readers.get_reader('massive_conscript_list.csv') as reader:
-    errors = bulk_writer.insert(cursor, reader, batch_size=2000)
+    errors = bulk_writer.insert(reader)
     print(f"Inserted {recruit_table.counts['insert']} records with {errors} errors")
 
 # Bulk merge (upsert) operations
 with dbtk.readers.get_reader('soldier_updates.csv') as reader:
-    errors = bulk_writer.merge(cursor, reader, batch_size=1000)
+    errors = bulk_writer.merge(reader)
 ```
 
 **DataSurge features:**
@@ -345,13 +360,15 @@ from dbtk.etl import transforms as tx
 # Date and time parsing with flexible formats
 tx.parse_date("Year 100 AG, Day 15")
 tx.parse_datetime("100 AG Summer Solstice T14:30:00Z")  # With timezone support
-tx.parse_timestamp("1642262200")  # Unix timestamp support
 
 # International phone number handling (requires phonenumbers library)
 tx.phone_clean("5551234567")              # -> "(555) 123-4567"
-tx.phone_format("+44 20 7946 0958", tx.PhoneFormat.NATIONAL)  # UK format
 tx.phone_validate("+1-800-AVATAR")        # Validation
-tx.phone_get_type("+1-800-CABBAGES")      # -> "toll_free"
+
+# For advanced phone operations, import from the submodule
+from dbtk.etl.transforms.phone import phone_format, phone_get_type, PhoneFormat
+phone_format("+44 20 7946 0958", PhoneFormat.NATIONAL)  # UK format
+phone_get_type("+1-800-CABBAGES")      # -> "toll_free"
 
 # Email validation and cleaning
 tx.email_validate("guru.pathik@eastern.air.temple")  # -> True

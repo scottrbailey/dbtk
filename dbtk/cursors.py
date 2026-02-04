@@ -6,41 +6,13 @@ All cursors delegate to the underlying database cursor stored in _cursor.
 
 import logging
 from typing import List, Any, Optional, Iterator, Callable
-from collections import namedtuple, OrderedDict
 
 from .record import Record
 from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
-__all__ = ['Cursor', 'RecordCursor', 'TupleCursor', 'DictCursor',
-           'ColumnCase', 'PreparedStatement']
-
-
-class ColumnCase:
-    """
-    Column name case transformation options for result sets.
-
-    Controls how column names from database queries are transformed:
-
-    - UPPER: Convert to uppercase (USER_ID)
-    - LOWER: Convert to lowercase (user_id) [default]
-    - TITLE: Convert to title case (User_Id)
-    - PRESERVE: Keep original case from database
-
-    Example:
-        >>> cursor = db.cursor(column_case=ColumnCase.UPPER)
-        >>> cursor = db.cursor(column_case='preserve')
-    """
-    UPPER = 'upper'
-    LOWER = 'lower'
-    TITLE = 'title'
-    PRESERVE = 'preserve'
-    DEFAULT = LOWER
-
-    @classmethod
-    def values(cls):
-        return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
+__all__ = ['Cursor', 'PreparedStatement']
 
 
 class PreparedStatement:
@@ -55,7 +27,7 @@ class PreparedStatement:
 
     def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8-sig'):
         """
-        Create a prepared statement from a SQL file. It
+        Create a prepared statement from a SQL file.
 
         Args:
             cursor: The cursor that will execute this statement
@@ -125,9 +97,8 @@ class Cursor:
     objects and provides a consistent interface plus additional functionality like SQL
     file execution, parameter conversion, and prepared statements.
 
-    The basic Cursor returns results as plain lists (index access only). Most users
-    should use higher-level cursor types like RecordCursor, TupleCursor, or DictCursor
-    which provide more convenient access patterns.
+    Cursor returns Record objects, which provide flexible access via dictionary keys,
+    attributes, or integer indices.
 
     Attributes
     ----------
@@ -160,22 +131,19 @@ class Cursor:
 
     See Also
     --------
-    RecordCursor : Returns Record objects with multiple access patterns
-    TupleCursor : Returns namedtuples
-    DictCursor : Returns OrderedDict objects
+    Record : Flexible data structure supporting dict, attribute, and index access
     """
     # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [
-        'connection', 'column_case', 'debug', 'return_cursor',
+        'connection', 'debug', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', 'batch_size',
         '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
     ]
     # Attributes that are allowed to be passed in from the connection/configuration layer
-    WRAPPER_SETTINGS = ('batch_size', 'column_case', 'debug', 'return_cursor', 'type')
+    WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor', 'fast_executemany')
 
     def __init__(self,
                  connection,
-                 column_case: Optional[str] = None,
                  batch_size: Optional[int] = None,
                  debug: Optional[bool] = False,
                  return_cursor: Optional[bool] = False,
@@ -187,8 +155,6 @@ class Cursor:
         ----------
         connection : Database
             Database connection object
-        column_case : str, optional
-            How to handle column name casing: 'lower', 'upper', 'title', or None (default)
         batch_size: int, optional
             How many rows to process at a time when using executemany() or bulk operations in DataSurge
         debug : bool, default False
@@ -217,9 +183,6 @@ class Cursor:
         self.record_factory = None
         self._row_factory_invalid = True
         self.return_cursor = return_cursor
-        if column_case is None:
-            column_case = settings.get('default_column_case', ColumnCase.DEFAULT)
-        self.column_case = column_case
         if batch_size is None:
             batch_size = settings.get('default_batch_size', 1000)
         self.batch_size = batch_size
@@ -237,8 +200,19 @@ class Cursor:
         except Exception as e:
             raise TypeError(f'First argument must be a database connection object: {e}')
 
+        # Handle fast_executemany configuration for pyodbc
+        if 'fast_executemany' in kwargs:
+            if hasattr(self._cursor, 'fast_executemany'):
+                self._cursor.fast_executemany = kwargs['fast_executemany']
+        elif hasattr(self.connection, 'driver_name') and self.connection.driver_name == 'pyodbc_sqlserver':
+            logger.info(
+                "pyodbc with SQL Server detected. Consider setting cursor: {fast_executemany: true} "
+                "in your connection config for better bulk insert performance. Note: fast_executemany "
+                "may cause MemoryError with TEXT/NVARCHAR(MAX)/JSON columns - use VARCHAR types instead."
+            )
+
         # Set parameter style info
-        self.paramstyle = self.connection.interface.paramstyle
+        self.paramstyle = self.connection.driver.paramstyle
         if hasattr(self.connection, 'placeholder'):
             self.placeholder = self.connection.placeholder
 
@@ -308,7 +282,7 @@ class Cursor:
 
         Called once per cursor, on first executemany(). Stores in self._bulk_method.
         """
-        adapter = self.connection.interface.__name__
+        adapter = self.connection.driver.__name__
         if adapter == 'psycopg2':
             try:
                 from psycopg2.extras import execute_batch
@@ -321,51 +295,77 @@ class Cursor:
                 return psycopg_batch
             except ImportError:
                 logger.debug("psycopg2.extras not available — using native executemany")
-        elif adapter == 'pyodbc':
-            if hasattr(self._cursor, 'fast_executemany') and not getattr(self._cursor, 'fast_executemany', False):
-                self._cursor.fast_executemany = True
-                logger.debug("pyodbc: enabled fast_executemany for bulk operations")
 
         # Fallback for everything else (SQLite, MySQL, etc.)
         return lambda cur, sql, argslist: cur.executemany(sql, argslist)
 
     def _create_record_factory(self) -> None:
-        """Create the function to process each row. Override in subclasses."""
+        """Create Record subclass with original column names from description."""
+        self._row_factory_invalid = False
 
-        def factory(*args):
-            return list(args)
+        # Get original column names from description (no transformation)
+        if not self.description:
+            original_columns = []
+        else:
+            original_columns = [col[0] for col in self.description]
 
-        self.record_factory = factory
+        # Create dynamic Record subclass and set fields
+        # set_fields() will handle normalization automatically
+        RecordClass = type('Record', (Record,), {})
+        RecordClass.set_fields(original_columns)
+        self.record_factory = RecordClass
 
-    def columns(self, case: Optional[str] = None) -> List[str]:
-        """Return list of column names."""
+    def columns(self, normalized: bool = False) -> List[str]:
+        """
+        Return list of column names.
+
+        Parameters
+        ----------
+        normalized : bool, default False
+            If True, return normalized column names (sanitized for Python identifiers).
+            If False, return original column names from database.
+
+        Returns
+        -------
+        List[str]
+            Column names in order
+
+        Example
+        -------
+        ::
+
+            cursor.execute("SELECT 'First Name', 'User ID' FROM ...")
+            cursor.columns()                 # ['First Name', 'User ID']
+            cursor.columns(normalized=True)  # ['first_name', 'user_id']
+        """
         if not self.description:
             return []
 
-        if case not in (ColumnCase.values()):
-            case = self.column_case
-
-        # Apply case transformation
-        if case == ColumnCase.LOWER:
-            cols = [c[0].lower() for c in self.description]
-        elif case == ColumnCase.UPPER:
-            cols = [c[0].upper() for c in self.description]
-        elif case == ColumnCase.TITLE:
-            cols = [c[0].title() for c in self.description]
+        if normalized:
+            # Return normalized column names
+            original_columns = [c[0] for c in self.description]
+            return [sanitize_identifier(col, idx) for idx, col in enumerate(original_columns)]
         else:
-            cols = [c[0] for c in self.description]
-
-        # Sanitize column names
-        return [sanitize_identifier(cols[i], i) for i in range(len(cols))]
+            # Return original column names
+            return [c[0] for c in self.description]
 
     def _is_ready(self) -> bool:
-        """Check if cursor is ready to fetch results."""
+        """Check if ready and update record factory if columns changed."""
         if self._cursor.description is None:
             raise Exception('Query has not been run or did not succeed.')
-
-        if self.record_factory is None:
+        elif self.record_factory is None:
             self._create_record_factory()
-
+        elif self._row_factory_invalid:
+            # Check if columns have changed since last query
+            if hasattr(self.record_factory, '_fields'):
+                # Get current original column names from description
+                current_columns = [col[0] for col in self.description] if self.description else []
+                if self.record_factory._fields != current_columns:
+                    self._create_record_factory()
+                else:
+                    self._row_factory_invalid = False
+            else:
+                self._create_record_factory()
         return True
 
     def execute(self, query: str, bind_vars: tuple = ()) -> None:
@@ -490,9 +490,9 @@ class Cursor:
         rows = self.fetchmany(2)
 
         if len(rows) == 0:
-            raise self.connection.interface.DatabaseError('No Data Found.')
+            raise self.connection.driver.DatabaseError('No Data Found.')
         elif len(rows) > 1:
-            raise self.connection.interface.DatabaseError(
+            raise self.connection.driver.DatabaseError(
                 'selectinto() must return one and only one row.'
             )
         else:
@@ -528,73 +528,3 @@ class Cursor:
         return []
 
 
-class RecordCursor(Cursor):
-    """Cursor that returns Record objects with attribute and dict-like access."""
-
-    def _is_ready(self) -> bool:
-        """Check if ready and update record factory if columns changed."""
-        if self._cursor.description is None:
-            raise Exception('Query has not been run or did not succeed.')
-        elif self.record_factory is None:
-            self._create_record_factory()
-        elif self._row_factory_invalid:
-            # Check if columns have changed since last query
-            if hasattr(self.record_factory, '_fields'):
-                if self.record_factory._fields != self.columns():
-                    self._create_record_factory()
-                else:
-                    self._row_factory_invalid = False
-            else:
-                self._create_record_factory()
-        return True
-
-    def _create_record_factory(self) -> None:
-        """Create Record subclass with current columns."""
-        self._row_factory_invalid = False
-        columns = self.columns()
-
-        # Create dynamic Record subclass
-        self.record_factory = type(
-            'Record',
-            (Record,),
-            {'_fields': columns}
-        )
-
-
-class TupleCursor(Cursor):
-    """Cursor that returns namedtuples."""
-
-    def _is_ready(self) -> bool:
-        """Check if ready and update record factory if columns changed."""
-        if self._cursor.description is None:
-            raise Exception('Query has not been run or did not succeed.')
-        elif self.record_factory is None:
-            self._create_record_factory()
-        elif self._row_factory_invalid:
-            # Check if columns have changed
-            if hasattr(self.record_factory, '_fields'):
-                if self.record_factory._fields != tuple(self.columns()):
-                    self._create_record_factory()
-                else:
-                    self._row_factory_invalid = False
-            else:
-                self._create_record_factory()
-        return True
-
-    def _create_record_factory(self) -> None:
-        """Create namedtuple factory with current columns."""
-        self._row_factory_invalid = False
-        self.record_factory = namedtuple('TupleRecord', self.columns())
-
-
-class DictCursor(Cursor):
-    """Cursor that returns OrderedDict objects."""
-
-    def _create_record_factory(self) -> None:
-        """Create factory that returns OrderedDict."""
-        columns = self.columns()
-
-        def factory(*args):
-            return OrderedDict(zip(columns, args))
-
-        self.record_factory = factory

@@ -249,14 +249,19 @@ class TestInsertOperation:
         incomplete_records = [
             {
                 'trainee_id': 'MEELO001',
-                'monk_name': 'Meelo'
-                # Missing required 'temple' field
+                'monk_name': 'Meelo',
+                'home_temple': None,  # Missing required value
+                'mastery_rank': None,
+                'bison_companion': None,
+                'daily_meditation': None
             },
             {
                 'trainee_id': 'IKKI001',
                 'monk_name': 'Ikki',
                 'home_temple': 'Air Temple Island',
-                'mastery_rank': '2'
+                'mastery_rank': '2',
+                'bison_companion': None,
+                'daily_meditation': None
             }
         ]
 
@@ -636,9 +641,30 @@ class TestBatchProcessing:
     def test_all_records_skipped(self, airbender_table, cursor):
         """Test when all Air Nomad records are invalid."""
         invalid_records = [
-            {'trainee_id': 'BAD001'},  # Missing required fields
-            {'trainee_id': 'BAD002'},
-            {'trainee_id': 'BAD003'}
+            {
+                'trainee_id': 'BAD001',
+                'monk_name': None,  # Missing required value
+                'home_temple': None,  # Missing required value
+                'mastery_rank': None,
+                'bison_companion': None,
+                'daily_meditation': None
+            },
+            {
+                'trainee_id': 'BAD002',
+                'monk_name': None,
+                'home_temple': None,
+                'mastery_rank': None,
+                'bison_companion': None,
+                'daily_meditation': None
+            },
+            {
+                'trainee_id': 'BAD003',
+                'monk_name': None,
+                'home_temple': None,
+                'mastery_rank': None,
+                'bison_companion': None,
+                'daily_meditation': None
+            }
         ]
 
         surge = DataSurge(airbender_table)
@@ -727,8 +753,22 @@ class TestCountTracking:
     def test_skips_accumulate(self, airbender_table):
         """Test that skipped Air Nomad records accumulate."""
         incomplete_records = [
-            {'trainee_id': 'BAD001'},
-            {'trainee_id': 'BAD002'}
+            {
+                'trainee_id': 'BAD001',
+                'monk_name': None,
+                'home_temple': None,
+                'mastery_rank': None,
+                'bison_companion': None,
+                'daily_meditation': None
+            },
+            {
+                'trainee_id': 'BAD002',
+                'monk_name': None,
+                'home_temple': None,
+                'mastery_rank': None,
+                'bison_companion': None,
+                'daily_meditation': None
+            }
         ]
 
         surge = DataSurge(airbender_table)

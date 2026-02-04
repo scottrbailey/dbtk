@@ -2,7 +2,7 @@
 
 import logging
 import re
-import time
+from textwrap import dedent
 from typing import Iterable, Optional
 
 from .base_surge import BaseSurge
@@ -91,7 +91,7 @@ class DataSurge(BaseSurge):
                 try:
                     self.cursor.executemany(sql, batch_params)
                     self.table.counts[operation] += len(batch_params)
-                except self.cursor.connection.interface.DatabaseError as e:
+                except self.cursor.connection.driver.DatabaseError as e:
                     logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
                     if raise_error:
                         raise
@@ -136,37 +136,52 @@ class DataSurge(BaseSurge):
             raise NotImplementedError(
                 f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
             )
+        elif db_type == 'oracle':
+            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
 
-        temp_name = f"tmp_{self.table.name}_{int(time.time())}"
+            # Get column definitions from table
+            col_info = self.table.get_column_definitions()
+            col_defs = [f"{col_name} {sql_type}" for col_name, _, _, _, _, sql_type in col_info]
+            col_defs_str = ', '.join(col_defs)
+            create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
+
         if db_type == 'sqlserver':
-            temp_name = f"#{temp_name}"
+            temp_name = f"#{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}"
 
-        create_sql = f"CREATE TEMPORARY TABLE {temp_name} AS SELECT * FROM {self.table.name} WHERE 1=0"
+            # Get column definitions from table
+            col_info = self.table.get_column_definitions()
+            col_defs = [f"[{col_name}] {sql_type} NULL" for col_name, _, _, _, _, sql_type in col_info]
+            col_defs_str = ', '.join(col_defs)
+            create_sql = f"CREATE TABLE {temp_name} ({col_defs_str})"
+
+        # Drop temp table if it exists from previous run, then create fresh
         try:
-            self.cursor.execute(create_sql)
-        except self.cursor.connection.interface.DatabaseError as e:
-            logger.error(f"Failed to create temp table {temp_name}: {e}")
-            if raise_error:
-                raise
-            return len(records_list)
+            self.cursor.execute(f"DROP TABLE {temp_name}")
+        except self.cursor.connection.driver.DatabaseError:
+            pass  # Table doesn't exist yet, which is fine
+
+        self.cursor.execute(create_sql)
+        logger.debug(f"Created temp table: {create_sql}")
 
         # Use temporary table for bulk insert
         from .table import Table
         temp_table = Table(
             name=temp_name,
             columns=self.table.columns,
-            cursor=self.cursor
+            cursor=self.cursor,
+            is_temp=True
         )
         temp_surge = DataSurge(temp_table, batch_size=self.batch_size)
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
-            self.cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
+            self.cursor.execute(f"DROP TABLE {temp_name}")
             return errors
 
-        # Generate MERGE SQL if not already done
-        self.table.generate_sql('merge')
-        merge_sql = self.table.sql_statements['merge']
+        # Transfer record fields from temp table to main table for proper merge column exclusion
+        self.table.calc_update_excludes(temp_table._record_fields)
+
+        merge_sql = self.table.get_sql('merge')
 
         # Replace the USING clause to point to temp table and store modified version
         modified_merge = re.sub(
@@ -176,7 +191,7 @@ class DataSurge(BaseSurge):
             flags=re.DOTALL
         )
         self._sql_statements['merge'] = modified_merge
-
+        logger.debug(f"Modified merge sql: {modified_merge}")
         try:
             if self.use_transaction:
                 with self.cursor.connection.transaction():
@@ -187,14 +202,14 @@ class DataSurge(BaseSurge):
             loaded = len(records_list) - errors
             self.table.counts['merge'] += loaded
             logger.info(f"MERGE via temp table → {loaded:,} records into {self.table.name}")
-        except self.cursor.connection.interface.DatabaseError as e:
+        except self.cursor.connection.driver.DatabaseError as e:
             logger.error(f"Merge failed: {e}")
             if raise_error:
                 raise
             errors += len(records_list) - errors
         finally:
             try:
-                self.cursor.execute(f"DROP TABLE IF EXISTS {temp_name}")
+                self.cursor.execute(f"DROP TABLE {temp_name}")
             except Exception as e:
                 logger.warning(f"Failed to drop temp table {temp_name}: {e}")
 

@@ -1,10 +1,3 @@
-import dbtk
-import polars as pl
-from pathlib import Path
-from dbtk.etl import Table, BulkSurge, ValidationCollector
-from dbtk.etl.transforms import TableLookup
-from dbtk.readers import DataFrameReader
-
 """
 Bulk loads title.basics.tsv.gz from the IMDB dataset into a Postgres database using
 Postgres COPY FROM CSV
@@ -28,6 +21,13 @@ CREATE TABLE genres (
    title   varchar(30)
 );
 """
+
+import dbtk
+import polars as pl
+from pathlib import Path
+from dbtk.etl import Table, BulkSurge, ValidationCollector
+from dbtk.etl.transforms import TableLookup
+from dbtk.readers import DataFrameReader
 
 
 def wrap_array(val) -> str:

@@ -202,7 +202,6 @@ def open_file(filename: Union[str, Path],
 
 def get_reader(filename: Union[str, Path],
                encoding: Optional[str] = None,
-               clean_headers: Optional['Clean'] = None,
                **kwargs) -> 'Reader':
     """
     Initialize a reader based on file extension.
@@ -212,7 +211,6 @@ def get_reader(filename: Union[str, Path],
     Args:
         filename: Path to data file (e.g., 'data.csv', 'data.csv.gz', 'archive.zip', or Path object)
         encoding: File encoding for text files
-        clean_headers: Header cleaning level (defaults vary by file type)
         **kwargs: Additional arguments passed to specific readers:
             - null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
             - sheet_name, sheet_index: For Excel files
@@ -228,11 +226,11 @@ def get_reader(filename: Union[str, Path],
     -----------------
     ::
 
-        # CSV file with custom header cleaning
-        with get_reader('data.csv', clean_headers=Clean.STANDARDIZE) as reader:
+        # CSV file - fields accessible by original or normalized names
+        with get_reader('data.csv') as reader:
             for record in reader:
-                print(record.name)  # Attribute access
-                print(record['age'])  # Dict-style access
+                print(record.name)  # Attribute access (normalized)
+                print(record['age'])  # Dict-style access (original)
 
         # Compressed CSV (automatically decompressed)
         with get_reader('data.csv.gz') as reader:
@@ -349,7 +347,7 @@ def get_reader(filename: Union[str, Path],
     if ext in ('csv', 'tsv'):
         from .csv import CSVReader
         fp = open_file(filename, encoding=effective_encoding, zip_member=zip_member)
-        return CSVReader(fp, clean_headers=clean_headers, **kwargs)
+        return CSVReader(fp, **kwargs)
     elif ext in ('xls', 'xlsx'):
         # Excel files are already compressed (ZIP-based), handle normally
         from .excel import open_workbook, get_sheet_by_index, get_sheet_by_name, XLSReader, XLSXReader
@@ -365,24 +363,24 @@ def get_reader(filename: Union[str, Path],
 
         if ws.__class__.__name__ == 'Worksheet':
             # openpyxl
-            reader = XLSXReader(ws, clean_headers=clean_headers, **kwargs)
+            reader = XLSXReader(ws, **kwargs)
         else:
             # xlrd
-            reader = XLSReader(ws, clean_headers=clean_headers, **kwargs)
+            reader = XLSReader(ws, **kwargs)
         reader.source = filename
         return reader
     elif ext == 'json':
         from .json import JSONReader
         fp = open_file(filename, encoding=effective_encoding, zip_member=zip_member)
-        return JSONReader(fp, clean_headers=clean_headers, **kwargs)
+        return JSONReader(fp, **kwargs)
     elif ext == 'ndjson':
         from .json import NDJSONReader
         fp = open_file(filename, encoding=effective_encoding, zip_member=zip_member)
-        return NDJSONReader(fp, clean_headers=clean_headers, **kwargs)
+        return NDJSONReader(fp, **kwargs)
     elif ext == 'xml':
         from .xml import XMLReader
         fp = open_file(filename, encoding=effective_encoding, zip_member=zip_member)
-        return XMLReader(fp, clean_headers=clean_headers, **kwargs)
+        return XMLReader(fp, **kwargs)
     else:
         # Assume fixed-width file
         fixed_config = kwargs.pop('fixed_config', None)
@@ -393,4 +391,4 @@ def get_reader(filename: Union[str, Path],
             )
         from .fixed_width import FixedReader
         fp = open_file(filename, encoding=effective_encoding, zip_member=zip_member)
-        return FixedReader(fp, columns=fixed_config, clean_headers=clean_headers, **kwargs)
+        return FixedReader(fp, columns=fixed_config, **kwargs)

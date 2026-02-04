@@ -1,11 +1,3 @@
-import dbtk
-import logging
-import polars as pl
-import time
-from pathlib import Path
-from dbtk.etl import BulkSurge, DataSurge, Table, ValidationCollector
-from dbtk.etl.transforms import TableLookup
-
 """
 IMDB Subset Loader: High-Performance ETL for Relational Movie Data
 
@@ -156,6 +148,15 @@ See Also
 - movie_principals.sql: Query for cast/crew with role filtering
 """
 
+import dbtk
+import logging
+import polars as pl
+import time
+from pathlib import Path
+from dbtk.etl import BulkSurge, DataSurge, Table, ValidationCollector
+from dbtk.etl.transforms import TableLookup
+
+
 def wrap_array(val) -> str:
     """Wrap comma separated string or list with '{}' for postgres"""
     if val is None:
@@ -289,7 +290,7 @@ if __name__ == '__main__':
             names_path,
             separator="\t",
             null_values=r"\N",
-            quote_char=None,  # required for the partially quoted values in the dataset
+            quote_char=None,     # required for the partially quoted values in the dataset
             ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
     ).filter((pl.col("nconst").is_in(all_names))).collect()
     with dbtk.readers.DataFrameReader(df) as reader:

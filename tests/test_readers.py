@@ -7,7 +7,6 @@ Testing the four nations of data formats with the precision of a master bender.
 import pytest
 from pathlib import Path
 from datetime import date, datetime
-from collections import OrderedDict
 
 from dbtk.readers import (
     CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
@@ -276,12 +275,11 @@ class TestReaderBase:
             assert len(headers) == 8, f"{reader_type} should have 8 columns without _row_num"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_return_type_record(self, reader_type, csv_file, excel_file, json_file,
-                                ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test return_type='record' returns Record objects."""
+    def test_returns_records(self, reader_type, csv_file, excel_file, json_file,
+                             ndjson_file, xml_file, fixed_file, fixed_columns):
+        """Test that all readers return Record objects by default."""
         with get_test_reader(reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns,
-                             return_type='record') as reader:
+                             ndjson_file, xml_file, fixed_file, fixed_columns) as reader:
             first = next(reader)
             assert isinstance(first, Record), f"{reader_type} should return Record objects"
 
@@ -289,51 +287,6 @@ class TestReaderBase:
             assert first['trainee_id'] is not None, "Should support dict-style access"
             assert first.monk_name is not None, "Should support attribute access"
 
-    @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_return_type_dict(self, reader_type, csv_file, excel_file, json_file,
-                              ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test return_type='dict' returns OrderedDict objects."""
-        with get_test_reader(reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns,
-                             return_type='dict') as reader:
-            first = next(reader)
-            assert isinstance(first, OrderedDict), f"{reader_type} should return OrderedDict"
-            assert first['trainee_id'] is not None, "Should support dict access"
-
-    @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_clean_headers_noop(self, reader_type, csv_file, excel_file, json_file,
-                                ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test Clean.NOOP leaves headers unchanged."""
-        with get_test_reader(reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns,
-                             clean_headers=Clean.NOOP) as reader:
-            headers = reader.headers
-            # Original headers should be preserved (except _row_num)
-            assert 'trainee_id' in headers or 'Trainee_Id' in headers or 'trainee_ID' in headers
-
-    @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_clean_headers_lower(self, reader_type, csv_file, excel_file, json_file,
-                                 ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test Clean.LOWER converts to lowercase."""
-        with get_test_reader(reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns,
-                             clean_headers=Clean.LOWER) as reader:
-            headers = reader.headers
-            assert all(h == h.lower() for h in headers if h != '_row_num'), \
-                f"{reader_type} headers should be lowercase"
-
-    @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
-    def test_clean_headers_lower_nospace(self, reader_type, csv_file, excel_file, json_file,
-                                         ndjson_file, xml_file, fixed_file, fixed_columns):
-        """Test Clean.LOWER_NOSPACE converts to lowercase and replaces spaces."""
-        with get_test_reader(reader_type, csv_file, excel_file, json_file,
-                             ndjson_file, xml_file, fixed_file, fixed_columns,
-                             clean_headers=Clean.LOWER_NOSPACE) as reader:
-            headers = reader.headers
-            assert all(h == h.lower() for h in headers if h != '_row_num'), \
-                f"{reader_type} headers should be lowercase"
-            assert all(' ' not in h for h in headers), \
-                f"{reader_type} headers should not contain spaces"
 
     @pytest.mark.parametrize("reader_type", ['csv', 'excel', 'json', 'ndjson', 'xml', 'fixed'])
     def test_context_manager(self, reader_type, csv_file, excel_file, json_file,
