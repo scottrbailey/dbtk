@@ -353,7 +353,7 @@ with dbtk.readers.get_reader('soldier_updates.csv') as reader:
 
 ### Ultra-Fast Loading with BulkSurge
 
-For maximum throughput, `BulkSurge` uses native cursor-based bulk loading where supported (PostgreSQL COPY):
+For maximum throughput, `BulkSurge` uses native cursor-based bulk loading on PostgreSQL (COPY) and Oracle (direct path load):
 
 ```python
 from dbtk.etl import BulkSurge
@@ -365,7 +365,7 @@ simple_table = dbtk.etl.Table('sensor_readings', {
     'value': {'field': 'reading', 'fn': 'float'},
 }, cursor=cursor)
 
-# BulkSurge streams data directly via COPY (PostgreSQL)
+# BulkSurge streams data directly via native bulk loading
 bulk = BulkSurge(simple_table, batch_size=50000)
 
 with dbtk.readers.get_reader('massive_sensor_data.csv.gz') as reader:
@@ -373,7 +373,7 @@ with dbtk.readers.get_reader('massive_sensor_data.csv.gz') as reader:
     print(f"Loaded {count} records")
 ```
 
-**For databases without cursor-based bulk loading**, use `dump()` to create a transformed staging file, then load with your database's native tools (SQL*Loader, bcp, etc.):
+**For databases without cursor-based bulk loading**, use `dump()` to create a transformed staging file, then load with your database's native tools (bcp, etc.):
 
 ```python
 # Transform and write to staging file
@@ -382,7 +382,6 @@ with dbtk.readers.get_reader('source.csv.gz') as reader:
     bulk.dump(reader, 'staging/transformed_data.csv')
 
 # Then load with native tools:
-# Oracle: sqlldr control=load.ctl data=staging/transformed_data.csv
 # SQL Server: bcp mydb.dbo.mytable in staging/transformed_data.csv -c -t,
 ```
 
@@ -390,16 +389,16 @@ with dbtk.readers.get_reader('source.csv.gz') as reader:
 
 | Feature | DataSurge | BulkSurge |
 |---------|-----------|-----------|
-| Speed | 90-120K rec/s | 200K+ rec/s (with COPY) |
+| Speed | 90-120K rec/s | 200K+ rec/s |
 | `db_expr` support | Yes | No |
 | MERGE/upsert | Yes | No (INSERT only) |
-| Cursor-based loading | N/A | PostgreSQL |
+| Cursor-based loading | N/A | PostgreSQL, Oracle |
 
 **When to use BulkSurge:**
 - Loading millions of rows
 - Simple INSERT operations (no upsert needed)
 - No database functions (`db_expr`) in column config
-- PostgreSQL for direct loading, or any database with `dump()` + native loader
+- PostgreSQL or Oracle for direct loading, or any database with `dump()` + native loader
 
 ### Data Transformations
 
