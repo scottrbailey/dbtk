@@ -73,3 +73,41 @@ register_user_drivers(custom_drivers)
    ```
 
 6. **Let the database do the work** - Use `db_expr` in Table definitions to leverage database functions instead of processing in Python.
+
+## EntityManager for Multi-Stage Imports
+
+`EntityManager` provides resumable, multi-stage ETL for complex imports where entities have multiple IDs that need to be resolved:
+
+```python
+from dbtk.etl import EntityManager
+
+# Track entities by primary ID, resolve secondary IDs on demand
+manager = EntityManager(
+    primary_id="crm_id",           # Reliable source ID (e.g., from CRM system)
+    secondary_ids=["recruit_id", "sis_id"]  # IDs to resolve
+)
+
+# Set up resolver query
+stmt = cursor.prepare_file("sql/resolve_person.sql")
+manager.set_main_resolver(stmt)
+
+# Process records - manager tracks state (PENDING, RESOLVED, ERROR, SKIPPED)
+for row in reader:
+    entity = manager.process_row(row["ApplicationID"])
+    if entity.status == "RESOLVED":
+        # Entity has all IDs resolved - proceed with import
+        table.set_values(entity)
+        table.execute('insert')
+
+# Save state for resumption
+manager.save("import_state.json")
+
+# Later: resume from saved state
+manager = EntityManager.load("import_state.json")
+```
+
+**Use cases:**
+- CRM integrations where records have multiple ID systems
+- Data migrations requiring ID crosswalks
+- Imports that may fail mid-process and need resumption
+- Tracking which records have been successfully processed
