@@ -143,15 +143,19 @@ with dbtk.readers.get_reader('data.csv', skip_rows=5) as reader:
 
 ### DataFrame Readers
 
-For the best performance, use [polars](https://pola.rs/) lazy API with DataFrameReader.
+For maximum throughput, use [polars](https://pola.rs) to read files and DataFrameReader to stream rows into DBTK pipelines.  This works with both polars and Pandas and can use any file format that either library supports. Tip: use Lazy API and streaming to prevent loading massive files into memory.
 
 ```python
 import polars as pl
+from dbtk.etl import DataSurge
+from dbtk.readers import DataFrameReader
 
-df = pl.scan_csv('data.csv').filter(pl.col("titleType") == "movie").collect()
-with dbtk.readers.DataFrameReader(df) as reader:
-    for record in reader:
-        print(f"Row {record.title}")
+# polars rips through CSV files at incredible speed
+df = pl.read_csv('massive_file.csv.gz').collect(engine='streaming')  # Handles compression natively
+
+with DataFrameReader(df) as reader:
+    surge = DataSurge(table)
+    surge.insert(reader)  
 ```
 
 ### Dual Field Name Access
