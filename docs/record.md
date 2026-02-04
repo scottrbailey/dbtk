@@ -190,20 +190,14 @@ old_status = row.pop('old_status', None)
 
 ## Conversion Methods
 
-### To Dict
-
 ```python
-# Original column names as keys
+# Convert to dict (standard Python idiom)
 data = dict(row)
-data = row.to_dict()
 
-# Normalized column names as keys
+# Use to_dict() when you need normalized keys
 data = row.to_dict(normalized=True)
-```
 
-### To Tuple
-
-```python
+# Get just the values as a tuple
 values = tuple(row.values())
 ```
 

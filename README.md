@@ -25,6 +25,20 @@ your database handle it. If you need dataframes and heavy analytics - reach for 
 or polars. DBTK sits in between: getting your data where it needs to be, cleaned and
 validated along the way.
 
+## Features
+
+- **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
+- **Portable SQL Queries** - Write SQL once with named parameters, runs on any database regardless of parameter style
+- **Smart Cursors** - All cursors return Record objects with the speed of tuples and the flexibility of dicts
+- **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
+- **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
+- **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
+- **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
+- **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning with international support
+- **High-Performance Bulk Operations** - DataSurge for blazing-fast batch operations; BulkSurge for even faster direct loading when supported
+- **Integration Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
+- **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
+
 ## The Record Class
 
 Every cursor query and file reader in DBTK returns **Record** objects - a hybrid data structure that works like a dict, tuple, and object simultaneously.
@@ -45,20 +59,6 @@ for row in cursor:
 **Normalized field names** let you write resilient code. Whether your source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`, you can always access it as `row.employee_id`. This means your Table field mappings work regardless of how the source system names its columns.
 
 See [Record Objects](docs/record.md) for complete documentation.
-
-## Features
-
-- **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
-- **Portable SQL Queries** - Write SQL once with named parameters, runs on any database regardless of parameter style
-- **Smart Cursors** - All cursors return Record objects with the speed of tuples and the flexibility of dicts
-- **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
-- **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
-- **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
-- **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
-- **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning with international support
-- **High-Performance Bulk Operations** - DataSurge for blazing-fast batch operations; BulkSurge for even faster direct loading when supported
-- **Integration Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
-- **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
 
 ## Installation
 
