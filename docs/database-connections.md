@@ -101,7 +101,7 @@ except db.driver.DatabaseError as e:
 
 ## Cursors and Records
 
-All DBTK cursors return **Record** objects - a flexible data structure supporting multiple access patterns:
+All DBTK cursors return **Record** objects - a hybrid data structure that works like a dict, tuple, and object simultaneously:
 
 ```python
 cursor = db.cursor()
@@ -109,44 +109,16 @@ cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
                {'status': 'active'})
 
 for user in cursor:
-    # Dictionary-style access
-    print(user['name'])
-
-    # Attribute access
-    print(user.email)
-
-    # Index access
-    user_id = user[0]
-
-    # Safe access with default
-    phone = user.get('phone', 'N/A')
-
-    # Slicing
-    first_three = user[:3]
-
-    # Iteration and joining
-    print('\t'.join(str(v) for v in user))
-
-    # Conversion
-    row_dict = dict(user)
-    row_tuple = tuple(user)
+    user['name']          # Dict-style access
+    user.email            # Attribute access
+    user[0]               # Index access
+    user[:2]              # Slicing
+    id, name, email = user  # Tuple unpacking
 ```
 
-### Column Name Handling
+Records also normalize column names, so `row.employee_id` works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
 
-Record objects store both the original column names from the database and normalized (lowercased, cleaned) names. You can access fields using either form:
-
-```python
-cursor.execute("SELECT Employee_ID, FULL_NAME FROM users")
-for row in cursor:
-    row.employee_id       # Normalized name access
-    row['Employee_ID']    # Original name access
-    row['employee_id']    # Normalized also works in dict access
-
-# See both forms
-columns = cursor.columns()                    # Original names
-normalized = cursor.columns(normalized=True)  # Normalized names
-```
+See [Record Objects](record.md) for full documentation on access patterns, normalization, mutation, and performance characteristics.
 
 ### Cursor Configuration
 
@@ -330,6 +302,7 @@ except db.driver.IntegrityError as e:
 
 ## See Also
 
+- [Record Objects](record.md) - Full documentation on DBTK's universal data structure
 - [Configuration & Security](configuration.md) - YAML config files and password encryption
 - [ETL Framework](etl.md) - Using cursors with Table, DataSurge, and BulkSurge
 - [Readers & Writers](readers-writers.md) - Moving data between databases and files
