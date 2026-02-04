@@ -86,7 +86,9 @@ for id, name, status in cursor:
 
 ## Normalized Field Names
 
-Record stores both original column names and normalized versions. Normalization lowercases and replaces non-alphanumeric characters with underscores:
+Record stores both original column names and normalized versions. Normalization exists because Python attribute syntax doesn't allow `row.FULL NAME` or `row.Employee-ID` - only valid Python identifiers work as attributes.
+
+Normalization lowercases and replaces non-alphanumeric characters with underscores:
 
 | Original Column | Normalized Name |
 |-----------------|-----------------|
@@ -95,15 +97,20 @@ Record stores both original column names and normalized versions. Normalization 
 | `Start Year`    | `start_year`    |
 | `Contact Email!`| `contact_email` |
 
-You can access fields using either form:
+**Access rules:**
+- **Normalized names** work with both attribute access (`row.employee_id`) and dict access (`row['employee_id']`)
+- **Original names** only work with dict access (`row['FULL NAME']`) - they may contain characters invalid for Python attributes
 
 ```python
 cursor.execute("SELECT Employee_ID, FULL NAME FROM users")
 for row in cursor:
-    # All of these work:
-    row['Employee_ID']    # Original name
-    row['employee_id']    # Normalized name
-    row.employee_id       # Normalized attribute access
+    # Normalized - works both ways
+    row.employee_id       # Attribute access
+    row['employee_id']    # Dict access
+
+    # Original - dict only
+    row['FULL NAME']      # Works
+    row.FULL NAME         # SyntaxError!
 ```
 
 ### Why This Matters
@@ -231,15 +238,16 @@ print(repr(row))
 
 ## Performance Note
 
-Record achieves tuple-like speed through a subclass-per-query pattern. When a cursor executes a query, DBTK dynamically creates a Record subclass with those column names as class attributes. Every row from that query shares the subclass - column names exist once in memory, not on every row.
+Record achieves tuple-like speed through a subclass-per-query pattern. Each time a cursor executes a query, DBTK dynamically creates a Record subclass with those column names as class attributes. Every row returned from that query shares the subclass - column names exist once in memory, not on every row.
 
 ```python
 cursor.execute("SELECT id, name, email FROM users")
-# DBTK creates: class Record_id_name_email(Record): ...
-# All rows share this class, each storing only [id_val, name_val, email_val]
+# DBTK creates a Record subclass with _fields = ['id', 'name', 'email']
+# All 10,000 rows share this class, each storing only [id_val, name_val, email_val]
 
-cursor.execute("SELECT * FROM orders")
-# Different query, different columns = different subclass
+cursor.execute("SELECT order_id, total, status FROM orders")
+# New query = new subclass with different fields
+# Previous subclass is eligible for garbage collection
 ```
 
-This is why Record can offer dict-like convenience without dict-like memory overhead when processing millions of rows.
+This is why Record can offer dict-like convenience without dict-like memory overhead when processing millions of rows. The same pattern applies to file readers - each reader creates a Record subclass based on the file's header row.
