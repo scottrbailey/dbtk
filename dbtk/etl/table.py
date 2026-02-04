@@ -596,16 +596,16 @@ class Table:
             placeholders_str = wrap_at_comma(placeholders_str)
 
         if db_type == 'mysql':
-            # MySQL: INSERT ... ON DUPLICATE KEY UPDATE
+            # MySQL/MariaDB: INSERT ... ON DUPLICATE KEY UPDATE
+            # Use VALUES(col) syntax for compatibility with both MySQL and MariaDB
             update_assignments = []
             for col, ident, bind_name, db_expr in update_cols:
                 if db_expr and '#' in db_expr:
-                    # Use alias syntax for MySQL 8.0.19+
-                    assignment = f"{ident} = {db_expr.replace('#', f'new_vals.{ident}')}"
+                    assignment = f"{ident} = {db_expr.replace('#', f'VALUES({ident})')}"
                 elif db_expr:
                     assignment = f"{ident} = {db_expr}"
                 else:
-                    assignment = f"{ident} = new_vals.{ident}"
+                    assignment = f"{ident} = VALUES({ident})"
                 update_assignments.append(assignment)
 
             update_clause = ', '.join(update_assignments)
@@ -614,7 +614,7 @@ class Table:
 
             sql = dedent(f"""\
             INSERT INTO {table_name} ({cols_str})
-            VALUES ({placeholders_str}) AS new_vals
+            VALUES ({placeholders_str})
             ON DUPLICATE KEY UPDATE {update_clause}""")
 
         elif db_type in ('postgres', 'sqlite'):

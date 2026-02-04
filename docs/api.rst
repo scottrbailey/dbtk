@@ -32,8 +32,17 @@ DBTK provides command-line tools for managing encryption keys and configuration 
 
 .. code-block:: bash
 
+   # Check dependencies, drivers, and configuration
+   dbtk checkup
+
+   # Interactive configuration setup wizard
+   dbtk config-setup
+
    # Generate encryption key
    dbtk generate-key
+
+   # Store encryption key in system keyring
+   dbtk store-key [key] [--force]
 
    # Encrypt passwords in config file
    dbtk encrypt-config [config_file]

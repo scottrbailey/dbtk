@@ -92,9 +92,19 @@ DRIVERS = {
         'connection_method': 'kwargs',
         'default_port': 3306
     },
-    'mysql.connector': {
+    'mariadb': {
         'database_type': 'mysql',
         'priority': 12,
+        'param_map': {},
+        'required_params': [{'host', 'database', 'user'}],
+        'optional_params': {'port', 'password', 'unix_socket', 'ssl', 'tls_version',
+                           'autocommit', 'converter', 'connect_timeout'},
+        'connection_method': 'kwargs',
+        'default_port': 3306
+    },
+    'mysql.connector': {
+        'database_type': 'mysql',
+        'priority': 13,
         'param_map': {},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'port', 'password', 'charset', 'collation', 'autocommit', 'time_zone',
@@ -105,7 +115,7 @@ DRIVERS = {
     },
     'pymysql': {
         'database_type': 'mysql',
-        'priority': 13,
+        'priority': 14,
         'param_map': {'database': 'db', 'password': 'passwd'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'port', 'password', 'charset', 'sql_mode', 'read_default_file',
@@ -116,7 +126,7 @@ DRIVERS = {
     },
     'MySQLdb': {
         'database_type': 'mysql',
-        'priority': 14,
+        'priority': 15,
         'param_map': {'database': 'db', 'password': 'passwd'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'port', 'password', 'charset', 'use_unicode', 'sql_mode', 'read_default_file',
@@ -163,7 +173,7 @@ DRIVERS = {
     'pyodbc_mysql': {
         'database_type': 'mysql',
         'module': 'pyodbc',
-        'priority': 15,
+        'priority': 16,
         'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'password', 'port'},
@@ -590,7 +600,6 @@ class Database:
             Optional cursor configuration:
 
             * ``batch_size`` (int) - Rows to process at once in bulk operations
-            * ``column_case`` (str) - Column name casing: 'lower', 'upper', 'title', or 'preserve'
             * ``debug`` (bool) - Enable debug output showing queries and bind variables
             * ``return_cursor`` (bool) - If True, execute() returns cursor for method chaining
 
@@ -616,7 +625,7 @@ class Database:
                 print(row.get('phone', 'N/A'))  # Safe access with default
 
             # With configuration options
-            cursor = db.cursor(debug=True, column_case='upper')
+            cursor = db.cursor(debug=True)
 
         See Also
         --------

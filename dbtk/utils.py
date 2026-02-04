@@ -66,6 +66,16 @@ class ParamStyle:
         return (cls.NAMED, cls.PYFORMAT)
 
     @classmethod
+    def get_positional_style(cls, paramstyle: str) -> str:
+        """ Return a positional paramstyle, mapping named style to the corresponding positional style if needed. """
+        if paramstyle == cls.NAMED:
+            return cls.NUMERIC
+        elif paramstyle == cls.PYFORMAT:
+            return cls.FORMAT
+        else:
+            return paramstyle
+
+    @classmethod
     def get_placeholder(cls, paramstyle: str) -> str:
         if paramstyle == cls.QMARK:
             return '?'
