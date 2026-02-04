@@ -191,14 +191,15 @@ old_status = row.pop('old_status', None)
 ## Conversion Methods
 
 ```python
+# Convert to tuple or list of values
+values = tuple(row)
+values = list(row)
+
 # Convert to dict (standard Python idiom)
 data = dict(row)
 
 # Use to_dict() when you need normalized keys
 data = row.to_dict(normalized=True)
-
-# Get just the values as a tuple
-values = tuple(row.values())
 ```
 
 ## Debugging
