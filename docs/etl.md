@@ -243,6 +243,7 @@ If **db_expr** is defined:
 - Automatic UPDATE exclusions
 - Support for INSERT, UPDATE, DELETE, MERGE operations
 - Incomplete record tracking with `counts['incomplete']`
+- `fetch()` method to retrieve existing record by primary key after `set_values()`
 
 **Handling Incomplete Records:**
 
@@ -350,6 +351,55 @@ with dbtk.readers.get_reader('soldier_updates.csv') as reader:
 
 **Performance impact:** DataSurge can be 10-100x faster than row-by-row operations, depending on your database and network latency.
 
+### Ultra-Fast Loading with BulkSurge
+
+For maximum throughput, `BulkSurge` uses native cursor-based bulk loading on PostgreSQL (COPY) and Oracle (direct path load):
+
+```python
+from dbtk.etl import BulkSurge
+
+# Define table (no db_expr columns allowed - BulkSurge loads raw data)
+simple_table = dbtk.etl.Table('sensor_readings', {
+    'sensor_id': {'field': 'id', 'primary_key': True},
+    'timestamp': {'field': 'ts', 'fn': 'datetime'},
+    'value': {'field': 'reading', 'fn': 'float'},
+}, cursor=cursor)
+
+# BulkSurge streams data directly via native bulk loading
+bulk = BulkSurge(simple_table, batch_size=50000)
+
+with dbtk.readers.get_reader('massive_sensor_data.csv.gz') as reader:
+    count = bulk.load(reader)
+    print(f"Loaded {count} records")
+```
+
+**For databases without cursor-based bulk loading**, use `dump()` to create a transformed staging file, then load with your database's native tools (bcp, etc.):
+
+```python
+# Transform and write to staging file
+bulk = BulkSurge(table)
+with dbtk.readers.get_reader('source.csv.gz') as reader:
+    bulk.dump(reader, 'staging/transformed_data.csv')
+
+# Then load with native tools:
+# SQL Server: bcp mydb.dbo.mytable in staging/transformed_data.csv -c -t,
+```
+
+**BulkSurge vs DataSurge:**
+
+| Feature | DataSurge | BulkSurge |
+|---------|-----------|-----------|
+| Speed | 90-120K rec/s | 200K+ rec/s |
+| `db_expr` support | Yes | No |
+| MERGE/upsert | Yes | No (INSERT only) |
+| Cursor-based loading | N/A | PostgreSQL, Oracle |
+
+**When to use BulkSurge:**
+- Loading millions of rows
+- Simple INSERT operations (no upsert needed)
+- No database functions (`db_expr`) in column config
+- PostgreSQL or Oracle for direct loading, or any database with `dump()` + native loader
+
 ### Data Transformations
 
 Built-in transformation functions handle common data cleaning tasks:
@@ -381,7 +431,7 @@ tx.get_int("123.45 gold pieces")  # -> 123
 
 ```
 
-### String Shorthand for Transformations ⚡ NEW!
+### String Shorthand for Transformations
 
 **The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax. For simple transformations like `'fn': lambda x: get_int(x) or 0`, you need imports, function calls, and lambda overhead.
 
@@ -399,7 +449,7 @@ table = dbtk.etl.Table('movies', {
     'state_abbrev': {'field': 'location', 'fn': Lookup('states', 'name', 'abbrev')},
 }, cursor=db.cursor())
 
-# NEW WAY - clean, no imports needed! ✨
+# String shorthand - clean, no imports needed
 table = dbtk.etl.Table('movies', {
     'year': {'field': 'startYear', 'fn': 'int:0'},
     'title_short': {'field': 'primaryTitle', 'fn': 'maxlen:255'},
@@ -467,7 +517,7 @@ with open('title.basics.tsv') as f:
 # 132,440 records/sec on single machine with PostgreSQL!
 ```
 
-### Database Lookups and Validation 🔥
+### Database Lookups and Validation
 
 **The power move:** TableLookup transforms any database table into a reusable lookup function with intelligent caching. Use it directly or via string shorthand for zero-boilerplate data enrichment and validation.
 
@@ -488,7 +538,7 @@ state_lookup({'state': 'Pennsylvania'}) # -> 'PA'
 state_details = TableLookup(cursor=cur, table='states', key_cols='code', return_cols=['state', 'capital', 'region'])
 state_details({'code': 'CA'}) # -> Record('California', 'Sacramento', 'West')
 
-# ⚡ NEW: String shorthand makes lookups incredibly clean!
+# String shorthand makes lookups clean
 customer_etl = dbtk.etl.Table('customers', {
     # Enrich with state data
     'state_code': {'field': 'state_name', 'fn': 'lookup:states:name:code'},

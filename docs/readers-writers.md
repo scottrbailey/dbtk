@@ -32,10 +32,15 @@ with readers.FixedReader(open('earth_kingdom_records.txt'), columns) as reader:
     for earthbender in reader:
         print(f"{earthbender.earthbender_name}: {earthbender.rock_throwing_distance} meters")
 
-# JSON files
+# JSON files (array of objects)
 with readers.JSONReader(open('eastern_air_temple.json')) as reader:
     for monk in reader:
         print(f"Air Nomad: {monk.monk_name}, Sky Bison: {monk.sky_bison_companion}")
+
+# NDJSON files (one JSON object per line - common for streaming/logs)
+with readers.NDJSONReader(open('api_events.ndjson')) as reader:
+    for event in reader:
+        print(f"Event: {event.type}, User: {event.user_id}")
 
 # XML files with XPath - data in elements will be detected without defining XMLColumn
 xml_columns = [
@@ -256,3 +261,19 @@ writers.to_csv(cursor, None)  # Prints to stdout
 cursor.execute("SELECT * FROM soldiers")
 writers.to_csv(cursor, 'soldiers.csv')
 ```
+
+### Streaming XML with XMLStreamer
+
+For large XML exports, `XMLStreamer` writes records incrementally without building the entire tree in memory:
+
+```python
+from dbtk.writers import XMLStreamer
+
+# Stream millions of records to XML
+with XMLStreamer(file='large_export.xml', root_element='records',
+                 record_element='item') as writer:
+    for batch in data_source.batches(10000):
+        writer.write_batch(batch)
+```
+
+This is memory-efficient for large datasets where `to_xml()` would consume too much memory building the DOM.
