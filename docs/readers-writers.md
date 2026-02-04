@@ -4,7 +4,8 @@
 
 **The problem:** Each file format has its own quirks and APIs. You end up writing different code for CSV vs Excel vs JSON, making your ETL pipelines fragile and hard to maintain.
 
-**The solution:** DBTK provides a single, consistent interface for reading all common file formats. Whether you're reading CSV, Excel, JSON, XML, or fixed-width files, the API is identical. Even better - `get_reader()` automatically detects the format from the file extension.
+**The solution:** DBTK provides a single, consistent interface for reading all common file formats. Whether you're reading CSV, Excel, JSON, XML, or fixed-width files, the API is identical. Even better - `get_reader()` automatically detects the format from the file extension. 
+All "Large" readers will automatically display progress trackers.
 
 ### Basic Usage
 
@@ -36,7 +37,7 @@ with readers.JSONReader(open('eastern_air_temple.json')) as reader:
     for monk in reader:
         print(f"Air Nomad: {monk.monk_name}, Sky Bison: {monk.sky_bison_companion}")
 
-# XML files with XPath
+# XML files with XPath - data in elements will be detected without defining XMLColumn
 xml_columns = [
     readers.XMLColumn('avatar_id', xpath='@reincarnation_cycle'),
     readers.XMLColumn('avatar_name', xpath='./name/text()'),
@@ -121,13 +122,6 @@ from dbtk.defaults import settings
 settings['compressed_file_buffer_size'] = 2 * 1024 * 1024  # 2MB buffer
 ```
 
-### Why Compress?
-
-- **Storage savings** - 80-90% smaller files (5-10x compression ratio)
-- **Transfer speed** - Much faster to download/transfer compressed files
-- **Processing speed** - Decompression overhead is negligible on modern CPUs
-- **Standard practice** - Large datasets are typically distributed as `.csv.gz` or `.tsv.gz`
-
 ### Common Reader Parameters
 
 All readers support these parameters for controlling input processing:
@@ -145,6 +139,19 @@ reader = dbtk.readers.CSVReader(
 with dbtk.readers.get_reader('data.csv', skip_rows=5) as reader:
     for record in reader:
         print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
+```
+
+### DataFrame Readers
+
+For the best performance, use [polars](https://pola.rs/) lazy API with DataFrameReader.
+
+```python
+import polars as pl
+
+df = pl.scan_csv('data.csv').filter(pl.col("titleType") == "movie").collect()
+with dbtk.readers.DataFrameReader(df) as reader:
+    for record in reader:
+        print(f"Row {record.title}")
 ```
 
 ### Dual Field Name Access

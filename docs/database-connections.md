@@ -24,19 +24,20 @@ db = sqlite('path/to/database.db')
 
 DBTK supports multiple database adapters with automatic detection and fallback:
 
-| Database | Driver | Install Command | Notes |
-|----------|--------|-----------------|-------|
-| PostgreSQL | psycopg2 | `pip install psycopg2-binary` | Recommended, most mature |
-| PostgreSQL | psycopg (3) | `pip install psycopg-binary` | Newest version, async support |
-| PostgreSQL | pgdb | `pip install pgdb` | DB-API compliant |
+| Database | Driver | Install Command | Notes                                 |
+|----------|--------|-----------------|---------------------------------------|
+| PostgreSQL | psycopg2 | `pip install psycopg2-binary` | Recommended, most mature              |
+| PostgreSQL | psycopg (3) | `pip install psycopg-binary` | Newest version, async support         |
+| PostgreSQL | pgdb | `pip install pgdb` | DB-API compliant                      |
 | Oracle | oracledb | `pip install oracledb` | Thin mode - no Oracle client required |
-| Oracle | cx_Oracle | `pip install cx_Oracle` | Requires Oracle client installation |
-| MySQL | mysqlclient | `pip install mysqlclient` | Fastest option, C extension |
-| MySQL | mysql.connector | `pip install mysql-connector-python` | Official MySQL connector |
-| MySQL | pymysql | `pip install pymysql` | Pure Python, lightweight |
-| SQL Server | pyodbc | `pip install pyodbc` | ODBC driver required on system |
-| SQL Server | pymssql | `pip install pymssql` | Lightweight, no ODBC needed |
-| SQLite | sqlite3 | Built-in | No installation needed |
+| Oracle | cx_Oracle | `pip install cx_Oracle` | Requires Oracle client installation   |
+| MySQL | mysqlclient | `pip install mysqlclient` | Fastest option, C extension           |
+| MySQL | mariadb | `pip install mariadb` | Official MariaDB connector, C extension, MySQL compatible  |
+| MySQL | mysql.connector | `pip install mysql-connector-python` | Official MySQL connector              |
+| MySQL | pymysql | `pip install pymysql` | Pure Python, lightweight              |
+| SQL Server | pyodbc | `pip install pyodbc` | ODBC driver required on system        |
+| SQL Server | pymssql | `pip install pymssql` | Lightweight, no ODBC needed           |
+| SQLite | sqlite3 | Built-in | No installation needed                |
 
 **Driver priority:** DBTK automatically selects the best available driver. Override with `driver='driver_name'` in your connection config or function call.
 
@@ -86,11 +87,14 @@ DBTK maintains a clean reference hierarchy for accessing the underlying driver:
 
 ```python
 # The Database holds the driver module
+db = dbtk.connect('imdb')
+cursor = db.cursor()
 print(db.driver.__name__)       # 'psycopg2', 'oracledb', etc.
 print(db.driver.paramstyle)     # 'named', 'qmark', etc.
 
-# Access the wrapped connection
-raw_conn = db._connection
+# Access the wrapped connection or cursor
+db._connection
+cursor._cursor
 
 # Use driver exceptions
 try:
@@ -109,14 +113,14 @@ cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
                {'status': 'active'})
 
 for user in cursor:
-    user['name']          # Dict-style access
-    user.email            # Attribute access
-    user[0]               # Index access
-    user[:2]              # Slicing
+    user['name']            # Dict-style access
+    user.email              # Attribute access
+    user[0]                 # Index access
+    user[:2]                # Slicing
     id, name, email = user  # Tuple unpacking
 ```
 
-Records also normalize column names, so `row.employee_id` works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
+Records also normalize column names for attribute access, so `row.employee_id` works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
 
 See [Record Objects](record.md) for full documentation on access patterns, normalization, mutation, and performance characteristics.
 
@@ -150,7 +154,7 @@ connections:
 
 ## Parameter Styles
 
-DBTK handles different parameter styles automatically. You can use named parameters (`:name`) with any database - DBTK converts to the driver's native style:
+DBTK handles different parameter styles automatically. You can use _named_ (`:name`) or _pyformat_ (`%(name)s`) with any database - DBTK converts to the driver's native style:
 
 ```python
 # Named parameters (recommended - works everywhere)
@@ -170,7 +174,7 @@ cursor.execute(
 | SQL Server (pyodbc) | qmark | `?` |
 | SQLite | qmark | `?` |
 
-DBTK's `execute_file()` method converts named parameters to whatever your driver needs, making SQL truly portable across databases.
+DBTK's `cursor.execute_file()` method and `PreparedStatement` converts named parameters to whatever your driver needs, making SQL truly portable across databases.
 
 ## Cursor Methods
 
@@ -191,6 +195,33 @@ cursor.executemany(
 
 # Execute from SQL file with portable parameter conversion
 cursor.execute_file('queries/create_schema.sql', {'status': 'active'})
+```
+
+### Prepared Statements
+For queries executed repeatedly with different parameters, PreparedStatement loads the SQL once and caches the parameter mapping:
+
+```python
+from dbtk.cursors import PreparedStatement
+
+# Load and prepare from file or from query string
+stmt = PreparedStatement(cursor, filename='queries/get_user.sql')
+stmt = PreparedStatement(cursor, query="SELECT * FROM orders WHERE customer_id = :id")
+
+# Execute many times efficiently
+for user_id in user_ids:
+    stmt.execute({'id': user_id})
+    user = cursor.fetchone()
+    process(user)
+```
+
+The statement retains a reference to its cursor, so you can iterate directly:The statement retains a reference to its cursor, so you can iterate directly:
+
+```python
+stmt = PreparedStatement(cursor, filename='queries/active_users.sql')
+stmt.execute({'status': 'active'})
+
+for user in stmt:  # Iterates the cursor
+    process(user)
 ```
 
 ### Fetching Results
@@ -278,7 +309,7 @@ db = sqlite('path/to/database.db')
 db = sqlite(':memory:')  # In-memory database
 ```
 
-All functions accept `**kwargs` for driver-specific parameters.
+All functions take the standard `user`, `password`, `database` parameters and map to any driver specific non-standard names automatically, and accept `**kwargs` for driver-specific parameters.
 
 ## Error Handling
 
@@ -294,11 +325,12 @@ except db.driver.IntegrityError as e:
 ## Best Practices
 
 1. **Use context managers** - Ensures connections are properly closed
-2. **Use named parameters** - More readable and portable across databases
+2. **Use named/pyformat parameters** - More readable and portable across databases
 3. **Iterate large result sets** - Don't `fetchall()` millions of rows
 4. **Use `transaction()` context manager** - Safe commit/rollback handling
 5. **Use configuration files** - Keep credentials out of code
 6. **Use `execute_file()`** - Portable SQL with automatic parameter conversion
+7. **Use `PreparedStatement`** - Portable SQL to be executed repeatedly
 
 ## See Also
 
