@@ -19,7 +19,7 @@ settings:
 connections:
   states_db:
     type: sqlite
-    database: fixtures/test_states.db
+    database: tests/fixtures/test_states.db
 
   test_db:
     type: postgres

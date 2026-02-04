@@ -64,6 +64,12 @@ Quick Start
    :maxdepth: 2
    :caption: Contents:
 
+   record
+   configuration
+   database-connections
+   readers-writers
+   etl
+   advanced
    api
 
 Indices and tables

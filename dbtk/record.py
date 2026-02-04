@@ -387,8 +387,8 @@ class Record(list):
     def __len__(self) -> int:
         return len(self.keys())
 
-    def __iter__(self) -> Iterator[str]:
-        return iter(self.keys())
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self.values())
 
     def __str__(self) -> str:
         items = ", ".join(f"{k!r}: {v!r}" for k, v in self.items())
