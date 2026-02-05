@@ -13,8 +13,7 @@ This library is designed by and for data integrators.
 **DBTK aims to be fast and memory-efficient at every turn.** But it was designed to boost your productivity first and foremost.
 You have dozens (possibly hundreds) of interfaces, impossible deadlines, and multiple projects all happening at once. Your
 environment has three or more different relational databases. You just want to get stuff done instead of writing the same
-boilerplate code over and over or stressing because that database system you hardly ever use is so different from the one
-you use every day.  
+boilerplate code over and over or stressing over differences on a database server you don't use very often.  
 
 **Design philosophy:** Modern databases excel at aggregating and transforming data at scale. DBTK embraces
 this by focusing on what Python does well: flexible record-by-record transformations,
@@ -29,14 +28,14 @@ validated along the way.
 
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
 - **Portable SQL Queries** - Write SQL once with named parameters, runs on any database regardless of parameter style
-- **Smart Cursors** - All cursors return Record objects with the speed of tuples and the flexibility of dicts
-- **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, and fixed-width text files with consistent API
+- **Smart Cursors** - All cursors and readers return Record objects with the speed and efficiency of tuples and the flexibility of dicts
+- **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, DataFrame and fixed-width text files with consistent API
 - **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
 - **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
 - **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
 - **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning with international support
 - **High-Performance Bulk Operations** - DataSurge for blazing-fast batch operations; BulkSurge for even faster direct loading when supported
-- **Integration Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
+- **Integrated Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
 - **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
 
 ## The Record Class
@@ -123,7 +122,7 @@ if dbtk.errors_logged():
 
 **What makes this easy:**
 - Write SQL once with named (`:param`) or pyformat (`%(param)s`) parameters - works on any database
-- Pass the same dict to multiple queries - extra params ignored, missing params become NULL
+- Pass the same dict to multiple queries - extra parameters are ignored, missing params are set to NULL
 - DBTK handles parameter conversion automatically - no manual string formatting needed
 - Export to CSV/Excel/JSON/NDJSON/XML with one line of code
 
@@ -194,6 +193,7 @@ Real-world benchmarks from production systems:
 - **BulkSurge (Postgres/Oracle)**: 220K rec/s transforming, validating, and bulk loading
 - **DataSurge (Oracle/SQL Server/MySQL)**: 90-120K rec/s with native executemany
 - **IMDB Dataset**: 132K rec/s loading 12M titles with transforms and validation
+- **Examples**: See the Examples folder for scripts you can run against the IMDB Dataset 
 
 These aren't toy benchmarks - they're real ETL pipelines with field mapping, data validation, type conversions, and database constraints. See the examples in the example folder.
 

@@ -80,7 +80,7 @@ if __name__ == '__main__':
                      # n_rows=100_000,    # uncomment to limit number of rows loaded
                      ).collect()
     with DataFrameReader(df, add_row_num=False) as reader:
-        title_surge = BulkSurge(titles, batch_size=50_000)
+        title_surge = BulkSurge(titles)
         title_surge.load(reader)
         # Swap these two lines to load using inserts instead of COPY FROM
         # title_surge = dbtk.etl.DataSurge(titles, use_transaction=True)
