@@ -2,7 +2,7 @@
 
 import logging
 import re
-from textwrap import dedent
+import uuid
 from typing import Iterable, Optional
 
 from .base_surge import BaseSurge
@@ -137,7 +137,8 @@ class DataSurge(BaseSurge):
                 f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
             )
         elif db_type == 'oracle':
-            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
+            uid = uuid.uuid4().hex[:6]
+            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}_{uid}")
 
             # Get column definitions from table
             col_info = self.table.get_column_definitions()
