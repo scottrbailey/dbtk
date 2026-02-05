@@ -770,8 +770,9 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     allowed_params = _get_params_for_database(db_type)
     config = {key: val for key, val in config.items() if key in allowed_params}
 
-    # Create database connection
-    return Database.create(db_type, driver=driver, cursor_settings=cursor_settings, **config)
+    # Create database connection with connection name
+    return Database.create(db_type, driver=driver, connection_name=name,
+                          cursor_settings=cursor_settings, **config)
 
 
 def get_password(name: str, config_file: Optional[str] = None) -> str:
