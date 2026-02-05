@@ -28,7 +28,7 @@ class BaseSurge(ABC):
         # force positional parameter style
         self.table.force_positional()
         # stats
-        self.total_processed = 0
+        self.total_read = 0
         self.total_loaded = 0
         self.skipped = 0
         self.skip_reasons = Counter()  # key: frozenset of missing fields, value: count
@@ -60,7 +60,7 @@ class BaseSurge(ABC):
                 self.skip_reasons[missing_set] += 1
                 # keep track of row number for rows that were skipped to aid in debugging
                 if self.skip_reasons[missing_set] <= 20:
-                    row_num = record.get('_row_num', self.total_processed)
+                    row_num = record.get('_row_num', self.total_read)
                     self.skip_samples.setdefault(missing_set, []).append(
                         (row_num, missing)
                     )
@@ -70,12 +70,12 @@ class BaseSurge(ABC):
     def records(self, source: Iterable[RecordLike]) -> Generator[tuple, None, None]:
         """Yield individual transformed and validated records."""
         for raw in source:
+            self.total_read += 1
             if self.pass_through:
                 params = raw
             else:
                 params = self._transform_row(raw)
             if params is not None:
-                self.total_processed += 1
                 self.total_loaded += 1
                 yield params
             else:
@@ -108,7 +108,7 @@ class BaseSurge(ABC):
                 params = self._transform_row(raw)
             if params is not None:
                 batch.append(params)
-                self.total_processed += 1
+                self.total_read += 1
                 self.total_loaded += 1
             else:
                 self.skipped += 1
