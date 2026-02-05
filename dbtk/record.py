@@ -35,6 +35,8 @@ def normalize_field_name(name: str) -> str:
         '_row_num'
         >>> normalize_field_name('#Term Code')
         'term_code'
+        >>> normalize_field_name('2025 Sales')
+        'n2025_sales'
     """
     if not name:
         return 'col'
@@ -48,7 +50,11 @@ def normalize_field_name(name: str) -> str:
     # 3. Strip trailing underscores only (preserve leading for Python convention)
     name = name.rstrip('_')
 
-    # 4. Ensure not empty
+    # 4. Attributes can't start with digit
+    if name and name[0].isdigit():
+        name = 'n' + name
+
+    # 5. Ensure not empty
     return name or 'col'
 
 
@@ -163,25 +169,43 @@ class Record(list):
                 raise KeyError(f"Column '{key}' not found")
         return super().__getitem__(key)
 
-    def __setitem__(self, key: Union[int, str, slice], value: Any) -> None:
-        if isinstance(key, str):
-            # Try original field names first
-            if key in self._fields:
-                # Existing column — revive if deleted
-                self._deleted_fields.discard(key)
-                super().__setitem__(self._fields.index(key), value)
-            # Then try normalized field names
-            elif key in self._fields_normalized:
-                idx = self._fields_normalized.index(key)
-                self._deleted_fields.discard(self._fields[idx])
-                super().__setitem__(idx, value)
-            else:
-                # New column — store in _added
-                if self._added is None:
-                    object.__setattr__(self, "_added", {})
-                self._added[key] = value
-        else:
+    def __setitem__(self, key: Union[int, str], value: Any) -> None:
+        if isinstance(key, int):
+            # Positional set — update list directly
+            # Note: if index > current len, list pads with None — we allow it
             super().__setitem__(key, value)
+            return
+
+        if not isinstance(key, str):
+            raise TypeError("key must be int or str")
+
+        # 1. Runtime-added field? Update it
+        if self._added and key in self._added:
+            self._added[key] = value
+            return
+
+        # 2. Try original field name
+        if key in self._fields:
+            if key in self._deleted_fields:
+                # Revive deleted field
+                self._deleted_fields.remove(key)
+            super().__setitem__(self._fields.index(key), value)
+            return
+
+        # 3. Try normalized field name
+        if key in self._fields_normalized:
+            idx = self._fields_normalized.index(key)
+            original_name = self._fields[idx]
+            if original_name in self._deleted_fields:
+                # Revive deleted field
+                self._deleted_fields.remove(original_name)
+            super().__setitem__(idx, value)
+            return
+
+        # 4. New field — add to runtime dict
+        if self._added is None:
+            object.__setattr__(self, "_added", {})
+        self._added[key] = value
 
     def __delitem__(self, key: Union[int, str]) -> None:
         if not isinstance(key, str):
@@ -379,6 +403,40 @@ class Record(list):
             {'start_year': 2020, 'end_year': 2025}
         """
         return dict(self.items(normalized=normalized))
+
+    def copy(self):
+        """
+        Return a shallow copy of the Record.
+
+        - Copies the underlying list values
+        - Copies the field metadata (_fields, _fields_normalized)
+        - Copies deleted fields set
+        - Copies any runtime-added fields (_added dict)
+        - Preserves the same Record subclass (so attribute access works)
+
+        Returns:
+            Record: A new Record instance with the same data and state
+        """
+        # Create a new instance of the same class (preserves subclass attrs)
+        new = self.__class__.__new__(self.__class__)
+
+        # Shallow copy of the underlying list (values)
+        super(Record, new).__init__(super().__iter__())
+
+        # Copy field metadata (shallow copy of lists)
+        new._fields = self._fields[:]
+        new._fields_normalized = self._fields_normalized[:]
+
+        # Copy deleted fields set (shallow copy)
+        new._deleted_fields = self._deleted_fields.copy()
+
+        # Copy runtime-added fields dict (shallow copy)
+        if self._added is not None:
+            new._added = self._added.copy()
+        else:
+            new._added = None
+
+        return new
 
     # ------------------------------------------------------------------ #
     # Utilities
