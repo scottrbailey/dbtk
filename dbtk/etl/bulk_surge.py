@@ -198,9 +198,9 @@ class BulkSurge(BaseSurge):
         Notes
         -----
         **PostgreSQL/Redshift:**
-        - Always uses direct method (COPY FROM STDIN)
+        - Only uses direct method (COPY FROM STDIN)
         - Streaming with background writer thread, no temp files
-        - Ignores method parameter
+        - If you need to use `psql \copy`, used BulkSurge.dump() to generate transformed CSV file
 
         **Oracle:**
         - Direct: Uses direct_path_load (requires python-oracledb 3.4+)
@@ -241,22 +241,26 @@ class BulkSurge(BaseSurge):
         dump : Export records to CSV file
         """
         db_type = self.cursor.connection.database_type.lower()
-        if "postgres" in db_type or "redshift" in db_type:
-            return self._load_postgres_direct(records)
-        elif "oracle" in db_type:
-            if method == "direct":
-                return self._load_oracle_direct(records)
-            else:
+        if method == 'direct':
+           if db_type in ('postgres', 'redshift'):
+               return self._load_postgres_direct(records)
+           elif db_type == 'oracle':
+               return self._load_oracle_direct(records)
+           elif db_type in ('mysql', 'mariadb'):
+               return self._load_mysql_local_stream(records)
+           else:
+               raise NotImplementedError(f'Direct load not available for {db_type}')
+        elif method == 'external':
+            if db_type == 'oracle':
                 return self._load_oracle_sqlldr(records, dump_path=dump_path)
-        elif "mysql" in db_type or "maria" in db_type:
-            if method == "direct":
-                return self._load_mysql_local_stream(records)
-            else:
+            elif db_type in ('sqlserver', 'mssql'):
+                return self._load_mssql_bcp(records, dump_path=dump_path)
+            elif db_type in ('mysql', 'mariadb'):
                 return self._load_mysql_external(records, dump_path=dump_path)
-        elif "sqlserver" in db_type or "mssql" in db_type:
-            return self._load_mssql_bcp(records, dump_path=dump_path)
+            else:
+                raise NotImplementedError(f'External load not available for {db_type}')
         else:
-            raise NotImplementedError(f"BulkSurge not supported for {db_type}")
+            raise ValueError(f'Method {method} not supported. Must be either direct or external.')
 
     def _load_postgres_direct(self, records: Iterable[Record]) -> int:
         _ = self.table.get_sql('insert')
