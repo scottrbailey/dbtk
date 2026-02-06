@@ -1,4 +1,5 @@
 # dbtk/etl/bulk_surge.py
+import csv
 import datetime as dt
 import logging
 import os
@@ -510,12 +511,19 @@ class BulkSurge(BaseSurge):
         db = config.get('database')
 
         csv_path = self._resolve_dump_path(dump_path, 'tsv')
-        self.dump(records, file_name=csv_path, delimiter='\t')  # bcp prefers tab-delimited
+        # True TSV: tab-delimited, no quoting, backslash escaping
+        self.dump(records, file_name=csv_path, delimiter='\t', quoting=csv.QUOTE_NONE,
+                  escapechar='\\', write_headers=False)
+
+        # Build bcp command with proper format flags
+        # -c: character format, -t: field terminator (tab), -r: row terminator
+        cmd = ['bcp', self.table.name, 'in', str(csv_path),
+               '-S', host, '-d', db, '-c', '-t\\t', '-r\\n']
 
         if user and password:
-            cmd = ['bcp', self.table.name, 'in', str(csv_path), f'-S {host}', f'-d {db}', f'-U {user}', f'-P {password}']
+            cmd.extend(['-U', user, '-P', password])
         else:
-            cmd = ['bcp', self.table.name, 'in', str(csv_path), f'-S {host}', f'-d {db}', '-T']  # integrated auth
+            cmd.append('-T')  # Windows integrated auth
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
