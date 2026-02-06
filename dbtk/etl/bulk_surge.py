@@ -50,8 +50,83 @@ class DequeBuffer:
 
 class BulkSurge(BaseSurge):
     """
-    Lightning-fast native bulk loading using COPY, bcp, sqlldr, etc.
-    Zero temp files when possible. Streaming. Memory-safe.
+    Lightning-fast bulk loading using native database tools and streaming.
+
+    BulkSurge provides high-performance data loading by leveraging database-specific
+    bulk loading mechanisms. It supports both direct streaming (zero temp files) and
+    external tool-based loading (bcp, SQL*Loader) depending on the database and method chosen.
+
+    Supported Databases
+    -------------------
+    * **PostgreSQL/Redshift**: COPY FROM STDIN (streaming, no temp files)
+    * **Oracle**: direct_path_load (streaming) or SQL*Loader (external tool)
+    * **MySQL/MariaDB**: LOAD DATA LOCAL INFILE (streaming) with automatic fallback
+    * **SQL Server**: bcp utility (external tool, requires named connection)
+
+    Loading Methods
+    ---------------
+    * **direct** (default): Uses native Python drivers for streaming bulk loads
+        - Postgres: COPY protocol with background writer thread
+        - Oracle: direct_path_load API (requires python-oracledb 3.4+)
+        - MySQL: LOAD DATA LOCAL INFILE with in-memory buffer
+
+    * **external**: Uses command-line tools (requires named connection from config)
+        - Oracle: SQL*Loader (sqlldr) with auto-generated control file
+        - MySQL: Falls back to direct if local_infile enabled, else dumps CSV
+        - SQL Server: bcp utility (only external method available)
+
+    Performance Notes
+    -----------------
+    - BulkSurge is memory-efficient: uses batching and streaming to handle large datasets
+    - Direct methods are typically faster and require no temp files
+    - External tools require credentials from config file (see connection_name)
+    - Tables with db_expr columns are incompatible (use DataSurge instead)
+
+    Parameters
+    ----------
+    table : Table
+        Table instance with column definitions and cursor
+    batch_size : int, optional
+        Number of records per batch (default: 10,000)
+    pass_through : bool, optional
+        Skip transformation/validation (default: False)
+
+    Attributes
+    ----------
+    total_read : int
+        Total rows read from source (loaded + skipped)
+    total_loaded : int
+        Total rows successfully loaded
+    skipped : int
+        Total rows skipped due to validation failures
+
+    Examples
+    --------
+    PostgreSQL streaming (zero temp files)::
+
+        with BulkSurge(table) as surge:
+            surge.load(reader)  # Uses COPY FROM STDIN
+
+    Oracle with SQL*Loader::
+
+        surge = BulkSurge(table)
+        surge.load(reader, method='external')  # Uses sqlldr
+
+    MySQL with custom dump location::
+
+        surge = BulkSurge(table)
+        surge.load(reader, method='direct', dump_path='/data/staging')
+
+    SQL Server with bcp (requires config)::
+
+        db = dbtk.connect('prod_mssql')  # Named connection required
+        surge = BulkSurge(table)
+        surge.load(reader)  # Uses bcp
+
+    See Also
+    --------
+    DataSurge : Standard bulk operations using executemany
+    Table : Table definition and schema management
     """
 
     def __init__(self, table, batch_size: int = 10_000, pass_through: bool = False):
@@ -87,6 +162,84 @@ class BulkSurge(BaseSurge):
     def load(self, records: Iterable[Record],
              method: str = 'direct',
              dump_path: Optional[Union[str, Path]] = None) -> int:
+        """
+        Bulk load records using database-specific mechanisms.
+
+        Automatically selects the appropriate loading strategy based on database type
+        and method parameter. Direct methods use streaming with zero temp files when
+        possible. External methods use command-line tools and require a named connection.
+
+        Parameters
+        ----------
+        records : Iterable[Record]
+            Iterator of Record objects to load
+        method : str, optional
+            Loading method to use (default: 'direct')
+            - 'direct': Stream data using native drivers (Postgres COPY, Oracle direct_path_load, MySQL LOCAL INFILE)
+            - 'external': Use external tools (Oracle sqlldr, SQL Server bcp, MySQL fallback)
+        dump_path : str or Path, optional
+            Path for temp CSV files (only used by external methods)
+            - If file path: use exactly as specified
+            - If directory: generate timestamped file in that directory
+            - If None: use settings['data_dump_dir'] or temp directory
+
+        Returns
+        -------
+        int
+            Number of records successfully loaded
+
+        Raises
+        ------
+        RuntimeError
+            If external method requires credentials but connection_name is not set
+        NotImplementedError
+            If database type is not supported or required driver features unavailable
+
+        Notes
+        -----
+        **PostgreSQL/Redshift:**
+        - Always uses direct method (COPY FROM STDIN)
+        - Streaming with background writer thread, no temp files
+        - Ignores method parameter
+
+        **Oracle:**
+        - Direct: Uses direct_path_load (requires python-oracledb 3.4+)
+        - External: Uses SQL*Loader (sqlldr) with auto-generated control file
+        - External method requires named connection from config
+
+        **MySQL/MariaDB:**
+        - Direct: LOAD DATA LOCAL INFILE with streaming buffer
+        - External: Checks local_infile setting, falls back to direct or dumps CSV
+        - Direct method requires local_infile=1 on server
+
+        **SQL Server:**
+        - Only external method (uses bcp utility)
+        - Requires named connection from config for credentials
+        - Supports integrated auth (Windows) if no user/password in config
+
+        Examples
+        --------
+        Direct streaming (default)::
+
+            surge = BulkSurge(table)
+            surge.load(reader)  # Streams data, zero temp files
+
+        Oracle SQL*Loader::
+
+            surge = BulkSurge(table)
+            surge.load(reader, method='external', dump_path='/staging')
+
+        SQL Server with bcp (requires config connection)::
+
+            db = dbtk.connect('prod_mssql')  # Must use named connection
+            table = Table('dbo.orders', columns=..., cursor=db.cursor())
+            surge = BulkSurge(table)
+            surge.load(reader)  # Uses bcp with credentials from config
+
+        See Also
+        --------
+        dump : Export records to CSV file
+        """
         db_type = self.cursor.connection.database_type.lower()
         if "postgres" in db_type or "redshift" in db_type:
             return self._load_postgres_direct(records)
@@ -210,6 +363,48 @@ class BulkSurge(BaseSurge):
 
     def _load_oracle_sqlldr(self, records: Iterable[Record],
                             dump_path: Optional[Union[str, Path]] = None) -> int:
+        """
+        Load data into Oracle using SQL*Loader (sqlldr) external utility.
+
+        Dumps records to CSV, generates a control file, and invokes sqlldr with
+        credentials from the named connection. Both CSV and control files are
+        cleaned up after loading completes.
+
+        Parameters
+        ----------
+        records : Iterable[Record]
+            Records to load
+        dump_path : str or Path, optional
+            Path for CSV file (control file placed alongside with unique suffix)
+
+        Returns
+        -------
+        int
+            Number of records loaded
+
+        Raises
+        ------
+        RuntimeError
+            If connection was not created from named config (no connection_name)
+            If sqlldr command fails
+
+        Notes
+        -----
+        - Requires connection via dbtk.connect('connection_name') for credentials
+        - Auto-generates control file with CHAR type for all columns
+        - Uses CSV format with comma delimiter and quoted fields
+        - Credentials passed via command line (sqlldr limitation)
+        - Temp files (CSV + .ctl) are deleted after load completes
+
+        Examples
+        --------
+        ::
+
+            db = dbtk.connect('oracle_prod')  # Named connection required
+            table = Table('schema.table_name', columns=..., cursor=db.cursor())
+            surge = BulkSurge(table)
+            surge.load(reader, method='external')  # Uses SQL*Loader
+        """
         import uuid
         config = self._get_connection_config()
         user = config.get('user')
@@ -258,6 +453,56 @@ class BulkSurge(BaseSurge):
 
     def _load_mssql_bcp(self, records: Iterable[Record],
                         dump_path: Optional[Union[str, Path]] = None) -> int:
+        """
+        Load data into SQL Server using bcp (bulk copy program) utility.
+
+        Dumps records to tab-delimited file and invokes bcp with credentials from
+        named connection. Supports both SQL authentication and Windows integrated auth.
+
+        Parameters
+        ----------
+        records : Iterable[Record]
+            Records to load
+        dump_path : str or Path, optional
+            Path for TSV file (uses .tsv extension automatically)
+
+        Returns
+        -------
+        int
+            Number of records loaded
+
+        Raises
+        ------
+        RuntimeError
+            If connection was not created from named config (no connection_name)
+            If bcp command fails
+
+        Notes
+        -----
+        - Requires connection via dbtk.connect('connection_name') for credentials
+        - Uses tab-delimited format (bcp preference)
+        - If user/password in config: uses SQL authentication (-U, -P)
+        - If no user/password: uses Windows integrated auth (-T)
+        - Credentials passed via command line (bcp limitation)
+        - Temp TSV file is deleted after load completes
+        - Alternative: Use DataSurge with pyodbc for fast executemany (no bcp needed)
+
+        Examples
+        --------
+        SQL Authentication::
+
+            # Config file has user/password
+            db = dbtk.connect('mssql_prod')
+            surge = BulkSurge(table)
+            surge.load(reader)  # Uses bcp with -U/-P
+
+        Windows Integrated Auth::
+
+            # Config file has no user/password
+            db = dbtk.connect('mssql_prod')
+            surge = BulkSurge(table)
+            surge.load(reader)  # Uses bcp with -T
+        """
         config = self._get_connection_config()
         user = config.get('user')
         password = config.get('password')
@@ -342,6 +587,29 @@ class BulkSurge(BaseSurge):
 
     def _load_mysql_external(self, records: Iterable[Record],
                              dump_path: Optional[Union[str, Path]] = None) -> int:
+        """
+        Load MySQL data with automatic method selection based on server configuration.
+
+        Checks the server's local_infile setting and either streams data directly
+        using LOAD DATA LOCAL INFILE or dumps to CSV with instructions for manual loading.
+
+        Parameters
+        ----------
+        records : Iterable[Record]
+            Records to load
+        dump_path : str or Path, optional
+            Path for CSV dump if local_infile is disabled
+
+        Returns
+        -------
+        int
+            Number of records loaded
+
+        Notes
+        -----
+        If local_infile=1: streams data with zero temp files using _load_mysql_local_stream()
+        If local_infile=0: dumps CSV and logs instructions for manual LOAD DATA INFILE
+        """
         self.cursor.execute("SELECT @@local_infile")
         if self.cursor.fetchone()[0] == 1:
             # Streaming with DequeBuffer instead of file
@@ -359,12 +627,56 @@ class BulkSurge(BaseSurge):
 
     def _resolve_dump_path(self, dump_path: Optional[Union[str, Path]] = None, extension: str = '.csv') -> Path:
         """
-        Resolve the final CSV path based on user input or fallbacks.
+        Resolve the final dump file path based on user input and configured fallbacks.
 
-        Priority:
-        1. User-provided dump_path (file or dir)
-        2. settings['data_dump_dir'] (if set and valid)
-        3. tempfile.gettempdir()
+        Handles both file paths and directory paths, automatically generating timestamped
+        filenames when a directory is provided. Sanitizes table names for safe filesystem use.
+
+        Parameters
+        ----------
+        dump_path : str or Path, optional
+            User-provided path (file or directory)
+        extension : str, optional
+            File extension to use ('.csv', '.tsv', etc.)
+
+        Returns
+        -------
+        Path
+            Resolved absolute path for the dump file
+
+        Resolution Priority
+        -------------------
+        1. User-provided dump_path
+           - If existing file or valid file path: use exactly
+           - If existing directory: generate timestamped file inside it
+        2. Configured settings['data_dump_dir']
+           - If directory exists: generate timestamped file inside it
+        3. System temp directory (fallback)
+           - Generate timestamped file in tempfile.gettempdir()
+
+        Filename Generation
+        -------------------
+        When generating filenames (for directory paths):
+        - Format: {sanitized_table_name}_{timestamp}{extension}
+        - Timestamp: YYYYmmdd_HHMMSS
+        - Table name sanitized to remove special characters
+
+        Examples
+        --------
+        Explicit file path::
+
+            path = surge._resolve_dump_path('/data/myfile.csv', '.csv')
+            # Returns: Path('/data/myfile.csv')
+
+        Directory path (auto-generates filename)::
+
+            path = surge._resolve_dump_path('/data/staging', '.csv')
+            # Returns: Path('/data/staging/orders_20260206_143022.csv')
+
+        Extension override (bcp uses .tsv)::
+
+            path = surge._resolve_dump_path('/tmp', '.tsv')
+            # Returns: Path('/tmp/orders_20260206_143022.tsv')
         """
         if dump_path:
             p = Path(dump_path)
