@@ -9,13 +9,14 @@ import threading
 
 from pathlib import Path
 from textwrap import dedent
-from typing import Iterable
+from typing import Iterable, Union, Optional
 
 import dbtk.config
 from ..defaults import settings
 from .base_surge import BaseSurge
 from ..writers.csv import CSVWriter
 from ..record import Record
+from ..utils import sanitize_identifier
 
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,9 @@ class BulkSurge(BaseSurge):
         config = cm.get_connection_config(self.cursor.connection_name)
         return config
 
-    def load(self, records: Iterable[Record], method: str = 'direct') -> int:
+    def load(self, records: Iterable[Record],
+             method: str = 'direct',
+             dump_path: Optional[Union[str, Path]] = None) -> int:
         db_type = self.cursor.connection.database_type.lower()
         if "postgres" in db_type or "redshift" in db_type:
             return self._load_postgres_direct(records)
@@ -91,14 +94,14 @@ class BulkSurge(BaseSurge):
             if method == "direct":
                 return self._load_oracle_direct(records)
             else:
-                return self._load_oracle_sqlldr(records)
+                return self._load_oracle_sqlldr(records, dump_path=dump_path)
         elif "mysql" in db_type or "maria" in db_type:
             if method == "direct":
                 return self._load_mysql_local_stream(records)
             else:
-                return self._load_mysql_external(records)
+                return self._load_mysql_external(records, dump_path=dump_path)
         elif "sqlserver" in db_type or "mssql" in db_type:
-            return self._load_mysql_external(records)
+            return self._load_mssql_bcp(records, dump_path=dump_path)
         else:
             raise NotImplementedError(f"BulkSurge not supported for {db_type}")
 
@@ -205,7 +208,8 @@ class BulkSurge(BaseSurge):
             )
         return self.total_loaded
 
-    def _load_oracle_sqlldr(self, records: Iterable[Record]) -> int:
+    def _load_oracle_sqlldr(self, records: Iterable[Record],
+                            dump_path: Optional[Union[str, Path]] = None) -> int:
         import uuid
         config = self._get_connection_config()
         user = config.get('user')
@@ -213,7 +217,8 @@ class BulkSurge(BaseSurge):
         db = config.get('database') or config.get('dsn')
 
         # Dump CSV
-        csv_path = self.dump(records, delimiter=',', quotechar='"', encoding='utf-8-sig')
+        csv_path = self._resolve_dump_path(dump_path, 'csv')
+        self.dump(records, file_name=csv_path, delimiter=',', quotechar='"', encoding='utf-8-sig')
 
         # Unique ctl name (avoid collisions)
         unique = uuid.uuid4().hex[:8]
@@ -251,14 +256,16 @@ class BulkSurge(BaseSurge):
 
         return self.total_loaded
 
-    def _load_mssql_bcp(self, records: Iterable[Record]) -> int:
+    def _load_mssql_bcp(self, records: Iterable[Record],
+                        dump_path: Optional[Union[str, Path]] = None) -> int:
         config = self._get_connection_config()
         user = config.get('user')
         password = config.get('password')
         host = config.get('host')
         db = config.get('database')
 
-        csv_path = self.dump(records, delimiter='\t')  # bcp prefers tab-delimited
+        csv_path = self._resolve_dump_path(dump_path, 'tsv')
+        self.dump(records, file_name=csv_path, delimiter='\t')  # bcp prefers tab-delimited
 
         if user and password:
             cmd = ['bcp', self.table.name, 'in', str(csv_path), f'-S {host}', f'-d {db}', f'-U {user}', f'-P {password}']
@@ -333,13 +340,15 @@ class BulkSurge(BaseSurge):
         finally:
             buffer.close()
 
-    def _load_mysql_external(self, records: Iterable[Record]) -> int:
+    def _load_mysql_external(self, records: Iterable[Record],
+                             dump_path: Optional[Union[str, Path]] = None) -> int:
         self.cursor.execute("SELECT @@local_infile")
         if self.cursor.fetchone()[0] == 1:
             # Streaming with DequeBuffer instead of file
             return self._load_mysql_local_stream(records)
         else:
-            csv_path = self.dump(records)
+            csv_path = self._resolve_dump_path(dump_path, 'csv')
+            self.dump(records, file_name=csv_path)
             logger.info(
                 f"local_infile is OFF on server. CSV dumped to {csv_path}. "
                 "To load manually (server-side file):\n"
@@ -348,18 +357,41 @@ class BulkSurge(BaseSurge):
             )
             return self.total_loaded
 
-    def _resolve_file_path(self, file_name: str = None) -> str:
-        now = dt.datetime.now()
-        if file_name is None:
-            return Path(self.fallback_dir) / Path(f"{self.table.name}_{now.strftime('%Y%m%d_%H%M%S')}.csv")
-        path = Path(file_name)
-        if path.is_dir():
-            # got a directory, use default filename
-            return path / Path(f"{self.table.name}_{now.strftime('%Y%m%d_%H%M%S')}.csv")
-        if path.parent.exists() and path.parent.is_dir():
-            # got a full path, use it
-            return path
-        return Path(self.fallback_dir) / Path(f"{self.table.name}_{now.strftime('%Y%m%d_%H%M%S')}.csv")
+    def _resolve_dump_path(self, dump_path: Optional[Union[str, Path]] = None, extension: str = '.csv') -> Path:
+        """
+        Resolve the final CSV path based on user input or fallbacks.
+
+        Priority:
+        1. User-provided dump_path (file or dir)
+        2. settings['data_dump_dir'] (if set and valid)
+        3. tempfile.gettempdir()
+        """
+        if dump_path:
+            p = Path(dump_path)
+            if p.is_file() or (p.suffix == extension and p.parent.exists()):
+                return p  # full file path → use exactly
+            elif p.is_dir() and p.exists():
+                # dir → generate timestamped name inside it
+                timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_name = sanitize_identifier(self.table.name)
+                return p / f"{safe_name}_{timestamp}{extension}"
+
+        # Configured dir fallback
+        configured = settings.get('data_dump_dir')
+        if configured:
+            p = Path(configured)
+            if p.is_dir() and p.exists():
+                timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_name = sanitize_identifier(self.table.name)
+                return p / f"{safe_name}_{timestamp}{extension}"
+            else:
+                logger.warning(f"Configured data_dump_dir '{configured}' invalid. Using temp dir.")
+
+        # Last resort: temp dir
+        temp_dir = Path(tempfile.gettempdir())
+        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = sanitize_identifier(self.table.name)
+        return temp_dir / f"{safe_name}_{timestamp}{extension}"
 
     def dump(self, records: Iterable[Record],
              file_name: str = None,
@@ -367,7 +399,7 @@ class BulkSurge(BaseSurge):
              delimiter: str = ",",
              quotechar: str = '"',
              encoding: str = 'utf-8-sig') -> int:
-        path = self._resolve_file_path(file_name)
+        path = self._resolve_dump_path(file_name)
         with open(path, "w", encoding=encoding, newline='') as fp:
             writer = CSVWriter(data=None, file=fp, write_headers=write_headers, null_string='\\N',
                                delimiter=delimiter, quotechar=quotechar)
