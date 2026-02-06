@@ -98,7 +98,7 @@ class BulkSurge(BaseSurge):
             else:
                 return self._load_mysql_external(records)
         elif "sqlserver" in db_type or "mssql" in db_type:
-            return self._load_mssql_bcp(records)
+            return self._load_mysql_external(records)
         else:
             raise NotImplementedError(f"BulkSurge not supported for {db_type}")
 
@@ -366,7 +366,7 @@ class BulkSurge(BaseSurge):
              write_headers: bool = True,
              delimiter: str = ",",
              quotechar: str = '"',
-             encoding: str = 'utf-8-sig') -> Path:
+             encoding: str = 'utf-8-sig') -> int:
         path = self._resolve_file_path(file_name)
         with open(path, "w", encoding=encoding, newline='') as fp:
             writer = CSVWriter(data=None, file=fp, write_headers=write_headers, null_string='\\N',
@@ -374,4 +374,4 @@ class BulkSurge(BaseSurge):
             for batch in self.batched(records):
                 writer.write_batch(batch)
         logger.info(f"Dumped {self.total_loaded} records to {path}")
-        return path
+        return self.total_loaded

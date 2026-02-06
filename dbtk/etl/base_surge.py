@@ -102,13 +102,13 @@ class BaseSurge(ABC):
         batch = []
 
         for raw in source:
-            self.total_read += 1
             if self.pass_through:
                 params = raw
             else:
                 params = self._transform_row(raw)
             if params is not None:
                 batch.append(params)
+                self.total_read += 1
                 self.total_loaded += 1
             else:
                 self.skipped += 1
