@@ -554,6 +554,25 @@ with dbtk.readers.get_reader('source.csv.gz') as reader:
 # Snowflake: COPY INTO mytable FROM 'staging/transformed.csv' ...
 ```
 
+**Oracle Auto-generation:**
+
+When connected to Oracle, `dump()` automatically generates a SQL\*Loader control file (.ctl) alongside the CSV and logs the `sqlldr` command:
+
+```python
+db = dbtk.connect('oracle_prod')  # Oracle connection
+surge = BulkSurge(table)
+surge.dump(reader, '/staging/export.csv')
+
+# Automatically creates:
+#   /staging/export.csv           (data file)
+#   /staging/export_a1b2c3d4.ctl  (control file with unique suffix)
+#
+# Logs show the sqlldr command to run:
+#   sqlldr userid=USER/PASS@DB control=/staging/export_a1b2c3d4.ctl data=/staging/export.csv
+```
+
+This saves time by eliminating manual control file creation and ensures the column mappings match your Table definition.
+
 #### BulkSurge vs DataSurge Comparison
 
 | Feature | DataSurge | BulkSurge |

@@ -705,17 +705,118 @@ class BulkSurge(BaseSurge):
         safe_name = sanitize_identifier(self.table.name)
         return temp_dir / f"{safe_name}_{timestamp}{extension}"
 
+    def _generate_control_file(self, csv_path: Path) -> Path:
+        """
+        Generate SQL*Loader control file for Oracle.
+
+        Parameters
+        ----------
+        csv_path : Path
+            Path to the CSV data file
+
+        Returns
+        -------
+        Path
+            Path to the generated control file
+
+        Notes
+        -----
+        Control file is placed alongside the CSV with .ctl extension.
+        Uses CHAR type for all columns with CSV format.
+        """
+        import uuid
+
+        # Unique ctl name to avoid collisions
+        unique = uuid.uuid4().hex[:8]
+        ctl_path = csv_path.with_name(f"{csv_path.stem}_{unique}.ctl")
+
+        # Generate control file from current Table schema
+        cols = ', '.join(f"{col} CHAR" for col in self.table.columns.keys())
+        ctl_content = dedent(f"""\
+        LOAD DATA
+        INFILE '{csv_path.name}'
+        INTO TABLE {self.table.name}
+        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+        TRAILING NULLCOLS
+        ({cols})
+        """)
+        ctl_path.write_text(ctl_content)
+        return ctl_path
+
     def dump(self, records: Iterable[Record],
              file_name: str = None,
              write_headers: bool = True,
              delimiter: str = ",",
              quotechar: str = '"',
              encoding: str = 'utf-8-sig') -> int:
+        """
+        Export records to CSV file with optional database-specific helpers.
+
+        For Oracle databases, automatically generates a SQL*Loader control file
+        and provides the sqlldr command for easy loading.
+
+        Parameters
+        ----------
+        records : Iterable[Record]
+            Records to export
+        file_name : str or Path, optional
+            Target file path (directory or full path)
+        write_headers : bool, optional
+            Include column headers in CSV (default: True)
+        delimiter : str, optional
+            CSV delimiter character (default: ',')
+        quotechar : str, optional
+            CSV quote character (default: '"')
+        encoding : str, optional
+            File encoding (default: 'utf-8-sig')
+
+        Returns
+        -------
+        int
+            Number of records written
+
+        Notes
+        -----
+        **Oracle Auto-generation:**
+        When connected to Oracle, dump() automatically generates a SQL*Loader
+        control file (.ctl) alongside the CSV and logs the sqlldr command to run.
+
+        Examples
+        --------
+        Export with auto-generated Oracle control file::
+
+            db = dbtk.connect('oracle_prod')
+            surge = BulkSurge(table)
+            surge.dump(reader, '/staging/export.csv')
+            # Creates: /staging/export.csv + /staging/export_a1b2c3d4.ctl
+            # Logs: sqlldr command to run
+        """
         path = self._resolve_dump_path(file_name)
         with open(path, "w", encoding=encoding, newline='') as fp:
             writer = CSVWriter(data=None, file=fp, write_headers=write_headers, null_string='\\N',
                                delimiter=delimiter, quotechar=quotechar)
             for batch in self.batched(records):
                 writer.write_batch(batch)
-        logger.info(f"Dumped {self.total_loaded} records to {path}")
+
+        logger.info(f"Dumped {self.total_loaded:,} records to {path}")
+
+        # Oracle: auto-generate control file and provide sqlldr command
+        db_type = self.cursor.connection.database_type.lower()
+        if 'oracle' in db_type:
+            ctl_path = self._generate_control_file(path)
+            logger.info(f"Generated SQL*Loader control file: {ctl_path}")
+
+            # Show sqlldr command with placeholders
+            if self.cursor.connection.connection_name:
+                logger.info(
+                    f"To load with SQL*Loader:\n"
+                    f"  sqlldr userid=USER/PASS@DB control={ctl_path} data={path}"
+                )
+            else:
+                logger.info(
+                    f"To load with SQL*Loader:\n"
+                    f"  sqlldr userid=USER/PASS@DB control={ctl_path} data={path}\n"
+                    f"  (or use load(method='external') with a named connection for automatic loading)"
+                )
+
         return self.total_loaded
