@@ -392,7 +392,7 @@ class Table:
         else:
             raise ValueError(f"Invalid operation '{operation}'")
 
-        return all(self.values.get(col) is not None for col in required)
+        return all(self.values.get(col) not in (None, '') for col in required)
 
     def reqs_missing(self, operation: str) -> Set[str]:
         if operation == 'insert':
@@ -404,7 +404,7 @@ class Table:
         else:
             raise ValueError(f"Invalid operation '{operation}'")
 
-        return {col for col in required if self.values.get(col) is None}
+        return {col for col in required if self.values.get(col) in (None, '')}
 
     def is_ready(self, operation: str) -> bool:
         """Fast O(1) check if the current record is ready for the given operation."""
