@@ -1,4 +1,5 @@
 # dbtk/etl/bulk_surge.py
+import csv
 import datetime as dt
 import logging
 import os
@@ -134,11 +135,7 @@ class BulkSurge(BaseSurge):
         path = None
         # Make sure Table columns are compatible with bulk processing
         self._valid_for_bulk()
-        if settings.get('data_dump_dir'):
-            path = Path(settings.get('data_dump_dir'))
-        if not path or not path.exists():
-            path = Path(tempfile.gettempdir())
-        self.fallback_dir = path
+        self.dump_path = None
 
     def _valid_for_bulk(self):
         """ Determine if table is compatible with bulk loading. """
@@ -156,7 +153,7 @@ class BulkSurge(BaseSurge):
         if not self.cursor.connection.connection_name:
             raise RuntimeError('BCP needs credentials. Please set up a named connection in the config file.')
         cm = dbtk.config.ConfigManager()
-        config = cm.get_connection_config(self.cursor.connection_name)
+        config = cm.get_connection_config(self.cursor.connection.connection_name)
         return config
 
     def load(self, records: Iterable[Record],
@@ -200,7 +197,7 @@ class BulkSurge(BaseSurge):
         **PostgreSQL/Redshift:**
         - Only uses direct method (COPY FROM STDIN)
         - Streaming with background writer thread, no temp files
-        - If you need to use `psql \copy`, used BulkSurge.dump() to generate transformed CSV file
+        - If you need to use `psql \\copy`, used BulkSurge.dump() to generate transformed CSV file
 
         **Oracle:**
         - Direct: Uses direct_path_load (requires python-oracledb 3.4+)
@@ -513,19 +510,32 @@ class BulkSurge(BaseSurge):
         host = config.get('host')
         db = config.get('database')
 
-        csv_path = self._resolve_dump_path(dump_path, 'tsv')
-        self.dump(records, file_name=csv_path, delimiter='\t')  # bcp prefers tab-delimited
-
+        self.dump(records, file_name = dump_path, delimiter = '\t', encoding='utf-8',
+                  quoting = csv.QUOTE_NONE, escapechar = '\\', write_headers = False)  # bcp prefers tab-delimited
+        csv_path = self.dump_path
+        cmd = ['bcp', self.table.name, 'in', str(csv_path), '-S', host, '-d', db,  '-c', '-u', '-t\\t', '-r\\n']
+        logger.debug('BCP command (minus auth):' + ' '.join(cmd))
         if user and password:
-            cmd = ['bcp', self.table.name, 'in', str(csv_path), f'-S {host}', f'-d {db}', f'-U {user}', f'-P {password}']
+            cmd += ['-U',  user, '-P', password]
         else:
-            cmd = ['bcp', self.table.name, 'in', str(csv_path), f'-S {host}', f'-d {db}', '-T']  # integrated auth
-
+            cmd += ['-T',]  # integrated auth
+        # Run BCP
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"bcp failed: {result.stderr}")
-            raise RuntimeError("bcp failed")
-
+            error_msg = f"bcp failed with exit code {result.returncode}"
+            if result.stderr:
+                error_msg += f"\n{result.stderr}"
+            elif result.stdout:
+                # Stderr empty - show last 10 lines of stdout as fallback
+                lines = result.stdout.strip().split('\n')
+                error_msg += f"\nstdout (last 10 lines):\n" + '\n'.join(lines[-10:])
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        else:
+            # On success, show summary (last 5 lines)
+            if result.stdout:
+                lines = result.stdout.strip().split('\n')
+                logger.info("bcp completed:\n" + '\n'.join(lines[-5:]))
         csv_path.unlink()
         return self.total_loaded
 
@@ -682,6 +692,8 @@ class BulkSurge(BaseSurge):
             path = surge._resolve_dump_path('/tmp', '.tsv')
             # Returns: Path('/tmp/orders_20260206_143022.tsv')
         """
+        if extension and not extension.startswith('.'):
+            extension = '.' + extension
         if dump_path:
             p = Path(dump_path)
             if p.is_file() or (p.suffix == extension and p.parent.exists()):
@@ -751,8 +763,8 @@ class BulkSurge(BaseSurge):
              file_name: str = None,
              write_headers: bool = True,
              delimiter: str = ",",
-             quotechar: str = '"',
-             encoding: str = 'utf-8-sig') -> int:
+             encoding: str = 'utf-8',
+             **csv_args) -> int:
         """
         Export records to CSV file with optional database-specific helpers.
 
@@ -769,10 +781,10 @@ class BulkSurge(BaseSurge):
             Include column headers in CSV (default: True)
         delimiter : str, optional
             CSV delimiter character (default: ',')
-        quotechar : str, optional
-            CSV quote character (default: '"')
         encoding : str, optional
-            File encoding (default: 'utf-8-sig')
+            File encoding (default: 'utf-8')
+        csv_args: optional
+            Arguments passed to csv writer
 
         Returns
         -------
@@ -795,18 +807,21 @@ class BulkSurge(BaseSurge):
             # Creates: /staging/export.csv + /staging/export_a1b2c3d4.ctl
             # Logs: sqlldr command to run
         """
-        path = self._resolve_dump_path(file_name)
-        with open(path, "w", encoding=encoding, newline='') as fp:
-            writer = CSVWriter(data=None, file=fp, write_headers=write_headers, null_string='\\N',
-                               delimiter=delimiter, quotechar=quotechar)
+        ext = '.tsv' if delimiter == '\t' else '.csv'
+
+        self.dump_path = self._resolve_dump_path(file_name, extension=ext)
+        with open(self.dump_path, "w", encoding=encoding, newline='') as fp:
+            writer = CSVWriter(data=None, file=fp, write_headers=write_headers,
+                               delimiter=delimiter, **csv_args)
             for batch in self.batched(records):
                 writer.write_batch(batch)
 
-        logger.info(f"Dumped {self.total_loaded:,} records to {path}")
+        logger.info(f"Dumped {self.total_loaded:,} records to {self.dump_path}")
 
         # Oracle: auto-generate control file and provide sqlldr command
         db_type = self.cursor.connection.database_type.lower()
         if 'oracle' in db_type:
+            path = self.dump_path.parent
             ctl_path = self._generate_control_file(path)
             logger.info(f"Generated SQL*Loader control file: {ctl_path}")
 
