@@ -6,7 +6,8 @@ import datetime as dt
 import tempfile
 from pathlib import Path
 
-from ..utils import RecordLike, batch_iterable
+from ..defaults import settings
+from ..utils import RecordLike, batch_iterable, sanitize_identifier
 from ..record import Record
 
 logger = logging.getLogger(__name__)
@@ -163,28 +164,49 @@ class BaseSurge(ABC):
         if batch:
             yield batch
 
-    def _resolve_file_path(self, path_input: Optional[str | Path] = None) -> Path:
+    def _resolve_file_path(self, path_input: Optional[str | Path] = None, extension: str = '.csv') -> Path:
         """
         Resolve an output file path from user input.
 
-        If path_input is a directory (or None), generates a timestamped
-        filename inside it. If it's a file path with an existing parent
-        directory, uses it exactly. Falls back to the system temp directory.
-        """
-        if path_input is None:
-            base = Path(tempfile.gettempdir())
-        else:
-            p = Path(path_input)
-            if p.is_dir():
-                base = p
-            elif p.parent.exists() and p.parent.is_dir():
-                return p
-            else:
-                base = Path(tempfile.gettempdir())
-                return base / p.name
+        Handles both file paths and directory paths, generating timestamped
+        filenames when a directory is provided. Sanitizes table names for
+        safe filesystem use.
 
+        Resolution Priority
+        -------------------
+        1. User-provided path_input
+           - If existing file or valid file path: use exactly
+           - If existing directory: generate timestamped file inside it
+        2. Configured settings['data_dump_dir']
+           - If directory exists: generate timestamped file inside it
+        3. System temp directory (fallback)
+        """
+        if extension and not extension.startswith('.'):
+            extension = '.' + extension
+
+        if path_input:
+            p = Path(path_input)
+            if p.is_file() or (p.suffix == extension and p.parent.exists()):
+                return p
+            elif p.is_dir() and p.exists():
+                timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_name = sanitize_identifier(self.table.name)
+                return p / f"{safe_name}_{timestamp}{extension}"
+
+        configured = settings.get('data_dump_dir')
+        if configured:
+            p = Path(configured)
+            if p.is_dir() and p.exists():
+                timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_name = sanitize_identifier(self.table.name)
+                return p / f"{safe_name}_{timestamp}{extension}"
+            else:
+                logger.warning(f"Configured data_dump_dir '{configured}' invalid. Using temp dir.")
+
+        temp_dir = Path(tempfile.gettempdir())
         timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        return base / f"{self.table.name}_{timestamp}.csv"
+        safe_name = sanitize_identifier(self.table.name)
+        return temp_dir / f"{safe_name}_{timestamp}{extension}"
 
     @abstractmethod
     def load(self,

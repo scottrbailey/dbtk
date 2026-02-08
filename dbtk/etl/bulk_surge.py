@@ -13,11 +13,9 @@ from textwrap import dedent
 from typing import Iterable, Union, Optional
 
 import dbtk.config
-from ..defaults import settings
 from .base_surge import BaseSurge
 from ..writers.csv import CSVWriter
 from ..record import Record
-from ..utils import sanitize_identifier
 
 
 logger = logging.getLogger(__name__)
@@ -426,7 +424,7 @@ class BulkSurge(BaseSurge):
         db = config.get('database') or config.get('dsn')
 
         # Dump CSV
-        csv_path = self._resolve_dump_path(dump_path, 'csv')
+        csv_path = self._resolve_file_path(dump_path, 'csv')
         self.dump(records, file_name=csv_path, delimiter=',', quotechar='"')
 
         # Unique ctl name (avoid collisions)
@@ -653,7 +651,7 @@ class BulkSurge(BaseSurge):
             # Streaming with DequeBuffer instead of file
             return self._load_mysql_local_stream(records)
         else:
-            csv_path = self._resolve_dump_path(dump_path, 'csv')
+            csv_path = self._resolve_file_path(dump_path, 'csv')
             self.dump(records, file_name=csv_path)
             logger.info(
                 f"local_infile is OFF on server. CSV dumped to {csv_path}. "
@@ -662,88 +660,6 @@ class BulkSurge(BaseSurge):
                 f"FIELDS TERMINATED BY ',' ENCLOSED BY '\"' IGNORE 1 LINES;"
             )
             return self.total_loaded
-
-    def _resolve_dump_path(self, dump_path: Optional[Union[str, Path]] = None, extension: str = '.csv') -> Path:
-        """
-        Resolve the final dump file path based on user input and configured fallbacks.
-
-        Handles both file paths and directory paths, automatically generating timestamped
-        filenames when a directory is provided. Sanitizes table names for safe filesystem use.
-
-        Parameters
-        ----------
-        dump_path : str or Path, optional
-            User-provided path (file or directory)
-        extension : str, optional
-            File extension to use ('.csv', '.tsv', etc.)
-
-        Returns
-        -------
-        Path
-            Resolved absolute path for the dump file
-
-        Resolution Priority
-        -------------------
-        1. User-provided dump_path
-           - If existing file or valid file path: use exactly
-           - If existing directory: generate timestamped file inside it
-        2. Configured settings['data_dump_dir']
-           - If directory exists: generate timestamped file inside it
-        3. System temp directory (fallback)
-           - Generate timestamped file in tempfile.gettempdir()
-
-        Filename Generation
-        -------------------
-        When generating filenames (for directory paths):
-        - Format: {sanitized_table_name}_{timestamp}{extension}
-        - Timestamp: YYYYmmdd_HHMMSS
-        - Table name sanitized to remove special characters
-
-        Examples
-        --------
-        Explicit file path::
-
-            path = surge._resolve_dump_path('/data/myfile.csv', '.csv')
-            # Returns: Path('/data/myfile.csv')
-
-        Directory path (auto-generates filename)::
-
-            path = surge._resolve_dump_path('/data/staging', '.csv')
-            # Returns: Path('/data/staging/orders_20260206_143022.csv')
-
-        Extension override (bcp uses .tsv)::
-
-            path = surge._resolve_dump_path('/tmp', '.tsv')
-            # Returns: Path('/tmp/orders_20260206_143022.tsv')
-        """
-        if extension and not extension.startswith('.'):
-            extension = '.' + extension
-        if dump_path:
-            p = Path(dump_path)
-            if p.is_file() or (p.suffix == extension and p.parent.exists()):
-                return p  # full file path → use exactly
-            elif p.is_dir() and p.exists():
-                # dir → generate timestamped name inside it
-                timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-                safe_name = sanitize_identifier(self.table.name)
-                return p / f"{safe_name}_{timestamp}{extension}"
-
-        # Configured dir fallback
-        configured = settings.get('data_dump_dir')
-        if configured:
-            p = Path(configured)
-            if p.is_dir() and p.exists():
-                timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-                safe_name = sanitize_identifier(self.table.name)
-                return p / f"{safe_name}_{timestamp}{extension}"
-            else:
-                logger.warning(f"Configured data_dump_dir '{configured}' invalid. Using temp dir.")
-
-        # Last resort: temp dir
-        temp_dir = Path(tempfile.gettempdir())
-        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_name = sanitize_identifier(self.table.name)
-        return temp_dir / f"{safe_name}_{timestamp}{extension}"
 
     def _generate_control_file(self, csv_path: Path) -> Path:
         """
@@ -802,7 +718,7 @@ class BulkSurge(BaseSurge):
         records : Iterable[Record]
             Records to export
         file_name : str or Path, optional
-            Target file path (directory or full path). See _resolve_dump_path
+            Target file path (directory or full path). See _resolve_file_path
             for resolution priority.
         write_headers : bool, optional
             Include column headers (default: True)
@@ -849,7 +765,7 @@ class BulkSurge(BaseSurge):
         """
         ext = '.tsv' if delimiter == '\t' else '.csv'
 
-        self.dump_path = self._resolve_dump_path(file_name, extension=ext)
+        self.dump_path = self._resolve_file_path(file_name, extension=ext)
         with open(self.dump_path, "w", encoding=encoding, newline='') as fp:
             writer = CSVWriter(data=None, file=fp, write_headers=write_headers,
                                delimiter=delimiter, **csv_args)
