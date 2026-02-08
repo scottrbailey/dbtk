@@ -32,7 +32,7 @@ class BaseSurge(ABC):
         self.total_loaded = 0
         self.skipped = 0
         self.skip_reasons = Counter()  # key: frozenset of missing fields, value: count
-        self.skip_samples = {}  # key: frozenset, value: list of (row_index, missing_fields)
+        self.skip_samples = {}  # key: frozenset of missing fields, value: list of row_indexes
 
         self._RecordClass = None  # Built on first use
 
@@ -61,9 +61,7 @@ class BaseSurge(ABC):
                 # keep track of row number for rows that were skipped to aid in debugging
                 if self.skip_reasons[missing_set] <= 20:
                     row_num = record.get('_row_num', self.total_read)
-                    self.skip_samples.setdefault(missing_set, []).append(
-                        (row_num, missing)
-                    )
+                    self.skip_samples.setdefault(missing_set, []).append(row_num)
             return None
         return self.table.get_bind_params(self.operation, mode=mode)
 
@@ -160,6 +158,6 @@ class BaseSurge(ABC):
                     logger.info(f"  - {count:,} rows skipped due to missing: {fields_str}")
                     # Log first few samples if debug mode
                     if reason_set in self.skip_samples:
-                        for row_idx, missing in self.skip_samples[reason_set][:3]:  # first 3 per reason
-                            logger.debug(f"    Sample skip at row #{row_idx}: missing {missing}")
+                        for row_idx in self.skip_samples[reason_set][:3]:  # first 3 per reason
+                            logger.debug(f"    Sample skip at row #{row_idx}: missing {reason_set}")
         return None
