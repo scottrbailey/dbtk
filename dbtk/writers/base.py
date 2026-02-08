@@ -51,7 +51,7 @@ class BaseWriter(ABC):
     columns : List[str], optional
         Column names for list-of-lists data. Ignored for other data types which
         have columns embedded.
-    encoding : str, default 'utf-8-sig'
+    encoding : str, default 'utf-8'
         File encoding for text-based formats
     write_headers : bool, default True
         If True, include header row in formats that support it.
@@ -122,7 +122,7 @@ class BaseWriter(ABC):
             data: Iterable[RecordLike],
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
-            encoding: str = "utf-8-sig",
+            encoding: str = "utf-8",
             write_headers: bool = True,
             **fmt_kwargs,
     ):
@@ -137,7 +137,7 @@ class BaseWriter(ABC):
             Output file. None writes to stdout.
         columns : List[str], optional
             Column names for list-of-lists
-        encoding : str, default 'utf-8-sig'
+        encoding : str, default 'utf-8'
             File encoding
         write_headers : bool, default True
             Include header row in output
@@ -506,7 +506,7 @@ class BatchWriter(BaseWriter):
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
             headers: Optional[List[str]] = None,
-            encoding: Optional[str] = 'utf-8-sig',
+            encoding: Optional[str] = 'utf-8',
             write_headers: bool = True,
             **fmt_kwargs,
     ):
