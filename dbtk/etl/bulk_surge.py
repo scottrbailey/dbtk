@@ -414,7 +414,7 @@ class BulkSurge(BaseSurge):
 
         # Dump CSV
         csv_path = self._resolve_dump_path(dump_path, 'csv')
-        self.dump(records, file_name=csv_path, delimiter=',', quotechar='"', encoding='utf-8-sig')
+        self.dump(records, file_name=csv_path, delimiter=',', quotechar='"')
 
         # Unique ctl name (avoid collisions)
         unique = uuid.uuid4().hex[:8]
@@ -510,10 +510,18 @@ class BulkSurge(BaseSurge):
         host = config.get('host')
         db = config.get('database')
 
-        self.dump(records, file_name = dump_path, delimiter = '\t', encoding='utf-8',
-                  quoting = csv.QUOTE_NONE, escapechar = '\\', write_headers = False)  # bcp prefers tab-delimited
+        self.dump(
+            records,
+            file_name=dump_path,
+            write_headers=False,
+            delimiter='\x1f',  # Unit Separator — super safe
+            quotechar=None,    # No quoting needed
+            quoting=csv.QUOTE_NONE,
+            escapechar=None    # No escaping
+        )
+
         csv_path = self.dump_path
-        cmd = ['bcp', self.table.name, 'in', str(csv_path), '-S', host, '-d', db,  '-c', '-u', '-t\\t', '-r\\n']
+        cmd = ['bcp', self.table.name, 'in', str(csv_path), '-S', host, '-d', db,  '-c', '-u', '-t\x1f', '-r\\n']
         logger.debug('BCP command (minus auth):' + ' '.join(cmd))
         if user and password:
             cmd += ['-U',  user, '-P', password]
@@ -536,7 +544,7 @@ class BulkSurge(BaseSurge):
             if result.stdout:
                 lines = result.stdout.strip().split('\n')
                 logger.info("bcp completed:\n" + '\n'.join(lines[-5:]))
-        csv_path.unlink()
+        csv_path.unlink(missing_ok=True)
         return self.total_loaded
 
     def _load_mysql_local_stream(self, records: Iterable[Record]) -> int:
