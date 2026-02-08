@@ -95,11 +95,24 @@ class BulkSurge(BaseSurge):
     Attributes
     ----------
     total_read : int
-        Total rows read from source (loaded + skipped)
+        Total rows read from source. 1-based (first row = 1). Includes
+        both loaded and skipped rows.
     total_loaded : int
-        Total rows successfully loaded
+        Total rows successfully loaded.
     skipped : int
-        Total rows skipped due to validation failures
+        Total rows skipped due to missing required fields.
+    skip_details : dict
+        Skip tracking grouped by reason. Key is a frozenset of missing
+        required field names. Value is a dict with:
+
+        - ``count``: total rows skipped for this reason
+        - ``sample``: list of up to 20 1-based row numbers (for debugging)
+
+        Example::
+
+            {frozenset({'primary_name'}): {'count': 5, 'sample': [937887, 957847, ...]}}
+    dump_path : Path or None
+        Path of the last file written by dump(). Set after each dump() call.
 
     Examples
     --------

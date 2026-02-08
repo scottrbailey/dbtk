@@ -19,6 +19,26 @@ class DataSurge(BaseSurge):
     Note: The Table instance's state (self.values) is modified during processing.
     Ensure the Table is not used concurrently by other operations or threads.
 
+    Attributes
+    ----------
+    total_read : int
+        Total rows read from source. 1-based (first row = 1). Includes
+        both loaded and skipped rows.
+    total_loaded : int
+        Total rows successfully loaded.
+    skipped : int
+        Total rows skipped due to missing required fields.
+    skip_details : dict
+        Skip tracking grouped by reason. Key is a frozenset of missing
+        required field names. Value is a dict with:
+
+        - ``count``: total rows skipped for this reason
+        - ``sample``: list of up to 20 1-based row numbers (for debugging)
+
+        Example::
+
+            {frozenset({'primary_name'}): {'count': 5, 'sample': [937887, 957847, ...]}}
+
     Example
     -------
     ::
