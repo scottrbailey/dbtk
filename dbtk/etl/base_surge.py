@@ -1,7 +1,6 @@
 # dbtk/etl/base_surge.py
 import logging
 from abc import ABC, abstractmethod
-from collections import Counter
 from typing import Iterable, Generator, Optional
 import datetime as dt
 import tempfile
@@ -31,8 +30,7 @@ class BaseSurge(ABC):
         self.total_read = 0
         self.total_loaded = 0
         self.skipped = 0
-        self.skip_reasons = Counter()  # key: frozenset of missing fields, value: count
-        self.skip_samples = {}  # key: frozenset, value: list of (row_index, missing_fields)
+        self.skip_details = {}  # key: frozenset of missing fields, value: {'count': int, 'sample': [row_nums]}
 
         self._RecordClass = None  # Built on first use
 
@@ -57,13 +55,16 @@ class BaseSurge(ABC):
             missing = self.table.reqs_missing(self.operation)
             if missing:
                 missing_set = frozenset(missing)
-                self.skip_reasons[missing_set] += 1
-                # keep track of row number for rows that were skipped to aid in debugging
-                if self.skip_reasons[missing_set] <= 20:
+                # Initialize skip tracking for this reason if needed
+                if missing_set not in self.skip_details:
+                    self.skip_details[missing_set] = {'count': 0, 'sample': []}
+
+                self.skip_details[missing_set]['count'] += 1
+
+                # Keep first 20 row numbers as samples for debugging
+                if self.skip_details[missing_set]['count'] <= 20:
                     row_num = record.get('_row_num', self.total_read)
-                    self.skip_samples.setdefault(missing_set, []).append(
-                        (row_num, missing)
-                    )
+                    self.skip_details[missing_set]['sample'].append(row_num)
             return None
         return self.table.get_bind_params(self.operation, mode=mode)
 
@@ -155,11 +156,12 @@ class BaseSurge(ABC):
             )
             if self.skipped:
                 logger.info(f"Skipped {self.skipped:,} rows total.")
-                for reason_set, count in self.skip_reasons.most_common():
+                # Sort by count (descending) for consistent reporting
+                sorted_skips = sorted(self.skip_details.items(), key=lambda x: x[1]['count'], reverse=True)
+                for reason_set, details in sorted_skips:
                     fields_str = ', '.join(sorted(reason_set)) or "<unknown reason>"
-                    logger.info(f"  - {count:,} rows skipped due to missing: {fields_str}")
+                    logger.info(f"  - {details['count']:,} rows skipped due to missing: {fields_str}")
                     # Log first few samples if debug mode
-                    if reason_set in self.skip_samples:
-                        for row_idx, missing in self.skip_samples[reason_set][:3]:  # first 3 per reason
-                            logger.debug(f"    Sample skip at row #{row_idx}: missing {missing}")
+                    for row_idx in details['sample'][:3]:  # first 3 per reason
+                        logger.debug(f"    Sample skip at row #{row_idx}: missing {reason_set}")
         return None
