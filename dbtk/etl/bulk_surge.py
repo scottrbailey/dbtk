@@ -457,15 +457,17 @@ class BulkSurge(BaseSurge):
         """
         Load data into SQL Server using bcp (bulk copy program) utility.
 
-        Dumps records to tab-delimited file and invokes bcp with credentials from
-        named connection. Supports both SQL authentication and Windows integrated auth.
+        Dumps records to a delimited file using ASCII Unit Separator (\\x1f)
+        as the field delimiter — a control character that never appears in
+        real-world data, eliminating the need for quoting or escaping. Invokes
+        bcp with credentials from the named connection.
 
         Parameters
         ----------
         records : Iterable[Record]
             Records to load
         dump_path : str or Path, optional
-            Path for TSV file (uses .tsv extension automatically)
+            Path for the data file (directory or full path)
 
         Returns
         -------
@@ -481,11 +483,12 @@ class BulkSurge(BaseSurge):
         Notes
         -----
         - Requires connection via dbtk.connect('connection_name') for credentials
-        - Uses tab-delimited format (bcp preference)
+        - Uses ASCII Unit Separator (\\x1f) as field delimiter — no quoting needed
+        - Uses ``-u`` flag (TrustServerCertificate) for ODBC Driver 18 compatibility
         - If user/password in config: uses SQL authentication (-U, -P)
         - If no user/password: uses Windows integrated auth (-T)
         - Credentials passed via command line (bcp limitation)
-        - Temp TSV file is deleted after load completes
+        - Temp data file is deleted after load completes
         - Alternative: Use DataSurge with pyodbc for fast executemany (no bcp needed)
 
         Examples
@@ -774,36 +777,46 @@ class BulkSurge(BaseSurge):
              encoding: str = 'utf-8',
              **csv_args) -> int:
         """
-        Export records to CSV file with optional database-specific helpers.
+        Export records to a delimited file.
 
-        For Oracle databases, automatically generates a SQL*Loader control file
-        and provides the sqlldr command for easy loading.
+        Resolves the output path, writes all records via CSVWriter, and sets
+        ``self.dump_path`` to the resolved path for callers that need it.
+        For Oracle connections, automatically generates a SQL*Loader control
+        file alongside the data file.
 
         Parameters
         ----------
         records : Iterable[Record]
             Records to export
         file_name : str or Path, optional
-            Target file path (directory or full path)
+            Target file path (directory or full path). See _resolve_dump_path
+            for resolution priority.
         write_headers : bool, optional
-            Include column headers in CSV (default: True)
+            Include column headers (default: True)
         delimiter : str, optional
-            CSV delimiter character (default: ',')
+            Field delimiter character (default: ','). Extension is inferred:
+            '\\t' → .tsv, anything else → .csv
         encoding : str, optional
             File encoding (default: 'utf-8')
-        csv_args: optional
-            Arguments passed to csv writer
+        **csv_args : optional
+            Additional keyword arguments passed to csv.writer (e.g.
+            quoting, quotechar, escapechar)
 
         Returns
         -------
         int
             Number of records written
 
+        Side Effects
+        ------------
+        Sets ``self.dump_path`` to the resolved output Path.
+
         Notes
         -----
         **Oracle Auto-generation:**
-        When connected to Oracle, dump() automatically generates a SQL*Loader
-        control file (.ctl) alongside the CSV and logs the sqlldr command to run.
+        When connected to Oracle, automatically generates a SQL*Loader
+        control file (.ctl) alongside the data file and logs the sqlldr
+        command to run.
 
         Examples
         --------
@@ -813,7 +826,13 @@ class BulkSurge(BaseSurge):
             surge = BulkSurge(table)
             surge.dump(reader, '/staging/export.csv')
             # Creates: /staging/export.csv + /staging/export_a1b2c3d4.ctl
-            # Logs: sqlldr command to run
+            # Logs sqlldr command, e.g.:
+            #   sqlldr userid=USER/PASS@DB control=... data=...
+
+        Custom delimiter with no quoting (e.g. for bcp)::
+
+            surge.dump(reader, '/staging/data.csv', delimiter='\\x1f',
+                       quoting=csv.QUOTE_NONE, escapechar=None)
         """
         ext = '.tsv' if delimiter == '\t' else '.csv'
 

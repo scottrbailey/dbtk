@@ -13,6 +13,41 @@ logger = logging.getLogger(__name__)
 
 
 class BaseSurge(ABC):
+    """
+    Base class for all Surge loaders.
+
+    Provides common iteration, transformation, validation, and skip tracking
+    for loading data into database tables.
+
+    Parameters
+    ----------
+    table : Table
+        Table instance with column definitions and cursor
+    batch_size : int, optional
+        Number of records per batch (default: cursor.batch_size or 1000)
+    pass_through : bool, optional
+        Skip transformation and validation (default: False)
+
+    Attributes
+    ----------
+    total_read : int
+        Total rows read from source. 1-based (first row = 1). Includes
+        both loaded and skipped rows.
+    total_loaded : int
+        Total rows successfully transformed, validated and loaded.
+    skipped : int
+        Total rows skipped due to missing required fields.
+    skip_details : dict
+        Skip tracking grouped by reason. Key is a frozenset of missing
+        required field names. Value is a dict with:
+
+        - ``count``: total rows skipped for this reason
+        - ``sample``: list of up to 20 1-based row numbers (for debugging)
+
+        Example::
+
+            {frozenset({'primary_name'}): {'count': 5, 'sample': [937887, 957847, ...]}}
+    """
     def __init__(
         self,
         table,
@@ -35,7 +70,7 @@ class BaseSurge(ABC):
         self._RecordClass = None  # Built on first use
 
     def _get_record_class(self, operation: Optional[str] = None):
-        """Your perfect method — unchanged, just moved and documented."""
+        """Build or return the Record subclass for this operation's columns."""
         if self._RecordClass is None:
             if operation is not None:
                 # Force SQL generation to populate _param_config[operation]
@@ -49,7 +84,15 @@ class BaseSurge(ABC):
         return self._RecordClass
 
     def _transform_row(self, record, mode=None):
-        """Transform and validate a row. Shared logic for all surges."""
+        """
+        Transform and validate a single row.
+
+        Applies column transforms and checks required fields. On failure,
+        records the 1-based row number in skip_details for debugging (up to
+        20 samples per unique set of missing fields).
+
+        Returns None if validation fails (caller should skip the row).
+        """
         self.table.set_values(record)
         if not self.table.is_ready(self.operation):
             missing = self.table.reqs_missing(self.operation)
@@ -69,7 +112,7 @@ class BaseSurge(ABC):
         return self.table.get_bind_params(self.operation, mode=mode)
 
     def records(self, source: Iterable[RecordLike]) -> Generator[tuple, None, None]:
-        """Yield individual transformed and validated records."""
+        """Yield individual transformed and validated records, updating stats."""
         for raw in source:
             self.total_read += 1
             if self.pass_through:
@@ -121,7 +164,13 @@ class BaseSurge(ABC):
             yield batch
 
     def _resolve_file_path(self, path_input: Optional[str | Path] = None) -> Path:
-        """ """
+        """
+        Resolve an output file path from user input.
+
+        If path_input is a directory (or None), generates a timestamped
+        filename inside it. If it's a file path with an existing parent
+        directory, uses it exactly. Falls back to the system temp directory.
+        """
         if path_input is None:
             base = Path(tempfile.gettempdir())
         else:
