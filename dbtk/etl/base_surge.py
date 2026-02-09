@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from . import Table
-from ..defaults import settings
+from ..config import get_setting
 from ..utils import RecordLike, batch_iterable, sanitize_identifier
 from ..record import Record
 
@@ -67,6 +67,7 @@ class BaseSurge(ABC):
         self.total_read = 0
         self.total_loaded = 0
         self.skipped = 0
+        self.log_dir = get_setting('logging.directory')
         self.skip_details = {}  # key: frozenset of missing fields, value: {'count': int, 'sample': [row_nums]}
 
         self._RecordClass = None  # Built on first use
@@ -77,7 +78,7 @@ class BaseSurge(ABC):
             if operation is not None:
                 # Force SQL generation to populate _param_config[operation]
                 _ = self.table.get_sql(operation)
-                cols = list(self.table._param_config[operation])
+                cols = list(self.table.param_config[operation])
             else:
                 cols = list(self.table.columns.keys())
 
@@ -89,7 +90,7 @@ class BaseSurge(ABC):
         """ Get column names in the correct order for this operation. """
         if operation is None:
             operation = self.operation
-        bind_params = self.table._param_config[operation]
+        bind_params = self.table.param_config[operation]
         return [self.table.bind_name_column(name) for name in bind_params]
 
     def _transform_row(self, record, mode=None):
@@ -201,7 +202,7 @@ class BaseSurge(ABC):
                 safe_name = sanitize_identifier(self.table.name)
                 return p / f"{safe_name}_{timestamp}{extension}"
 
-        configured = settings.get('data_dump_dir')
+        configured = get_setting('data_dump_dir')
         if configured:
             p = Path(configured)
             if p.is_dir() and p.exists():

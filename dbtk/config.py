@@ -406,8 +406,10 @@ class ConfigManager:
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
-            else:
+            elif default:
                 return default
+            else:
+                return settings.get(k)
 
         return value
 

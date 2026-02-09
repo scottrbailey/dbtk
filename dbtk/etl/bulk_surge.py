@@ -142,6 +142,9 @@ class BulkSurge(BaseSurge):
 
     def __init__(self, table, batch_size: int = 10_000, pass_through: bool = False):
         super().__init__(table, batch_size=batch_size, pass_through=pass_through)
+        # Make sure Table had built out insert query and parameter info
+        self.operation = 'insert'
+        self.table.get_sql('insert')
         # Make sure Table columns are compatible with bulk processing
         self._valid_for_bulk()
         self.dump_path = None
@@ -427,19 +430,24 @@ class BulkSurge(BaseSurge):
         self.dump(records, file_name=csv_path, delimiter=',', quotechar='"')
         # dump automatically creates .ctl file if connected to Oracle
         ctl_path = self.control_path
-
-        # Env for subprocess (creds not in cmd line)
-        env = os.environ.copy()
-        env['ORACLE_USER'] = user
-        env['ORACLE_PASS'] = password
-        env['ORACLE_DB'] = db
-
-        cmd = ['sqlldr', f'userid={user}/{password}@{db}', f'control={ctl_path}']
-        logger.debug(' '.join(cmd))
+        log_path = self.log_dir +  self.dump_path.stem + '.log'
+        cmd = ['sqlldr', f'userid={user}/{password}@{db}', f'control={ctl_path}', f'log={log_path}']
+        logger.debug(f'sqlldr userid={user}/<PASSWORD>@{db} control={ctl_path} log={log_path}')
 
         try:
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
-            logger.info(f"sql*loader success: {result.stdout}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                logger.info("SQL*Loader completed successfully")
+            elif result.returncode == 2:
+                logger.warning(f"SQL*Loader completed with warnings:")
+            else:
+                logger.error(f"SQL*Loader failed with exit code {result.returncode}:\n{result.stderr}")
+                raise RuntimeError(f"sql*loader failed with exit code {result.returncode}")
+            lines = result.stdout.strip().split('\n')
+            msg = "sql*loader success: " + '\n'.join(lines[-6:])
+            logger.info(msg)
+            logger.info(f"See sql*loader log for details: {log_path}")
         except subprocess.CalledProcessError as e:
             logger.error(f"sql*loader failed: {e.stderr}")
             raise RuntimeError("sql*loader failed") from e
@@ -647,7 +655,7 @@ class BulkSurge(BaseSurge):
             )
             return self.total_loaded
 
-    def _generate_control_file(self, csv_path: Path) -> Path:
+    def _generate_control_file(self, csv_path: Path, write_headers: bool =True) -> Path:
         """
         Generate SQL*Loader control file for Oracle.
 
@@ -655,6 +663,8 @@ class BulkSurge(BaseSurge):
         ----------
         csv_path : Path
             Path to the CSV data file
+        write_headers : bool, optional
+            If headers were written to data file, the first row will be skipped.
 
         Returns
         -------
@@ -670,7 +680,7 @@ class BulkSurge(BaseSurge):
         # Generate control file from current Table schema
         cols = ',\n        '.join(f"{col} CHAR" for col in self._get_columns('insert'))
         ctl_content = dedent(f"""\
-        OPTIONS (DIRECT=TRUE, ROWS={self.batch_size})
+        OPTIONS (DIRECT=TRUE, ROWS={self.batch_size}, SKIP={int(write_headers)})
         LOAD DATA
         INFILE '{csv_path.absolute()}'
         BADFILE '{csv_path.with_suffix(".bad").absolute()}'
@@ -749,7 +759,7 @@ class BulkSurge(BaseSurge):
                        quoting=csv.QUOTE_NONE, escapechar=None)
         """
         ext = '.tsv' if delimiter == '\t' else '.csv'
-        headers = self._get_columns('insert') if write_headers else None
+        headers = self._get_columns('insert')
         logger.debug(f'Dump column headers: {headers}')
         dump_path = self._resolve_file_path(file_name, extension=ext)
         self.dump_path = dump_path
@@ -767,7 +777,7 @@ class BulkSurge(BaseSurge):
         # Oracle: auto-generate control file and provide sqlldr command
         db_type = self.cursor.connection.database_type.lower()
         if 'oracle' in db_type:
-            ctl_path = self._generate_control_file(dump_path)
+            ctl_path = self._generate_control_file(dump_path, write_headers=write_headers)
             logger.info(f"Generated SQL*Loader control file: {ctl_path}")
 
             # Show sqlldr command with placeholders
