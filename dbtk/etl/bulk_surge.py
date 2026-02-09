@@ -5,7 +5,6 @@ import logging
 import os
 import queue
 import subprocess
-import tempfile
 import threading
 
 from pathlib import Path
@@ -143,10 +142,10 @@ class BulkSurge(BaseSurge):
 
     def __init__(self, table, batch_size: int = 10_000, pass_through: bool = False):
         super().__init__(table, batch_size=batch_size, pass_through=pass_through)
-        path = None
         # Make sure Table columns are compatible with bulk processing
         self._valid_for_bulk()
         self.dump_path = None
+        self.control_path = None
 
     def _valid_for_bulk(self):
         """ Determine if table is compatible with bulk loading. """
@@ -417,7 +416,7 @@ class BulkSurge(BaseSurge):
             surge = BulkSurge(table)
             surge.load(reader, method='external')  # Uses SQL*Loader
         """
-        import uuid
+
         config = self._get_connection_config()
         user = config.get('user')
         password = config.get('password')
@@ -426,22 +425,8 @@ class BulkSurge(BaseSurge):
         # Dump CSV
         csv_path = self._resolve_file_path(dump_path, 'csv')
         self.dump(records, file_name=csv_path, delimiter=',', quotechar='"')
-
-        # Unique ctl name (avoid collisions)
-        unique = uuid.uuid4().hex[:8]
-        ctl_path = csv_path.with_name(f"{csv_path.stem}_{unique}.ctl")
-
-        # Generate control file from current Table schema
-        cols = ', '.join(f"{col} CHAR" for col in self.table.columns.keys())
-        ctl_content = dedent(f"""\
-        LOAD DATA
-        INFILE '{csv_path.name}'
-        INTO TABLE {self.table.name}
-        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-        TRAILING NULLCOLS
-        ({cols})
-        """)
-        ctl_path.write_text(ctl_content)
+        # dump automatically creates .ctl file if connected to Oracle
+        ctl_path = self.control_path
 
         # Env for subprocess (creds not in cmd line)
         env = os.environ.copy()
@@ -449,7 +434,8 @@ class BulkSurge(BaseSurge):
         env['ORACLE_PASS'] = password
         env['ORACLE_DB'] = db
 
-        cmd = ['sqlldr', f'userid={user}/{password}@{db}', f'control={ctl_path}', f'data={csv_path}']
+        cmd = ['sqlldr', f'userid={user}/{password}@{db}', f'control={ctl_path}']
+        logger.debug(' '.join(cmd))
 
         try:
             result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
@@ -457,9 +443,9 @@ class BulkSurge(BaseSurge):
         except subprocess.CalledProcessError as e:
             logger.error(f"sql*loader failed: {e.stderr}")
             raise RuntimeError("sql*loader failed") from e
-        finally:
-            csv_path.unlink(missing_ok=True)
-            ctl_path.unlink(missing_ok=True)
+
+        csv_path.unlink(missing_ok=True)
+        ctl_path.unlink(missing_ok=True)
 
         return self.total_loaded
 
@@ -680,23 +666,22 @@ class BulkSurge(BaseSurge):
         Control file is placed alongside the CSV with .ctl extension.
         Uses CHAR type for all columns with CSV format.
         """
-        import uuid
-
-        # Unique ctl name to avoid collisions
-        unique = uuid.uuid4().hex[:8]
-        ctl_path = csv_path.with_name(f"{csv_path.stem}_{unique}.ctl")
-
+        ctl_path = csv_path.with_name(f"{csv_path.stem}.ctl")
         # Generate control file from current Table schema
-        cols = ', '.join(f"{col} CHAR" for col in self.table.columns.keys())
+        cols = ',\n        '.join(f"{col} CHAR" for col in self._get_columns('insert'))
         ctl_content = dedent(f"""\
+        OPTIONS (DIRECT=TRUE, ROWS={self.batch_size})
         LOAD DATA
-        INFILE '{csv_path.name}'
+        INFILE '{csv_path.absolute()}'
+        BADFILE '{csv_path.with_suffix(".bad").absolute()}'
+        DISCARDFILE '{csv_path.with_suffix(".dsc").absolute()}'
         INTO TABLE {self.table.name}
         FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-        TRAILING NULLCOLS
-        ({cols})
+        TRAILING NULLCOLS(
+        {cols})
         """)
         ctl_path.write_text(ctl_content)
+        self.control_path = ctl_path
         return ctl_path
 
     def dump(self, records: Iterable[Record],
@@ -764,34 +749,38 @@ class BulkSurge(BaseSurge):
                        quoting=csv.QUOTE_NONE, escapechar=None)
         """
         ext = '.tsv' if delimiter == '\t' else '.csv'
-
-        self.dump_path = self._resolve_file_path(file_name, extension=ext)
-        with open(self.dump_path, "w", encoding=encoding, newline='') as fp:
-            writer = CSVWriter(data=None, file=fp, write_headers=write_headers,
+        headers = self._get_columns('insert') if write_headers else None
+        logger.debug(f'Dump column headers: {headers}')
+        dump_path = self._resolve_file_path(file_name, extension=ext)
+        self.dump_path = dump_path
+        with open(dump_path, "w", encoding=encoding, newline='') as fp:
+            writer = CSVWriter(data=None,
+                               file=fp,
+                               write_headers=write_headers,
+                               headers=headers,
                                delimiter=delimiter, **csv_args)
             for batch in self.batched(records):
                 writer.write_batch(batch)
 
-        logger.info(f"Dumped {self.total_loaded:,} records to {self.dump_path}")
+        logger.info(f"Dumped {self.total_loaded:,} records to {dump_path}")
 
         # Oracle: auto-generate control file and provide sqlldr command
         db_type = self.cursor.connection.database_type.lower()
         if 'oracle' in db_type:
-            path = self.dump_path.parent
-            ctl_path = self._generate_control_file(path)
+            ctl_path = self._generate_control_file(dump_path)
             logger.info(f"Generated SQL*Loader control file: {ctl_path}")
 
             # Show sqlldr command with placeholders
             if self.cursor.connection.connection_name:
                 logger.info(
                     f"To load with SQL*Loader:\n"
-                    f"  sqlldr userid=USER/PASS@DB control={ctl_path} data={path}"
+                    f"  sqlldr userid=USER/PASS@DB control={ctl_path} data={dump_path}\n"
+                    "   (or use DataSurge.load(method='external') for automatic  loading"
                 )
             else:
                 logger.info(
                     f"To load with SQL*Loader:\n"
-                    f"  sqlldr userid=USER/PASS@DB control={ctl_path} data={path}\n"
-                    f"  (or use load(method='external') with a named connection for automatic loading)"
+                    f"  sqlldr userid=USER/PASS@DB control={ctl_path} data={dump_path}"
                 )
 
         return self.total_loaded

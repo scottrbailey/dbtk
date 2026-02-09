@@ -6,6 +6,7 @@ import datetime as dt
 import tempfile
 from pathlib import Path
 
+from . import Table
 from ..defaults import settings
 from ..utils import RecordLike, batch_iterable, sanitize_identifier
 from ..record import Record
@@ -51,7 +52,7 @@ class BaseSurge(ABC):
     """
     def __init__(
         self,
-        table,
+        table: Table,
         batch_size: Optional[int] = None,
         pass_through: bool = False
     ):
@@ -83,6 +84,13 @@ class BaseSurge(ABC):
             self._RecordClass = type("Record", (Record,), {})
             self._RecordClass.set_columns(cols)
         return self._RecordClass
+
+    def _get_columns(self, operation: Optional[str] = None):
+        """ Get column names in the correct order for this operation. """
+        if operation is None:
+            operation = self.operation
+        bind_params = self.table._param_config[operation]
+        return [self.table.bind_name_column(name) for name in bind_params]
 
     def _transform_row(self, record, mode=None):
         """
