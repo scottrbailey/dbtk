@@ -58,7 +58,7 @@ class BulkSurge(BaseSurge):
     -------------------
     * **PostgreSQL/Redshift**: COPY FROM STDIN (streaming, no temp files)
     * **Oracle**: direct_path_load (streaming) or SQL*Loader (external tool)
-    * **MySQL/MariaDB**: LOAD DATA LOCAL INFILE (streaming) with automatic fallback
+    * **MySQL/MariaDB**: LOAD DATA LOCAL INFILE via temp file (external only)
     * **SQL Server**: bcp utility (external tool, requires named connection)
 
     Loading Methods
@@ -66,11 +66,10 @@ class BulkSurge(BaseSurge):
     * **direct** (default): Uses native Python drivers for streaming bulk loads
         - Postgres: COPY protocol with background writer thread
         - Oracle: direct_path_load API (requires python-oracledb 3.4+)
-        - MySQL: LOAD DATA LOCAL INFILE with in-memory buffer
 
-    * **external**: Uses command-line tools (requires named connection from config)
+    * **external**: Dumps CSV then loads via command-line tool or SQL command
         - Oracle: SQL*Loader (sqlldr) with auto-generated control file
-        - MySQL: Falls back to direct if local_infile enabled, else dumps CSV
+        - MySQL/MariaDB: LOAD DATA LOCAL INFILE from temp CSV file
         - SQL Server: bcp utility (only external method available)
 
     Performance Notes
@@ -126,7 +125,7 @@ class BulkSurge(BaseSurge):
     MySQL with custom dump location::
 
         surge = BulkSurge(table)
-        surge.load(reader, method='direct', dump_path='/data/staging')
+        surge.load(reader, method='external', dump_path='/data/staging')
 
     SQL Server with bcp (requires config)::
 
@@ -185,8 +184,8 @@ class BulkSurge(BaseSurge):
             Iterator of Record objects to load
         method : str, optional
             Loading method to use (default: 'direct')
-            - 'direct': Stream data using native drivers (Postgres COPY, Oracle direct_path_load, MySQL LOCAL INFILE)
-            - 'external': Use external tools (Oracle sqlldr, SQL Server bcp, MySQL fallback)
+            - 'direct': Stream data using native drivers (Postgres COPY, Oracle direct_path_load)
+            - 'external': Dump CSV then load (Oracle sqlldr, SQL Server bcp, MySQL LOAD DATA LOCAL INFILE)
         dump_path : str or Path, optional
             Path for temp CSV files (only used by external methods)
             - If file path: use exactly as specified
@@ -218,9 +217,9 @@ class BulkSurge(BaseSurge):
         - External method requires named connection from config
 
         **MySQL/MariaDB:**
-        - Direct: LOAD DATA LOCAL INFILE with streaming buffer
-        - External: Checks local_infile setting, falls back to direct or dumps CSV
-        - Direct method requires local_infile=1 on server
+        - Only external method supported (direct raises NotImplementedError)
+        - Dumps CSV then executes LOAD DATA LOCAL INFILE
+        - Requires local_infile=1 on server
 
         **SQL Server:**
         - Only external method (uses bcp utility)
