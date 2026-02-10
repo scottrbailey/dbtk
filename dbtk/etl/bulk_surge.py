@@ -581,7 +581,7 @@ class BulkSurge(BaseSurge):
         """
         # Dump to CSV file
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, file_name=csv_path)
+        self.dump(records, file_name=csv_path, newline='\n')
 
         # Execute LOAD DATA LOCAL INFILE from the temp file
         # Use forward slashes for MySQL (works on Windows too, avoids escape issues)
@@ -601,11 +601,15 @@ class BulkSurge(BaseSurge):
             self.cursor.execute(sql)
             self.cursor.connection.commit()  # MySQL requires explicit commit
             logger.info(f"Loaded {self.total_loaded:,} records from {csv_path}")
-            return self.total_loaded
+
         except Exception as e:
             logger.error(f"LOAD DATA LOCAL INFILE failed: {e}")
             logger.info(f"CSV file preserved at: {csv_path}")
             raise
+
+        # csv_path.unlink(missing_ok=True)
+        return self.total_loaded
+
 
     def _generate_control_file(self, csv_path: Path, write_headers: bool =True) -> Path:
         """
@@ -651,6 +655,7 @@ class BulkSurge(BaseSurge):
              write_headers: bool = True,
              delimiter: str = ",",
              encoding: str = 'utf-8',
+             newline: str = '',
              **csv_args) -> int:
         """
         Export records to a delimited file.
@@ -674,6 +679,8 @@ class BulkSurge(BaseSurge):
             '\\t' → .tsv, anything else → .csv
         encoding : str, optional
             File encoding (default: 'utf-8')
+        newline : str, optional
+            Newline character for file (default: '')
         **csv_args : optional
             Additional keyword arguments passed to csv.writer (e.g.
             quoting, quotechar, escapechar)
@@ -715,7 +722,7 @@ class BulkSurge(BaseSurge):
         logger.debug(f'Dump column headers: {headers}')
         dump_path = self._resolve_file_path(file_name, extension=ext)
         self.dump_path = dump_path
-        with open(dump_path, "w", encoding=encoding, newline='') as fp:
+        with open(dump_path, "w", encoding=encoding, newline=newline) as fp:
             writer = CSVWriter(data=None,
                                file=fp,
                                write_headers=write_headers,
