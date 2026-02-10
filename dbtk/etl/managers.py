@@ -22,6 +22,7 @@ class EntityStatus:
     """Status values for entity resolution lifecycle."""
     PENDING = "pending"
     RESOLVED = "resolved"
+    STAGED = "staged"     # exists in staging tables, not yet matched to ERP
     ERROR = "error"
     SKIPPED = "skipped"
     
@@ -242,6 +243,46 @@ class EntityManager:
         primary_val = self._secondary_index[secondary_id].get(value)
         return self.entities.get(primary_val) if primary_val is not None else None
 
+    def assign(
+        self,
+        entity_or_primary: Any,
+        id_type: str,
+        value: Any,
+    ) -> None:
+        """
+        Assign a secondary ID to an entity and update the secondary index.
+
+        Use this when an ID is obtained outside of a resolver — for example,
+        after inserting a new person into staging tables and receiving back a
+        staging_id, or after a human-match step assigns an erp_id.
+
+        Parameters
+        ----------
+        entity_or_primary : dict or primary key value
+            Either the entity dict or the primary key value used to look it up.
+        id_type : str
+            The secondary ID field to set (must be in secondary_ids).
+        value : Any
+            The value to assign.
+        """
+        if isinstance(entity_or_primary, dict):
+            entity = entity_or_primary
+        else:
+            entity = self.entities.get(entity_or_primary)
+            if entity is None:
+                raise KeyError(f"No entity found for primary value: {entity_or_primary!r}")
+
+        if id_type not in self.secondary_ids:
+            raise ValueError(f"Unknown secondary id: {id_type!r}")
+
+        old_val = entity.get(id_type)
+        entity[id_type] = value
+
+        primary_val = entity.get(self.primary_id)
+        if old_val is not None:
+            self._secondary_index[id_type].pop(old_val, None)
+        self._secondary_index[id_type][value] = primary_val
+
     # =================================================================
     # Errors
     # =================================================================
@@ -262,6 +303,22 @@ class EntityManager:
     # =================================================================
     def iter_entities(self) -> Iterator[Dict[str, Any]]:
         yield from self.entities.values()
+
+    def iter_unresolved(self, id_type: str) -> Iterator[Dict[str, Any]]:
+        """Yield entities that are missing a specific ID value.
+
+        Useful for multi-pass workflows: after an initial resolution run,
+        iterate entities still missing ``erp_id`` to stage as new records,
+        or after human matching, re-resolve only those that were staged.
+
+        Parameters
+        ----------
+        id_type : str
+            The ID field to check — yields entities where this field is None.
+        """
+        for entity in self.entities.values():
+            if entity.get(id_type) is None:
+                yield entity
 
     def iter_with_errors(self, stage: Optional[str] = None) -> Iterator[Dict[str, Any]]:
         for entity in self.entities.values():
