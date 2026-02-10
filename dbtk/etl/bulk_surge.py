@@ -627,6 +627,7 @@ class BulkSurge(BaseSurge):
 
         try:
             self.cursor.execute(sql)
+            self.cursor.connection.commit()  # MySQL requires explicit commit
             thread.join(timeout=30)  # wait for writer to finish
             if thread.is_alive():
                 logger.warning("Writer thread did not finish in time")
@@ -685,6 +686,7 @@ class BulkSurge(BaseSurge):
 
         try:
             self.cursor.execute(sql)
+            self.cursor.connection.commit()  # MySQL requires explicit commit
             logger.info(f"Loaded {self.total_loaded:,} records from {csv_path}")
             return self.total_loaded
         except Exception as e:
