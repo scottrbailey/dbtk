@@ -670,9 +670,11 @@ class BulkSurge(BaseSurge):
         self.dump(records, file_name=csv_path)
 
         # Execute LOAD DATA LOCAL INFILE from the temp file
+        # Use forward slashes for MySQL (works on Windows too, avoids escape issues)
+        csv_path_str = csv_path.absolute().as_posix()
         cols = ", ".join(self._get_columns('insert'))
         sql = dedent(f"""\
-        LOAD DATA LOCAL INFILE '{csv_path.absolute()}'
+        LOAD DATA LOCAL INFILE '{csv_path_str}'
         INTO TABLE {self.table.name}
         FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
         ESCAPED BY '\\\\'
