@@ -250,6 +250,9 @@ class BulkSurge(BaseSurge):
         --------
         dump : Export records to CSV file
         """
+        # Commit any pending transaction to avoid locks during bulk load
+        self.cursor.connection.commit()
+
         db_type = self.cursor.connection.database_type.lower()
         if method == 'direct':
            if db_type in ('postgres', 'redshift'):
