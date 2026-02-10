@@ -1,8 +1,6 @@
 # dbtk/etl/bulk_surge.py
 import csv
-import datetime as dt
 import logging
-import os
 import queue
 import subprocess
 import threading
@@ -58,7 +56,7 @@ class BulkSurge(BaseSurge):
     -------------------
     * **PostgreSQL/Redshift**: COPY FROM STDIN (streaming, no temp files)
     * **Oracle**: direct_path_load (streaming) or SQL*Loader (external tool)
-    * **MySQL/MariaDB**: LOAD DATA LOCAL INFILE (streaming) with automatic fallback
+    * **MySQL/MariaDB**: LOAD DATA LOCAL INFILE via temp file (external only)
     * **SQL Server**: bcp utility (external tool, requires named connection)
 
     Loading Methods
@@ -66,11 +64,10 @@ class BulkSurge(BaseSurge):
     * **direct** (default): Uses native Python drivers for streaming bulk loads
         - Postgres: COPY protocol with background writer thread
         - Oracle: direct_path_load API (requires python-oracledb 3.4+)
-        - MySQL: LOAD DATA LOCAL INFILE with in-memory buffer
 
-    * **external**: Uses command-line tools (requires named connection from config)
+    * **external**: Dumps CSV then loads via command-line tool or SQL command
         - Oracle: SQL*Loader (sqlldr) with auto-generated control file
-        - MySQL: Falls back to direct if local_infile enabled, else dumps CSV
+        - MySQL/MariaDB: LOAD DATA LOCAL INFILE from temp CSV file
         - SQL Server: bcp utility (only external method available)
 
     Performance Notes
@@ -126,7 +123,7 @@ class BulkSurge(BaseSurge):
     MySQL with custom dump location::
 
         surge = BulkSurge(table)
-        surge.load(reader, method='direct', dump_path='/data/staging')
+        surge.load(reader, method='external', dump_path='/data/staging')
 
     SQL Server with bcp (requires config)::
 
@@ -185,8 +182,8 @@ class BulkSurge(BaseSurge):
             Iterator of Record objects to load
         method : str, optional
             Loading method to use (default: 'direct')
-            - 'direct': Stream data using native drivers (Postgres COPY, Oracle direct_path_load, MySQL LOCAL INFILE)
-            - 'external': Use external tools (Oracle sqlldr, SQL Server bcp, MySQL fallback)
+            - 'direct': Stream data using native drivers (Postgres COPY, Oracle direct_path_load)
+            - 'external': Dump CSV then load (Oracle sqlldr, SQL Server bcp, MySQL LOAD DATA LOCAL INFILE)
         dump_path : str or Path, optional
             Path for temp CSV files (only used by external methods)
             - If file path: use exactly as specified
@@ -218,9 +215,9 @@ class BulkSurge(BaseSurge):
         - External method requires named connection from config
 
         **MySQL/MariaDB:**
-        - Direct: LOAD DATA LOCAL INFILE with streaming buffer
-        - External: Checks local_infile setting, falls back to direct or dumps CSV
-        - Direct method requires local_infile=1 on server
+        - Only external method supported (direct raises NotImplementedError)
+        - Dumps CSV then executes LOAD DATA LOCAL INFILE
+        - Requires local_infile=1 on server
 
         **SQL Server:**
         - Only external method (uses bcp utility)
@@ -250,14 +247,16 @@ class BulkSurge(BaseSurge):
         --------
         dump : Export records to CSV file
         """
+        # Commit any pending transaction to avoid locks during bulk load
+        self.cursor.connection.commit()
+
         db_type = self.cursor.connection.database_type.lower()
+
         if method == 'direct':
            if db_type in ('postgres', 'redshift'):
                return self._load_postgres_direct(records)
            elif db_type == 'oracle':
                return self._load_oracle_direct(records)
-           elif db_type in ('mysql', 'mariadb'):
-               return self._load_mysql_local_stream(records)
            else:
                raise NotImplementedError(f'Direct load not available for {db_type}')
         elif method == 'external':
@@ -274,7 +273,7 @@ class BulkSurge(BaseSurge):
 
     def _load_postgres_direct(self, records: Iterable[Record]) -> int:
         _ = self.table.get_sql('insert')
-        cols = ", ".join(self.table._param_config['insert'])
+        cols = ", ".join(self._get_columns('insert'))
         sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N')"
 
         buffer = DequeBuffer(max_rows=self.batch_size * 3)
@@ -350,7 +349,7 @@ class BulkSurge(BaseSurge):
         - For more forgiving loads, use DataSurge.insert().
         """
         _ = self.table.get_sql('insert')
-        cols = list(self.table.param_config['insert'])
+        cols = self._get_columns('insert')
 
         tabname = self.table.name.split('.')
         if len(tabname) == 2:
@@ -555,80 +554,20 @@ class BulkSurge(BaseSurge):
         csv_path.unlink(missing_ok=True)
         return self.total_loaded
 
-    def _load_mysql_local_stream(self, records: Iterable[Record]) -> int:
-        """
-        Stream bulk load into MySQL using LOAD DATA LOCAL INFILE with zero temp file.
-        Uses a background writer thread to populate the buffer while the main thread
-        executes the LOAD command.
-        """
-        if 'mysql' not in self.cursor.connection.database_type.lower():
-            raise RuntimeError("This method is for MySQL/MariaDB only")
-
-        buffer = DequeBuffer(max_rows=self.batch_size * 10)  # generous buffer
-
-        # Background thread writes CSV to buffer
-        def writer_thread():
-            try:
-                writer = CSVWriter(
-                    data=None,
-                    file=buffer,
-                    write_headers=True,
-                    null_string='\\N',
-                    delimiter=',',
-                    quotechar='"',
-                    escapechar='\\',
-                    lineterminator='\n'
-                )
-                for batch in self.batched(records):
-                    writer.write_batch(batch)
-                writer.close()
-            except Exception as e:
-                logger.error(f"CSV writer thread failed: {e}")
-                buffer.close()  # signal EOF
-
-        thread = threading.Thread(target=writer_thread, daemon=True)
-        thread.start()
-
-        # Execute LOAD DATA LOCAL INFILE using the buffer as file-like object
-        sql = dedent(f"""\
-        LOAD DATA LOCAL INFILE 'buffer_stream'
-        INTO TABLE {self.table.name}
-        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-        ESCAPED BY '\\\\'
-        LINES TERMINATED BY '\\n'
-        IGNORE 1 LINES
-        """)
-
-        try:
-            # Most MySQL connectors accept file-like objects for LOCAL INFILE
-            self.cursor.execute(sql, params=None)  # buffer is used internally
-            thread.join(timeout=30)  # wait for writer to finish
-            if thread.is_alive():
-                logger.warning("Writer thread did not finish in time")
-                buffer.close()
-            return self.total_loaded
-        except Exception as e:
-            logger.error(f"LOAD DATA LOCAL failed: {e}")
-            buffer.close()
-            thread.join(timeout=5)
-            raise
-        finally:
-            buffer.close()
-
     def _load_mysql_external(self, records: Iterable[Record],
                              dump_path: Optional[Union[str, Path]] = None) -> int:
         """
-        Load MySQL data with automatic method selection based on server configuration.
+        External bulk load for MySQL using temp file + LOAD DATA LOCAL INFILE.
 
-        Checks the server's local_infile setting and either streams data directly
-        using LOAD DATA LOCAL INFILE or dumps to CSV with instructions for manual loading.
+        Dumps records to CSV file, then executes LOAD DATA LOCAL INFILE to bulk load
+        from the file. Unlike direct method, always uses a temp file on disk.
 
         Parameters
         ----------
         records : Iterable[Record]
             Records to load
         dump_path : str or Path, optional
-            Path for CSV dump if local_infile is disabled
+            Path for CSV dump (file or directory)
 
         Returns
         -------
@@ -637,23 +576,40 @@ class BulkSurge(BaseSurge):
 
         Notes
         -----
-        If local_infile=1: streams data with zero temp files using _load_mysql_local_stream()
-        If local_infile=0: dumps CSV and logs instructions for manual LOAD DATA INFILE
+        Uses LOAD DATA LOCAL INFILE which requires local_infile=1 on server.
+        For direct streaming without temp files, use method='direct' instead.
         """
-        self.cursor.execute("SELECT @@local_infile")
-        if self.cursor.fetchone()[0] == 1:
-            # Streaming with DequeBuffer instead of file
-            return self._load_mysql_local_stream(records)
-        else:
-            csv_path = self._resolve_file_path(dump_path, 'csv')
-            self.dump(records, file_name=csv_path)
-            logger.info(
-                f"local_infile is OFF on server. CSV dumped to {csv_path}. "
-                "To load manually (server-side file):\n"
-                f"LOAD DATA INFILE '{csv_path}' INTO TABLE {self.table.name} "
-                f"FIELDS TERMINATED BY ',' ENCLOSED BY '\"' IGNORE 1 LINES;"
-            )
-            return self.total_loaded
+        # Dump to CSV file
+        csv_path = self._resolve_file_path(dump_path, 'csv')
+        self.dump(records, file_name=csv_path, lineterminator='\n')
+
+        # Execute LOAD DATA LOCAL INFILE from the temp file
+        # Use forward slashes for MySQL (works on Windows too, avoids escape issues)
+        csv_path_str = csv_path.absolute().as_posix()
+        cols = ", ".join(self._get_columns('insert'))
+        sql = dedent(f"""\
+        LOAD DATA LOCAL INFILE '{csv_path_str}'
+        INTO TABLE {self.table.name}
+        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+        ESCAPED BY '\\\\'
+        LINES TERMINATED BY '\\n'
+        IGNORE 1 LINES
+        ({cols})
+        """)
+
+        try:
+            self.cursor.execute(sql)
+            self.cursor.connection.commit()  # MySQL requires explicit commit
+            logger.info(f"Loaded {self.total_loaded:,} records from {csv_path}")
+
+        except Exception as e:
+            logger.error(f"LOAD DATA LOCAL INFILE failed: {e}")
+            logger.info(f"CSV file preserved at: {csv_path}")
+            raise
+
+        # csv_path.unlink(missing_ok=True)
+        return self.total_loaded
+
 
     def _generate_control_file(self, csv_path: Path, write_headers: bool =True) -> Path:
         """

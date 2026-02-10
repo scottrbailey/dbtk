@@ -47,6 +47,7 @@ DRIVERS = {
                            'client_encoding', 'options', 'sslcert', 'sslkey', 'sslrootcert'},
         'connection_method': 'connection_string',
         'default_port': 5432,
+        'note': 'pip install psycopg[binary]'
     },
     'pgdb': {
         'database_type': 'postgres',
@@ -81,7 +82,7 @@ DRIVERS = {
     },
 
     # MySQL Drivers
-    'mysqlclient': {
+    'MySQLdb': {
         'database_type': 'mysql',
         'priority': 11,
         'param_map': {'database': 'db', 'password': 'passwd'},
@@ -90,7 +91,8 @@ DRIVERS = {
                            'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
                            'read_default_group', 'unix_socket', 'port'},
         'connection_method': 'kwargs',
-        'default_port': 3306
+        'default_port': 3306,
+        'note': 'pip install mysqlclient',
     },
     'mariadb': {
         'database_type': 'mysql',
@@ -111,7 +113,8 @@ DRIVERS = {
                            'sql_mode', 'use_unicode', 'get_warnings', 'raise_on_warnings',
                            'connection_timeout', 'buffered', 'raw', 'consume_results'},
         'connection_method': 'kwargs',
-        'default_port': 3306
+        'default_port': 3306,
+        'note': 'pip install mysql-connector-python'
     },
     'pymysql': {
         'database_type': 'mysql',
@@ -121,17 +124,6 @@ DRIVERS = {
         'optional_params': {'port', 'password', 'charset', 'sql_mode', 'read_default_file',
                            'conv', 'use_unicode', 'connect_timeout', 'read_timeout', 'write_timeout',
                            'bind_address', 'unix_socket', 'autocommit'},
-        'connection_method': 'kwargs',
-        'default_port': 3306
-    },
-    'MySQLdb': {
-        'database_type': 'mysql',
-        'priority': 15,
-        'param_map': {'database': 'db', 'password': 'passwd'},
-        'required_params': [{'host', 'database', 'user'}],
-        'optional_params': {'port', 'password', 'charset', 'use_unicode', 'sql_mode', 'read_default_file',
-                           'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
-                           'read_default_group', 'unix_socket'},
         'connection_method': 'kwargs',
         'default_port': 3306
     },

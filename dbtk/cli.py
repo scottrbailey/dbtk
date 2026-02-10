@@ -87,17 +87,20 @@ def checkup():
                 # see if driver has 'module' attribute to use instead of name
                 module_name = info.get('module', name)
                 spec = importlib.util.find_spec(module_name)
-                version = installed.get(_name_cleanup(module_name), '--')
+                version = installed.get(_name_cleanup(module_name), '--    ')
                 status = "✓" if spec else "✗"
             except ModuleNotFoundError:
-                version = '--'
+                version = '--   '
                 status = "✗"
             odbc_driver_name = info.get("odbc_driver_name")
             if odbc_driver_name:
                 odbc_status = "✓" if odbc_driver_name in odbc_drivers else "✗"
                 note = f'({odbc_status} {odbc_driver_name})'
             else:
-                note = ''
+                if  'note' in info:
+                    note = f'({info.get("note")})'
+                else:
+                    note = ''
 
             print(f"{display_name:<20} {pri:<9} {status:<8} {version} {note}")
 
