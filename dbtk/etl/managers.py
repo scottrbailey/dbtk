@@ -159,9 +159,13 @@ class EntityManager:
         updated = False
         primary_val = entity.get(self.primary_id)
 
-        for id in self.id_types:
-            if entity.get(id) is None:
-                continue
+        # Snapshot which IDs are set before the loop.  If a resolver populates a
+        # secondary ID (e.g. ridm) we do NOT want that to trigger a second resolver
+        # call for that ID in the same pass — the resolver likely doesn't accept it
+        # as a bind variable, and the lookup would be redundant at best.
+        ids_to_try = [id for id in self.id_types if entity.get(id) is not None]
+
+        for id in ids_to_try:
             resolver = self._resolvers.get(id)
             if resolver is None:
                 continue
@@ -181,7 +185,10 @@ class EntityManager:
         resolver: Union[TableLookup, PreparedStatement],
         primary_val: Any,
     ) -> bool:
-        bind_vars = {using_id: entity[using_id]}
+        # Pass all known ID values so multi-ID OR queries receive every bind
+        # variable they expect.  Unknown IDs simply aren't in the query's
+        # param_names and are silently ignored by PreparedStatement.
+        bind_vars = {k: entity.get(k) for k in self.id_types}
 
         if isinstance(resolver, TableLookup):
             result = resolver(bind_vars)
