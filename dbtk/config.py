@@ -397,11 +397,11 @@ class ConfigManager:
             timeout = config.get_setting('database.timeout', 30)
             tz = config.get_setting('default_timezone', 'UTC')
         """
-        settings = self.config.get('settings', {})
+        config_settings = self.config.get('settings', {})
 
         # Support dot notation for nested settings
         keys = key.split('.')
-        value = settings
+        value = config_settings
 
         for k in keys:
             if isinstance(value, dict) and k in value:
