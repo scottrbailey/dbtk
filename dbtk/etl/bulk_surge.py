@@ -1,6 +1,7 @@
 # dbtk/etl/bulk_surge.py
 import csv
 import logging
+import time
 import queue
 import subprocess
 import threading
@@ -247,6 +248,8 @@ class BulkSurge(BaseSurge):
         --------
         dump : Export records to CSV file
         """
+        self.start_time = time.monotonic()
+
         # Commit any pending transaction to avoid locks during bulk load
         self.cursor.connection.commit()
 
@@ -254,22 +257,25 @@ class BulkSurge(BaseSurge):
 
         if method == 'direct':
            if db_type in ('postgres', 'redshift'):
-               return self._load_postgres_direct(records)
+               result = self._load_postgres_direct(records)
            elif db_type == 'oracle':
-               return self._load_oracle_direct(records)
+               result = self._load_oracle_direct(records)
            else:
                raise NotImplementedError(f'Direct load not available for {db_type}')
         elif method == 'external':
             if db_type == 'oracle':
-                return self._load_oracle_sqlldr(records, dump_path=dump_path)
+                result = self._load_oracle_sqlldr(records, dump_path=dump_path)
             elif db_type in ('sqlserver', 'mssql'):
-                return self._load_mssql_bcp(records, dump_path=dump_path)
+                result = self._load_mssql_bcp(records, dump_path=dump_path)
             elif db_type in ('mysql', 'mariadb'):
-                return self._load_mysql_external(records, dump_path=dump_path)
+                result = self._load_mysql_external(records, dump_path=dump_path)
             else:
                 raise NotImplementedError(f'External load not available for {db_type}')
         else:
             raise ValueError(f'Method {method} not supported. Must be either direct or external.')
+
+        self._log_summary()
+        return result
 
     def _load_postgres_direct(self, records: Iterable[Record]) -> int:
         _ = self.table.get_sql('insert')
