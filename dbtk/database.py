@@ -47,6 +47,7 @@ DRIVERS = {
                            'client_encoding', 'options', 'sslcert', 'sslkey', 'sslrootcert'},
         'connection_method': 'connection_string',
         'default_port': 5432,
+        'note': 'pip install psycopg[binary]'
     },
     'pgdb': {
         'database_type': 'postgres',
@@ -90,8 +91,8 @@ DRIVERS = {
                            'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
                            'read_default_group', 'unix_socket', 'port'},
         'connection_method': 'kwargs',
+        'default_port': 3306,
         'note': 'pip install mysqlclient',
-        'default_port': 3306
     },
     'mariadb': {
         'database_type': 'mysql',
@@ -112,7 +113,8 @@ DRIVERS = {
                            'sql_mode', 'use_unicode', 'get_warnings', 'raise_on_warnings',
                            'connection_timeout', 'buffered', 'raw', 'consume_results'},
         'connection_method': 'kwargs',
-        'default_port': 3306
+        'default_port': 3306,
+        'note': 'pip install mysql-connector-python'
     },
     'pymysql': {
         'database_type': 'mysql',
