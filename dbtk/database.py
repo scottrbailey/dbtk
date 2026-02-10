@@ -81,7 +81,7 @@ DRIVERS = {
     },
 
     # MySQL Drivers
-    'mysqlclient': {
+    'MySQLdb': {
         'database_type': 'mysql',
         'priority': 11,
         'param_map': {'database': 'db', 'password': 'passwd'},
@@ -90,6 +90,7 @@ DRIVERS = {
                            'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
                            'read_default_group', 'unix_socket', 'port'},
         'connection_method': 'kwargs',
+        'note': 'pip install mysqlclient',
         'default_port': 3306
     },
     'mariadb': {
@@ -121,17 +122,6 @@ DRIVERS = {
         'optional_params': {'port', 'password', 'charset', 'sql_mode', 'read_default_file',
                            'conv', 'use_unicode', 'connect_timeout', 'read_timeout', 'write_timeout',
                            'bind_address', 'unix_socket', 'autocommit'},
-        'connection_method': 'kwargs',
-        'default_port': 3306
-    },
-    'MySQLdb': {
-        'database_type': 'mysql',
-        'priority': 15,
-        'param_map': {'database': 'db', 'password': 'passwd'},
-        'required_params': [{'host', 'database', 'user'}],
-        'optional_params': {'port', 'password', 'charset', 'use_unicode', 'sql_mode', 'read_default_file',
-                           'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
-                           'read_default_group', 'unix_socket'},
         'connection_method': 'kwargs',
         'default_port': 3306
     },
