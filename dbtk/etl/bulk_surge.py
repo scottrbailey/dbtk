@@ -274,7 +274,7 @@ class BulkSurge(BaseSurge):
 
     def _load_postgres_direct(self, records: Iterable[Record]) -> int:
         _ = self.table.get_sql('insert')
-        cols = ", ".join(self.table._param_config['insert'])
+        cols = ", ".join(self._get_columns('insert'))
         sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N')"
 
         buffer = DequeBuffer(max_rows=self.batch_size * 3)
@@ -350,7 +350,7 @@ class BulkSurge(BaseSurge):
         - For more forgiving loads, use DataSurge.insert().
         """
         _ = self.table.get_sql('insert')
-        cols = list(self.table.param_config['insert'])
+        cols = self._get_columns('insert')
 
         tabname = self.table.name.split('.')
         if len(tabname) == 2:
@@ -590,6 +590,7 @@ class BulkSurge(BaseSurge):
         thread.start()
 
         # Execute LOAD DATA LOCAL INFILE using the buffer as file-like object
+        cols = ", ".join(self._get_columns('insert'))
         sql = dedent(f"""\
         LOAD DATA LOCAL INFILE 'buffer_stream'
         INTO TABLE {self.table.name}
@@ -597,6 +598,7 @@ class BulkSurge(BaseSurge):
         ESCAPED BY '\\\\'
         LINES TERMINATED BY '\\n'
         IGNORE 1 LINES
+        ({cols})
         """)
 
         try:
@@ -647,11 +649,12 @@ class BulkSurge(BaseSurge):
         else:
             csv_path = self._resolve_file_path(dump_path, 'csv')
             self.dump(records, file_name=csv_path)
+            cols = ", ".join(self._get_columns('insert'))
             logger.info(
                 f"local_infile is OFF on server. CSV dumped to {csv_path}. "
                 "To load manually (server-side file):\n"
                 f"LOAD DATA INFILE '{csv_path}' INTO TABLE {self.table.name} "
-                f"FIELDS TERMINATED BY ',' ENCLOSED BY '\"' IGNORE 1 LINES;"
+                f"FIELDS TERMINATED BY ',' ENCLOSED BY '\"' IGNORE 1 LINES ({cols});"
             )
             return self.total_loaded
 
