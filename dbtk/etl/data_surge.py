@@ -1,6 +1,7 @@
 # dbtk/etl/data_surge.py
 
 import logging
+import time
 import re
 import uuid
 from typing import Iterable, Optional
@@ -128,6 +129,7 @@ class DataSurge(BaseSurge):
         """
         Core bulk execution using executemany() — shared path for insert/update/delete/merge.
         """
+        self.start_time = time.monotonic()
         operation = (operation or self.operation).lower()
         if operation not in ("insert", "update", "delete", "merge"):
             raise ValueError(f"Invalid operation: {operation}")
@@ -140,9 +142,8 @@ class DataSurge(BaseSurge):
         else:
             errors, skipped = self._execute_batches(records, operation, sql, raise_error)
 
-        logger.info(
-            f"Batched `{self.table.name}` <{operation}s: {self.table.counts[operation]:,}; errors: {errors:,}; skips: {skipped:,}>")
         self.skips += skipped
+        self._log_summary()
         return errors
 
     def _merge_with_temp_table(self, records: Iterable[Record], raise_error: bool) -> int:

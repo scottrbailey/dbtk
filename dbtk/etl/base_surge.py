@@ -1,5 +1,6 @@
 # dbtk/etl/base_surge.py
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Iterable, Generator, Optional
 import datetime as dt
@@ -64,6 +65,7 @@ class BaseSurge(ABC):
         # force positional parameter style
         self.table.force_positional()
         # stats
+        self.start_time = 0.0
         self.total_read = 0
         self.total_loaded = 0
         self.skipped = 0
@@ -71,6 +73,13 @@ class BaseSurge(ABC):
         self.skip_details = {}  # key: frozenset of missing fields, value: {'count': int, 'sample': [row_nums]}
 
         self._RecordClass = None  # Built on first use
+
+    def _log_summary(self):
+        """Log uniform load statistics after each operation."""
+        elapsed = time.monotonic() - self.start_time
+        rate = int(self.total_loaded / elapsed) if elapsed > 0 else 0
+        skipped = f', {self.skipped:,} skipped' if self.skipped else ''
+        logger.info(f"Loaded {self.total_loaded:,} records in {elapsed:.2f}s ({rate:,} rec/s){skipped}")
 
     def _get_record_class(self, operation: Optional[str] = None):
         """Build or return the Record subclass for this operation's columns."""
