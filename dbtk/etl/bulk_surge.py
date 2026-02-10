@@ -1,8 +1,6 @@
 # dbtk/etl/bulk_surge.py
 import csv
-import datetime as dt
 import logging
-import os
 import queue
 import subprocess
 import threading
