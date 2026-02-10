@@ -254,13 +254,12 @@ class BulkSurge(BaseSurge):
         self.cursor.connection.commit()
 
         db_type = self.cursor.connection.database_type.lower()
+
         if method == 'direct':
            if db_type in ('postgres', 'redshift'):
                return self._load_postgres_direct(records)
            elif db_type == 'oracle':
                return self._load_oracle_direct(records)
-           elif db_type in ('mysql', 'mariadb'):
-               return self._load_mysql_direct(records)
            else:
                raise NotImplementedError(f'Direct load not available for {db_type}')
         elif method == 'external':
