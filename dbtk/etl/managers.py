@@ -64,7 +64,7 @@ class EntityManager:
     primary_id : str
         Name of the reliable source id (e.g., "crm_id")
     secondary_ids : List[str]
-        IDs to resolve and index (e.g., ["recruit_id", "sis_id"])
+        IDs to resolve from query results (e.g., ["erp_id", "staging_id"])
 
     Examples
     --------
@@ -90,11 +90,6 @@ class EntityManager:
 
         # primary_value -> entity dict
         self.entities: Dict[Any, Dict[str, Any]] = {}
-
-        # secondary_value -> primary_value
-        self._secondary_index: Dict[str, Dict[Any, Any]] = {
-            k: {} for k in self.secondary_ids
-        }
 
         # from_id -> resolver
         self._resolvers: Dict[str, Any] = {}
@@ -216,11 +211,7 @@ class EntityManager:
                 continue
             new_val = row_dict.get(sk)
             if new_val is not None and entity.get(sk) != new_val:
-                old_val = entity.get(sk)
                 entity[sk] = new_val
-                self._secondary_index[sk][new_val] = primary_val
-                if old_val is not None:
-                    self._secondary_index[sk].pop(old_val, None)
                 updated = True
 
         # Enrichment columns
@@ -237,12 +228,6 @@ class EntityManager:
     def get_by_primary(self, primary_value: Any) -> Optional[Dict[str, Any]]:
         return self.entities.get(primary_value)
 
-    def get_by_secondary(self, secondary_id: str, value: Any) -> Optional[Dict[str, Any]]:
-        if secondary_id not in self.secondary_ids:
-            raise ValueError(f"Unknown secondary id: {secondary_id}")
-        primary_val = self._secondary_index[secondary_id].get(value)
-        return self.entities.get(primary_val) if primary_val is not None else None
-
     def assign(
         self,
         entity_or_primary: Any,
@@ -250,7 +235,7 @@ class EntityManager:
         value: Any,
     ) -> None:
         """
-        Assign a secondary ID to an entity and update the secondary index.
+        Assign a secondary ID to an entity.
 
         Use this when an ID is obtained outside of a resolver — for example,
         after inserting a new person into staging tables and receiving back a
@@ -275,13 +260,7 @@ class EntityManager:
         if id_type not in self.secondary_ids:
             raise ValueError(f"Unknown secondary id: {id_type!r}")
 
-        old_val = entity.get(id_type)
         entity[id_type] = value
-
-        primary_val = entity.get(self.primary_id)
-        if old_val is not None:
-            self._secondary_index[id_type].pop(old_val, None)
-        self._secondary_index[id_type][value] = primary_val
 
     # =================================================================
     # Errors
@@ -359,10 +338,6 @@ class EntityManager:
                 "errors": [ErrorDetail(**e) for e in entity_data.get("errors", [])],
             }
             manager.entities[primary_val] = entity
-
-            for sk in secondary_ids:
-                if (val := entity.get(sk)) is not None:
-                    manager._secondary_index[sk][val] = primary_val
 
         logger.info(f"EntityManager state loaded from {path_obj} ({len(manager.entities)} entities)")
         return manager
