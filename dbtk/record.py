@@ -132,14 +132,37 @@ class Record(list):
     __slots__ = ("_added", "_deleted_fields")
     _fields: List[str] = []  # Original field names (e.g., 'Start Year')
     _fields_normalized: List[str] = []  # Normalized for access (e.g., 'start_year')
+    _field_len: int = 0 # cached for fast hot path
 
-    def __init__(self, *values: Any) -> None:
-        # Fast path: initialize list directly in C code — no __setitem__ calls
-        super().__init__(values)
-
-        # Lazy attributes — only allocated only when needed
+    def __init__(self, *args, **kwargs):
+        # Lazy attributes
         object.__setattr__(self, "_deleted_fields", set())
         object.__setattr__(self, "_added", None)
+
+        # Fast path check first
+        n = self._field_len
+        if len(args) == n and not kwargs:
+            super().__init__(args)
+            return
+
+        # Default values
+        values = [None] * n
+
+        # Positional: fill in order, truncate if too many
+        for i, val in enumerate(args):
+            if i < n:
+                values[i] = val
+
+        # Keyword args: override
+        for k, v in kwargs.items():
+            if k in self._fields_normalized:
+                idx = self._fields_normalized.index(k)
+                values[idx] = v
+            elif k in self._fields:
+                idx = self._fields.index(k)
+                values[idx] = v
+
+        super().__init__(values)
 
     # ------------------------------------------------------------------ #
     # Core access methods
@@ -266,7 +289,7 @@ class Record(list):
             ['start_year', 'end_date']
         """
         cls._fields = fields
-
+        cls._field_len = len(fields)
         # Normalize and handle collisions
         normalized = []
         seen = {}
@@ -280,7 +303,6 @@ class Record(list):
             else:
                 seen[norm] = 1
             normalized.append(norm)
-
         cls._fields_normalized = normalized
 
 
@@ -373,6 +395,30 @@ class Record(list):
         raise KeyError(key)
 
     def update(self, other=None, **kwargs) -> None:
+        """
+            Fill in missing or empty fields from another dict, Record, or keyword arguments.
+
+            Updates the current Record by copying values from `other` (or `**kwargs`) only for fields
+            that are currently `None` or an empty string (`''`). Existing non-empty values are preserved.
+
+            This is a non-destructive "fill gaps" operation — it will never overwrite valid data.
+
+            Args:
+                other: Optional dict or Record containing values to coalesce. If provided, its items
+                       are processed first.
+                **kwargs: Additional key-value pairs to coalesce (overrides keys in `other` if both
+                          provide a value).
+
+            Returns:
+                self: The updated Record (for chaining).
+
+            Examples:
+                >>> Record.set_fields(['id', 'name', 'email', 'phone', 'notes'])
+                >>> record = Record(None, "Scott", "", "scott@example.com", None)
+                >>> resolved = {'id': 123, 'name': 'Scott Bailey', 'notes': 'VIP'}
+                >>> record.coalesce(resolved, phone="555-1234")
+                >>> record  # [123, "Scott", "", "555-1234", "VIP"]
+            """
         if other is not None:
             if hasattr(other, "items"):
                 for k, v in other.items():
@@ -382,6 +428,18 @@ class Record(list):
                     self[k] = v
         for k, v in kwargs.items():
             self[k] = v
+
+    def coalesce(self, other=None, **kwargs) -> None:
+        """"""
+        if other is not None:
+            if hasattr(other, "items"):
+                for k, v in other.items():
+                    if k in self and self[k] in (None, ''):
+                        self[k] = v
+        for k, v in kwargs.items():
+            if k in self and self[k] in (None, ''):
+                self[k] = v
+        return self
 
     def to_dict(self, normalized: bool = False) -> dict:
         """
