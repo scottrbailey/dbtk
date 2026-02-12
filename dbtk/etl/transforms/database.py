@@ -162,6 +162,10 @@ class TableLookup:
             self._preload_all()
             self._preloaded = True
 
+    @property
+    def cursor(self):
+        return self._cursor
+
     def _build_sql(self):
         """Build the SELECT and PreparedStatement."""
         # Build SELECT clause
