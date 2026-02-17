@@ -122,7 +122,7 @@ class IdentityManager:
         # Check cache / existing entity
         if source_id in self.entities:
             entity = self.entities[source_id]
-            if entity._status == EntityStatus.RESOLVED:
+            if entity['_status'] == EntityStatus.RESOLVED:
                 resolved_id = entity[self.target_key]
                 if update_target_key and record is not None:
                     existing = record.get(self.target_key)
@@ -195,9 +195,9 @@ class IdentityManager:
         if not self._record_factory:
             self.resolver.execute({})
             self._setup_record_class(None)
-        for source_key, entity in self.entities.items():
+        for source_id, entity in self.entities.items():
             if entity.get('_status') in (EntityStatus.NOT_FOUND, EntityStatus.PENDING):
-                self.resolve(source_key)
+                self.resolve(source_id)
 
     def calc_stats(self):
         counts = {s: 0 for s in EntityStatus.VALUES}
