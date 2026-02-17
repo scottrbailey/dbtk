@@ -73,7 +73,7 @@ class PreparedStatement:
             Cursor if return_cursor=True, else None
         """
         try:
-            params = self.cursor._prepare_params(self.param_names, bind_vars)
+            params = self.cursor.prepare_params(self.param_names, bind_vars)
             return self.cursor.execute(self.sql, params)
         except Exception as e:
             source = self.filename or '<query>'
@@ -256,7 +256,7 @@ class Cursor:
         else:
             raise StopIteration
 
-    def _prepare_params(self, param_names: list, bind_vars: dict) -> Any:
+    def prepare_params(self, param_names: list, bind_vars: dict) -> Any:
         """
         Convert dict parameters to format required by cursor's paramstyle.
 
@@ -421,7 +421,7 @@ class Cursor:
 
             # Prepare parameters
             if bind_vars:
-                params = self._prepare_params(param_names, bind_vars)
+                params = self.prepare_params(param_names, bind_vars)
             else:
                 params = None
 

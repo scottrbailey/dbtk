@@ -5,6 +5,7 @@ import time
 import queue
 import subprocess
 import threading
+import time
 
 from pathlib import Path
 from textwrap import dedent
@@ -254,7 +255,7 @@ class BulkSurge(BaseSurge):
         self.cursor.connection.commit()
 
         db_type = self.cursor.connection.database_type.lower()
-
+        self.start_time = time.monotonic()
         if method == 'direct':
            if db_type in ('postgres', 'redshift'):
                result = self._load_postgres_direct(records)
@@ -606,7 +607,8 @@ class BulkSurge(BaseSurge):
         try:
             self.cursor.execute(sql)
             self.cursor.connection.commit()  # MySQL requires explicit commit
-            logger.info(f"Loaded {self.total_loaded:,} records from {csv_path}")
+            et = time.monotonic()
+            logger.info(f"Loaded {self.total_loaded:,} records from {csv_path} total time: {et - self.start_time:.2}")
 
         except Exception as e:
             logger.error(f"LOAD DATA LOCAL INFILE failed: {e}")

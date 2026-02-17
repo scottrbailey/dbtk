@@ -3,10 +3,11 @@
 """
 Orchestration tools for multi-stage, resumable ETL processes.
 
-EntityManager provides lightweight, incremental entity orchestration
-for imports where a reliable primary key exists in source data.
+IdentityManager provides lightweight, incremental identity resolution
+for imports where a reliable source primary key exists in source data.
 """
 
+import datetime as dt
 import json
 import logging
 from pathlib import Path
@@ -14,6 +15,7 @@ from typing import Any, Dict, Iterator, List, Optional, Union
 
 from ..cursors import PreparedStatement
 from .transforms.database import TableLookup
+from ..record import Record
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +27,24 @@ class EntityStatus:
     STAGED = "staged"     # exists in staging tables, not yet matched to ERP
     ERROR = "error"
     SKIPPED = "skipped"
-    
-    
-class ErrorDetail:
-    """Structured error record attached to an entity."""
+    NOT_FOUND = "not_found"
+
+    VALUES = (
+        PENDING,
+        RESOLVED,
+        STAGED,
+        ERROR,
+        SKIPPED,
+        NOT_FOUND,
+    )
+
+    @classmethod
+    def __iter__(cls):
+        yield from cls.VALUES
+
+
+class MessageDetail:
+    """Structured message record attached to an entity."""
 
     __slots__ = ("message", "stage", "field", "code")
 
@@ -46,301 +62,212 @@ class ErrorDetail:
 
     def __repr__(self) -> str:
         return (
-            f"ErrorDetail(message={self.message!r}, stage={self.stage!r},  "
+            f"MessageDetail(message={self.message!r}, stage={self.stage!r}, "
             f"field={self.field!r}, code={self.code!r})"
         )
 
 
-class EntityManager:
-    """
-    Incremental entity manager for resumable, multi-stage imports.
-
-    Optimized for workflows where every inbound record has a reliable
-    primary id (e.g., CRM application ID), and secondary ids plus
-    enrichment data are resolved on-demand.
-
-    Parameters
-    ----------
-    primary_id : str
-        Name of the reliable source id (e.g., "crm_id")
-    secondary_ids : List[str]
-        IDs to resolve from query results (e.g., ["erp_id", "staging_id"])
-
-    Examples
-    --------
-    >>> manager = EntityManager(primary_id="crm_id", secondary_ids=["recruit_id", "sis_id"])
-    >>> stmt = cursor.prepare_file("sql/resolve_person.sql")
-    >>> manager.set_main_resolver(stmt)
-    >>>
-    >>> for row in reader:
-    ...     entity = manager.process_row(row["ApplicationID"])
-    ...     print(f"Processing {entity.get('full_name', entity['crm_id'])}")
-    >>>
-    >>> manager.save("import_state.json")
-    """
-
+class IdentityManager:
     def __init__(
         self,
-        primary_id: str,
-        secondary_ids: List[str],
+        source_key: str,
+        target_key: str,
+        resolver: Union[PreparedStatement, TableLookup],
+        alternate_keys: Optional[List[str]] = []
     ):
-        self.primary_id = primary_id
-        self.secondary_ids = secondary_ids or []
-        self.id_types = [primary_id] + self.secondary_ids
+        self.source_key = source_key
+        self.target_key = target_key
+        self.alternate_keys = alternate_keys
+        if isinstance(resolver, TableLookup):
+            # Get PreparedStatement from TableLookup
+            self.resolver = resolver._stmt
+        elif isinstance(resolver, PreparedStatement):
+            self.resolver = resolver
+        else:
+            raise ValueError('Resolver must be either a PreparedStatement or TableLookup')
+        self.entities: Dict[Any, Record] = {}
+        self._record_factory: Optional[type[Record]] = None  # lazy-created
 
-        # primary_value -> entity dict
-        self.entities: Dict[Any, Dict[str, Any]] = {}
+    def _setup_record_class(self, record: Optional[Record] = None):
+        if self._record_factory:
+            return self._record_factory
+        if record:
+            alt_keys = set(self.alternate_keys) - set(record.keys())
+            fields = record.keys() + list(alt_keys) + ['_status', '_messages']
+        elif self.resolver.cursor.description:
+            fields = [c[0] for c in self.resolver.cursor.description]
+        else:
+            fields = [self.target_key, '_status', '_messages']
+        RecordClass = type('EntityRecord', (Record,), {})
+        RecordClass.set_fields(fields)
+        if self.target_key not in RecordClass._fields \
+                and self.target_key not in RecordClass._fields_normalized:
+            raise ValueError(f'{self.target_key} must be returned by the primary resolver')
+        self._record_factory = RecordClass
 
-        # from_id -> resolver
-        self._resolvers: Dict[str, Any] = {}
+    def resolve(self, value: Any) -> Optional[Record]:
+        if isinstance(value, (dict, Record)):
+            source_id = value.get(self.source_key)
+            if source_id is None:
+                return None
+            record = value
+            update_target_key = True
+        else:
+            source_id = value
+            record = None
+            update_target_key = False
 
-    # =================================================================
-    # Hot path
-    # =================================================================
-    def process_row(
-        self,
-        primary_value: Any,
-        *,
-        auto_resolve: bool = True,
-        status: str = EntityStatus.PENDING,
-    ) -> Dict[str, Any]:
-        """Core method: get/create entity and optionally resolve."""
-        entity = self.entities.get(primary_value)
+        # Check cache / existing entity
+        if source_id in self.entities:
+            entity = self.entities[source_id]
+            if entity._status == EntityStatus.RESOLVED:
+                resolved_id = entity[self.target_key]
+                if update_target_key and record is not None:
+                    existing = record.get(self.target_key)
+                    if existing is not None and existing != resolved_id:
+                        raise ValueError(
+                            f"Conflict on {self.target_key}: existing={existing!r}, resolved={resolved_id!r}"
+                        )
+                    record[self.target_key] = resolved_id
+                return entity
 
-        if entity is None:
-            entity = {
-                self.primary_id: primary_value,
-                "status": status,
-                "errors": [],
-            }
-            self.entities[primary_value] = entity
+        # Not cached → run primary resolver
+        if record:
+            bind_vars = self.resolver.cursor.prepare_params(self.resolver.param_names, record)
+        else:
+            bind_vars = {self.source_key: source_id}
+        self.resolver.execute(bind_vars)
+        resolved_raw = self.resolver.fetchone()
+        if self._record_factory is None:
+            self._setup_record_class(resolved_raw)
+        if resolved_raw is None:
+            resolved_raw = {self.source_key: source_id}
+        entity = self._record_factory(**resolved_raw)
+        entity['_messages'] = []
+        if entity.get(self.target_key) is None:
+            entity['_status'] = EntityStatus.NOT_FOUND
+        else:
+            entity['_status'] = EntityStatus.RESOLVED
+        self.entities[source_id] = entity
 
-        if auto_resolve:
-            self.resolve(entity)
+        # Mutate input record if provided
+        if update_target_key and record is not None and entity['_status'] == EntityStatus.RESOLVED:
+            existing = record.get(self.target_key)
+            if existing is not None and existing != entity[self.target_key]:
+                raise ValueError(
+                    f"Conflict on {self.target_key}: existing={existing!r}, resolved={entity[self.target_key]!r}"
+                )
+            record[self.target_key] = entity[self.target_key]
 
         return entity
 
-    # =================================================================
-    # Resolver management
-    # =================================================================
-    def set_main_resolver(
-        self,
-        resolver: Union[TableLookup, PreparedStatement],
-        from_ids: Optional[List[str]] = None,
-    ) -> None:
-        """Set the main resolver (most common: from primary_id)."""
-        if from_ids is None:
-            from_ids = [self.primary_id]
+    def add_message(self, source_id: str, message: Union[str, MessageDetail]):
+        self.entities[source_id]['_messages'].append(message)
 
-        for id in from_ids:
-            if id not in self.id_types:
-                raise ValueError(f"Invalid from_id for resolver: {id}")
-            self._resolvers[id] = resolver
-
-    def add_fallback_resolver(
-        self,
-        from_id: str,
-        resolver: Union[TableLookup, PreparedStatement],
-    ) -> None:
-        """Add resolver for rare secondary-to-secondary cases."""
-        if from_id not in self.secondary_ids:
-            raise ValueError(f"Fallback from_key must be secondary: {from_id}")
-        self._resolvers[from_id] = resolver
-
-    # =================================================================
-    # Resolution
-    # =================================================================
-    def resolve(self, entity: Dict[str, Any]) -> bool:
-        """Resolve secondary keys and enrich entity."""
-        updated = False
-        primary_val = entity.get(self.primary_id)
-
-        # Snapshot which IDs are set before the loop.  If a resolver populates a
-        # secondary ID (e.g. ridm) we do NOT want that to trigger a second resolver
-        # call for that ID in the same pass — the resolver likely doesn't accept it
-        # as a bind variable, and the lookup would be redundant at best.
-        ids_to_try = [id for id in self.id_types if entity.get(id) is not None]
-
-        for id in ids_to_try:
-            resolver = self._resolvers.get(id)
-            if resolver is None:
-                continue
-
-            if self._apply_resolver(entity, id, resolver, primary_val):
-                updated = True
-
-        if updated:
-            entity["status"] = EntityStatus.RESOLVED
-
-        return updated
-
-    def _apply_resolver(
-        self,
-        entity: Dict[str, Any],
-        using_id: str,
-        resolver: Union[TableLookup, PreparedStatement],
-        primary_val: Any,
-    ) -> bool:
-        # Pass all known ID values so multi-ID OR queries receive every bind
-        # variable they expect.  Unknown IDs simply aren't in the query's
-        # param_names and are silently ignored by PreparedStatement.
-        bind_vars = {k: entity.get(k) for k in self.id_types}
-
-        if isinstance(resolver, TableLookup):
-            result = resolver(bind_vars)
-        else:
-            resolver.execute(bind_vars)
-            result = resolver.fetchone()
-
-        if not result:
-            return False
-
-        # Normalize to dict
-        if hasattr(result, "to_dict"):
-            row_dict = result.to_dict()
-        elif hasattr(result, "_asdict"):
-            row_dict = result._asdict()
-        else:
-            row_dict = dict(result)
-
-        updated = False
-
-        # Tracked secondary keys
-        for sk in self.secondary_ids:
-            if sk == using_id:
-                continue
-            new_val = row_dict.get(sk)
-            if new_val is not None and entity.get(sk) != new_val:
-                entity[sk] = new_val
-                updated = True
-
-        # Enrichment columns
-        for col, val in row_dict.items():
-            if col not in self.id_types and entity.get(col) != val:
-                entity[col] = val
-                updated = True
-
-        return updated
-
-    # =================================================================
-    # Lookups
-    # =================================================================
-    def get_by_primary(self, primary_value: Any) -> Optional[Dict[str, Any]]:
-        return self.entities.get(primary_value)
-
-    def assign(
-        self,
-        entity_or_primary: Any,
-        id_type: str,
-        value: Any,
-    ) -> None:
-        """
-        Assign a secondary ID to an entity.
-
-        Use this when an ID is obtained outside of a resolver — for example,
-        after inserting a new person into staging tables and receiving back a
-        staging_id, or after a human-match step assigns an erp_id.
-
-        Parameters
-        ----------
-        entity_or_primary : dict or primary key value
-            Either the entity dict or the primary key value used to look it up.
-        id_type : str
-            The secondary ID field to set (must be in secondary_ids).
-        value : Any
-            The value to assign.
-        """
-        if isinstance(entity_or_primary, dict):
-            entity = entity_or_primary
-        else:
-            entity = self.entities.get(entity_or_primary)
-            if entity is None:
-                raise KeyError(f"No entity found for primary value: {entity_or_primary!r}")
-
-        if id_type not in self.secondary_ids:
-            raise ValueError(f"Unknown secondary id: {id_type!r}")
-
+    def set_id(self, source_id: str, id_type: str, value: str):
+        if id_type not in self.alternate_keys and id_type != self.target_key:
+            raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
+        entity = self.entities[source_id]
         entity[id_type] = value
 
-    # =================================================================
-    # Errors
-    # =================================================================
-    def add_error(
-        self,
-        entity: Dict[str, Any],
-        message: str = "",
-        stage: Optional[str] = None,
-        field: Optional[str] = None,
-        code: Optional[str] = None,
-    ) -> None:
-        entity.setdefault("errors", []).append(
-            ErrorDetail(stage=stage, field=field, message=message, code=code)
-        )
+    def get_id(self, source_id: str, id_type: str):
+        if id_type not in self.alternate_keys and id_type != self.target_key:
+            raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
+        return self.entities[source_id].get(id_type)
 
-    # =================================================================
-    # Iteration
-    # =================================================================
-    def iter_entities(self) -> Iterator[Dict[str, Any]]:
-        yield from self.entities.values()
+    def batch_resolve(self):
+        if not self._record_factory:
+            self.resolver.execute({})
+            self._setup_record_class(None)
+        if self.source_key not in self._record_factory._fields and \
+                self.source_key not in self._record_factory._fields_normalized:
+            raise ValueError(f'Resolver must return {self.source_key} to allow batch_resolve.')
+        sql = self.resolver.sql
+        param_names = self.resolver.param_names
+        bind_array = []
+        cnt = 0
+        for source_key, entity in self.entities.items():
+            if entity.get('_status') in (EntityStatus.NOT_FOUND, EntityStatus.PENDING):
+                params = self.resolver.cursor.prepare_params(param_names, entity)
+                bind_array.append(params)
+                cnt += 1
+                if cnt % 1000 == 0:
+                    self.resolver.cursor.executemany(sql, bind_array)
+                    self._process_batch_results()
+                    bind_array = []
+        if bind_array:
+            self.resolver.cursor.executemany(sql, bind_array)
+            self._process_batch_results()
 
-    def iter_unresolved(self, id_type: str) -> Iterator[Dict[str, Any]]:
-        """Yield entities that are missing a specific ID value.
+    def _process_batch_results(self):
+        for rec in self.resolver.cursor.fetchall():
+            source_id = rec.get(self.source_key)
+            if not source_id:
+                continue
+            raw_entity = self._record_factory(**rec)
+            entity = self.entities.get(source_id)
+            entity.coalesce(raw_entity)
+            if entity.get(self.target_key):
+                entity['_status'] = EntityStatus.RESOLVED
+            self.entities[source_id] = entity
 
-        Useful for multi-pass workflows: after an initial resolution run,
-        iterate entities still missing ``erp_id`` to stage as new records,
-        or after human matching, re-resolve only those that were staged.
-
-        Parameters
-        ----------
-        id_type : str
-            The ID field to check — yields entities where this field is None.
-        """
+    def calc_stats(self):
+        counts = {s: 0 for s in EntityStatus.VALUES}
         for entity in self.entities.values():
-            if entity.get(id_type) is None:
-                yield entity
+            status = entity.get('_status')
+            if status:
+                counts[status] += 1
+        return counts
 
-    def iter_with_errors(self, stage: Optional[str] = None) -> Iterator[Dict[str, Any]]:
-        for entity in self.entities.values():
-            errors = [e for e in entity.get("errors", []) if stage is None or e.stage == stage]
-            if errors:
-                yield entity
+    def save_state(self, path: Union[str, Path]):
+        field_order = None
+        if self._record_factory:
+            field_order = self._record_factory._fields  # exact ordered list
+        elif self.entities:
+            # Rare fallback: first entity might have partial fields
+            first_entity = next(iter(self.entities.values()))
+            field_order = list(first_entity.keys())  # whatever we have
+        else:
+            field_order = [self.target_key, '_status', '_messages']
 
-    # =================================================================
-    # Persistence
-    # =================================================================
-    def save(self, path: Union[str, Path]) -> None:
-        serializable = {
-            primary: {
-                **entity,
-                "errors": [e.__dict__ for e in entity.get("errors", [])],
+        data = {
+            "version": 1,
+            "timestamp": dt.datetime.utcnow().isoformat() + "Z",
+            "source_key": self.source_key,
+            "target_key": self.target_key,
+            "field_order": field_order,
+            "entities": {
+                str(source_pk): entity.to_dict(normalized=False)
+                for source_pk, entity in self.entities.items()
             }
-            for primary, entity in self.entities.items()
         }
-        path_obj = Path(path)
-        path_obj.write_text(json.dumps(serializable, indent=2, default=str))
-        logger.info(f"EntityManager state saved to {path_obj} ({len(self.entities)} entities)")
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, default=str)
 
-    @classmethod
-    def load(
-        cls,
-        path: Union[str, Path],
-        primary_id: str,
-        secondary_ids: List[str],
-    ) -> "EntityManager":
-        path_obj = Path(path)
-        data = json.loads(path_obj.read_text())
+    def load_state(self, path: Union[str, Path]):
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
-        manager = cls(primary_id=primary_id, secondary_ids=secondary_ids)
+        self.source_key = data["source_key"]
+        self.target_key = data["target_key"]
 
-        for primary_val, entity_data in data.items():
-            entity = {
-                **entity_data,
-                "errors": [ErrorDetail(**e) for e in entity_data.get("errors", [])],
-            }
-            manager.entities[primary_val] = entity
+        # Re-create factory from saved field_order
+        field_order = data.get("field_order")
+        if field_order:
+            RecordClass = type('EntityRecord', (Record,), {})
+            RecordClass.set_fields(field_order)
+            self._record_factory = RecordClass
+        else:
+            logger.warning("No field_order in saved state — using minimal fallback")
+            self.resolver.execute({})
+            self._setup_record_class()  # fallback to target_key + metadata
 
-        logger.info(f"EntityManager state loaded from {path_obj} ({len(manager.entities)} entities)")
-        return manager
+        self.entities = {}
+        for source_pk, entity_data in data["entities"].items():
+            entity = self._record_factory(**entity_data)
+            # Ignore extra keys in JSON (safe)
+            self.entities[source_pk] = entity
+
 
 class ValidationCollector:
     """
