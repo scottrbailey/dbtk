@@ -91,14 +91,15 @@ class IdentityManager:
     def _setup_record_class(self, record: Optional[Record] = None):
         if self._record_factory:
             return self._record_factory
-        if record:
-            fields = record.keys()
-        elif self.resolver.cursor.description:
-            fields = [c[0] for c in self.resolver.cursor.description]
-        else:
-            fields = [self.target_key]
-        alt_keys = set(self.alternate_keys) - set(fields)
-        fields = fields + alt_keys + ['_status', '_errors', '_messages']
+        if record is None:
+            if not self.resolver.cursor._row_factory_invalid:
+                temp_class = self.resolver.cursor.record_factory
+            else:
+                temp_class = type('tempEntityRecord', (Record,), {})
+                temp_class.set_fields([self.source_key, self.target_key])
+            record = temp_class()
+        alt_keys = [fld for fld in self.alternate_keys if fld not in record]
+        fields = record.keys() + alt_keys + ['_status', '_errors', '_messages']
         RecordClass = type('EntityRecord', (Record,), {})
         RecordClass.set_fields(fields)
         if self.target_key not in RecordClass._fields \

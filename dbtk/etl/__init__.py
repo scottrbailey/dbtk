@@ -30,8 +30,9 @@ Example
 from .table import Table
 from .data_surge import DataSurge
 from .bulk_surge import BulkSurge
-from .managers import EntityManager, ValidationCollector
+from .managers import IdentityManager, ValidationCollector
+from .transforms.database import TableLookup
 from .config_generators import column_defs_from_db
 
-__all__ = ['Table', 'DataSurge', 'BulkSurge', 'EntityManager', 'ValidationCollector',
-           'column_defs_from_db']
+__all__ = ['Table', 'DataSurge', 'BulkSurge', 'IdentityManager', 'ValidationCollector',
+           'TableLookup', 'column_defs_from_db']
