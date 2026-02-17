@@ -43,8 +43,8 @@ class EntityStatus:
         yield from cls.VALUES
 
 
-class MessageDetail:
-    """Structured message record attached to an entity."""
+class ErrorDetail:
+    """Structured error record attached to an entity."""
 
     __slots__ = ("message", "stage", "field", "code")
 
@@ -62,7 +62,7 @@ class MessageDetail:
 
     def __repr__(self) -> str:
         return (
-            f"MessageDetail(message={self.message!r}, stage={self.stage!r}, "
+            f"ErrorDetail(message={self.message!r}, stage={self.stage!r}, "
             f"field={self.field!r}, code={self.code!r})"
         )
 
@@ -73,11 +73,11 @@ class IdentityManager:
         source_key: str,
         target_key: str,
         resolver: Union[PreparedStatement, TableLookup],
-        alternate_keys: Optional[List[str]] = []
+        alternate_keys: Optional[List[str]] = None
     ):
         self.source_key = source_key
         self.target_key = target_key
-        self.alternate_keys = alternate_keys
+        self.alternate_keys = alternate_keys if alternate_keys else []
         if isinstance(resolver, TableLookup):
             # Get PreparedStatement from TableLookup
             self.resolver = resolver._stmt
@@ -92,12 +92,13 @@ class IdentityManager:
         if self._record_factory:
             return self._record_factory
         if record:
-            alt_keys = set(self.alternate_keys) - set(record.keys())
-            fields = record.keys() + list(alt_keys) + ['_status', '_messages']
+            fields = record.keys()
         elif self.resolver.cursor.description:
             fields = [c[0] for c in self.resolver.cursor.description]
         else:
-            fields = [self.target_key, '_status', '_messages']
+            fields = [self.target_key]
+        alt_keys = set(self.alternate_keys) - set(fields)
+        fields = fields + alt_keys + ['_status', '_errors', '_messages']
         RecordClass = type('EntityRecord', (Record,), {})
         RecordClass.set_fields(fields)
         if self.target_key not in RecordClass._fields \
@@ -144,6 +145,7 @@ class IdentityManager:
             resolved_raw = {self.source_key: source_id}
         entity = self._record_factory(**resolved_raw)
         entity['_messages'] = []
+        entity['_errors'] = []
         if entity.get(self.target_key) is None:
             entity['_status'] = EntityStatus.NOT_FOUND
         else:
@@ -161,8 +163,11 @@ class IdentityManager:
 
         return entity
 
-    def add_message(self, source_id: str, message: Union[str, MessageDetail]):
-        self.entities[source_id]['_messages'].append(message)
+    def add_message(self, source_id: str, message: str):
+        self.entities[source_id].get('_messages', []).append(message)
+
+    def add_error(self, source_id: str, error: ErrorDetail):
+        self.entities[source_id].get('_errors', []).append(error)
 
     def set_id(self, source_id: str, id_type: str, value: str):
         if id_type not in self.alternate_keys and id_type != self.target_key:

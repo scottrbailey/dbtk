@@ -395,6 +395,18 @@ class Record(list):
         raise KeyError(key)
 
     def update(self, other=None, **kwargs) -> None:
+        """ """
+        if other is not None:
+            if hasattr(other, "items"):
+                for k, v in other.items():
+                    self[k] = v
+            else:
+                for k, v in other:
+                    self[k] = v
+        for k, v in kwargs.items():
+            self[k] = v
+
+    def coalesce(self, other=None, **kwargs) -> None:
         """
             Fill in missing or empty fields from another dict, Record, or keyword arguments.
 
@@ -419,18 +431,6 @@ class Record(list):
                 >>> record.coalesce(resolved, phone="555-1234")
                 >>> record  # [123, "Scott", "", "555-1234", "VIP"]
             """
-        if other is not None:
-            if hasattr(other, "items"):
-                for k, v in other.items():
-                    self[k] = v
-            else:
-                for k, v in other:
-                    self[k] = v
-        for k, v in kwargs.items():
-            self[k] = v
-
-    def coalesce(self, other=None, **kwargs) -> None:
-        """"""
         if other is not None:
             if hasattr(other, "items"):
                 for k, v in other.items():
