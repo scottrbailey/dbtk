@@ -134,8 +134,12 @@ class IdentityManager:
                 return entity
 
         # Not cached → run primary resolver
+        # Prefer passing any existing entity data so alternate_keys and partial
+        # results from prior lookups are available to the query.
         if record:
             bind_vars = self.resolver.cursor.prepare_params(self.resolver.param_names, record)
+        elif source_id in self.entities:
+            bind_vars = self.resolver.cursor.prepare_params(self.resolver.param_names, self.entities[source_id])
         else:
             bind_vars = {self.source_key: source_id}
         self.resolver.execute(bind_vars)
@@ -247,6 +251,7 @@ class IdentityManager:
             "timestamp": dt.datetime.utcnow().isoformat() + "Z",
             "source_key": self.source_key,
             "target_key": self.target_key,
+            "alternate_keys": self.alternate_keys,
             "field_order": field_order,
             "entities": {
                 str(source_pk): entity.to_dict(normalized=False)
@@ -262,6 +267,7 @@ class IdentityManager:
 
         self.source_key = data["source_key"]
         self.target_key = data["target_key"]
+        self.alternate_keys = data.get("alternate_keys", [])
 
         # Re-create factory from saved field_order
         field_order = data.get("field_order")
