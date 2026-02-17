@@ -233,7 +233,13 @@ class IdentityManager:
             first_entity = next(iter(self.entities.values()))
             field_order = list(first_entity.keys())  # whatever we have
         else:
-            field_order = [self.target_key, '_status', '_messages']
+            field_order = [self.target_key, '_status', '_errors', '_messages']
+
+        def _serialize(obj):
+            if isinstance(obj, ErrorDetail):
+                return {'message': obj.message, 'stage': obj.stage,
+                        'field': obj.field, 'code': obj.code}
+            return str(obj)
 
         data = {
             "version": 1,
@@ -247,7 +253,7 @@ class IdentityManager:
             }
         }
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, default=str)
+            json.dump(data, f, indent=2, default=_serialize)
 
     def load_state(self, path: Union[str, Path]):
         with open(path, 'r', encoding='utf-8') as f:
@@ -269,8 +275,12 @@ class IdentityManager:
 
         self.entities = {}
         for source_pk, entity_data in data["entities"].items():
+            if isinstance(entity_data.get('_errors'), list):
+                entity_data['_errors'] = [
+                    ErrorDetail(**e) if isinstance(e, dict) else e
+                    for e in entity_data['_errors']
+                ]
             entity = self._record_factory(**entity_data)
-            # Ignore extra keys in JSON (safe)
             self.entities[source_pk] = entity
 
 
