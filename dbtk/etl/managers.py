@@ -26,16 +26,23 @@ class EntityStatus:
     RESOLVED = "resolved"
     ERROR = "error"
     SKIPPED = "skipped"
+    NOT_FOUND = "not_found"
 
-    def __iter__(self):
-        yield self.PENDING
-        yield self.RESOLVED
-        yield self.ERROR
-        yield self.SKIPPED
+    VALUES = (
+        PENDING,
+        RESOLVED,
+        ERROR,
+        SKIPPED,
+        NOT_FOUND,
+    )
+
+    @classmethod
+    def __iter__(cls):
+        yield from cls.VALUES
     
     
-class ErrorDetail:
-    """Structured error record attached to an entity."""
+class MessageDetail:
+    """Structured message record attached to an entity."""
 
     __slots__ = ("message", "stage", "field", "code")
 
@@ -65,21 +72,30 @@ class IdentityManager:
         self,
         source_key: str,
         target_key: str,
-        primary_resolver: Union[PreparedStatement, TableLookup],
+        resolver: Union[PreparedStatement, TableLookup],
+        alternate_keys: Optional[List[str]] = []
     ):
         self.source_key = source_key
         self.target_key = target_key
-        self.primary_resolver = primary_resolver
-        self.entities: Dict[Dict, Record] = {}
+        self.alternate_keys = alternate_keys
+        if isinstance(resolver, TableLookup):
+            # Get PreparedStatement from TableLookup
+            self.resolver = resolver._stmt
+        elif isinstance(resolver, PreparedStatement):
+            self.resolver = resolver
+        else:
+            raise ValueError('Resolver must be either a PreparedStatement or TableLookup')
+        self.entities: Dict[Any, Record] = {}
         self._record_factory: Optional[type[Record]] = None  # lazy-created
 
     def _setup_record_class(self, record: Optional[Record] = None):
         if self._record_factory:
             return self._record_factory
         if record:
-            fields =  record.keys() + ['_status', '_messages']
-        elif self.primary_resolver.cursor.description:
-            fields = [c[0] for c in self.primary_resolver.cursor.description]
+            alt_keys = set(self.alternate_keys) - set(record.keys())
+            fields =  record.keys() + list(alt_keys) + ['_status', '_messages']
+        elif self.resolver.cursor.description:
+            fields = [c[0] for c in self.resolver.cursor.description]
         else:
             fields = [self.target_key, '_status', '_messages']
         RecordClass = type('EntityRecord', (Record,), {})
@@ -91,19 +107,18 @@ class IdentityManager:
 
     def resolve(self, value: Any) -> Optional[Record]:
         if isinstance(value, (dict, Record)):
-            source_key = value.get(self.source_key)
-            if source_key is None:
+            source_id = value.get(self.source_key)
+            if source_id is None:
                 return None
             record = value
             update_target_key = True
         else:
-            source_key = value
+            source_id = value
             record = None
             update_target_key = False
-
         # Check cache / existing entity
-        if source_key in self.entities:
-            entity = self.entities[source_key]
+        if source_id in self.entities:
+            entity = self.entities[source_id]
             if entity._status == EntityStatus.RESOLVED:
                 resolved_id = entity[self.target_key]
                 if update_target_key and record is not None:
@@ -116,21 +131,26 @@ class IdentityManager:
                 return entity
 
         # Not cached → run primary resolver
-        bind_vars = {self.source_key: source_key}
-        resolved_raw = self.primary_resolver(bind_vars)
+        if record:
+            bind_vars = self.resolver.cursor.prepare_params(self.resolver.param_names, record)
+        else:
+            bind_vars = {self.source_key: source_id}
+        self.resolver.execute(bind_vars)
+        resolved_raw = self.resolver.fetchone()
         if self._record_factory is None:
             self._setup_record_class(resolved_raw)
-        entity = self._record_factory(resolved_raw)
+        if resolved_raw is None:
+            resolved_raw = {self.source_key: source_id}
+        entity = self._record_factory(**resolved_raw)
         entity['_messages'] = []
         if entity.get(self.target_key) is None:
             entity['_status'] = EntityStatus.NOT_FOUND
-            return None
         else:
             entity['_status'] = EntityStatus.RESOLVED
-        self.entities[source_key] = entity
+        self.entities[source_id] = entity
 
         # Mutate input record if provided
-        if update_target_key and record is not None:
+        if update_target_key and record is not None and entity['_status'] == EntityStatus.RESOLVED:
             existing = record.get(self.target_key)
             if existing is not None and existing != entity[self.target_key]:
                 raise ValueError(
@@ -140,9 +160,66 @@ class IdentityManager:
 
         return entity
 
+    def add_message(self, source_id: str, message: Union[str, MessageDetail]):
+        self.entities[source_id]['_messages'].append(message)
+
+    def set_id(self, source_id: str, id_type: str, value:str):
+        if id_type not in self.alternate_keys and id_type != self.target_key:
+            raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
+        entity = self.entities[source_id]
+        entity[id_type] = value
+
+    def get_id(self, source_id: str, id_type: str):
+        if id_type not in self.alternate_keys and id_type != self.target_key:
+            raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
+        return self.entities[source_id].get(id_type)
+
+    def batch_resolve(self):
+        if not self._record_factory:
+            self.resolver.execute({})
+            self._setup_record_class(None)
+        if self.source_key not in self._record_factory._fields and \
+                self.source_key not in self._record_factory._fields_normalized:
+            raise ValueError(f'Resolver must return {self.source_key} to allow batch_resolve.')
+        sql = self.resolver.sql
+        param_names = self.resolver.param_names
+        bind_array = []
+        cnt = 0
+        for source_key, entity in self.entities.items():
+            if entity.get('_status') in (EntityStatus.NOT_FOUND, EntityStatus.PENDING):
+                params = self.resolver.cursor.prepare_params(param_names, entity)
+                bind_array.append(params)
+                cnt += 1
+                if cnt % 1000 == 0:
+                    self.resolver.cursor.executemany(sql, bind_array)
+                    self._process_batch_results()
+                    bind_array = []
+        if bind_array:
+            self.resolver.cursor.executemany(sql, bind_array)
+            self._process_batch_results()
+
+    def _process_batch_results(self):
+        for rec in self.resolver.cursor.fetchall():
+            source_id = rec.get(self.source_key)
+            if not source_id:
+                continue
+            raw_entity = self._record_factory(**rec)
+            entity = self.entities.get(source_id)
+            entity.coalesce(raw_entity)
+            if entity.get(self.target_key):
+                entity['_status'] = EntityStatus.RESOLVED
+            self.entities[source_id] = entity
+
+    def calc_stats(self):
+        counts = {s: 0 for s in EntityStatus.VALUES}
+        for entity in self.entities.values():
+            status = entity.get('_status')
+            if status:
+                counts[status] += 1
+        return counts
+
     def save_state(self, path: Union[str, Path]):
         field_order = None
-        counts = {s: 0 for s in EntityStatus()}
         if self._record_factory:
             field_order = self._record_factory._fields  # exact ordered list
         elif self.entities:
@@ -159,16 +236,10 @@ class IdentityManager:
             "target_key": self.target_key,
             "field_order": field_order,
             "entities": {
-                str(source_pk): {
-                    "status": entity._status,
-                    "target_key": entity.get(self.target_key),
-                    "messages": entity._messages,
-                    "fields": entity.to_dict(normalized=False)
-                }
+                str(source_pk): entity.to_dict(normalized=False)
                 for source_pk, entity in self.entities.items()
             }
         }
-
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, default=str)
 
@@ -187,20 +258,12 @@ class IdentityManager:
             self._record_factory = RecordClass
         else:
             logger.warning("No field_order in saved state — using minimal fallback")
-            self.primary_resolver.execute({})
+            self.resolver.execute({})
             self._setup_record_class()  # fallback to target_key + metadata
 
         self.entities = {}
-        for source_pk_str, entity_data in data["entities"].items():
-            source_pk = source_pk_str  # string keys ok, or convert if needed
-            fields = entity_data.pop("fields", {})
-            status = entity_data.pop("status")
-            messages = entity_data.pop("messages", [])
-
-            entity = self._record_factory(**fields)
-            entity['_status'] = status
-            entity['_messages'] = messages
-
+        for source_pk, entity_data in data["entities"].items():
+            entity = self._record_factory(**entity_data)
             # Ignore extra keys in JSON (safe)
             self.entities[source_pk] = entity
 
@@ -385,19 +448,3 @@ class ValidationCollector:
             reader.filter(lambda r: r.tconst in title_collector)  # Uses __contains__
         """
         return set(self.existing.keys()) | self.added
-
-class IdentityManager:
-    def __init__(self, source_pk:str,
-                 target_pk:Optional[str] = None,
-                 dump_path:Optional[str|Path] = None,
-                 primary_resolver: Optional[PreparedStatement|TableLookup] = None):
-        self.source_pk = source_pk
-        self.target_pk = target_pk
-        self.primary_resolver = primary_resolver
-        self.dump_path = dump_path
-        self.entities = dict()
-        self.errors = dict()
-
-    def resolve(self, record:Record):
-        pass
-
