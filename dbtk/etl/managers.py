@@ -238,6 +238,7 @@ class IdentityManager:
         }
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, default=_serialize)
+        logger.info(f"IdentityManager saved state to {path}")
 
     def load_state(self, path: Union[str, Path]):
         with open(path, 'r', encoding='utf-8') as f:
@@ -267,6 +268,7 @@ class IdentityManager:
                 ]
             entity = self._record_factory(**entity_data)
             self.entities[source_pk] = entity
+        logger.info(f"IdentityManager loaded state from {path}")
 
 
 class ValidationCollector:
