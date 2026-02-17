@@ -69,6 +69,7 @@ class BaseSurge(ABC):
         self.total_read = 0
         self.total_loaded = 0
         self.skipped = 0
+        self.start_time = None
         self.log_dir = get_setting('logging.directory')
         self.skip_details = {}  # key: frozenset of missing fields, value: {'count': int, 'sample': [row_nums]}
 
