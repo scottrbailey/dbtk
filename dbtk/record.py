@@ -395,7 +395,26 @@ class Record(list):
         raise KeyError(key)
 
     def update(self, other=None, **kwargs) -> None:
-        """ """
+        """
+        Update fields from another dict, Record, or keyword arguments.
+
+        Overwrites existing field values unconditionally. To preserve existing
+        non-empty values, use :meth:`coalesce` instead.
+
+        Accepts any mapping with an ``items()`` method, an iterable of
+        ``(key, value)`` pairs, or keyword arguments. Unknown keys are added
+        as runtime fields.
+
+        Args:
+            other: Optional dict, Record, or iterable of (key, value) pairs.
+            **kwargs: Additional key-value pairs to set.
+
+        Examples:
+            >>> Record.set_fields(['id', 'name', 'email'])
+            >>> record = Record(1, 'Scott', 'old@example.com')
+            >>> record.update({'email': 'new@example.com'}, name='Scott Bailey')
+            >>> record  # [1, 'Scott Bailey', 'new@example.com']
+        """
         if other is not None:
             if hasattr(other, "items"):
                 for k, v in other.items():
