@@ -72,21 +72,30 @@ class IdentityManager:
         self,
         source_key: str,
         target_key: str,
-        resolver: Union[PreparedStatement, TableLookup],
+        resolver: Optional[Union[PreparedStatement, TableLookup]] = None,
         alternate_keys: Optional[List[str]] = None
     ):
         self.source_key = source_key
         self.target_key = target_key
         self.alternate_keys = alternate_keys if alternate_keys else []
-        if isinstance(resolver, TableLookup):
-            # Get PreparedStatement from TableLookup
-            self.resolver = resolver._stmt
-        elif isinstance(resolver, PreparedStatement):
-            self.resolver = resolver
-        else:
-            raise ValueError('Resolver must be either a PreparedStatement or TableLookup')
+        self.resolver = resolver  # goes through property setter
         self.entities: Dict[Any, Record] = {}
         self._record_factory: Optional[type[Record]] = None  # lazy-created
+
+    @property
+    def resolver(self) -> Optional[PreparedStatement]:
+        return self._resolver
+
+    @resolver.setter
+    def resolver(self, value: Optional[Union[PreparedStatement, TableLookup]]):
+        if value is None:
+            self._resolver = None
+        elif isinstance(value, TableLookup):
+            self._resolver = value._stmt
+        elif isinstance(value, PreparedStatement):
+            self._resolver = value
+        else:
+            raise ValueError('Resolver must be either a PreparedStatement or TableLookup')
 
     def _setup_record_class(self, record: Optional[Record] = None):
         if self._record_factory:
@@ -240,35 +249,46 @@ class IdentityManager:
             json.dump(data, f, indent=2, default=_serialize)
         logger.info(f"IdentityManager saved state to {path}")
 
-    def load_state(self, path: Union[str, Path]):
+    @classmethod
+    def load_state(cls, path: Union[str, Path],
+                   resolver: Optional[Union[PreparedStatement, TableLookup]] = None) -> 'IdentityManager':
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        self.source_key = data["source_key"]
-        self.target_key = data["target_key"]
-        self.alternate_keys = data.get("alternate_keys", [])
+        instance = cls(
+            source_key=data["source_key"],
+            target_key=data["target_key"],
+            alternate_keys=data.get("alternate_keys", []),
+            resolver=resolver,
+        )
 
         # Re-create factory from saved field_order
         field_order = data.get("field_order")
         if field_order:
             RecordClass = type('EntityRecord', (Record,), {})
             RecordClass.set_fields(field_order)
-            self._record_factory = RecordClass
+            instance._record_factory = RecordClass
+        elif resolver:
+            logger.warning("No field_order in saved state — falling back to resolver")
+            instance.resolver.execute({})
+            instance._setup_record_class()
         else:
-            logger.warning("No field_order in saved state — using minimal fallback")
-            self.resolver.execute({})
-            self._setup_record_class()  # fallback to target_key + metadata
+            logger.warning("No field_order in saved state and no resolver — entity factory unavailable")
 
-        self.entities = {}
+        instance.entities = {}
         for source_pk, entity_data in data["entities"].items():
             if isinstance(entity_data.get('_errors'), list):
                 entity_data['_errors'] = [
                     ErrorDetail(**e) if isinstance(e, dict) else e
                     for e in entity_data['_errors']
                 ]
-            entity = self._record_factory(**entity_data)
-            self.entities[source_pk] = entity
+            if instance._record_factory:
+                entity = instance._record_factory(**entity_data)
+            else:
+                entity = Record(**entity_data)
+            instance.entities[source_pk] = entity
         logger.info(f"IdentityManager loaded state from {path}")
+        return instance
 
 
 class ValidationCollector:
