@@ -169,10 +169,16 @@ class IdentityManager:
         return entity
 
     def add_message(self, source_id: str, message: str):
-        self.entities[source_id].get('_messages', []).append(message)
+        entity = self.entities[source_id]
+        if entity.get('_messages') is None:
+            entity['_messages'] = []
+        entity['_messages'].append(message)
 
     def add_error(self, source_id: str, error: ErrorDetail):
-        self.entities[source_id].get('_errors', []).append(error)
+        entity = self.entities[source_id]
+        if entity.get('_errors') is None:
+            entity['_errors'] = []
+        entity['_errors'].append(error)
 
     def set_id(self, source_id: str, id_type: str, value: str):
         if id_type not in self.alternate_keys and id_type != self.target_key:
@@ -189,37 +195,9 @@ class IdentityManager:
         if not self._record_factory:
             self.resolver.execute({})
             self._setup_record_class(None)
-        if self.source_key not in self._record_factory._fields and \
-                self.source_key not in self._record_factory._fields_normalized:
-            raise ValueError(f'Resolver must return {self.source_key} to allow batch_resolve.')
-        sql = self.resolver.sql
-        param_names = self.resolver.param_names
-        bind_array = []
-        cnt = 0
         for source_key, entity in self.entities.items():
             if entity.get('_status') in (EntityStatus.NOT_FOUND, EntityStatus.PENDING):
-                params = self.resolver.cursor.prepare_params(param_names, entity)
-                bind_array.append(params)
-                cnt += 1
-                if cnt % 1000 == 0:
-                    self.resolver.cursor.executemany(sql, bind_array)
-                    self._process_batch_results()
-                    bind_array = []
-        if bind_array:
-            self.resolver.cursor.executemany(sql, bind_array)
-            self._process_batch_results()
-
-    def _process_batch_results(self):
-        for rec in self.resolver.cursor.fetchall():
-            source_id = rec.get(self.source_key)
-            if not source_id:
-                continue
-            raw_entity = self._record_factory(**rec)
-            entity = self.entities.get(source_id)
-            entity.coalesce(raw_entity)
-            if entity.get(self.target_key):
-                entity['_status'] = EntityStatus.RESOLVED
-            self.entities[source_id] = entity
+                self.resolve(source_key)
 
     def calc_stats(self):
         counts = {s: 0 for s in EntityStatus.VALUES}
@@ -245,14 +223,14 @@ class IdentityManager:
                 return {'message': obj.message, 'stage': obj.stage,
                         'field': obj.field, 'code': obj.code}
             return str(obj)
-
+        stats = self.calc_stats()
         data = {
-            "version": 1,
             "timestamp": dt.datetime.utcnow().isoformat() + "Z",
             "source_key": self.source_key,
             "target_key": self.target_key,
             "alternate_keys": self.alternate_keys,
             "field_order": field_order,
+            "stats": stats,
             "entities": {
                 str(source_pk): entity.to_dict(normalized=False)
                 for source_pk, entity in self.entities.items()

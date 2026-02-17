@@ -256,20 +256,24 @@ class Cursor:
         else:
             raise StopIteration
 
-    def prepare_params(self, param_names: list, bind_vars: dict) -> Any:
+    def prepare_params(self, param_names: list,
+                       bind_vars: dict,
+                       paramstyle: str = None) -> Any:
         """
-        Convert dict parameters to format required by cursor's paramstyle.
+        Convert dict parameters to format required by paramstyle.
 
         Args:
             bind_vars: Dictionary of named parameters
+            paramstyle: Override cursor's paramstyle
 
         Returns:
             Tuple for positional styles, dict for named styles
         """
         missing = set(param_names) - set(bind_vars.keys())
+        paramstyle = paramstyle if paramstyle and paramstyle in ParamStyle.values() else self.paramstyle
         if missing:
-            logger.info(f"Parameters not provided, defaulting to None: {', '.join(missing)}")
-        if self.paramstyle in ParamStyle.positional_styles():
+            logger.debug(f"Parameters not provided, defaulting to None: {', '.join(missing)}")
+        if paramstyle in ParamStyle.positional_styles():
             # Build tuple in param_names order
             return tuple(bind_vars.get(name) for name in param_names)
         else:
