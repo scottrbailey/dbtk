@@ -187,7 +187,10 @@ class IdentityManager:
                 temp_class = self.resolver.cursor.record_factory
             else:
                 temp_class = type('tempEntityRecord', (Record,), {})
-                temp_class.set_fields([self.source_key, self.target_key])
+                keys = [self.source_key]
+                if self.target_key != self.source_key:
+                    keys.append(self.target_key)
+                temp_class.set_fields(keys)
             record = temp_class()
         alt_keys = [fld for fld in self.alternate_keys if fld not in record]
         fields = list(record.keys()) + alt_keys + ['_status', '_errors', '_messages']
