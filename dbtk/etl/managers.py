@@ -190,7 +190,7 @@ class IdentityManager:
                 temp_class.set_fields([self.source_key, self.target_key])
             record = temp_class()
         alt_keys = [fld for fld in self.alternate_keys if fld not in record]
-        fields = record.keys() + alt_keys + ['_status', '_errors', '_messages']
+        fields = list(record.keys()) + alt_keys + ['_status', '_errors', '_messages']
         RecordClass = type('EntityRecord', (Record,), {})
         RecordClass.set_fields(fields)
         if self.target_key not in RecordClass._fields \
@@ -254,15 +254,20 @@ class IdentityManager:
                 status = EntityStatus.RESOLVED
             else:
                 status = EntityStatus.STAGED
+            if not self._record_factory:
+                self._setup_record_class(record)
             if record:
                 entity = self._record_factory(**record)
+                entity['_status'] = status
+                entity['_messages'] = []
+                entity['_errors'] = []
             else:
                 entity_dict = {self.source_key: source_id,
                                '_status': status,
                                '_messages': [], '_errors': []}
                 entity = self._record_factory(**entity_dict)
-                self.entities[source_id] = entity
-                return entity
+            self.entities[source_id] = entity
+            return entity
 
         # Not cached → run primary resolver
         # Prefer passing any existing entity data so alternate_keys and partial
