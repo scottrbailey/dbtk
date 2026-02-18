@@ -74,9 +74,9 @@ register_user_drivers(custom_drivers)
 
 6. **Let the database do the work** - Use `db_expr` in Table definitions to leverage database functions instead of processing in Python.
 
-## IdentityManager for Multi-Stage Imports
+## IdentityManager
 
-`IdentityManager` provides a resumable, lightweight identity-resolution cache for complex imports where source records need to be matched to target-system IDs before processing.
+`IdentityManager` resolves source-system keys to target-system identifiers, caching results so each entity is queried at most once. It tracks status, errors, and messages per entity — useful across a range of import patterns: a single-pass load that spans multiple source files, a multi-file import where only some files carry the linking key, or a multi-stage pipeline that needs to be resumed between runs.
 
 ```python
 from dbtk.etl import IdentityManager, EntityStatus
@@ -101,10 +101,10 @@ for row in reader:
     elif entity["_status"] == EntityStatus.NOT_FOUND:
         im.add_message(row["crm_id"], "No match in ERP — will retry after staging")
 
-# Save state between pipeline stages
+# Optionally persist state for audit or resumption on a later run
 im.save_state("state/persons.json")
 
-# Later: resume without re-querying already-resolved entities
+# Resume: already-resolved entities are restored from cache, not re-queried
 im = IdentityManager.load_state("state/persons.json", resolver=stmt)
 ```
 
@@ -179,7 +179,8 @@ im = IdentityManager.load_state("state/persons.json", resolver=stmt)
 ```
 
 **Use cases:**
+- Imports spanning multiple source files where only some files carry the entity identifier
+- Any import where the same source key may appear in many rows — resolver runs once, cache handles the rest
 - CRM/ERP integrations where records have IDs from multiple systems
-- Multi-phase imports (stage → confirm → load) that need resumption
-- Data migrations requiring ID crosswalks between source and target
-- Tracking which records succeeded, failed, or need a retry
+- Multi-stage pipelines (stage → confirm → load) that benefit from resumption between runs
+- Auditing: per-entity error and message tracking regardless of pipeline complexity
