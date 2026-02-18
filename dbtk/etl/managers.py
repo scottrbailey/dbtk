@@ -183,7 +183,7 @@ class IdentityManager:
         if self._record_factory:
             return self._record_factory
         if record is None:
-            if not self.resolver.cursor._row_factory_invalid:
+            if self.resolver and not self.resolver.cursor._row_factory_invalid:
                 temp_class = self.resolver.cursor.record_factory
             else:
                 temp_class = type('tempEntityRecord', (Record,), {})
@@ -248,6 +248,20 @@ class IdentityManager:
                             f"Conflict on {self.target_key}: existing={existing!r}, resolved={resolved_id!r}"
                         )
                     record[self.target_key] = resolved_id
+                return entity
+        if self.resolver is None:
+            if self.target_key == self.source_key:
+                status = EntityStatus.RESOLVED
+            else:
+                status = EntityStatus.STAGED
+            if record:
+                entity = self._record_factory(**record)
+            else:
+                entity_dict = {self.source_key: source_id,
+                               '_status': status,
+                               '_messages': [], '_errors': []}
+                entity = self._record_factory(**entity_dict)
+                self.entities[source_id] = entity
                 return entity
 
         # Not cached → run primary resolver
