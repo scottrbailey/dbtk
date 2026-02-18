@@ -8,7 +8,7 @@ import logging
 from typing import List, Any, Optional, Iterator, Callable
 
 from .record import Record
-from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
+from .utils import ParamStyle, process_sql_parameters, normalize_field_name
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
@@ -261,6 +261,7 @@ class Cursor:
                        paramstyle: str = None) -> Any:
         """
         Convert named parameters to the format required by the cursor's paramstyle.
+        Used automatically by PreparedStatement, Table and DataSurge classes.
 
         Parameters
         ----------
@@ -271,7 +272,7 @@ class Cursor:
             Dictionary of named parameter values keyed by parameter name.
         paramstyle : str, optional
             Override the cursor's native paramstyle for this call.
-            Must be one of the values in :class:`~dbtk.utils.ParamStyle`.
+            Must be one of the values in :class:`dbtk.utils.ParamStyle`.
             Ignored if not a recognised style.
 
         Returns
@@ -282,6 +283,21 @@ class Cursor:
         dict
             For named styles (``named``, ``pyformat``):
             subset of ``bind_vars`` containing only the required parameters.
+
+        Example
+        -------
+        ::
+            from dbtk.utils import ParamStyle, process_sql_parameters
+
+            # query with :named or %(pyformat)s parameters
+            sql = "SELECT * FROM warriors WHERE nation = :nation AND rank = COALESCE(:rank, rank)"
+
+            # query rewritten in cursor's parameter style and parameter names in order they appear
+            query, params_names = process_sql_parameters(sql, ParamStyle.get_positional_style(cur.paramstyle))
+
+            # missing parameter defaults to None, extra parameters are ignored
+            cur.prepare_params(params_names, {'nation': 'Fire Nation', 'nick_name': 'Sparky'})
+            ('Fire Nation', None)
         """
         missing = set(param_names) - set(bind_vars.keys())
         paramstyle = paramstyle if paramstyle and paramstyle in ParamStyle.values() else self.paramstyle
@@ -340,7 +356,7 @@ class Cursor:
         Parameters
         ----------
         normalized : bool, default False
-            If True, return normalized column names (sanitized for Python identifiers).
+            If True, return normalized column names (sanitized for Python attributes).
             If False, return original column names from database.
 
         Returns
@@ -361,8 +377,7 @@ class Cursor:
 
         if normalized:
             # Return normalized column names
-            original_columns = [c[0] for c in self.description]
-            return [sanitize_identifier(col, idx) for idx, col in enumerate(original_columns)]
+            return [normalize_field_name(c[0]) for c in self.description]
         else:
             # Return original column names
             return [c[0] for c in self.description]

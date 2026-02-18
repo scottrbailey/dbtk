@@ -67,7 +67,7 @@ class IdentityManager:
     Lightweight, resumable identity-resolution cache for ETL imports.
 
     Maps source-system primary keys to target-system identifiers using a
-    SQL resolver query.  Resolved entities are stored as :class:`~dbtk.record.Record`
+    SQL resolver query.  Resolved entities are stored as :class:`dbtk.record.Record`
     instances keyed by ``source_key`` and enriched with status, messages,
     errors, and any configured ``alternate_keys``.
 
@@ -92,7 +92,7 @@ class IdentityManager:
     Attributes
     ----------
     entities : dict
-        Mapping of source_key value → resolved :class:`~dbtk.record.Record`.
+        Mapping of source_key value → resolved :class:`dbtk.record.Record`.
         Each Record contains all resolver columns plus ``_status``,
         ``_errors``, ``_messages``, and any ``alternate_keys``.
 
@@ -303,7 +303,7 @@ class IdentityManager:
 
     def add_error(self, source_id: str, error: ErrorDetail):
         """
-        Append an :class:`~dbtk.utils.ErrorDetail` to an entity's ``_errors`` list.
+        Append an :class:`dbtk.utils.ErrorDetail` to an entity's ``_errors`` list.
 
         Parameters
         ----------
@@ -411,7 +411,7 @@ class IdentityManager:
 
         The file captures ``source_key``, ``target_key``, ``alternate_keys``,
         ``field_order`` (for factory reconstruction), summary stats, and the
-        full entity dict.  :class:`~dbtk.utils.ErrorDetail` objects are
+        full entity dict.  :class:`dbtk.utils.ErrorDetail` objects are
         serialized to ``{"message": ..., "field": ..., "code": ...}`` dicts.
 
         Parameters
@@ -458,7 +458,7 @@ class IdentityManager:
 
         Re-creates the entity Record factory from ``field_order`` stored in
         the file.  Deserializes ``_errors`` lists back to
-        :class:`~dbtk.utils.ErrorDetail` instances.
+        :class:`dbtk.utils.ErrorDetail` instances.
 
         Parameters
         ----------

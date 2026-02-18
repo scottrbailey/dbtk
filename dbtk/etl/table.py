@@ -71,21 +71,19 @@ class Table:
 
         * **primary_key** (bool, optional, default False):
           Marks column as primary key. Automatically implies ``required=True``.
-          Alias: ``key`` — both spellings are identical.
+          Alias: ``key``.
 
         * **key** (bool, optional, default False):
-          Alias for ``primary_key``.  Either spelling may be used interchangeably.
+          Alias for ``primary_key``.  Either may be used interchangeably.
 
         * **auto_key** (bool, optional, default False):
           Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
           Ideal for typical auto-increment primary keys.
 
         * **nullable** (bool, optional, default True):
-          Controls whether the column must have a value for INSERT/MERGE.
+          Controls whether the column must have a value for INSERT/UPDATE/MERGE.
           ``nullable=False`` is the **anti-alias** of ``required=True`` — both
-          mark the column as required.  Use whichever reads more naturally:
-          ``nullable=False`` when mirroring a ``NOT NULL`` database constraint;
-          ``required=True`` when expressing a business rule.
+          mark the column as required.
 
         * **required** (bool, optional, default False):
           Explicitly marks column as required.  Anti-alias of ``nullable=False``.
@@ -101,7 +99,7 @@ class Table:
 
         * **bind_name** (str, auto-generated):
           Sanitized parameter name for SQL bind variables. Automatically created from
-          column name (replaces special chars with underscores).
+          column name. Can not be specified in the column definition.
 
     Example
     -------
@@ -186,7 +184,7 @@ class Table:
         ``select``, ``merge``, ``records``, ``incomplete``.
     last_error : ErrorDetail or None
         The error detail from the most recent :meth:`execute` call.
-        Set to ``None`` on success, or an :class:`~dbtk.utils.ErrorDetail`
+        Set to ``None`` on success, or an :class:`dbtk.utils.ErrorDetail`
         on ``DatabaseError`` (when ``raise_error=False``).  Cleared on
         every successful execution and on :meth:`cursor` reassignment.
     """
@@ -1088,7 +1086,7 @@ class Table:
         On success: increments ``counts[operation]``, sets ``last_error = None``,
         returns 0.
 
-        On ``DatabaseError``: logs the error, stores an :class:`~dbtk.utils.ErrorDetail`
+        On ``DatabaseError``: logs the error, stores an :class:`dbtk.utils.ErrorDetail`
         in ``last_error``, re-raises if ``raise_error=True``, otherwise returns 1.
 
         Parameters
@@ -1143,7 +1141,7 @@ class Table:
         * ``counts[operation]`` incremented on success.
         * ``counts['incomplete']`` incremented when requirements are unmet.
         * ``last_error`` set to ``None`` on success or an
-          :class:`~dbtk.utils.ErrorDetail` on database error.
+          :class:`dbtk.utils.ErrorDetail` on database error.
 
         Raises
         ------
