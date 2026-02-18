@@ -107,9 +107,9 @@ class IdentityManager:
         for row in reader:
             entity = im.resolve(row)
             if entity['_status'] == EntityStatus.RESOLVED:
-                row['erp_person_id'] = entity['erp_person_id']
                 table.set_values(row)
-                table.execute('insert')
+                if table.execute('insert'):          # returns 1 on DB error
+                    im.add_error(row['student_id'], table.last_error)
             else:
                 im.add_error(row['student_id'],
                              ErrorDetail('Not found', field='student_id'))

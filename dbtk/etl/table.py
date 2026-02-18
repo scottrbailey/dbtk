@@ -70,20 +70,25 @@ class Table:
           no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
 
         * **primary_key** (bool, optional, default False):
-          Marks column as primary key. Automatically sets key=True and required=True.
+          Marks column as primary key. Automatically implies ``required=True``.
+          Alias: ``key`` — both spellings are identical.
 
         * **key** (bool, optional, default False):
-          Alias for primary_key.
+          Alias for ``primary_key``.  Either spelling may be used interchangeably.
 
         * **auto_key** (bool, optional, default False):
           Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
           Ideal for typical auto-increment primary keys.
 
         * **nullable** (bool, optional, default True):
-          If False, marks column as required (must have non-None value for INSERT/MERGE).
+          Controls whether the column must have a value for INSERT/MERGE.
+          ``nullable=False`` is the **anti-alias** of ``required=True`` — both
+          mark the column as required.  Use whichever reads more naturally:
+          ``nullable=False`` when mirroring a ``NOT NULL`` database constraint;
+          ``required=True`` when expressing a business rule.
 
         * **required** (bool, optional, default False):
-          Explicitly marks column as required.
+          Explicitly marks column as required.  Anti-alias of ``nullable=False``.
 
         * **auto_gen** (bool, optional, default False):
           If True, the column is omitted from INSERT statements.

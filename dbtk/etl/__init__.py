@@ -7,8 +7,11 @@ and performing bulk operations:
 
 - :class:`Table`: Schema-aware table operations with automatic SQL generation,
   field mapping, transformations, and per-operation error tracking via ``last_error``.
-- :class:`DataSurge`: High-performance bulk INSERT, UPDATE, DELETE, and MERGE
-  operations backed by a ``Table``.
+- :class:`DataSurge`: Row-oriented bulk INSERT, UPDATE, DELETE, and MERGE using
+  ``executemany``.  Works with all drivers; supports ``db_expr`` columns.
+- :class:`BulkSurge`: High-throughput bulk loading via native database mechanisms
+  (PostgreSQL ``COPY``, Oracle direct-path, SQL Server ``bcp``, etc.).
+  Memory-efficient streaming; does not support ``db_expr`` columns.
 - :class:`IdentityManager`: Resumable source-to-target identity resolution with
   per-entity status, error, and message tracking.  State can be saved/loaded as JSON.
 - :class:`ValidationCollector`: Callable collector for fn-pipelines that enriches
@@ -22,7 +25,7 @@ Example
 -------
 ::
 
-    from dbtk.etl import Table, DataSurge, IdentityManager
+    from dbtk.etl import Table, DataSurge, BulkSurge, IdentityManager
 
     # Define table structure
     table = Table('users', columns={
@@ -31,10 +34,14 @@ Example
         'email': {'field': 'email', 'fn': 'email'}
     }, cursor=cursor)
 
-    # Bulk operations
-    surge = DataSurge(table, batch_size=500)
-    surge.insert(records)
-    surge.merge(records)
+    # Row-oriented operations (INSERT + UPDATE/MERGE in same run, or db_expr columns)
+    surge = DataSurge(table)
+    surge.upsert(new_records)      # INSERT new, UPDATE existing
+    surge.delete(stale_records)
+
+    # High-throughput load (no db_expr columns, INSERT only)
+    bulk = BulkSurge(table)
+    bulk.insert(records)           # Streams via COPY / direct-path / bcp
 
     # Identity resolution
     stmt = cursor.prepare_file('sql/resolve_user.sql')

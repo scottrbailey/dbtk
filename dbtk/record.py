@@ -88,6 +88,34 @@ class Record(list):
     * **coalesce(dict)** - Update only missing values from a dictionary
     * **pprint()** - Pretty-print the record
 
+    Column Names: Original vs Normalized
+    -------------------------------------
+    Every Record stores two parallel lists of names for each column:
+
+    * ``_fields`` — the **original** names exactly as returned by the database
+      (e.g. ``'First Name'``, ``'User ID'``, ``'#term_code'``).
+    * ``_fields_normalized`` — **Python-safe** versions used for attribute access
+      (e.g. ``'first_name'``, ``'user_id'``, ``'term_code'``).
+
+    Both lists are set once by :meth:`set_fields` when the cursor executes its
+    first query.  Normalization lowercases, replaces non-alphanumeric characters
+    with underscores, collapses runs, strips trailing underscores, and prefixes
+    digit-leading names with ``n``.
+
+    **Which to use:**
+
+    * Use **original names** (``row['First Name']``, ``row.keys()``,
+      ``row.to_dict()``) when round-tripping data back to the database or to a
+      CSV, where column names must match the schema exactly.
+    * Use **normalized names** (``row.first_name``, ``row['first_name']``,
+      ``row.keys(normalized=True)``, ``row.to_dict(normalized=True)``) in
+      application code where Pythonic attribute access is preferred or when
+      feeding into tools that require valid identifiers (e.g. dataclasses,
+      Pydantic models, pandas ``rename``).
+
+    Both forms work interchangeably for item get/set and ``in`` checks, so
+    ``row['First Name']`` and ``row['first_name']`` return the same value.
+
     Note
     ----
     Record is dynamically subclassed when a cursor executes a query. Each unique
