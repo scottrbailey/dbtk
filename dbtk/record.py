@@ -85,6 +85,7 @@ class Record(list):
     * **items()** - Get (column, value) pairs
     * **copy()** - Create a shallow copy of the record
     * **update(dict)** - Update multiple columns from a dictionary
+    * **coalesce(dict)** - Update only missing values from a dictionary
     * **pprint()** - Pretty-print the record
 
     Note

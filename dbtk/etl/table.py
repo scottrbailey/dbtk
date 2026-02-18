@@ -73,7 +73,7 @@ class Table:
           Marks column as primary key. Automatically sets key=True and required=True.
 
         * **key** (bool, optional, default False):
-          Marks column as key for WHERE clauses in SELECT, UPDATE, DELETE operations.
+          Alias for primary_key.
 
         * **auto_key** (bool, optional, default False):
           Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
