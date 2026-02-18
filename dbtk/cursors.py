@@ -260,14 +260,28 @@ class Cursor:
                        bind_vars: dict,
                        paramstyle: str = None) -> Any:
         """
-        Convert dict parameters to format required by paramstyle.
+        Convert named parameters to the format required by the cursor's paramstyle.
 
-        Args:
-            bind_vars: Dictionary of named parameters
-            paramstyle: Override cursor's paramstyle
+        Parameters
+        ----------
+        param_names : list of str
+            Ordered list of parameter names as they appear in the SQL statement.
+            Missing names default to ``None`` with a debug-level log message.
+        bind_vars : dict
+            Dictionary of named parameter values keyed by parameter name.
+        paramstyle : str, optional
+            Override the cursor's native paramstyle for this call.
+            Must be one of the values in :class:`~dbtk.utils.ParamStyle`.
+            Ignored if not a recognised style.
 
-        Returns:
-            Tuple for positional styles, dict for named styles
+        Returns
+        -------
+        tuple
+            For positional styles (``qmark``, ``numeric``, ``format``):
+            values ordered to match ``param_names``.
+        dict
+            For named styles (``named``, ``pyformat``):
+            subset of ``bind_vars`` containing only the required parameters.
         """
         missing = set(param_names) - set(bind_vars.keys())
         paramstyle = paramstyle if paramstyle and paramstyle in ParamStyle.values() else self.paramstyle

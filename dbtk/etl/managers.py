@@ -22,10 +22,28 @@ logger = logging.getLogger(__name__)
 
 
 class EntityStatus:
-    """Status values for entity resolution lifecycle."""
+    """
+    Status constants for the entity resolution lifecycle.
+
+    Attributes
+    ----------
+    PENDING : str
+        Entity has been registered but resolution has not yet been attempted.
+    RESOLVED : str
+        Entity was successfully matched; ``target_key`` is populated.
+    STAGED : str
+        Entity exists in a staging table but has not yet been matched to the
+        target system (e.g. an ERP record not yet confirmed).
+    ERROR : str
+        Resolution was attempted and failed due to an unexpected error.
+    SKIPPED : str
+        Resolution was intentionally bypassed for this entity.
+    NOT_FOUND : str
+        Resolution was attempted but no matching record was found in the target.
+    """
     PENDING = "pending"
     RESOLVED = "resolved"
-    STAGED = "staged"     # exists in staging tables, not yet matched to ERP
+    STAGED = "staged"
     ERROR = "error"
     SKIPPED = "skipped"
     NOT_FOUND = "not_found"
@@ -45,6 +63,60 @@ class EntityStatus:
 
 
 class IdentityManager:
+    """
+    Lightweight, resumable identity-resolution cache for ETL imports.
+
+    Maps source-system primary keys to target-system identifiers using a
+    SQL resolver query.  Resolved entities are stored as :class:`~dbtk.record.Record`
+    instances keyed by ``source_key`` and enriched with status, messages,
+    errors, and any configured ``alternate_keys``.
+
+    State can be persisted to JSON between runs with :meth:`save_state` and
+    restored with :meth:`load_state`, allowing long-running imports to be
+    resumed without re-querying already-resolved entities.
+
+    Parameters
+    ----------
+    source_key : str
+        Field name for the source-system primary key (e.g. ``'student_id'``).
+    target_key : str
+        Field name for the target-system primary key that the resolver returns
+        (e.g. ``'erp_person_id'``).
+    resolver : PreparedStatement or TableLookup, optional
+        Query used to look up a ``target_key`` from a ``source_key``.
+        Can be set or replaced later via the ``resolver`` property.
+    alternate_keys : list of str, optional
+        Additional key fields to track per entity (e.g. ``['banner_id', 'erp_vendor_id']``).
+        These are persisted alongside ``target_key`` in saved state.
+
+    Attributes
+    ----------
+    entities : dict
+        Mapping of source_key value → resolved :class:`~dbtk.record.Record`.
+        Each Record contains all resolver columns plus ``_status``,
+        ``_errors``, ``_messages``, and any ``alternate_keys``.
+
+    Example
+    -------
+    ::
+
+        stmt = cursor.prepare_file('sql/resolve_student.sql')
+        im = IdentityManager('student_id', 'erp_person_id', resolver=stmt,
+                             alternate_keys=['banner_id'])
+
+        for row in reader:
+            entity = im.resolve(row)
+            if entity['_status'] == EntityStatus.RESOLVED:
+                row['erp_person_id'] = entity['erp_person_id']
+                table.set_values(row)
+                table.execute('insert')
+            else:
+                im.add_error(row['student_id'],
+                             ErrorDetail('Not found', field='student_id'))
+
+        im.save_state('state/students.json')
+    """
+
     def __init__(
         self,
         source_key: str,
@@ -52,6 +124,21 @@ class IdentityManager:
         resolver: Optional[Union[PreparedStatement, TableLookup]] = None,
         alternate_keys: Optional[List[str]] = None
     ):
+        """
+        Initialize IdentityManager.
+
+        Parameters
+        ----------
+        source_key : str
+            Field name of the source-system primary key.
+        target_key : str
+            Field name of the target-system primary key returned by the resolver.
+        resolver : PreparedStatement or TableLookup, optional
+            Resolution query.  Accepts either type; ``TableLookup`` is unwrapped
+            to its underlying ``PreparedStatement``.
+        alternate_keys : list of str, optional
+            Additional key fields to persist and track per entity.
+        """
         self.source_key = source_key
         self.target_key = target_key
         self.alternate_keys = alternate_keys if alternate_keys else []
@@ -61,10 +148,18 @@ class IdentityManager:
 
     @property
     def resolver(self) -> Optional[PreparedStatement]:
+        """The active PreparedStatement used for resolution queries."""
         return self._resolver
 
     @resolver.setter
     def resolver(self, value: Optional[Union[PreparedStatement, TableLookup]]):
+        """
+        Set the resolver, accepting either a PreparedStatement or TableLookup.
+
+        ``TableLookup`` instances are automatically unwrapped to their
+        underlying ``PreparedStatement``.  Pass ``None`` to clear the resolver
+        (useful when loading state for inspection without re-querying).
+        """
         if value is None:
             self._resolver = None
         elif isinstance(value, TableLookup):
@@ -75,6 +170,16 @@ class IdentityManager:
             raise ValueError('Resolver must be either a PreparedStatement or TableLookup')
 
     def _setup_record_class(self, record: Optional[Record] = None):
+        """
+        Create and cache the EntityRecord subclass used for all entities.
+
+        Derives field list from ``record`` (a freshly resolved row) or from
+        the resolver cursor's current record factory when ``record`` is None.
+        Appends any ``alternate_keys`` not already present, then adds
+        ``_status``, ``_errors``, and ``_messages`` sentinel fields.
+
+        Called automatically on first resolution; idempotent after that.
+        """
         if self._record_factory:
             return self._record_factory
         if record is None:
@@ -94,6 +199,32 @@ class IdentityManager:
         self._record_factory = RecordClass
 
     def resolve(self, value: Any) -> Optional[Record]:
+        """
+        Resolve a source key to a target entity, caching the result.
+
+        Parameters
+        ----------
+        value : scalar, dict, or Record
+            * **scalar** — treated as the raw ``source_key`` value.  The
+              resolver is called with ``{source_key: value}`` and the
+              returned entity is cached but the caller's record is *not*
+              mutated.
+            * **dict or Record** — ``source_key`` is extracted from the
+              mapping.  On a successful resolution the ``target_key`` is
+              written back into the caller's record.
+
+        Returns
+        -------
+        Record or None
+            The cached/resolved entity Record, or ``None`` if ``source_key``
+            cannot be found in ``value``.
+
+        Raises
+        ------
+        ValueError
+            If the resolved ``target_key`` conflicts with a value already
+            present in the caller's record.
+        """
         if isinstance(value, (dict, Record)):
             source_id = value.get(self.source_key)
             if source_id is None:
@@ -155,29 +286,93 @@ class IdentityManager:
         return entity
 
     def add_message(self, source_id: str, message: str):
+        """
+        Append an informational message to an entity's ``_messages`` list.
+
+        Parameters
+        ----------
+        source_id : str
+            Source-system key identifying the entity (must already be cached).
+        message : str
+            Message text to append.
+        """
         entity = self.entities[source_id]
         if entity.get('_messages') is None:
             entity['_messages'] = []
         entity['_messages'].append(message)
 
     def add_error(self, source_id: str, error: ErrorDetail):
+        """
+        Append an :class:`~dbtk.utils.ErrorDetail` to an entity's ``_errors`` list.
+
+        Parameters
+        ----------
+        source_id : str
+            Source-system key identifying the entity (must already be cached).
+        error : ErrorDetail
+            Structured error to attach to the entity.
+        """
         entity = self.entities[source_id]
         if entity.get('_errors') is None:
             entity['_errors'] = []
         entity['_errors'].append(error)
 
     def set_id(self, source_id: str, id_type: str, value: str):
+        """
+        Store a target or alternate key value for a cached entity.
+
+        Parameters
+        ----------
+        source_id : str
+            Source-system key identifying the entity (must already be cached).
+        id_type : str
+            Either ``target_key`` or one of ``alternate_keys``.
+        value : str
+            The identifier value to store.
+
+        Raises
+        ------
+        ValueError
+            If ``id_type`` is not the ``target_key`` or a registered ``alternate_key``.
+        """
         if id_type not in self.alternate_keys and id_type != self.target_key:
             raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
         entity = self.entities[source_id]
         entity[id_type] = value
 
     def get_id(self, source_id: str, id_type: str):
+        """
+        Retrieve a target or alternate key value for a cached entity.
+
+        Parameters
+        ----------
+        source_id : str
+            Source-system key identifying the entity (must already be cached).
+        id_type : str
+            Either ``target_key`` or one of ``alternate_keys``.
+
+        Returns
+        -------
+        str or None
+            The stored identifier value, or ``None`` if not yet set.
+
+        Raises
+        ------
+        ValueError
+            If ``id_type`` is not the ``target_key`` or a registered ``alternate_key``.
+        """
         if id_type not in self.alternate_keys and id_type != self.target_key:
             raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
         return self.entities[source_id].get(id_type)
 
     def batch_resolve(self):
+        """
+        Re-run the resolver for all entities whose status is PENDING or NOT_FOUND.
+
+        Useful after bulk-loading staging data when some entities could not be
+        resolved on first pass.  Initializes the record factory from a dry-run
+        resolver call if it has not yet been set up.
+        """
         if not self._record_factory:
             self.resolver.execute({})
             self._setup_record_class(None)
@@ -186,6 +381,23 @@ class IdentityManager:
                 self.resolve(source_id)
 
     def calc_stats(self):
+        """
+        Count entities by status.
+
+        Returns
+        -------
+        dict
+            Mapping of each :class:`EntityStatus` value to the number of
+            entities currently at that status.
+
+        Example
+        -------
+        ::
+
+            stats = im.calc_stats()
+            print(stats)
+            # {'pending': 0, 'resolved': 142, 'staged': 5, 'error': 3, ...}
+        """
         counts = {s: 0 for s in EntityStatus.VALUES}
         for entity in self.entities.values():
             status = entity.get('_status')
@@ -194,6 +406,19 @@ class IdentityManager:
         return counts
 
     def save_state(self, path: Union[str, Path]):
+        """
+        Persist the current entity cache to a JSON file.
+
+        The file captures ``source_key``, ``target_key``, ``alternate_keys``,
+        ``field_order`` (for factory reconstruction), summary stats, and the
+        full entity dict.  :class:`~dbtk.utils.ErrorDetail` objects are
+        serialized to ``{"message": ..., "field": ..., "code": ...}`` dicts.
+
+        Parameters
+        ----------
+        path : str or Path
+            Destination file path.  Parent directory must exist.
+        """
         field_order = None
         if self._record_factory:
             field_order = self._record_factory._fields  # exact ordered list
@@ -228,6 +453,27 @@ class IdentityManager:
     @classmethod
     def load_state(cls, path: Union[str, Path],
                    resolver: Optional[Union[PreparedStatement, TableLookup]] = None) -> 'IdentityManager':
+        """
+        Restore an IdentityManager from a previously saved JSON file.
+
+        Re-creates the entity Record factory from ``field_order`` stored in
+        the file.  Deserializes ``_errors`` lists back to
+        :class:`~dbtk.utils.ErrorDetail` instances.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the JSON file written by :meth:`save_state`.
+        resolver : PreparedStatement or TableLookup, optional
+            Resolver to attach to the restored instance.  If the saved file
+            has no ``field_order``, the resolver is used as a fallback to
+            initialize the record factory.
+
+        Returns
+        -------
+        IdentityManager
+            Fully restored instance with all entities re-hydrated.
+        """
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 

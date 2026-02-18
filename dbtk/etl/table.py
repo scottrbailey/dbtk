@@ -174,9 +174,16 @@ class Table:
 
     Attributes
     ----------
-        values (dict): Current record values (dict of column_name: value)
-        counts (dict): Operation counters (insert, update, delete, select, merge, records, incomplete)
-
+    values : dict
+        Current record values keyed by bind name (populated by :meth:`set_values`).
+    counts : dict
+        Operation counters with keys: ``insert``, ``update``, ``delete``,
+        ``select``, ``merge``, ``records``, ``incomplete``.
+    last_error : ErrorDetail or None
+        The error detail from the most recent :meth:`execute` call.
+        Set to ``None`` on success, or an :class:`~dbtk.utils.ErrorDetail`
+        on ``DatabaseError`` (when ``raise_error=False``).  Cleared on
+        every successful execution and on :meth:`cursor` reassignment.
     """
 
     OPERATIONS = ('insert', 'select', 'update', 'delete', 'merge')
@@ -865,6 +872,7 @@ class Table:
         self.refresh_readiness()
 
     def _reset_counts(self):
+        """Reset all operation counters and clear last_error."""
         self.counts = {op: 0 for op in self.OPERATIONS}
         self.counts['records'] = 0
         self.counts['incomplete'] = 0
@@ -1069,6 +1077,31 @@ class Table:
 
     def _exec_sql(self, sql: str, params: Union[dict, tuple],
                   operation: str, raise_error: bool) -> int:
+        """
+        Execute a single SQL statement and update counts and last_error.
+
+        On success: increments ``counts[operation]``, sets ``last_error = None``,
+        returns 0.
+
+        On ``DatabaseError``: logs the error, stores an :class:`~dbtk.utils.ErrorDetail`
+        in ``last_error``, re-raises if ``raise_error=True``, otherwise returns 1.
+
+        Parameters
+        ----------
+        sql : str
+            The SQL statement to execute.
+        params : dict or tuple
+            Bind parameters for the statement.
+        operation : str
+            One of ``OPERATIONS`` — used to update the correct counter.
+        raise_error : bool
+            If True, re-raise the ``DatabaseError`` after logging.
+
+        Returns
+        -------
+        int
+            0 on success, 1 on error (when raise_error=False).
+        """
         try:
             self._cursor.execute(sql, params)
             self.counts[operation] += 1
@@ -1086,7 +1119,33 @@ class Table:
         """
         Execute the specified database operation using current record values.
 
-        Returns 0 on success, 1 on skip/error.
+        Parameters
+        ----------
+        operation : str
+            One of ``'insert'``, ``'select'``, ``'update'``, ``'delete'``, ``'merge'``.
+        raise_error : bool, default False
+            If True, re-raise ``DatabaseError`` instead of swallowing it.
+            If False, the error is captured in ``last_error`` and 1 is returned.
+
+        Returns
+        -------
+        int
+            0 on success; 1 when requirements are unmet (incomplete record)
+            or when a ``DatabaseError`` occurs and ``raise_error=False``.
+
+        Side Effects
+        ------------
+        * ``counts[operation]`` incremented on success.
+        * ``counts['incomplete']`` incremented when requirements are unmet.
+        * ``last_error`` set to ``None`` on success or an
+          :class:`~dbtk.utils.ErrorDetail` on database error.
+
+        Raises
+        ------
+        ValueError
+            If ``operation`` is not valid, or required key columns are missing.
+        DatabaseError
+            If the underlying execute fails and ``raise_error=True``.
         """
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'")

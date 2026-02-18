@@ -19,11 +19,42 @@ _format_cache = None
 
 
 class ErrorDetail:
-    """Structured error record for ETL and database operations."""
+    """
+    Structured error record for ETL and database operations.
+
+    Captures a single error with optional field attribution and driver-specific
+    error code. Used by :class:`~dbtk.etl.table.Table` (``last_error``) and
+    :class:`~dbtk.etl.managers.IdentityManager` (per-entity ``_errors`` list),
+    and round-trips cleanly through JSON via ``save_state`` / ``load_state``.
+
+    Attributes
+    ----------
+    message : str
+        Human-readable description of the error.
+    field : str, optional
+        Name of the source or target field the error is associated with.
+        ``None`` when the error is not specific to a single field.
+    code : str, optional
+        Database- or application-level error code (e.g. ``pgcode`` from
+        psycopg2, an ORA- number, or a custom application string).
+        ``None`` when no structured code is available.
+    """
 
     __slots__ = ("message", "field", "code")
 
     def __init__(self, message: str, field: str = None, code: str = None):
+        """
+        Create an ErrorDetail.
+
+        Parameters
+        ----------
+        message : str
+            Human-readable description of the error.
+        field : str, optional
+            Field the error relates to, or ``None``.
+        code : str, optional
+            Structured error code, or ``None``.
+        """
         self.message = message
         self.field = field
         self.code = code
