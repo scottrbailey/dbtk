@@ -166,6 +166,9 @@ row.status = 'active'
 
 # Multiple updates
 row.update({'status': 'active', 'modified': datetime.now()})
+
+# Coalesce - only fills in None values, leaves existing values alone
+row.coalesce({'phone': 'unlisted', 'status': 'active'})
 ```
 
 ### Add New Fields

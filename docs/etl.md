@@ -139,11 +139,11 @@ Each database column is configured with a dictionary specifying how to source an
         'db_expr': 'DATABASE_FUNCTION(#)',  # Call database function (e.g., CURRENT_TIMESTAMP, UPPER(#))    
 
         # VALIDATION - optional:
-        'nullable': False,                  # Column cannot be NULL
-        'required': True,                   # Column is required (inverse of nullable)
-        
-        'primary_key': True,                # Mark as primary key  
-        'key': True,                        # Mark as key column (synonym for primary_key)
+        'nullable': False,                  # Column cannot be NULL (anti-alias of required=True)
+        'required': True,                   # Column is required (anti-alias of nullable=False)
+
+        'primary_key': True,                # Mark as primary key (alias: key)
+        'key': True,                        # Alias for primary_key
 
         # UPDATE CONTROL - optional:
         'no_update': True,                  # Exclude from UPDATE operations (default: False)
@@ -244,6 +244,7 @@ If **db_expr** is defined:
 - Support for INSERT, UPDATE, DELETE, MERGE operations
 - Incomplete record tracking with `counts['incomplete']`
 - `fetch()` method to retrieve existing record by primary key after `set_values()`
+- `last_error` attribute — set to an `ErrorDetail` on `DatabaseError` (when `raise_error=False`), `None` on success; useful for feeding errors directly into `IdentityManager.add_error()`
 
 **Handling Incomplete Records:**
 
