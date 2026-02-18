@@ -13,7 +13,7 @@ from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
 from ..database import ParamStyle
-from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike
+from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike, ErrorDetail
 from .transforms.core import fn_resolver
 from .transforms.database import _DeferredTransform
 
@@ -868,6 +868,7 @@ class Table:
         self.counts = {op: 0 for op in self.OPERATIONS}
         self.counts['records'] = 0
         self.counts['incomplete'] = 0
+        self.last_error: Optional[ErrorDetail] = None
 
     def _reset(self):
         self._sql_statements = {op: None for op in self.OPERATIONS}
@@ -1071,10 +1072,12 @@ class Table:
         try:
             self._cursor.execute(sql, params)
             self.counts[operation] += 1
+            self.last_error = None
             return 0
         except self._cursor.connection.driver.DatabaseError as e:
             error_msg = f"SQL failed: {sql}\nParams: {params}\nError: {str(e)}"
             logger.error(error_msg)
+            self.last_error = ErrorDetail(message=str(e), code=getattr(e, 'pgcode', None))
             if raise_error:
                 raise
             return 1

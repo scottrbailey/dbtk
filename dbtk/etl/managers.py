@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterator, List, Optional, Union
 from ..cursors import PreparedStatement
 from .transforms.database import TableLookup
 from ..record import Record
+from ..utils import ErrorDetail
 
 logger = logging.getLogger(__name__)
 
@@ -41,30 +42,6 @@ class EntityStatus:
     @classmethod
     def __iter__(cls):
         yield from cls.VALUES
-
-
-class ErrorDetail:
-    """Structured error record attached to an entity."""
-
-    __slots__ = ("message", "stage", "field", "code")
-
-    def __init__(
-        self,
-        message: str,
-        stage: Optional[str] = None,
-        field: Optional[str] = None,
-        code: Optional[str] = None,
-    ):
-        self.message = message
-        self.stage = stage
-        self.field = field
-        self.code = code
-
-    def __repr__(self) -> str:
-        return (
-            f"ErrorDetail(message={self.message!r}, stage={self.stage!r}, "
-            f"field={self.field!r}, code={self.code!r})"
-        )
 
 
 class IdentityManager:
@@ -229,8 +206,7 @@ class IdentityManager:
 
         def _serialize(obj):
             if isinstance(obj, ErrorDetail):
-                return {'message': obj.message, 'stage': obj.stage,
-                        'field': obj.field, 'code': obj.code}
+                return {'message': obj.message, 'field': obj.field, 'code': obj.code}
             return str(obj)
         stats = self.calc_stats()
         data = {

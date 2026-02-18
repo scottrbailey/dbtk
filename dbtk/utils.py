@@ -17,6 +17,21 @@ MIDNIGHT = dt.time(0, 0, 0)
 # cache format strings for performance
 _format_cache = None
 
+
+class ErrorDetail:
+    """Structured error record for ETL and database operations."""
+
+    __slots__ = ("message", "field", "code")
+
+    def __init__(self, message: str, field: str = None, code: str = None):
+        self.message = message
+        self.field = field
+        self.code = code
+
+    def __repr__(self) -> str:
+        return f"ErrorDetail(message={self.message!r}, field={self.field!r}, code={self.code!r})"
+
+
 class ParamStyle:
     """
     SQL parameter placeholder styles for different database drivers.
