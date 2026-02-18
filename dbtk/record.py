@@ -60,13 +60,13 @@ def normalize_field_name(name: str) -> str:
 
 class Record(list):
     """
-    Flexible/lightweight row object supporting that behaves like a dict, list, and object.
+    Flexible/lightweight that strikes a balance between the memory efficiency of list
+    and the functionality of dicts/objects.
 
     Record extends list to provide a rich interface for accessing query result rows.
     It supports attribute access, dictionary-style key access, integer indexing, and
-    slicing - all on the same object. This makes it the most flexible return type
-    for both cursors and readers. Ideal when you need different access patterns in
-    different parts of your code.
+    slicing - all on the same object. This makes it a very flexible and memory efficient
+    return type for both cursors and readers.
 
     Access Patterns
     ---------------
@@ -98,9 +98,9 @@ class Record(list):
       (e.g. ``'first_name'``, ``'user_id'``, ``'term_code'``).
 
     Both lists are set once by :meth:`set_fields` when the cursor executes its
-    first query.  Normalization lowercases, replaces non-alphanumeric characters
-    with underscores, collapses runs, strips trailing underscores, and prefixes
-    digit-leading names with ``n``.
+    first query.  Normalization converts field to be suitable for attribute access.
+    It lowercases, replaces non-alphanumeric characters with underscores, collapses runs,
+    strips trailing underscores, and prefixes digit-leading names with ``n``.
 
     **Which to use:**
 
@@ -109,9 +109,8 @@ class Record(list):
       CSV, where column names must match the schema exactly.
     * Use **normalized names** (``row.first_name``, ``row['first_name']``,
       ``row.keys(normalized=True)``, ``row.to_dict(normalized=True)``) in
-      application code where Pythonic attribute access is preferred or when
-      feeding into tools that require valid identifiers (e.g. dataclasses,
-      Pydantic models, pandas ``rename``).
+      application code where Pythonic attribute access is preferred and when
+      case and white-space insensitive matching is beneficial.
 
     Both forms work interchangeably for item get/set and ``in`` checks, so
     ``row['First Name']`` and ``row['first_name']`` return the same value.
@@ -133,7 +132,7 @@ class Record(list):
         user = cursor.fetchone()
 
         # All these access patterns work on the same object:
-        print(user['name'])           # Dictionary-style: 'Aang'
+        print(user['name'])            # Dictionary-style: 'Aang'
         print(user.name)               # Attribute access: 'Aang'
         print(user[1])                 # Index access: 'Aang'
         print(user[1:3])               # Slicing: ['Aang', 'aang@avatar.com']
