@@ -306,6 +306,7 @@ class Reader(ABC):
         self._source: str = None        # keep track of source filename for subclasses that use a file pointer directly (Excel)
         self._start_time: float = 0     # will get updated when the first record is read (time.monotonic())
         self._filters = []              # filter pipeline (list of callables)
+        self._done: bool = False        # True after StopIteration summary has been logged
 
     def __enter__(self):
         """Context manager entry."""
@@ -420,17 +421,19 @@ class Reader(ABC):
             try:
                 row_data = self._read_next_row()
             except StopIteration:
-                took = time.monotonic() - self._start_time
-                rate = self._row_num / took if took else 0
-                if self._big:
-                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
-                # Show both counts if filtering was used
-                if self._filters and self._rows_read != self._row_num:
-                    print(f"Done in {took:.2f}s - {self._rows_read:,} read → {self._row_num:,} returned ({int(rate):,} rec/s)")
-                    logger.info(f"Read {self._rows_read:,} rows, returned {self._row_num:,} in {took:.2f}s ({int(rate):,} rec/s)")
-                else:
-                    print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
-                    logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
+                if not self._done:
+                    self._done = True
+                    took = time.monotonic() - self._start_time
+                    rate = self._row_num / took if took else 0
+                    if self._big:
+                        print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
+                    # Show both counts if filtering was used
+                    if self._filters and self._rows_read != self._row_num:
+                        print(f"Done in {took:.2f}s - {self._rows_read:,} read → {self._row_num:,} returned ({int(rate):,} rec/s)")
+                        logger.info(f"Read {self._rows_read:,} rows, returned {self._row_num:,} in {took:.2f}s ({int(rate):,} rec/s)")
+                    else:
+                        print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
+                        logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
                 raise  # ← let for-loop end
 
             # Track total rows read (before filtering)
