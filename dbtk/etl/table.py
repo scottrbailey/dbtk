@@ -51,9 +51,18 @@ class Table:
           function instead of a single field value. If omitted, column is populated
           via 'default' or 'db_expr'.
 
-        * **default** (any, optional):
-          Default/constant value to use for this column. Applied when source field
-          is missing, empty, or None.
+        * **default** (any or callable, optional):
+          Default value for this column. Applied when the source field is missing,
+          empty, or None. If callable (e.g. a zero-argument lambda), it is called
+          at ``set_values()`` time so the value is resolved on each record rather
+          than at column-definition time. Useful for values that come from runtime
+          context (CLI args, job IDs, etc.) that aren't available when columns are
+          defined::
+
+              conf_vars = {}  # populated later after args are parsed
+              columns = {
+                  'user_id': {'default': lambda: conf_vars['user_id']},
+              }
 
         * **fn** (callable | list[callable] | str, optional):
           Transformation function(s) to apply to the source value.
@@ -857,7 +866,8 @@ class Table:
                 val = None
 
             if val in ('', None) and 'default' in col_def:
-                val = col_def['default']
+                default = col_def['default']
+                val = default() if callable(default) else default
 
             if 'fn' in col_def:
                 fn = col_def['fn']

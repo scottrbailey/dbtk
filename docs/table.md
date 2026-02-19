@@ -56,7 +56,7 @@ Each database column is configured with a dictionary specifying how to source an
     'database_column_name': {
         # DATA SOURCE
         'field': 'source_field_name',       # Map from input record field
-        'default': 'static_value',          # Use a default value for all records
+        'default': 'static_value',          # Use a static or callable default for all records
         'fn': transform_function,           # Python function to transform field value, no parens!
         'db_expr': 'DATABASE_FUNCTION(#)',  # Call database function (e.g., CURRENT_TIMESTAMP, UPPER(#))
 
@@ -111,6 +111,12 @@ columns_config = {
 
     # Static value for all records
     'status': {'default': 'active'},
+
+    # Callable default — resolved at set_values() time, not column-definition time.
+    # Useful when the value comes from runtime context (CLI args, job config, etc.)
+    # that isn't available yet when columns are defined.
+    'user_id':   {'default': lambda: conf_vars['user_id']},
+    'import_job': {'default': lambda: conf_vars.get('job_id', 'unknown')},
     'import_date': {'db_expr': 'CURRENT_DATE'},
 
     # Database function with parameter (# is placeholder for field value)
@@ -141,7 +147,24 @@ The value matches any entries in table.null_values it will be set to `None`.
 This is configurable but the default is: `('', 'NULL', '<null>', '\\N')`
 
 ### 3. Default Fallback
-If value is `None` or `''`, apply **default** if defined.
+If value is `None` or `''`, apply **default** if defined. If `default` is callable,
+it is called with no arguments at this point — the return value is used. This lets
+you bind a column to a runtime value (CLI arg, job context, etc.) without knowing
+it at column-definition time:
+
+```python
+conf_vars = {}  # create before column defs, populate later
+
+columns = {
+    'user_id': {'default': lambda: conf_vars['user_id']},
+    'name':    {'field': 'name'},
+}
+
+table = Table('my_table', columns, cursor=cursor)
+
+# Populate conf_vars after arg parsing, before processing records
+conf_vars['user_id'] = args.user_id
+```
 
 ### 4. Transformation
 Apply **fn** if defined. Functions can:
