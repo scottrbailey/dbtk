@@ -3,7 +3,6 @@
 import logging
 import time
 import re
-import uuid
 from typing import Iterable, Optional
 
 from .base_surge import BaseSurge
