@@ -158,14 +158,14 @@ class DataSurge(BaseSurge):
                 f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
             )
         elif db_type == 'oracle':
-            uid = uuid.uuid4().hex[:6]
-            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}_{uid}")
+            uid = uuid.uuid4().hex[:6].upper()
+            temp_name = f"TMP_{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}_{uid}"
 
             # Get column definitions from table
             col_info = self.table.get_column_definitions()
             col_defs = [f"{col_name} {sql_type}" for col_name, _, _, _, _, sql_type in col_info]
             col_defs_str = ', '.join(col_defs)
-            create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
+            create_sql = f"CREATE TABLE {temp_name} ({col_defs_str})"
 
         if db_type == 'sqlserver':
             temp_name = f"#{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}"
@@ -197,9 +197,6 @@ class DataSurge(BaseSurge):
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
-            if db_type == 'oracle':
-                self.cursor.execute(f"DELETE FROM {temp_name}")
-                self.cursor.connection.commit()
             self.cursor.execute(f"DROP TABLE {temp_name}")
             return errors
 
@@ -234,9 +231,6 @@ class DataSurge(BaseSurge):
             errors += len(records_list) - errors
         finally:
             try:
-                if db_type == 'oracle':
-                    self.cursor.execute(f"DELETE FROM {temp_name}")
-                    self.cursor.connection.commit()
                 self.cursor.execute(f"DROP TABLE {temp_name}")
             except Exception as e:
                 logger.warning(f"Failed to drop temp table {temp_name}: {e}")
