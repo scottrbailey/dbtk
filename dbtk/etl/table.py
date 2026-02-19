@@ -906,7 +906,7 @@ class Table:
         if not err:
             return self._cursor.fetchone()
 
-    def get_column_definitions(self) -> list:
+    def get_column_definitions(self, all_cols: bool = False) -> list:
         """
         Introspect database table columns to get type information.
 
@@ -914,9 +914,13 @@ class Table:
         information for columns defined in this Table object. Validates that
         all Table columns exist in the database.
 
+        Parameters:
+            all_cols (bool): If True, return all columns from the database table.
+                If False, return only columns on the Table object.
+
         Returns:
             List of tuples: (column_name, type_obj, internal_size, precision, scale, sql_type_def)
-            where sql_type_def is the SQL type string like 'VARCHAR2(100)' or 'NUMBER(10,2)'
+            where sql_type_def is the SQL type string like 'VARCHAR(100)' or 'NUMBER(10,2)'
 
         Raises:
             ValueError: If a column defined in this Table doesn't exist in the database
@@ -941,7 +945,11 @@ class Table:
 
         # Validate and collect type info for Table-defined columns
         result = []
-        for col_name in self._columns.keys():
+        if all_cols:
+            col_list = db_columns.keys()
+        else:
+            col_list = self._columns.keys()
+        for col_name in col_list:
             col_name_upper = col_name.upper()
             if col_name_upper not in db_columns:
                 raise ValueError(
