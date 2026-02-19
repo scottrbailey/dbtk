@@ -35,7 +35,8 @@ class EntityStatus:
         Entity exists in a staging table but has not yet been matched to the
         target system (e.g. an ERP record not yet confirmed).
     ERROR : str
-        Resolution was attempted and failed due to an unexpected error.
+        An error occurred while creating or updating the entity. Possibly impacting
+        downstream processing.
     SKIPPED : str
         Resolution was intentionally bypassed for this entity.
     NOT_FOUND : str
@@ -72,8 +73,8 @@ class IdentityManager:
     errors, and any configured ``alternate_keys``.
 
     State can be persisted to JSON between runs with :meth:`save_state` and
-    restored with :meth:`load_state`, allowing long-running imports to be
-    resumed without re-querying already-resolved entities.
+    restored with :meth:`load_state`, allowing long-running and multi-stage imports
+    to be resumed without re-querying already-resolved entities.
 
     Parameters
     ----------
@@ -86,7 +87,7 @@ class IdentityManager:
         Query used to look up a ``target_key`` from a ``source_key``.
         Can be set or replaced later via the ``resolver`` property.
     alternate_keys : list of str, optional
-        Additional key fields to track per entity (e.g. ``['banner_id', 'erp_vendor_id']``).
+        Additional key fields to track per entity (e.g. ``['staging_id', 'erp_vendor_id']``).
         These are persisted alongside ``target_key`` in saved state.
 
     Attributes
@@ -115,6 +116,10 @@ class IdentityManager:
                              ErrorDetail('Not found', field='student_id'))
 
         im.save_state('state/students.json')
+
+        # to initialize from saved state
+        em = IdentityManager.load_state('state/students.json', resolver=stmt)
+        em.batch_resolve([EntityStatus.STAGED])
     """
 
     def __init__(
@@ -132,7 +137,8 @@ class IdentityManager:
         source_key : str
             Field name of the source-system primary key.
         target_key : str
-            Field name of the target-system primary key returned by the resolver.
+            Field name of the target-system primary key. Must be returned by the resolver.
+            Set equal to source_key to skip ID resolution.
         resolver : PreparedStatement or TableLookup, optional
             Resolution query.  Accepts either type; ``TableLookup`` is unwrapped
             to its underlying ``PreparedStatement``.
@@ -156,9 +162,8 @@ class IdentityManager:
         """
         Set the resolver, accepting either a PreparedStatement or TableLookup.
 
-        ``TableLookup`` instances are automatically unwrapped to their
-        underlying ``PreparedStatement``.  Pass ``None`` to clear the resolver
-        (useful when loading state for inspection without re-querying).
+        Pass ``None`` to clear the resolver (useful when loading state for
+        inspection without re-querying).
         """
         if value is None:
             self._resolver = None
@@ -192,6 +197,8 @@ class IdentityManager:
                     keys.append(self.target_key)
                 temp_class.set_fields(keys)
             record = temp_class()
+        if self.target_key not in record:
+            raise ValueError(f'The target_key ({self.target_key}) must be returned by the resolver.')
         alt_keys = [fld for fld in self.alternate_keys if fld not in record]
         fields = list(record.keys()) + alt_keys + ['_status', '_errors', '_messages']
         RecordClass = type('EntityRecord', (Record,), {})
@@ -387,19 +394,30 @@ class IdentityManager:
             raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
         return self.entities[source_id].get(id_type)
 
-    def batch_resolve(self):
+    def batch_resolve(self, additional_statuses: Optional[List[str]]):
         """
         Re-run the resolver for all entities whose status is PENDING or NOT_FOUND.
 
         Useful after bulk-loading staging data when some entities could not be
         resolved on first pass.  Initializes the record factory from a dry-run
         resolver call if it has not yet been set up.
+
+        Parameters
+        ----------
+        additional_statuses : optional list of str
+            Additional statuses to resolve in addition to EntityStatus.NOT_FOUND and
+            EntityStatus.PENDING
         """
+
         if not self._record_factory:
             self.resolver.execute({})
             self._setup_record_class(None)
+
+        statuses = {EntityStatus.PENDING, EntityStatus.NOT_FOUND}
+        if additional_statuses:
+            statuses.update(additional_statuses)
         for source_id, entity in self.entities.items():
-            if entity.get('_status') in (EntityStatus.NOT_FOUND, EntityStatus.PENDING):
+            if entity.get('_status') in statuses:
                 self.resolve(source_id)
 
     def calc_stats(self):
