@@ -197,8 +197,6 @@ class IdentityManager:
                     keys.append(self.target_key)
                 temp_class.set_fields(keys)
             record = temp_class()
-        if self.target_key not in record:
-            raise ValueError(f'The target_key ({self.target_key}) must be returned by the resolver.')
         alt_keys = [fld for fld in self.alternate_keys if fld not in record]
         fields = list(record.keys()) + alt_keys + ['_status', '_errors', '_messages']
         RecordClass = type('EntityRecord', (Record,), {})
@@ -394,7 +392,7 @@ class IdentityManager:
             raise ValueError(f'id_type must be either the target_key or one of the alternate_keys')
         return self.entities[source_id].get(id_type)
 
-    def batch_resolve(self, additional_statuses: Optional[List[str]]):
+    def batch_resolve(self, additional_statuses: Optional[List[str]] = None):
         """
         Re-run the resolver for all entities whose status is PENDING or NOT_FOUND.
 
