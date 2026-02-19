@@ -197,6 +197,9 @@ class DataSurge(BaseSurge):
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
+            if db_type == 'oracle':
+                self.cursor.execute(f"DELETE FROM {temp_name}")
+                self.cursor.connection.commit()
             self.cursor.execute(f"DROP TABLE {temp_name}")
             return errors
 
@@ -231,6 +234,9 @@ class DataSurge(BaseSurge):
             errors += len(records_list) - errors
         finally:
             try:
+                if db_type == 'oracle':
+                    self.cursor.execute(f"DELETE FROM {temp_name}")
+                    self.cursor.connection.commit()
                 self.cursor.execute(f"DROP TABLE {temp_name}")
             except Exception as e:
                 logger.warning(f"Failed to drop temp table {temp_name}: {e}")
