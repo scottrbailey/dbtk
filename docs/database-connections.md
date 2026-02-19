@@ -322,6 +322,79 @@ except db.driver.IntegrityError as e:
     print(f"Integrity constraint violated: {e}")
 ```
 
+## SQL File Execution and Prepared Statements
+
+Write SQL once with `:named` or `%(pyformat)s` parameters — DBTK runs it on any database.
+
+```python
+# query.sql - write once, run anywhere
+# SELECT * FROM users WHERE status = :status AND created > :start_date
+#   -- or equivalently --
+# SELECT * FROM users WHERE status = %(status)s AND created > %(start_date)s
+
+# Works on ANY database - dbtk handles the conversion
+cursor.execute_file('queries/get_users.sql', {
+    'status': 'active',
+    'start_date': '2025-01-01'
+})
+
+# Behind the scenes:
+# Oracle:    :status, :start_date
+# Postgres:  %(status)s, %(start_date)s
+# MySQL:     %s, %s (parameters reordered automatically)
+# SQLite:    ?, ? (parameters reordered automatically)
+```
+
+**One-off queries with `execute_file()`:**
+
+- Loads query from file and accepts `:named` or `%(pyformat)s` parameter format
+- Converts parameters to match the cursor's native paramstyle
+- Extra parameters in the dict are ignored; missing parameters default to NULL
+
+```python
+cursor.execute_file('queries/monthly_report.sql', {
+    'start_date': '2025-01-01',
+    'end_date': '2025-01-31'
+})
+results = cursor.fetchall()
+```
+
+**Prepared statements for repeated execution:**
+
+`cursor.prepare_file()` does the same query and parameter transformation but returns a
+`PreparedStatement` that can be executed many times and behaves like a cursor:
+
+```python
+# queries/kingdom_report.sql
+# SELECT soldier_id, name, rank, missions_completed
+# FROM soldiers
+# WHERE kingdom = :kingdom
+#   AND rank >= :min_rank
+# ORDER BY missions_completed DESC
+
+stmt = cursor.prepare_file('queries/kingdom_report.sql')
+
+kingdoms = [
+    {'kingdom': 'Fire Nation', 'min_rank': 'Captain'},
+    {'kingdom': 'Earth Kingdom', 'min_rank': 'General'},
+    {'kingdom': 'Water Tribe', 'min_rank': 'Warrior'},
+]
+
+for params in kingdoms:
+    stmt.execute(params)
+    data = stmt.fetchall()  # PreparedStatement acts like a cursor
+    dbtk.writers.to_csv(data, f"reports/{params['kingdom'].replace(' ', '_')}.csv")
+```
+
+`PreparedStatement` is also the resolver type accepted by `IdentityManager` — see
+[ETL: Tools & Logging](etl-tools.md).
+
+**Benefits of SQL files:**
+- Keep SQL separate from Python for better organisation and editor syntax highlighting
+- Test queries independently before integration
+- Reuse the same query across different scripts
+- Write once, run on any database
+
 ## Best Practices
 
 1. **Use context managers** - Ensures connections are properly closed
@@ -336,5 +409,6 @@ except db.driver.IntegrityError as e:
 
 - [Record Objects](record.md) - Full documentation on DBTK's universal data structure
 - [Configuration & Security](configuration.md) - YAML config files and password encryption
-- [ETL Framework](etl.md) - Using cursors with Table, DataSurge, and BulkSurge
+- [ETL: Table & Transforms](table.md) - Using cursors with Table and DataSurge
+- [ETL: Tools & Logging](etl-tools.md) - IdentityManager and ValidationCollector
 - [Readers & Writers](readers-writers.md) - Moving data between databases and files
