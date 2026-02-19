@@ -60,7 +60,6 @@ class DataSurge(BaseSurge):
         """
         super().__init__(table, batch_size=batch_size)
         self.use_transaction = use_transaction
-        self.skips = 0
         # Swap to positional parameters if named to save memory in bind parameters
         self.table.force_positional()
         self._sql_statements = {}  # Only for modified SQL (merge temp table hack)
@@ -111,6 +110,7 @@ class DataSurge(BaseSurge):
             if batch_params:
                 try:
                     self.cursor.executemany(sql, batch_params)
+                    self.total_loaded += len(batch_params)
                     self.table.counts[operation] += len(batch_params)
                 except self.cursor.connection.driver.DatabaseError as e:
                     logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
@@ -142,7 +142,7 @@ class DataSurge(BaseSurge):
         else:
             errors, skipped = self._execute_batches(records, operation, sql, raise_error)
 
-        self.skips += skipped
+        self.skipped += skipped
         self._log_summary()
         return errors
 
