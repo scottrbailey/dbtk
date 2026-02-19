@@ -159,13 +159,13 @@ class DataSurge(BaseSurge):
             )
         elif db_type == 'oracle':
             uid = uuid.uuid4().hex[:6].upper()
-            temp_name = f"TMP_{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}_{uid}"
+            temp_name = f"GTT_{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}_{uid}"
 
             # Get column definitions from table
             col_info = self.table.get_column_definitions()
             col_defs = [f"{col_name} {sql_type}" for col_name, _, _, _, _, sql_type in col_info]
             col_defs_str = ', '.join(col_defs)
-            create_sql = f"CREATE TABLE {temp_name} ({col_defs_str})"
+            create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT DELETE ROWS"
 
         if db_type == 'sqlserver':
             temp_name = f"#{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}"
