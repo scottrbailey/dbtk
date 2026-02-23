@@ -62,7 +62,7 @@ class PreparedStatement:
         """Iterator protocol."""
         return self.cursor.__next__()
 
-    def execute(self, bind_vars: dict) -> Any:
+    def execute(self, bind_vars: Optional[dict] = None) -> Any:
         """
         Execute the prepared statement with the given parameters.
 
@@ -72,6 +72,8 @@ class PreparedStatement:
         Returns:
             Cursor if return_cursor=True, else None
         """
+        if bind_vars is None:
+            bind_vars = {}
         try:
             params = self.cursor.prepare_params(self.param_names, bind_vars)
             return self.cursor.execute(self.sql, params)

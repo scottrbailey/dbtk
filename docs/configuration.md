@@ -68,7 +68,8 @@ settings:
   default_country: US
   default_timezone: UTC
 
-  # Logging configuration for integration scripts
+  # Logging configuration for integration scripts 
+  # can be overwritten in a script level dbtk.setup_logging(level='DEBUG')
   logging:
     directory: ./logs
     level: INFO
@@ -104,7 +105,7 @@ You can optionally specify a `driver` field to choose a specific database adapte
 connections:
   # Use psycopg (v3) instead of default psycopg2
   pg_v3:
-    driver: psycopg
+    driver: psycopg             # run `dbtk checkup` to show available drivers
     host: localhost
     database: mydb
     user: myuser
@@ -226,7 +227,7 @@ gAAAAABh...
 
 # Encrypt all passwords in a config file
 # Finds plaintext 'password:' entries and converts to 'encrypted_password:'
-$ dbtk encrypt-config dbtk.yml
+$ dbtk encrypt-config [dbtk.yml]
 
 # Migrate config to a new encryption key
 $ dbtk migrate-config old_config.yml new_config.yml --new-key "new_key_here"
@@ -343,10 +344,10 @@ drivers:
     database_type: firebird
     module: firebird.driver        # Only needed if name doesn't match module
     priority: 1
-    param_map: {}                  # Map non-standard parameter names
+    param_map: {'database': 'db', 'password': 'passwd'}  # Map non-standard parameter names
     required_params: [{'host', 'database', 'user'}, {'dsn'}]
-    optional_params: {'port', 'password'}
-    connection_method: kwargs
+    optional_params: {'port', 'protocol'}
+    connection_method: kwargs      # connection_string (postgres), dsn (oracle), odbc_string (odbc), kwargs (all others)
     default_port: 3050
 ```
 
@@ -374,9 +375,8 @@ register_user_drivers({
 2. Never commit encryption keys to version control
 3. Use `DBTK_ENCRYPTION_KEY` environment variable in containerized environments
 4. Use system keyring on workstations (`dbtk store-key`)
-5. Rotate keys periodically with `dbtk migrate-config`
-6. Set restrictive permissions on config files (`chmod 600`)
-7. Use separate configs for dev/staging/production
+5. Set restrictive permissions on config files (`chmod 600`)
+6. Use separate configs for dev/staging/production
 
 ## See Also
 
