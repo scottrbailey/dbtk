@@ -176,10 +176,18 @@ See [Record Objects](docs/record.md) for complete documentation.
 
 ## Documentation
 
+### Getting Started
+- **[Getting Started Guide](docs/getting-started.md)** - 5-minute tutorial with complete examples
+- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- **[API Reference](docs/api-reference.md)** - Complete method and function reference
+
+### Core Features
 - **[Record Objects](docs/record.md)** - DBTK's universal data structure with dict, tuple, and attribute access
 - **[Configuration & Security](docs/configuration.md)** - Set up encrypted passwords, YAML config files, and command-line tools
 - **[Database Connections](docs/database-connections.md)** - Connect to any database, use smart cursors, SQL file execution, manage transactions
 - **[Readers & Writers](docs/readers-writers.md)** - Read from and write to CSV, Excel, JSON, XML, fixed-width files
+
+### ETL Framework
 - **[ETL: Table & Transforms](docs/table.md)** - Field mapping, column config, data transforms, database lookups
 - **[ETL: DataSurge & BulkSurge](docs/datasurge.md)** - High-performance bulk loading for any database
 - **[ETL: Tools & Logging](docs/etl-tools.md)** - IdentityManager, ValidationCollector, and integration script logging

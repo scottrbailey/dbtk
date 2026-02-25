@@ -79,6 +79,13 @@ settings:
     split_errors: true  # If True, separate error log will be created (only if critical or errors are encountered
     console: true
     retention_days: 30
+
+  # File I/O settings
+  compressed_file_buffer_size: 1048576  # 1MB buffer for reading compressed files (.gz, .bz2, .xz)
+  data_dump_dir: /tmp                   # Default directory for BulkSurge dump() operations
+
+  # CSV writer settings
+  null_string_csv: ''                   # How to represent NULL values in CSV output
 ```
 
 ### Database Connections
