@@ -313,8 +313,9 @@ All readers support:
 
 ### Common Methods
 
-**`filter(func)`**
+**`add_filter(func)`**
 - Adds filter function to pipeline
+- Multiple calls accumulate (AND logic)
 - Returns: self (for chaining)
 
 **`__iter__()`**
