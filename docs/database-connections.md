@@ -12,7 +12,7 @@ db = dbtk.connect('production_db')
 
 # Direct connection
 from dbtk.database import postgres, oracle, mysql, sqlserver, sqlite
-# non-standard connection parameters are automatically mapped
+# non-standard connection parameters are automatically mapped, standard ports are defaulted
 db = postgres(user='admin', password='secret', database='mydb', host='localhost')
 db = oracle(user='admin', password='secret', database='ORCL', host='localhost')
 db = mysql(user='admin', password='secret', database='mydb')
@@ -64,6 +64,9 @@ db.close()
 
 # Parameter style help
 db.param_help()  # Shows this driver's parameter style with examples
+# psycopg2's parameter style is "pyformat"
+# "SELECT * FROM people WHERE name = %s AND age > %s", ("Smith", 30)
+# "SELECT * FROM people WHERE name = %(name)s AND age > %(age)s", {"name": "Smith", "age": 30}
 ```
 
 ### Context Managers
@@ -107,7 +110,8 @@ except cursor.connection.driver.DatabaseError as e:
 
 ## Cursors and Records
 
-All DBTK cursors return **Record** objects - a hybrid data structure that works like a dict, tuple, and object simultaneously:
+All DBTK cursors return **Record** objects - a hybrid data structure that is memory efficient like at tuple but the 
+functionality of dict or an object.
 
 ```python
 cursor = db.cursor()
@@ -139,7 +143,8 @@ cursor = db.cursor(
 cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
 ```
 
-Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`:
+Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`.
+See [Configuration](configuration.md#database-connections) for detailed connection configuration documentation.
 
 ```yaml
 connections:
@@ -194,8 +199,11 @@ For queries executed repeatedly with different parameters, PreparedStatement loa
 ```python
 from dbtk.cursors import PreparedStatement
 
-# Load and prepare from file or from query string
+# Create a PreparedStatement from a query file
+movies_stmt = cursor.prepare_file('queries/list_movies.sql')
 users_stmt = PreparedStatement(cursor, filename='queries/get_user.sql')
+
+# Create PreparedStatement from query string
 orders_stmt = PreparedStatement(cursor, query="SELECT * FROM orders WHERE customer_id = :id")
 
 users_stmt.execute({'location': 'CA'})
@@ -211,7 +219,7 @@ DBTK has tools to handle different parameter styles. You can use _named_ (`:name
 `cursor.execute_file()` and `PreparedStatment` will automatically rewrite the query and format parameters to match your database's paramstyle, making your queries portable across databases.
 
 Oracle and PostgreSQL support both dictionary and positional parameters. Their default (db.driver.paramstyle) will be 
-the dictionary style. If you want force positional mode ()
+the dictionary style. If you want force positional mode, you can override the paramstyle as in the example below.   
 
 ```python
 from dbtk.utils import process_sql_parameters, ParamStyle
@@ -289,37 +297,6 @@ with db.transaction():
     # Commits automatically on success, rolls back on exception
 ```
 
-## Direct Connection Functions
-
-Each database type has a convenience function with appropriate defaults. Some drivers have non-standard connection 
-parameters. 
-
-```python
-from dbtk.database import postgres, oracle, mysql, sqlserver, sqlite
-
-# PostgreSQL (default port: 5432)
-db = postgres(user='admin', password='secret', database='mydb',
-              host='localhost')
-
-# Oracle (default port: 1521)
-db = oracle(user='admin', password='secret', database='ORCL',
-            host='localhost')
-
-# MySQL (default port: 3306)
-db = mysql(user='admin', password='secret', database='mydb',
-           host='localhost', port=3307)
-
-# SQL Server (default port: 1433)
-db = sqlserver(user='admin', password='secret', database='mydb',
-               host='localhost')
-
-# SQLite (no host/user/password needed)
-db = sqlite('path/to/database.db')
-db = sqlite(':memory:')  # In-memory database
-```
-
-All functions take the standard `user`, `password`, `database` parameters and map to any driver specific non-standard names automatically, and accept `**kwargs` for driver-specific parameters.
-
 ## Error Handling
 
 ```python
@@ -331,73 +308,6 @@ except db.driver.IntegrityError as e:
     print(f"Integrity constraint violated: {e}")
 ```
 
-## SQL File Execution and Prepared Statements
-
-Write SQL once with `:named` or `%(pyformat)s` parameters — DBTK runs it on any database.
-
-```python
-# query.sql - write once, run anywhere
-# SELECT * FROM users WHERE status = :status AND created > :start_date
-#   -- or equivalently --
-# SELECT * FROM users WHERE status = %(status)s AND created > %(start_date)s
-
-# Works on ANY database - dbtk handles the conversion
-cursor.execute_file('queries/get_users.sql', {
-    'status': 'active',
-    'start_date': '2025-01-01'
-})
-
-# Behind the scenes:
-# Oracle:    :status, :start_date
-# Postgres:  %(status)s, %(start_date)s
-# MySQL:     %s, %s (parameters reordered automatically)
-# SQLite:    ?, ? (parameters reordered automatically)
-```
-
-**One-off queries with `execute_file()`:**
-
-- Loads query from file and accepts `:named` or `%(pyformat)s` parameter format
-- Converts parameters to match the cursor's native paramstyle
-- Extra parameters in the dict are ignored; missing parameters default to NULL
-
-```python
-cursor.execute_file('queries/monthly_report.sql', {
-    'start_date': '2025-01-01',
-    'end_date': '2025-01-31'
-})
-results = cursor.fetchall()
-```
-
-**Prepared statements for repeated execution:**
-
-`cursor.prepare_file()` does the same query and parameter transformation but returns a
-`PreparedStatement` that can be executed many times and behaves like a cursor:
-
-```python
-# queries/kingdom_report.sql
-# SELECT soldier_id, name, rank, missions_completed
-# FROM soldiers
-# WHERE kingdom = :kingdom
-#   AND rank >= :min_rank
-# ORDER BY missions_completed DESC
-
-stmt = cursor.prepare_file('queries/kingdom_report.sql')
-
-kingdoms = [
-    {'kingdom': 'Fire Nation', 'min_rank': 'Captain'},
-    {'kingdom': 'Earth Kingdom', 'min_rank': 'General'},
-    {'kingdom': 'Water Tribe', 'min_rank': 'Warrior'},
-]
-
-for params in kingdoms:
-    stmt.execute(params)
-    data = stmt.fetchall()  # PreparedStatement acts like a cursor
-    dbtk.writers.to_csv(data, f"reports/{params['kingdom'].replace(' ', '_')}.csv")
-```
-
-`PreparedStatement` is also the resolver type accepted by `IdentityManager` — see
-[ETL: Tools & Logging](etl-tools.md).
-
 **Benefits of SQL files:**
 - Keep SQL separate from Python for better organisation and editor syntax highlighting
 - Test queries independently before integration
@@ -408,10 +318,10 @@ for params in kingdoms:
 
 1. **Use context managers** - Ensures connections are properly closed
 2. **Use named/pyformat parameters** - More readable and portable across databases
-3. **Iterate large result sets** - Don't `fetchall()` millions of rows
+3. **Iterate large result sets** - Don't `fetchall()` on millions of rows
 4. **Use `transaction()` context manager** - Safe commit/rollback handling
 5. **Use configuration files** - Keep credentials out of code
-6. **Use `execute_file()`** - Portable SQL with automatic parameter conversion
+6. **Use `cursor.execute_file()`** - Portable SQL with automatic parameter conversion
 7. **Use `PreparedStatement`** - Portable SQL to be executed repeatedly
 
 ## See Also
