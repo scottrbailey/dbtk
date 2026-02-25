@@ -440,6 +440,113 @@ tx.indicator("Firebender", true_val="Fire Nation Citizen")  # Conditional values
 tx.get_int("123.45 gold pieces")  # -> 123
 ```
 
+### Transform Functions Reference
+
+Complete list of built-in transform functions in `dbtk.etl.transforms`:
+
+#### Type Conversions
+
+| Function | Description | Example | Returns |
+|----------|-------------|---------|---------|
+| `get_int(value, default=None)` | Parse integer, return default if invalid | `get_int('123')` | `123` |
+| | | `get_int('abc', 0)` | `0` |
+| `get_float(value, default=None)` | Parse float, return default if invalid | `get_float('12.34')` | `12.34` |
+| | | `get_float('$1,234.56')` | `1234.56` |
+| `get_bool(value)` | Parse boolean from various formats | `get_bool('yes')` | `True` |
+| | | `get_bool('0')` | `False` |
+| `get_digits(value)` | Extract digits only | `get_digits('(555) 123-4567')` | `'5551234567'` |
+| `to_number(value)` | Auto-detect int/float | `to_number('42')` | `42` (int) |
+| | | `to_number('3.14')` | `3.14` (float) |
+
+#### String Operations
+
+| Function | Description | Example | Returns |
+|----------|-------------|---------|---------|
+| `capitalize(value)` | Capitalize first letter | `capitalize('john')` | `'John'` |
+| `normalize_whitespace(value)` | Collapse multiple spaces | `normalize_whitespace('a  b   c')` | `'a b c'` |
+
+#### Date and Time
+
+| Function | Description | Example | Notes |
+|----------|-------------|---------|-------|
+| `parse_date(value)` | Parse date from various formats | `parse_date('2024-01-15')` | Auto-detects format |
+| | | `parse_date('Jan 15, 2024')` | Returns `datetime.date` |
+| `parse_datetime(value)` | Parse datetime with timezone support | `parse_datetime('2024-01-15T10:30:00Z')` | Returns `datetime.datetime` |
+
+#### Email
+
+| Function | Description | Example | Returns |
+|----------|-------------|---------|---------|
+| `email_validate(value)` | Validate email format | `email_validate('user@example.com')` | `True` |
+| | | `email_validate('invalid')` | `False` |
+| `email_clean(value)` | Clean and lowercase email | `email_clean(' USER@EXAMPLE.COM ')` | `'user@example.com'` |
+
+#### Phone Numbers
+
+Requires `phonenumbers` library: `pip install phonenumbers`
+
+| Function | Description | Example | Notes |
+|----------|-------------|---------|-------|
+| `phone_validate(value, country='US')` | Validate phone number | `phone_validate('555-1234')` | Returns bool |
+| `phone_clean(value, country='US')` | Clean and format phone | `phone_clean('5551234567')` | `'(555) 123-4567'` |
+| `phone_format(value, format=PhoneFormat.NATIONAL)` | Format with specific style | `phone_format('+1-555-123-4567', PhoneFormat.E164)` | `'+15551234567'` |
+| `phone_get_type(value)` | Get phone type | `phone_get_type('+1-800-555-0100')` | `'toll_free'` |
+
+**PhoneFormat options:** `E164`, `INTERNATIONAL`, `NATIONAL`, `RFC3966`
+
+#### Address Validation
+
+Requires `usaddress` library: `pip install usaddress`
+
+| Function | Description | Example | Notes |
+|----------|-------------|---------|-------|
+| `validate_us_address(value)` | Validate US address format | `validate_us_address('123 Main St')` | Returns bool |
+| `standardize_address(value)` | Standardize address format | `standardize_address('123 main street')` | `'123 Main St'` |
+
+#### Lists and Parsing
+
+| Function | Description | Example | Returns |
+|----------|-------------|---------|---------|
+| `parse_list(value, delimiter=',')` | Split string to list | `parse_list('a,b,c')` | `['a', 'b', 'c']` |
+| `get_list_item(lst, index, default=None)` | Get item by index safely | `get_list_item(['a','b'], 5, 'N/A')` | `'N/A'` |
+
+#### Utilities
+
+| Function | Description | Example | Returns |
+|----------|-------------|---------|---------|
+| `coalesce(*values)` | Return first non-None value | `coalesce(None, '', 'first', 'second')` | `'first'` |
+| `indicator(value, true_val='Y', false_val=None, invert=False)` | Boolean to indicator | `indicator(True)` | `'Y'` |
+| | | `indicator(False)` | `None` |
+| | | `indicator(True, 'Active', 'Inactive')` | `'Active'` |
+| `format_number(value, decimals=2, thousands_sep=',')` | Format number | `format_number(1234.567)` | `'1,234.57'` |
+
+#### Using in Table Definitions
+
+```python
+from dbtk.etl import Table, transforms as tx
+
+# Direct function reference
+table = Table('users', {
+    'age': {'field': 'age_str', 'fn': tx.get_int},
+    'email': {'field': 'email_raw', 'fn': tx.email_clean},
+    'amount': {'field': 'price', 'fn': tx.get_float},
+}, cursor=cursor)
+
+# Custom function combining transforms
+def clean_phone(value):
+    digits = tx.get_digits(value)
+    return tx.phone_format(digits) if digits else None
+
+table = Table('contacts', {
+    'phone': {'field': 'phone_raw', 'fn': clean_phone},
+}, cursor=cursor)
+
+# Transform pipelines (executed in order)
+table = Table('users', {
+    'username': {'field': 'email', 'fn': [tx.email_clean, lambda x: x.split('@')[0]]},
+}, cursor=cursor)
+```
+
 ## String Shorthand for Transformations
 
 **The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax.

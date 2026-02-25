@@ -318,3 +318,161 @@ with XMLStreamer(file='large_export.xml', root_element='records',
 ```
 
 This is memory-efficient for large datasets where `to_xml()` would consume too much memory building the DOM.
+
+#### XMLStreamer Detailed Usage
+
+`XMLStreamer` provides fine-grained control for streaming large XML exports:
+
+```python
+from dbtk.writers import XMLStreamer
+
+# Basic usage with cursor
+cursor.execute("SELECT * FROM users WHERE active = true")
+
+with XMLStreamer(file='active_users.xml', root_element='users',
+                 record_element='user', encoding='utf-8') as streamer:
+    for record in cursor:
+        streamer.write_record(record)
+# Auto-closes and finalizes XML
+
+# Batch processing for performance
+cursor.execute("SELECT * FROM orders")
+
+with XMLStreamer(file='orders.xml', root_element='orders',
+                 record_element='order') as streamer:
+    batch = []
+    for record in cursor:
+        batch.append(record)
+        if len(batch) >= 10000:
+            streamer.write_batch(batch)
+            batch = []
+    if batch:  # Write remaining
+        streamer.write_batch(batch)
+
+# Custom element attributes
+with XMLStreamer(file='products.xml', root_element='catalog',
+                 record_element='product') as streamer:
+    for record in cursor:
+        # Records with nested data work automatically
+        streamer.write_record(record)
+
+# Manual control (without context manager)
+streamer = XMLStreamer(file='data.xml', root_element='data',
+                       record_element='item')
+streamer.write_batch(records_list_1)
+streamer.write_batch(records_list_2)
+streamer.close()  # Must call close() to finalize XML
+```
+
+**XMLStreamer vs to_xml():**
+
+| Feature | XMLStreamer | to_xml() |
+|---------|-------------|----------|
+| Memory usage | Constant (streaming) | O(n) - loads all in memory |
+| Best for | Millions of records | < 100K records |
+| Control | Fine-grained batching | Single operation |
+| Speed | Slower (incremental writes) | Faster (bulk write) |
+
+**When to use XMLStreamer:**
+- Exporting > 100K records to XML
+- Memory-constrained environments
+- Long-running exports that need progress tracking
+- Need to process multiple cursors into one XML
+
+### Multiple Sheets with LinkedExcelWriter
+
+`LinkedExcelWriter` creates Excel workbooks with multiple sheets from different data sources:
+
+```python
+from dbtk.writers import LinkedExcelWriter
+
+# Create workbook with multiple sheets
+with LinkedExcelWriter('monthly_report.xlsx') as workbook:
+    # Sheet 1: Sales data
+    cursor.execute("SELECT * FROM sales WHERE month = :month", {'month': 'January'})
+    workbook.write_sheet(cursor, 'Sales')
+
+    # Sheet 2: Expenses
+    cursor.execute("SELECT * FROM expenses WHERE month = :month", {'month': 'January'})
+    workbook.write_sheet(cursor, 'Expenses')
+
+    # Sheet 3: Summary (from materialized data)
+    summary_data = [
+        {'category': 'Revenue', 'amount': 100000},
+        {'category': 'Expenses', 'amount': 75000},
+        {'category': 'Profit', 'amount': 25000}
+    ]
+    workbook.write_sheet(summary_data, 'Summary')
+
+# Workbook is automatically saved and closed
+
+# Complex multi-source report
+with LinkedExcelWriter('quarterly_report.xlsx') as wb:
+    # Active customers
+    cursor.execute("SELECT * FROM customers WHERE status = 'active'")
+    wb.write_sheet(cursor, 'Active Customers')
+
+    # Churned customers
+    cursor.execute("SELECT * FROM customers WHERE status = 'churned'")
+    wb.write_sheet(cursor, 'Churned Customers')
+
+    # Regional breakdown
+    cursor.execute("""
+        SELECT region, COUNT(*) as customer_count, SUM(revenue) as total_revenue
+        FROM customers GROUP BY region
+    """)
+    wb.write_sheet(cursor, 'By Region')
+
+    # Year-over-year comparison
+    yoy_data = calculate_yoy_comparison()  # Your function
+    wb.write_sheet(yoy_data, 'YoY Comparison')
+```
+
+**LinkedExcelWriter vs multiple to_excel() calls:**
+
+```python
+# ❌ WRONG: This overwrites the file each time
+writers.to_excel(sales_data, 'report.xlsx', sheet='Sales')
+writers.to_excel(expenses_data, 'report.xlsx', sheet='Expenses')  # Overwrites!
+
+# ❌ WRONG: Even with append=True, requires re-reading file each time
+writers.to_excel(sales_data, 'report.xlsx', sheet='Sales')
+writers.to_excel(expenses_data, 'report.xlsx', sheet='Expenses', append=True)
+# Works but inefficient - reopens file
+
+# ✅ CORRECT: Efficient multi-sheet creation
+with LinkedExcelWriter('report.xlsx') as wb:
+    wb.write_sheet(sales_data, 'Sales')
+    wb.write_sheet(expenses_data, 'Expenses')
+# File written once at close
+```
+
+**Methods:**
+
+- `write_sheet(data, sheet_name)` - Add sheet with data (cursor or list)
+- `save()` - Save workbook (called automatically on exit)
+- `close()` - Close workbook (called automatically on exit)
+
+**Use cases:**
+- Multi-tab reports for business users
+- Quarterly/annual reports with multiple breakdowns
+- Data exports with raw data + summaries
+- Combining data from multiple databases into one file
+
+### Performance Comparison
+
+For large datasets, here's when to use each writer:
+
+| Records | CSV | Excel | JSON | XML | XMLStreamer |
+|---------|-----|-------|------|-----|-------------|
+| < 10K | ✅ Fast | ✅ Fast | ✅ Fast | ✅ Fast | ❌ Overkill |
+| 10K - 100K | ✅ Fast | ✅ OK | ✅ OK | ⚠️ Slow | ⚠️ Better |
+| 100K - 1M | ✅ Fast | ⚠️ Slow | ⚠️ Slow | ❌ Memory | ✅ Use this |
+| > 1M | ✅ Fast | ❌ Very slow | ❌ Memory | ❌ Memory | ✅ Use this |
+
+**Recommendations:**
+- **CSV**: Best for all sizes, especially large datasets
+- **Excel**: Great for < 100K records, business reports
+- **JSON**: Good for < 100K records, API integration
+- **XML**: Use XMLStreamer for > 100K records
+- **LinkedExcelWriter**: Multi-sheet reports (any size per sheet < 1M)
