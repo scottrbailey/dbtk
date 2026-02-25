@@ -256,8 +256,8 @@ for record in reader:
 
 ```python
 with dbtk.readers.get_reader('data.csv') as reader:
-    reader.filter(lambda r: r.status == 'active')
-    reader.filter(lambda r: r.age >= 18)
+    reader.add_filter(lambda r: r.status == 'active')
+    reader.add_filter(lambda r: r.age >= 18)
     for record in reader:
         process(record)
 ```

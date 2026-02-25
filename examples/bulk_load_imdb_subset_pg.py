@@ -217,7 +217,7 @@ if __name__ == '__main__':
         null_values=r"\N",
         quote_char=None,     # required for the partially quoted values in the dataset
         ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter(
+    ).add_filter(
         (pl.col("titleType") == "movie")
         & pl.col("genres").str.contains("Crime")
         & pl.col("genres").str.contains("Drama")
@@ -244,7 +244,7 @@ if __name__ == '__main__':
         null_values=r"\N",
         quote_char=None,     # required for the partially quoted values in the dataset
         ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter(pl.col('tconst').is_in(all_titles)).collect()
+    ).add_filter(pl.col('tconst').is_in(all_titles)).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
         surge = DataSurge(title_ratings)
         surge.update(reader)
@@ -268,7 +268,7 @@ if __name__ == '__main__':
             null_values=r"\N",
             quote_char=None,  # required for the partially quoted values in the dataset
             ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter((pl.col("tconst").is_in(all_titles))).collect()
+    ).add_filter((pl.col("tconst").is_in(all_titles))).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
         surge = BulkSurge(principals)
         surge.load(reader)
@@ -292,7 +292,7 @@ if __name__ == '__main__':
             null_values=r"\N",
             quote_char=None,     # required for the partially quoted values in the dataset
             ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter((pl.col("nconst").is_in(all_names))).collect()
+    ).add_filter((pl.col("nconst").is_in(all_names))).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
         surge = BulkSurge(names)
         surge.load(reader)

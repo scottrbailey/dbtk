@@ -148,13 +148,13 @@ with dbtk.readers.get_reader('data.csv', skip_rows=5) as reader:
 
 ### Filtering Records
 
-Use `filter()` to selectively process records. Multiple filters accumulate in a pipeline - all must return True for a record to be included.
+Use `add_filter()` to selectively process records. Multiple filters accumulate in a pipeline - all must return True for a record to be included.
 
 ```python
 # Filter by column value
 with dbtk.readers.get_reader('soldiers.csv') as reader:
-    reader.filter(lambda r: r.rank == 'Captain')
-    reader.filter(lambda r: r.age >= 25)  # Both conditions must be True
+    reader.add_filter(lambda r: r.rank == 'Captain')
+    reader.add_filter(lambda r: r.age >= 25)  # Both conditions must be True
     for record in reader:
         process(record)
 
@@ -169,14 +169,14 @@ with dbtk.readers.get_reader('titles.csv') as reader:
 
 # Second pass: only process records with valid title references
 with dbtk.readers.get_reader('title_principals.csv') as reader:
-    reader.filter(lambda r: r.tconst in valid_titles)
+    reader.add_filter(lambda r: r.tconst in valid_titles)
     for record in reader:
         process(record)  # Only records with valid tconst
 
 # Complex filtering logic
 with dbtk.readers.get_reader('orders.csv') as reader:
-    reader.filter(lambda r: r.status == 'active' and r.total > 100)
-    reader.filter(lambda r: r.country in {'US', 'CA', 'MX'})
+    reader.add_filter(lambda r: r.status == 'active' and r.total > 100)
+    reader.add_filter(lambda r: r.country in {'US', 'CA', 'MX'})
     for record in reader:
         process(record)
 ```
@@ -184,7 +184,7 @@ with dbtk.readers.get_reader('orders.csv') as reader:
 **Key behaviors:**
 - Filters applied after `skip_rows` and null value conversion
 - Filters applied before `n_rows` limit
-- Multiple `filter()` calls create an AND pipeline (all must pass)
+- Multiple `add_filter()` calls create an AND pipeline (all must pass)
 - Operates on final Record objects with normalized field names
 
 ### DataFrame Readers

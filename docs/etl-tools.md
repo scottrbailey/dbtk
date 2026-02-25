@@ -252,7 +252,7 @@ for record in titles_reader:
 
 # Filter a second file to only matching titles
 with dbtk.readers.get_reader('title.principals.tsv.gz') as reader:
-    reader.filter(lambda r: r.tconst in title_collector)
+    reader.add_filter(lambda r: r.tconst in title_collector)
     for record in reader:
         process(record)
 ```
@@ -261,14 +261,14 @@ with dbtk.readers.get_reader('title.principals.tsv.gz') as reader:
 
 ```python
 # Valid codes (seen in reference table)
-mapping = collector.get_valid_mapping()   # {code: description}
+mapping = collector.get_valid_mapping()  # {code: description}
 
 # New codes (not in reference table)
-new_codes = collector.get_new_codes()     # sorted list
+new_codes = collector.get_new_codes()  # sorted list
 
 # All codes as a set (useful for polars filtering)
 all_codes = collector.get_all()
-df = pl.scan_csv('data.tsv').filter(pl.col('code').is_in(all_codes))
+df = pl.scan_csv('data.tsv').add_filter(pl.col('code').is_in(all_codes))
 ```
 
 ---
