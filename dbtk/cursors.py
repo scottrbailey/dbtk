@@ -5,7 +5,8 @@ All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
 import logging
-from typing import List, Any, Optional, Iterator, Callable
+from pathlib import Path
+from typing import List, Any, Optional, Iterator, Callable, Union
 
 from .record import Record
 from .utils import ParamStyle, process_sql_parameters, normalize_field_name
@@ -25,7 +26,7 @@ class PreparedStatement:
     so it can be used in the same way as a regular cursor (fetchone(), fetchmany(), etc.).
     """
 
-    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8-sig'):
+    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[Union[str, Path]] = None, encoding: Optional[str] = 'utf-8-sig'):
         """
         Create a prepared statement from a SQL file.
 
@@ -424,7 +425,7 @@ class Cursor:
         else:
             return None
 
-    def execute_file(self, filename: str, bind_vars: Optional[dict] = None, **kwargs) -> Any:
+    def execute_file(self, filename: Union[str, Path], bind_vars: Optional[dict] = None, **kwargs) -> Any:
         """
         Execute SQL query from a file with named parameter substitution.
 
@@ -471,7 +472,7 @@ class Cursor:
             )
             raise
 
-    def prepare_file(self, filename: str, encoding: str = 'utf-8-sig') -> PreparedStatement:
+    def prepare_file(self, filename: Union[str, Path], encoding: str = 'utf-8-sig') -> PreparedStatement:
         """
         Prepare a SQL statement from a file for repeated execution.
 

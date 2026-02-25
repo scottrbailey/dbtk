@@ -659,7 +659,7 @@ class BulkSurge(BaseSurge):
         return ctl_path
 
     def dump(self, records: Iterable[Record],
-             file_name: str = None,
+             filename: Optional[Union[str, Path]] = None,
              write_headers: bool = True,
              delimiter: str = ",",
              encoding: str = 'utf-8',
@@ -676,7 +676,7 @@ class BulkSurge(BaseSurge):
         ----------
         records : Iterable[Record]
             Records to export
-        file_name : str or Path, optional
+        filename : Union[str, Path], optional
             Target file path (directory or full path). See _resolve_file_path
             for resolution priority.
         write_headers : bool, optional
@@ -725,7 +725,7 @@ class BulkSurge(BaseSurge):
         ext = '.tsv' if delimiter == '\t' else '.csv'
         headers = self._get_columns('insert')
         logger.debug(f'Dump column headers: {headers}')
-        dump_path = self._resolve_file_path(file_name, extension=ext)
+        dump_path = self._resolve_file_path(filename, extension=ext)
         self.dump_path = dump_path
         with open(dump_path, "w", encoding=encoding, newline='') as fp:
             writer = CSVWriter(data=None,
