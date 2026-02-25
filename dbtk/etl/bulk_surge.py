@@ -433,7 +433,7 @@ class BulkSurge(BaseSurge):
 
         # Dump CSV
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, file_name=csv_path, delimiter=',', quotechar='"')
+        self.dump(records, filename=csv_path, delimiter=',', quotechar='"')
         # dump automatically creates .ctl file if connected to Oracle
         ctl_path = self.control_path
         log_path = self.log_dir +  self.dump_path.stem + '.log'
@@ -526,7 +526,7 @@ class BulkSurge(BaseSurge):
 
         self.dump(
             records,
-            file_name=dump_path,
+            filename=dump_path,
             write_headers=False,
             delimiter='\x1f',  # Unit Separator — super safe
             quotechar=None,    # No quoting needed
@@ -588,7 +588,7 @@ class BulkSurge(BaseSurge):
         """
         # Dump to CSV file
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, file_name=csv_path, lineterminator='\n')
+        self.dump(records, filename=csv_path, lineterminator='\n')
 
         # Execute LOAD DATA LOCAL INFILE from the temp file
         # Use forward slashes for MySQL (works on Windows too, avoids escape issues)
