@@ -74,113 +74,17 @@ register_user_drivers(custom_drivers)
 
 6. **Let the database do the work** - Use `db_expr` in Table definitions to leverage database functions instead of processing in Python.
 
-## IdentityManager
+## IdentityManager & ValidationCollector
 
-`IdentityManager` resolves source-system keys to target-system identifiers, caching results so each entity is queried at most once. It tracks status, errors, and messages per entity — useful across a range of import patterns: a single-pass load that spans multiple source files, a multi-file import where only some files carry the linking key, or a multi-stage pipeline that needs to be resumed between runs.
+For detailed documentation on identity resolution, validation, and logging tools for production ETL pipelines, see [ETL: Tools & Logging](etl-tools.md).
 
-```python
-from dbtk.etl import IdentityManager, EntityStatus
-from dbtk.utils import ErrorDetail
+**IdentityManager** - Resolves source-system keys to target-system identifiers with caching, status tracking, and state persistence. Essential for multi-stage imports and CRM/ERP integrations.
 
-# Map source CRM IDs to ERP person IDs, also tracking a banner_id per entity
-stmt = cursor.prepare_file("sql/resolve_person.sql")
-im = IdentityManager(
-    source_key="crm_id",       # Reliable source-system primary key
-    target_key="erp_person_id",  # ID returned by resolver query
-    resolver=stmt,
-    alternate_keys=["banner_id"],  # Additional IDs to track
-)
+**ValidationCollector** - Collects and validates coded values during processing, with optional lookup enrichment.
 
-# Process records - resolve() caches results and writes target_key back into row
-for row in reader:
-    entity = im.resolve(row)          # Looks up crm_id, writes erp_person_id into row
-    if entity["_status"] == EntityStatus.RESOLVED:
-        table.set_values(row)         # row now has erp_person_id populated
-        if table.execute("insert"):   # returns 1 on DatabaseError
-            im.add_error(row["crm_id"], table.last_error)
-    elif entity["_status"] == EntityStatus.NOT_FOUND:
-        im.add_message(row["crm_id"], "No match in ERP — will retry after staging")
+## See Also
 
-# Optionally persist state for audit or resumption on a later run
-im.save_state("state/persons.json")
-
-# Resume: already-resolved entities are restored from cache, not re-queried
-im = IdentityManager.load_state("state/persons.json", resolver=stmt)
-```
-
-### Entity statuses
-
-| Status | Meaning |
-|--------|---------|
-| `pending` | Registered but not yet resolved |
-| `resolved` | Matched; `target_key` is populated |
-| `staged` | Exists in staging but not yet confirmed in target system |
-| `not_found` | Resolver ran but returned no match |
-| `error` | Resolution failed with an unexpected error |
-| `skipped` | Intentionally bypassed |
-
-```python
-from dbtk.etl import EntityStatus
-
-if entity["_status"] == EntityStatus.RESOLVED:
-    ...
-elif entity["_status"] == EntityStatus.NOT_FOUND:
-    ...
-```
-
-### resolve()
-
-`resolve(value)` accepts a scalar, dict, or Record:
-
-- **scalar** — treated as the raw `source_key` value; calls the resolver and caches the result without mutating anything.
-- **dict / Record** — extracts `source_key` from the mapping; on success, writes `target_key` back into the caller's record so it's immediately available for `table.set_values()`.
-
-Already-resolved entities are returned from cache without hitting the database.
-
-### Tracking errors and messages
-
-```python
-# Attach a structured error to a cached entity
-im.add_error(row["crm_id"], table.last_error)          # ErrorDetail from Table
-im.add_error(row["crm_id"], ErrorDetail("Duplicate", field="email"))
-
-# Attach a plain informational message
-im.add_message(row["crm_id"], "Staged — will retry in phase 2")
-```
-
-### Managing alternate keys
-
-```python
-# Store a separately resolved ID against a cached entity
-im.set_id(row["crm_id"], "banner_id", banner_result["id"])
-
-# Retrieve it later
-banner_id = im.get_id(row["crm_id"], "banner_id")
-```
-
-### Batch re-resolution
-
-After a bulk-load staging step, retry all unresolved entities in one call:
-
-```python
-im.batch_resolve()   # Re-runs resolver for all PENDING and NOT_FOUND entities
-```
-
-### Stats and state
-
-```python
-stats = im.calc_stats()
-# {'pending': 0, 'resolved': 142, 'staged': 5, 'not_found': 8, 'error': 3, 'skipped': 1}
-
-im.save_state("state/persons.json")   # Persist to JSON
-
-# Restore — all entities re-hydrated, ErrorDetail objects deserialized
-im = IdentityManager.load_state("state/persons.json", resolver=stmt)
-```
-
-**Use cases:**
-- Imports spanning multiple source files where only some files carry the entity identifier
-- Any import where the same source key may appear in many rows — resolver runs once, cache handles the rest
-- CRM/ERP integrations where records have IDs from multiple systems
-- Multi-stage pipelines (stage → confirm → load) that benefit from resumption between runs
-- Auditing: per-entity error and message tracking regardless of pipeline complexity
+- [ETL: Tools & Logging](etl-tools.md) - IdentityManager, ValidationCollector, and integration logging
+- [Configuration & Security](configuration.md) - Custom driver registration, config file locations
+- [ETL: Table & Transforms](table.md) - Using db_expr for database-side processing
+- [ETL: DataSurge & BulkSurge](datasurge.md) - Performance tuning for bulk operations

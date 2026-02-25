@@ -13,7 +13,7 @@ errors across an entire import run, and can persist that state to JSON so multi-
 pipelines can resume without re-querying resolved records.
 
 ```python
-from dbtk.etl.managers import IdentityManager, EntityStatus
+from dbtk.etl import IdentityManager, EntityStatus
 ```
 
 ### EntityStatus
@@ -164,7 +164,7 @@ stats = im.calc_stats()
 
 ```python
 import dbtk
-from dbtk.etl.managers import IdentityManager, EntityStatus
+from dbtk.etl import IdentityManager, EntityStatus
 from dbtk.utils import ErrorDetail
 
 dbtk.setup_logging()
@@ -224,7 +224,7 @@ processing. Useful for accumulating all values seen in a field (e.g. title codes
 department codes) and validating or enriching them against a reference table.
 
 ```python
-from dbtk.etl.managers import ValidationCollector
+from dbtk.etl import ValidationCollector
 from dbtk.etl.transforms import TableLookup
 
 # Pure collection — no lookup
@@ -239,6 +239,8 @@ genre_collector = ValidationCollector(lookup=genre_lookup, desc_field='name')
 for record in reader:
     genre_name = genre_collector(record['genre_code'])  # Returns enriched name
 ```
+
+For detailed `TableLookup` documentation including caching strategies and string shorthand syntax, see [Table Lookups and Validation](table.md#database-lookups-and-validation).
 
 **Filtering with `in` operator:**
 
@@ -459,4 +461,4 @@ for your specific business logic, not for database operations, file reading, or 
 
 - [ETL: Table & Transforms](table.md) - Table configuration, transforms, TableLookup
 - [ETL: DataSurge & BulkSurge](datasurge.md) - High-performance bulk loading
-- [Database Connections](database-connections.md) - Connections, cursors, PreparedStatement
+- [Database Connections](database-connections.md) - Connections, cursors, SQL file execution, PreparedStatement
