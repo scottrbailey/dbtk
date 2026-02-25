@@ -225,32 +225,64 @@ for record in records:
     critical_table.execute('insert', raise_error=True)  # Raises ValueError if incomplete
 ```
 
-**Performance tip:** Use `is_ready()` instead of `reqs_met()` for readiness checks:
+### Readiness Checking Methods
 
+Table provides three methods for checking if a record is ready for execution:
+
+**`is_ready(operation)` → bool** - Fast O(1) cached readiness check (RECOMMENDED)
 ```python
-# ✅ RECOMMENDED: is_ready() - O(1) cached bit-flag check
-address_table.set_values(record)
-if address_table.is_ready('insert'):
-    address_table.execute('insert')
+# ✅ Use this in loops and hot paths
+table.set_values(record)
+if table.is_ready('insert'):
+    table.execute('insert')
 
-# ❌ SLOWER: reqs_met() - recalculates requirements every call
-if address_table.reqs_met('insert'):  # Don't use this in loops!
-    address_table.execute('insert')
-
-# For conditional operations based on data completeness
-if address_table.is_ready('update'):
-    address_table.execute('update')
-elif address_table.is_ready('insert'):
-    address_table.execute('insert')
+# Conditional operations based on data completeness
+if table.is_ready('update'):
+    table.execute('update')
+elif table.is_ready('insert'):
+    table.execute('insert')
 ```
+- Returns True if all required columns have values for the operation
+- Updated automatically by `set_values()` using bit flags
+- **Use this for performance-critical code**
 
-**Key differences:**
-- `is_ready(operation)` - **Fast O(1)** cached readiness check using bit flags. Updated automatically by `set_values()`. Use this in loops and hot paths.
-- `reqs_met(operation)` - **Slower** non-cached check that validates requirements on every call. Only use when you need to verify requirements changed outside `set_values()`.
+**`reqs_met(operation)` → bool** - Slower non-cached validation (rarely needed)
+```python
+# ❌ Avoid in loops - recalculates every call
+if table.reqs_met('insert'):
+    table.execute('insert')
+
+# ✓ Only use when verifying after direct modifications
+table.values['status'] = 'active'  # Direct modification
+if table.reqs_met('insert'):  # Recalculates from scratch
+    table.execute('insert')
+```
+- Recalculates requirements on every call (no cache)
+- Only needed when bypassing `set_values()` and can't use `refresh_readiness()`
+
+**`reqs_missing(operation)` → Set[str]** - Get missing column names
+```python
+# Useful for error reporting and diagnostics
+table.set_values(record)
+if not table.is_ready('insert'):
+    missing = table.reqs_missing('insert')
+    logger.warning(f"Cannot insert record {record.id}: missing {missing}")
+    # Output: Cannot insert record 123: missing {'email', 'status'}
+
+# Debug incomplete records
+for record in reader:
+    table.set_values(record)
+    missing = table.reqs_missing('insert')
+    if missing:
+        print(f"Row {record._row_num}: missing required fields: {missing}")
+```
+- Returns set of column names that are missing values
+- Empty set means record is ready
+- Perfect for error messages and validation reporting
 
 **When to use `refresh_readiness()`:**
 
-If you modify `table.values` directly (bypassing `set_values()`), you must call `refresh_readiness()` to update the cached readiness state:
+If you modify `table.values` directly (bypassing `set_values()`), call `refresh_readiness()` to update the cached state:
 
 ```python
 # Direct modification requires manual refresh
@@ -258,10 +290,125 @@ table.set_values(record)
 table.values['status'] = 'active'  # Direct modification
 table.refresh_readiness()  # Update cached state
 
-# Now is_ready() will reflect the changes
+# Now is_ready() reflects the changes
 if table.is_ready('insert'):
     table.execute('insert')
 ```
+
+### Fetching Existing Records
+
+The `fetch()` method retrieves an existing record from the database using the primary key values from the current `table.values`. This is essential for update-or-insert logic.
+
+```python
+# Standard update-or-insert pattern
+for record in reader:
+    table.set_values(record)
+    existing = table.fetch()  # SELECT using primary key
+
+    if existing:
+        # Record exists - update it
+        table.execute('update')
+    else:
+        # Record doesn't exist - insert it
+        table.execute('insert')
+
+# Check specific fields before deciding
+for record in reader:
+    table.set_values(record)
+    existing = table.fetch()
+
+    if existing and existing.status == 'archived':
+        logger.info(f"Skipping archived record: {existing.id}")
+        continue
+    elif existing:
+        table.execute('update')
+    else:
+        table.execute('insert')
+```
+
+**Key behaviors:**
+- Returns a Record object if found, `None` if not found
+- Uses primary key columns from `table.values` for the SELECT
+- Raises `ValueError` if primary key values are missing or None
+- Executes immediately (not batched)
+- Returns the Record with all columns from the database
+
+**Common pattern with IdentityManager:**
+```python
+from dbtk.etl import IdentityManager, EntityStatus
+
+im = IdentityManager('source_id', 'target_id', resolver=stmt)
+
+for record in reader:
+    entity = im.resolve(record)  # Gets target_id
+    if entity['_status'] != EntityStatus.RESOLVED:
+        continue
+
+    table.set_values(record)  # Now has target_id populated
+    if table.fetch():  # Check if exists in database
+        table.execute('update')
+    else:
+        table.execute('insert')
+```
+
+### Error Tracking with last_error
+
+The `last_error` attribute is automatically set when database operations fail with `raise_error=False`. It contains an `ErrorDetail` object for structured error handling.
+
+```python
+from dbtk.utils import ErrorDetail
+
+# Pattern 1: Simple error tracking
+for record in reader:
+    table.set_values(record)
+    if table.execute('insert', raise_error=False):  # Returns 1 on error
+        print(f"Insert failed: {table.last_error}")
+        # Output: Insert failed: ErrorDetail(message='duplicate key', field='email', ...)
+
+# Pattern 2: Feed errors to IdentityManager
+from dbtk.etl import IdentityManager, EntityStatus
+
+im = IdentityManager('student_id', 'person_id', resolver=stmt)
+
+for record in reader:
+    entity = im.resolve(record)
+    if entity['_status'] != EntityStatus.RESOLVED:
+        continue
+
+    table.set_values(record)
+    if table.execute('insert', raise_error=False):
+        # On error: mark entity as ERROR and attach error details
+        entity['_status'] = EntityStatus.ERROR
+        im.add_error(record['student_id'], table.last_error)
+
+# Pattern 3: Collect errors for reporting
+errors = []
+for record in reader:
+    table.set_values(record)
+    if table.execute('insert', raise_error=False):
+        errors.append({
+            'row': record._row_num,
+            'id': record.id,
+            'error': table.last_error
+        })
+
+# Generate error report
+for err in errors:
+    print(f"Row {err['row']} (ID: {err['id']}): {err['error'].message}")
+```
+
+**ErrorDetail attributes:**
+- `message` - Error description
+- `field` - Column/field that caused the error (if applicable)
+- `code` - Error code (database-specific)
+- `value` - The value that caused the error (if applicable)
+
+**Key behaviors:**
+- Set to `ErrorDetail` object on DatabaseError
+- Set to `None` on successful execution
+- Only populated when `raise_error=False`
+- Preserved until next `execute()` call
+- Perfect for integration with IdentityManager error tracking
 
 ## Data Transformations
 

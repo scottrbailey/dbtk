@@ -146,6 +146,47 @@ with dbtk.readers.get_reader('data.csv', skip_rows=5) as reader:
         print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
 ```
 
+### Filtering Records
+
+Use `filter()` to selectively process records. Multiple filters accumulate in a pipeline - all must return True for a record to be included.
+
+```python
+# Filter by column value
+with dbtk.readers.get_reader('soldiers.csv') as reader:
+    reader.filter(lambda r: r.rank == 'Captain')
+    reader.filter(lambda r: r.age >= 25)  # Both conditions must be True
+    for record in reader:
+        process(record)
+
+# Filter using ValidationCollector (seen in first pass)
+from dbtk.etl import ValidationCollector
+
+# First pass: collect valid IDs
+valid_titles = ValidationCollector()
+with dbtk.readers.get_reader('titles.csv') as reader:
+    for record in reader:
+        valid_titles(record.tconst)
+
+# Second pass: only process records with valid title references
+with dbtk.readers.get_reader('title_principals.csv') as reader:
+    reader.filter(lambda r: r.tconst in valid_titles)
+    for record in reader:
+        process(record)  # Only records with valid tconst
+
+# Complex filtering logic
+with dbtk.readers.get_reader('orders.csv') as reader:
+    reader.filter(lambda r: r.status == 'active' and r.total > 100)
+    reader.filter(lambda r: r.country in {'US', 'CA', 'MX'})
+    for record in reader:
+        process(record)
+```
+
+**Key behaviors:**
+- Filters applied after `skip_rows` and null value conversion
+- Filters applied before `n_rows` limit
+- Multiple `filter()` calls create an AND pipeline (all must pass)
+- Operates on final Record objects with normalized field names
+
 ### DataFrame Readers
 
 For maximum throughput, use [polars](https://pola.rs) to read files and DataFrameReader to stream rows into DBTK pipelines.  This works with both polars and Pandas and can use any file format that either library supports. Tip: use Lazy API and streaming to prevent loading massive files into memory.
