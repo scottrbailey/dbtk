@@ -3,6 +3,7 @@
 """XML file reader with XPath support for element extraction."""
 
 import logging
+from pathlib import Path
 from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
 from .base import Reader, Clean
 
@@ -221,7 +222,7 @@ class XMLReader(Reader):
 
 
 # Convenience function to match other readers
-def open_xml(filename: str, **kwargs) -> XMLReader:
+def open_xml(filename: Union[str, Path], **kwargs) -> XMLReader:
     """
     Open XML file for reading.
 

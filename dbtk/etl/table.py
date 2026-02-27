@@ -13,7 +13,7 @@ from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
 from ..database import ParamStyle
-from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike
+from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike, ErrorDetail
 from .transforms.core import fn_resolver
 from .transforms.database import _DeferredTransform
 
@@ -51,9 +51,18 @@ class Table:
           function instead of a single field value. If omitted, column is populated
           via 'default' or 'db_expr'.
 
-        * **default** (any, optional):
-          Default/constant value to use for this column. Applied when source field
-          is missing, empty, or None.
+        * **default** (any or callable, optional):
+          Default value for this column. Applied when the source field is missing,
+          empty, or None. If callable (e.g. a zero-argument lambda), it is called
+          at ``set_values()`` time so the value is resolved on each record rather
+          than at column-definition time. Useful for values that come from runtime
+          context (CLI args, job IDs, etc.) that aren't available when columns are
+          defined::
+
+              conf_vars = {}  # populated later after args are parsed
+              columns = {
+                  'user_id': {'default': lambda: conf_vars['user_id']},
+              }
 
         * **fn** (callable | list[callable] | str, optional):
           Transformation function(s) to apply to the source value.
@@ -70,20 +79,23 @@ class Table:
           no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
 
         * **primary_key** (bool, optional, default False):
-          Marks column as primary key. Automatically sets key=True and required=True.
+          Marks column as primary key. Automatically implies ``required=True``.
+          Alias: ``key``.
 
         * **key** (bool, optional, default False):
-          Marks column as key for WHERE clauses in SELECT, UPDATE, DELETE operations.
+          Alias for ``primary_key``.  Either may be used interchangeably.
 
         * **auto_key** (bool, optional, default False):
           Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
           Ideal for typical auto-increment primary keys.
 
         * **nullable** (bool, optional, default True):
-          If False, marks column as required (must have non-None value for INSERT/MERGE).
+          Controls whether the column must have a value for INSERT/UPDATE/MERGE.
+          ``nullable=False`` is the **anti-alias** of ``required=True`` — both
+          mark the column as required.
 
         * **required** (bool, optional, default False):
-          Explicitly marks column as required.
+          Explicitly marks column as required.  Anti-alias of ``nullable=False``.
 
         * **auto_gen** (bool, optional, default False):
           If True, the column is omitted from INSERT statements.
@@ -96,7 +108,7 @@ class Table:
 
         * **bind_name** (str, auto-generated):
           Sanitized parameter name for SQL bind variables. Automatically created from
-          column name (replaces special chars with underscores).
+          column name. Can not be specified in the column definition.
 
     Example
     -------
@@ -174,9 +186,16 @@ class Table:
 
     Attributes
     ----------
-        values (dict): Current record values (dict of column_name: value)
-        counts (dict): Operation counters (insert, update, delete, select, merge, records, incomplete)
-
+    values : dict
+        Current record values keyed by bind name (populated by :meth:`set_values`).
+    counts : dict
+        Operation counters with keys: ``insert``, ``update``, ``delete``,
+        ``select``, ``merge``, ``records``, ``incomplete``.
+    last_error : ErrorDetail or None
+        The error detail from the most recent :meth:`execute` call.
+        Set to ``None`` on success, or an :class:`dbtk.utils.ErrorDetail`
+        on ``DatabaseError`` (when ``raise_error=False``).  Cleared on
+        every successful execution and on :meth:`cursor` reassignment.
     """
 
     OPERATIONS = ('insert', 'select', 'update', 'delete', 'merge')
@@ -733,7 +752,7 @@ class Table:
             UPDATE SET {update_set}
         WHEN NOT MATCHED THEN
             INSERT ({insert_cols})
-            VALUES ({insert_values});""")
+            VALUES ({insert_values})""")
 
         logger.debug(f"Generated merge SQL for {self._name}:\n{sql}")
         return sql
@@ -847,7 +866,8 @@ class Table:
                 val = None
 
             if val in ('', None) and 'default' in col_def:
-                val = col_def['default']
+                default = col_def['default']
+                val = default() if callable(default) else default
 
             if 'fn' in col_def:
                 fn = col_def['fn']
@@ -865,9 +885,11 @@ class Table:
         self.refresh_readiness()
 
     def _reset_counts(self):
+        """Reset all operation counters and clear last_error."""
         self.counts = {op: 0 for op in self.OPERATIONS}
         self.counts['records'] = 0
         self.counts['incomplete'] = 0
+        self.last_error: Optional[ErrorDetail] = None
 
     def _reset(self):
         self._sql_statements = {op: None for op in self.OPERATIONS}
@@ -884,7 +906,7 @@ class Table:
         if not err:
             return self._cursor.fetchone()
 
-    def get_column_definitions(self) -> list:
+    def get_column_definitions(self, all_cols: bool = False) -> list:
         """
         Introspect database table columns to get type information.
 
@@ -892,9 +914,13 @@ class Table:
         information for columns defined in this Table object. Validates that
         all Table columns exist in the database.
 
+        Parameters:
+            all_cols (bool): If True, return all columns from the database table.
+                If False, return only columns on the Table object.
+
         Returns:
             List of tuples: (column_name, type_obj, internal_size, precision, scale, sql_type_def)
-            where sql_type_def is the SQL type string like 'VARCHAR2(100)' or 'NUMBER(10,2)'
+            where sql_type_def is the SQL type string like 'VARCHAR(100)' or 'NUMBER(10,2)'
 
         Raises:
             ValueError: If a column defined in this Table doesn't exist in the database
@@ -919,7 +945,11 @@ class Table:
 
         # Validate and collect type info for Table-defined columns
         result = []
-        for col_name in self._columns.keys():
+        if all_cols:
+            col_list = db_columns.keys()
+        else:
+            col_list = self._columns.keys()
+        for col_name in col_list:
             col_name_upper = col_name.upper()
             if col_name_upper not in db_columns:
                 raise ValueError(
@@ -1068,13 +1098,40 @@ class Table:
 
     def _exec_sql(self, sql: str, params: Union[dict, tuple],
                   operation: str, raise_error: bool) -> int:
+        """
+        Execute a single SQL statement and update counts and last_error.
+
+        On success: increments ``counts[operation]``, sets ``last_error = None``,
+        returns 0.
+
+        On ``DatabaseError``: logs the error, stores an :class:`dbtk.utils.ErrorDetail`
+        in ``last_error``, re-raises if ``raise_error=True``, otherwise returns 1.
+
+        Parameters
+        ----------
+        sql : str
+            The SQL statement to execute.
+        params : dict or tuple
+            Bind parameters for the statement.
+        operation : str
+            One of ``OPERATIONS`` — used to update the correct counter.
+        raise_error : bool
+            If True, re-raise the ``DatabaseError`` after logging.
+
+        Returns
+        -------
+        int
+            0 on success, 1 on error (when raise_error=False).
+        """
         try:
             self._cursor.execute(sql, params)
             self.counts[operation] += 1
+            self.last_error = None
             return 0
         except self._cursor.connection.driver.DatabaseError as e:
             error_msg = f"SQL failed: {sql}\nParams: {params}\nError: {str(e)}"
             logger.error(error_msg)
+            self.last_error = ErrorDetail(message=str(e), code=getattr(e, 'pgcode', None))
             if raise_error:
                 raise
             return 1
@@ -1083,7 +1140,33 @@ class Table:
         """
         Execute the specified database operation using current record values.
 
-        Returns 0 on success, 1 on skip/error.
+        Parameters
+        ----------
+        operation : str
+            One of ``'insert'``, ``'select'``, ``'update'``, ``'delete'``, ``'merge'``.
+        raise_error : bool, default False
+            If True, re-raise ``DatabaseError`` instead of swallowing it.
+            If False, the error is captured in ``last_error`` and 1 is returned.
+
+        Returns
+        -------
+        int
+            0 on success; 1 when requirements are unmet (incomplete record)
+            or when a ``DatabaseError`` occurs and ``raise_error=False``.
+
+        Side Effects
+        ------------
+        * ``counts[operation]`` incremented on success.
+        * ``counts['incomplete']`` incremented when requirements are unmet.
+        * ``last_error`` set to ``None`` on success or an
+          :class:`dbtk.utils.ErrorDetail` on database error.
+
+        Raises
+        ------
+        ValueError
+            If ``operation`` is not valid, or required key columns are missing.
+        DatabaseError
+            If the underlying execute fails and ``raise_error=True``.
         """
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'")

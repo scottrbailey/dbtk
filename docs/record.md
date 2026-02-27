@@ -102,7 +102,7 @@ Normalization lowercases and replaces non-alphanumeric characters with underscor
 - **Original names** only work with dict access (`row['FULL NAME']`) - they may contain characters invalid for Python attributes
 
 ```python
-cursor.execute("SELECT Employee_ID, FULL NAME FROM users")
+cursor.execute('SELECT Employee_ID, "FULL NAME" FROM users')
 for row in cursor:
     # Normalized - works both ways
     row.employee_id       # Attribute access
@@ -111,6 +111,7 @@ for row in cursor:
     # Original - dict only
     row['FULL NAME']      # Works
     row.FULL NAME         # SyntaxError!
+
 ```
 
 ### Why This Matters
@@ -166,6 +167,10 @@ row.status = 'active'
 
 # Multiple updates
 row.update({'status': 'active', 'modified': datetime.now()})
+row.update(name='Aang', age=130)
+
+# Coalesce - only fills in None values, leaves existing values alone
+row.coalesce({'phone': 'unlisted', 'status': 'active'})
 ```
 
 ### Add New Fields

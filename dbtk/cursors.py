@@ -5,10 +5,11 @@ All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
 import logging
-from typing import List, Any, Optional, Iterator, Callable
+from pathlib import Path
+from typing import List, Any, Optional, Iterator, Callable, Union
 
 from .record import Record
-from .utils import ParamStyle, process_sql_parameters, sanitize_identifier
+from .utils import ParamStyle, process_sql_parameters, normalize_field_name
 from .defaults import settings
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class PreparedStatement:
     so it can be used in the same way as a regular cursor (fetchone(), fetchmany(), etc.).
     """
 
-    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[str] = None, encoding: Optional[str] = 'utf-8-sig'):
+    def __init__(self, cursor, query: Optional[str] = None, filename: Optional[Union[str, Path]] = None, encoding: Optional[str] = 'utf-8-sig'):
         """
         Create a prepared statement from a SQL file.
 
@@ -62,7 +63,7 @@ class PreparedStatement:
         """Iterator protocol."""
         return self.cursor.__next__()
 
-    def execute(self, bind_vars: dict) -> Any:
+    def execute(self, bind_vars: Optional[dict] = None) -> Any:
         """
         Execute the prepared statement with the given parameters.
 
@@ -72,6 +73,8 @@ class PreparedStatement:
         Returns:
             Cursor if return_cursor=True, else None
         """
+        if bind_vars is None:
+            bind_vars = {}
         try:
             params = self.cursor.prepare_params(self.param_names, bind_vars)
             return self.cursor.execute(self.sql, params)
@@ -256,20 +259,54 @@ class Cursor:
         else:
             raise StopIteration
 
-    def prepare_params(self, param_names: list, bind_vars: dict) -> Any:
+    def prepare_params(self, param_names: list,
+                       bind_vars: dict,
+                       paramstyle: str = None) -> Any:
         """
-        Convert dict parameters to format required by cursor's paramstyle.
+        Convert named parameters to the format required by the cursor's paramstyle.
+        Used automatically by PreparedStatement, Table and DataSurge classes.
 
-        Args:
-            bind_vars: Dictionary of named parameters
+        Parameters
+        ----------
+        param_names : list of str
+            Ordered list of parameter names as they appear in the SQL statement.
+            Missing names default to ``None`` with a debug-level log message.
+        bind_vars : dict
+            Dictionary of named parameter values keyed by parameter name.
+        paramstyle : str, optional
+            Override the cursor's native paramstyle for this call.
+            Must be one of the values in :class:`dbtk.utils.ParamStyle`.
+            Ignored if not a recognised style.
 
-        Returns:
-            Tuple for positional styles, dict for named styles
+        Returns
+        -------
+        tuple
+            For positional styles (``qmark``, ``numeric``, ``format``):
+            values ordered to match ``param_names``.
+        dict
+            For named styles (``named``, ``pyformat``):
+            subset of ``bind_vars`` containing only the required parameters.
+
+        Example
+        -------
+        ::
+            from dbtk.utils import ParamStyle, process_sql_parameters
+
+            # query with :named or %(pyformat)s parameters
+            sql = "SELECT * FROM warriors WHERE nation = :nation AND rank = COALESCE(:rank, rank)"
+
+            # query rewritten in cursor's parameter style and parameter names in order they appear
+            query, params_names = process_sql_parameters(sql, ParamStyle.get_positional_style(cur.paramstyle))
+
+            # missing parameter defaults to None, extra parameters are ignored
+            cur.prepare_params(params_names, {'nation': 'Fire Nation', 'nick_name': 'Sparky'})
+            ('Fire Nation', None)
         """
         missing = set(param_names) - set(bind_vars.keys())
+        paramstyle = paramstyle if paramstyle and paramstyle in ParamStyle.values() else self.paramstyle
         if missing:
-            logger.info(f"Parameters not provided, defaulting to None: {', '.join(missing)}")
-        if self.paramstyle in ParamStyle.positional_styles():
+            logger.debug(f"Parameters not provided, defaulting to None: {', '.join(missing)}")
+        if paramstyle in ParamStyle.positional_styles():
             # Build tuple in param_names order
             return tuple(bind_vars.get(name) for name in param_names)
         else:
@@ -322,7 +359,7 @@ class Cursor:
         Parameters
         ----------
         normalized : bool, default False
-            If True, return normalized column names (sanitized for Python identifiers).
+            If True, return normalized column names (sanitized for Python attributes).
             If False, return original column names from database.
 
         Returns
@@ -343,8 +380,7 @@ class Cursor:
 
         if normalized:
             # Return normalized column names
-            original_columns = [c[0] for c in self.description]
-            return [sanitize_identifier(col, idx) for idx, col in enumerate(original_columns)]
+            return [normalize_field_name(c[0]) for c in self.description]
         else:
             # Return original column names
             return [c[0] for c in self.description]
@@ -389,7 +425,7 @@ class Cursor:
         else:
             return None
 
-    def execute_file(self, filename: str, bind_vars: Optional[dict] = None, **kwargs) -> Any:
+    def execute_file(self, filename: Union[str, Path], bind_vars: Optional[dict] = None, **kwargs) -> Any:
         """
         Execute SQL query from a file with named parameter substitution.
 
@@ -436,7 +472,7 @@ class Cursor:
             )
             raise
 
-    def prepare_file(self, filename: str, encoding: str = 'utf-8-sig') -> PreparedStatement:
+    def prepare_file(self, filename: Union[str, Path], encoding: str = 'utf-8-sig') -> PreparedStatement:
         """
         Prepare a SQL statement from a file for repeated execution.
 

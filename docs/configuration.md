@@ -58,7 +58,7 @@ db = dbtk.connect('database_name')
 
 ## Configuration File Structure
 
-The config file has three main sections: `settings`, `connections`, and optionally `passwords` and `drivers`.
+The config file has two main sections: `settings`, `connections`, and optionally `passwords` and `drivers`.
 
 ### Settings
 
@@ -67,8 +67,8 @@ settings:
   default_batch_size: 1000
   default_country: US
   default_timezone: UTC
-
-  # Logging configuration for integration scripts
+  
+  # Logging settings can be overwritten in a script level dbtk.setup_logging(level='DEBUG')
   logging:
     directory: ./logs
     level: INFO
@@ -78,11 +78,19 @@ settings:
     split_errors: true  # If True, separate error log will be created (only if critical or errors are encountered
     console: true
     retention_days: 30
+
+  # File I/O settings
+  compressed_file_buffer_size: 1048576  # 1MB buffer for reading compressed files (.gz, .bz2, .xz)
+  data_dump_dir: /tmp                   # Default directory for BulkSurge dump() operations
+
+  # CSV writer settings
+  null_string_csv: ''                   # How to represent NULL values in CSV output
 ```
 
 ### Database Connections
 
-Each connection is defined under the `connections:` key with a `type` field indicating the database type:
+Each connection is defined under the `connections:` key with a `type` field indicating the database type. 
+Some database drivers use non-standard parameter names (`db` instead `database`). DBTK will automatically map standard names to driver specific names if needed.
 
 ```yaml
 connections:
@@ -104,7 +112,7 @@ You can optionally specify a `driver` field to choose a specific database adapte
 connections:
   # Use psycopg (v3) instead of default psycopg2
   pg_v3:
-    driver: psycopg
+    driver: psycopg             # run `dbtk checkup` to show available drivers
     host: localhost
     database: mydb
     user: myuser
@@ -115,25 +123,6 @@ connections:
     driver: pyodbc_postgres
     dsn: MY_DSN
     password: '${MY_PASSWORD}'    # Pull from environment variable
-```
-
-### Cursor Settings
-
-Set default cursor behavior for all cursors created from a connection:
-
-```yaml
-connections:
-  my_database:
-    type: postgres
-    host: localhost
-    database: mydb
-    user: myuser
-    encrypted_password: gAAAAABh...
-    cursor:
-      batch_size: 4000          # Rows to process at once in bulk operations
-      debug: false              # Print SQL queries and bind variables
-      return_cursor: true       # execute() returns cursor for method chaining
-      fast_executemany: true    # For pyodbc SQL Server bulk inserts
 ```
 
 ### Driver-Specific Examples
@@ -196,6 +185,25 @@ connections:
     database: /path/to/database.db
 ```
 
+### Cursor Settings
+
+Set default cursor behavior for all cursors created from a connection:
+
+```yaml
+connections:
+  my_database:
+    type: postgres
+    host: localhost
+    database: mydb
+    user: myuser
+    encrypted_password: gAAAAABh...
+    cursor:
+      batch_size: 4000          # Rows to process at once in bulk operations
+      debug: false              # Print SQL queries and bind variables
+      return_cursor: true       # execute() returns cursor for method chaining
+      fast_executemany: true    # For pyodbc SQL Server bulk inserts
+```
+
 ## Password Encryption
 
 DBTK uses Fernet symmetric encryption (from the `cryptography` library) for password storage. Before you can begin encrypting and decrypting passwords, you must generate and store an encryption key.
@@ -226,7 +234,7 @@ gAAAAABh...
 
 # Encrypt all passwords in a config file
 # Finds plaintext 'password:' entries and converts to 'encrypted_password:'
-$ dbtk encrypt-config dbtk.yml
+$ dbtk encrypt-config [dbtk.yml]
 
 # Migrate config to a new encryption key
 $ dbtk migrate-config old_config.yml new_config.yml --new-key "new_key_here"
@@ -314,6 +322,9 @@ $ dbtk encrypt-config dbtk.yml
 
 **Key rotation:**
 
+Use `dbtk migrate-config` to migrate a config file to a new environment without having shared encryption keys. 
+The passwords will be decrypted with your current key and encrypted with the new key.
+
 ```bash
 export DBTK_ENCRYPTION_KEY="current_key"
 NEW_KEY=$(dbtk generate-key)
@@ -335,7 +346,8 @@ passwords:
 
 ## Custom Driver Registration
 
-Register custom database drivers in the config file:
+Register custom database drivers in the config file. By registering a driver for and DB-API 2.0 compliant, DBTK can support 
+additional databases. Some features like `Table.merge`, `DataSurge.merge`, and `BulkSurge` are database specific and will not work.
 
 ```yaml
 drivers:
@@ -343,10 +355,10 @@ drivers:
     database_type: firebird
     module: firebird.driver        # Only needed if name doesn't match module
     priority: 1
-    param_map: {}                  # Map non-standard parameter names
-    required_params: [{'host', 'database', 'user'}, {'dsn'}]
-    optional_params: {'port', 'password'}
-    connection_method: kwargs
+    param_map: {'database': 'db', 'password': 'passwd'}  # Map non-standard parameter names
+    required_params: [{'host', 'database', 'user'}, {'dsn'}] 
+    optional_params: {'port', 'protocol'}
+    connection_method: kwargs      # connection_string (postgres), dsn (oracle), odbc_string (odbc), kwargs (all others)
     default_port: 3050
 ```
 
@@ -374,9 +386,8 @@ register_user_drivers({
 2. Never commit encryption keys to version control
 3. Use `DBTK_ENCRYPTION_KEY` environment variable in containerized environments
 4. Use system keyring on workstations (`dbtk store-key`)
-5. Rotate keys periodically with `dbtk migrate-config`
-6. Set restrictive permissions on config files (`chmod 600`)
-7. Use separate configs for dev/staging/production
+5. Set restrictive permissions on config files (`chmod 600`)
+6. Use separate configs for dev/staging/production
 
 ## See Also
 

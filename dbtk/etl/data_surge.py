@@ -3,7 +3,6 @@
 import logging
 import time
 import re
-import uuid
 from typing import Iterable, Optional
 
 from .base_surge import BaseSurge
@@ -60,7 +59,6 @@ class DataSurge(BaseSurge):
         """
         super().__init__(table, batch_size=batch_size)
         self.use_transaction = use_transaction
-        self.skips = 0
         # Swap to positional parameters if named to save memory in bind parameters
         self.table.force_positional()
         self._sql_statements = {}  # Only for modified SQL (merge temp table hack)
@@ -111,6 +109,7 @@ class DataSurge(BaseSurge):
             if batch_params:
                 try:
                     self.cursor.executemany(sql, batch_params)
+                    self.total_loaded += len(batch_params)
                     self.table.counts[operation] += len(batch_params)
                 except self.cursor.connection.driver.DatabaseError as e:
                     logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
@@ -142,7 +141,7 @@ class DataSurge(BaseSurge):
         else:
             errors, skipped = self._execute_batches(records, operation, sql, raise_error)
 
-        self.skips += skipped
+        self.skipped += skipped
         self._log_summary()
         return errors
 
@@ -158,11 +157,10 @@ class DataSurge(BaseSurge):
                 f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
             )
         elif db_type == 'oracle':
-            uid = uuid.uuid4().hex[:6]
-            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}_{uid}")
+            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
 
             # Get column definitions from table
-            col_info = self.table.get_column_definitions()
+            col_info = self.table.get_column_definitions(all_cols=True)
             col_defs = [f"{col_name} {sql_type}" for col_name, _, _, _, _, sql_type in col_info]
             col_defs_str = ', '.join(col_defs)
             create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
@@ -178,12 +176,15 @@ class DataSurge(BaseSurge):
 
         # Drop temp table if it exists from previous run, then create fresh
         try:
-            self.cursor.execute(f"DROP TABLE {temp_name}")
+            self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+            table_exists = True
         except self.cursor.connection.driver.DatabaseError:
-            pass  # Table doesn't exist yet, which is fine
+            # Table doesn't exist yet, which is fine
+            table_exists = False
 
-        self.cursor.execute(create_sql)
-        logger.debug(f"Created temp table: {create_sql}")
+        if not table_exists:
+            self.cursor.execute(create_sql)
+            logger.debug(f"Created temp table: {create_sql}")
 
         # Use temporary table for bulk insert
         from .table import Table
@@ -197,7 +198,11 @@ class DataSurge(BaseSurge):
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
-            self.cursor.execute(f"DROP TABLE {temp_name}")
+            if db_type == 'oracle':
+                self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+                self.cursor.connection.commit()
+            else:
+                self.cursor.execute(f"DROP TABLE {temp_name}")
             return errors
 
         # Transfer record fields from temp table to main table for proper merge column exclusion
@@ -231,8 +236,11 @@ class DataSurge(BaseSurge):
             errors += len(records_list) - errors
         finally:
             try:
-                self.cursor.execute(f"DROP TABLE {temp_name}")
+                if db_type == 'oracle':
+                    self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+                else:
+                    self.cursor.execute(f"DROP TABLE {temp_name}")
             except Exception as e:
-                logger.warning(f"Failed to drop temp table {temp_name}: {e}")
+                logger.warning(f"Failed to clear temp table {temp_name}: {e}")
 
         return errors

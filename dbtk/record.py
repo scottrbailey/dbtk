@@ -3,70 +3,19 @@
 Record classes for database result sets.
 """
 
-import re
 from typing import List, Any, Iterator, Tuple, Union
-from .utils import to_string
-
-
-def normalize_field_name(name: str) -> str:
-    """
-    Normalize field name for attribute access.
-
-    Converts to lowercase, replaces non-alphanumeric characters with underscores,
-    collapses consecutive underscores, and strips trailing underscores.
-    Leading underscores are preserved to maintain Python's convention for private/internal fields.
-
-    Args:
-        name: Original field name
-
-    Returns:
-        Normalized field name suitable for Python attribute access
-
-    Examples:
-        >>> normalize_field_name('Start Year')
-        'start_year'
-        >>> normalize_field_name('Start Year!')
-        'start_year'
-        >>> normalize_field_name('!Status')
-        'status'
-        >>> normalize_field_name('__id__')
-        '__id'
-        >>> normalize_field_name('_row_num')
-        '_row_num'
-        >>> normalize_field_name('#Term Code')
-        'term_code'
-        >>> normalize_field_name('2025 Sales')
-        'n2025_sales'
-    """
-    if not name:
-        return 'col'
-
-    # 1. Lowercase and strip whitespace
-    name = str(name).lower().strip()
-
-    # 2. Replace all non-alphanumeric with underscore (consecutive become single _)
-    name = re.sub(r'[^a-z0-9]+', '_', name)
-
-    # 3. Strip trailing underscores only (preserve leading for Python convention)
-    name = name.rstrip('_')
-
-    # 4. Attributes can't start with digit
-    if name and name[0].isdigit():
-        name = 'n' + name
-
-    # 5. Ensure not empty
-    return name or 'col'
+from .utils import to_string, normalize_field_name
 
 
 class Record(list):
     """
-    Flexible/lightweight row object supporting that behaves like a dict, list, and object.
+    Flexible/lightweight that strikes a balance between the memory efficiency of list
+    and the functionality of dicts/objects.
 
     Record extends list to provide a rich interface for accessing query result rows.
     It supports attribute access, dictionary-style key access, integer indexing, and
-    slicing - all on the same object. This makes it the most flexible return type
-    for both cursors and readers. Ideal when you need different access patterns in
-    different parts of your code.
+    slicing - all on the same object. This makes it a very flexible and memory efficient
+    return type for both cursors and readers.
 
     Access Patterns
     ---------------
@@ -85,7 +34,35 @@ class Record(list):
     * **items()** - Get (column, value) pairs
     * **copy()** - Create a shallow copy of the record
     * **update(dict)** - Update multiple columns from a dictionary
+    * **coalesce(dict)** - Update only missing values from a dictionary
     * **pprint()** - Pretty-print the record
+
+    Column Names: Original vs Normalized
+    -------------------------------------
+    Every Record stores two parallel lists of names for each column:
+
+    * ``_fields`` — the **original** names exactly as returned by the database
+      (e.g. ``'First Name'``, ``'User ID'``, ``'#term_code'``).
+    * ``_fields_normalized`` — **Python-safe** versions used for attribute access
+      (e.g. ``'first_name'``, ``'user_id'``, ``'term_code'``).
+
+    Both lists are set once by :meth:`set_fields` when the cursor executes its
+    first query.  Normalization converts field to be suitable for attribute access.
+    It lowercases, replaces non-alphanumeric characters with underscores, collapses runs,
+    strips trailing underscores, and prefixes digit-leading names with ``n``.
+
+    **Which to use:**
+
+    * Use **original names** (``row['First Name']``, ``row.keys()``,
+      ``row.to_dict()``) when round-tripping data back to the database or to a
+      CSV, where column names must match the schema exactly.
+    * Use **normalized names** (``row.first_name``, ``row['first_name']``,
+      ``row.keys(normalized=True)``, ``row.to_dict(normalized=True)``) in
+      application code where Pythonic attribute access is preferred and when
+      case and white-space insensitive matching is beneficial.
+
+    Both forms work interchangeably for item get/set and ``in`` checks, so
+    ``row['First Name']`` and ``row['first_name']`` return the same value.
 
     Note
     ----
@@ -104,7 +81,7 @@ class Record(list):
         user = cursor.fetchone()
 
         # All these access patterns work on the same object:
-        print(user['name'])           # Dictionary-style: 'Aang'
+        print(user['name'])            # Dictionary-style: 'Aang'
         print(user.name)               # Attribute access: 'Aang'
         print(user[1])                 # Index access: 'Aang'
         print(user[1:3])               # Slicing: ['Aang', 'aang@avatar.com']
@@ -396,6 +373,37 @@ class Record(list):
 
     def update(self, other=None, **kwargs) -> None:
         """
+        Update fields from another dict, Record, or keyword arguments.
+
+        Overwrites existing field values unconditionally. To preserve existing
+        non-empty values, use :meth:`coalesce` instead.
+
+        Accepts any mapping with an ``items()`` method, an iterable of
+        ``(key, value)`` pairs, or keyword arguments. Unknown keys are added
+        as runtime fields.
+
+        Args:
+            other: Optional dict, Record, or iterable of (key, value) pairs.
+            **kwargs: Additional key-value pairs to set.
+
+        Examples:
+            >>> Record.set_fields(['id', 'name', 'email'])
+            >>> record = Record(1, 'Scott', 'old@example.com')
+            >>> record.update({'email': 'new@example.com'}, name='Scott Bailey')
+            >>> record  # [1, 'Scott Bailey', 'new@example.com']
+        """
+        if other is not None:
+            if hasattr(other, "items"):
+                for k, v in other.items():
+                    self[k] = v
+            else:
+                for k, v in other:
+                    self[k] = v
+        for k, v in kwargs.items():
+            self[k] = v
+
+    def coalesce(self, other=None, **kwargs) -> None:
+        """
             Fill in missing or empty fields from another dict, Record, or keyword arguments.
 
             Updates the current Record by copying values from `other` (or `**kwargs`) only for fields
@@ -419,18 +427,6 @@ class Record(list):
                 >>> record.coalesce(resolved, phone="555-1234")
                 >>> record  # [123, "Scott", "", "555-1234", "VIP"]
             """
-        if other is not None:
-            if hasattr(other, "items"):
-                for k, v in other.items():
-                    self[k] = v
-            else:
-                for k, v in other:
-                    self[k] = v
-        for k, v in kwargs.items():
-            self[k] = v
-
-    def coalesce(self, other=None, **kwargs) -> None:
-        """"""
         if other is not None:
             if hasattr(other, "items"):
                 for k, v in other.items():

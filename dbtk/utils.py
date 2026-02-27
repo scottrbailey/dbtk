@@ -17,6 +17,52 @@ MIDNIGHT = dt.time(0, 0, 0)
 # cache format strings for performance
 _format_cache = None
 
+
+class ErrorDetail:
+    """
+    Structured error record for ETL and database operations.
+
+    Captures a single error with optional field attribution and driver-specific
+    error code. Used by :class:`dbtk.etl.table.Table` (``last_error``) and
+    :class:`dbtk.etl.managers.IdentityManager` (per-entity ``_errors`` list),
+    and round-trips cleanly through JSON via ``save_state`` / ``load_state``.
+
+    Attributes
+    ----------
+    message : str
+        Human-readable description of the error.
+    field : str, optional
+        Name of the source or target field the error is associated with.
+        ``None`` when the error is not specific to a single field.
+    code : str, optional
+        Database- or application-level error code (e.g. ``pgcode`` from
+        psycopg2, an ORA- number, or a custom application string).
+        ``None`` when no structured code is available.
+    """
+
+    __slots__ = ("message", "field", "code")
+
+    def __init__(self, message: str, field: str = None, code: str = None):
+        """
+        Create an ErrorDetail.
+
+        Parameters
+        ----------
+        message : str
+            Human-readable description of the error.
+        field : str, optional
+            Field the error relates to, or ``None``.
+        code : str, optional
+            Structured error code, or ``None``.
+        """
+        self.message = message
+        self.field = field
+        self.code = code
+
+    def __repr__(self) -> str:
+        return f"ErrorDetail(message={self.message!r}, field={self.field!r}, code={self.code!r})"
+
+
 class ParamStyle:
     """
     SQL parameter placeholder styles for different database drivers.
@@ -362,6 +408,55 @@ def sanitize_identifier(name: str, idx: int = 0) -> str:
     # Remove trailing underscore if present
     return sanitized.rstrip('_')
 
+
+def normalize_field_name(name: str) -> str:
+    """
+    Normalize field name for attribute access.
+
+    Converts to lowercase, replaces non-alphanumeric characters with underscores,
+    collapses consecutive underscores, and strips trailing underscores.
+    Leading underscores are preserved to maintain Python's convention for private/internal fields.
+
+    Args:
+        name: Original field name
+
+    Returns:
+        Normalized field name suitable for Python attribute access
+
+    Examples:
+        >>> normalize_field_name('Start Year')
+        'start_year'
+        >>> normalize_field_name('Start Year!')
+        'start_year'
+        >>> normalize_field_name('!Status')
+        'status'
+        >>> normalize_field_name('__id__')
+        '__id'
+        >>> normalize_field_name('_row_num')
+        '_row_num'
+        >>> normalize_field_name('#Term Code')
+        'term_code'
+        >>> normalize_field_name('2025 Sales')
+        'n2025_sales'
+    """
+    if not name:
+        return 'col'
+
+    # 1. Lowercase and strip whitespace
+    name = str(name).lower().strip()
+
+    # 2. Replace all non-alphanumeric with underscore (consecutive become single _)
+    name = re.sub(r'[^a-z0-9]+', '_', name)
+
+    # 3. Strip trailing underscores only (preserve leading for Python convention)
+    name = name.rstrip('_')
+
+    # 4. Attributes can't start with digit
+    if name and name[0].isdigit():
+        name = 'n' + name
+
+    # 5. Ensure not empty
+    return name or 'col'
 
 def batch_iterable(iterable: Iterable[Any], batch_size: int) -> Iterable[List[Any]]:
     """

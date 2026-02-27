@@ -468,7 +468,7 @@ Frank,35,US""")
     def test_single_filter(self, csv_data):
         """Test filtering with a single condition."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             assert len(results) == 4
             assert all(int(r.age) >= 18 for r in results)
@@ -478,8 +478,8 @@ Frank,35,US""")
     def test_multiple_filters_pipeline(self, csv_data):
         """Test multiple filters accumulating in a pipeline."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
-            reader.filter(lambda r: r.country == 'US')
+            reader.add_filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: r.country == 'US')
             results = list(reader)
             assert len(results) == 3
             names = [r.name for r in results]
@@ -488,7 +488,7 @@ Frank,35,US""")
     def test_filter_with_n_rows(self, csv_data):
         """Test that n_rows applies after filtering."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             reader.n_rows = 2
             results = list(reader)
             assert len(results) == 2
@@ -498,21 +498,21 @@ Frank,35,US""")
     def test_filter_no_matches(self, csv_data):
         """Test filter that matches no records."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) > 100)
+            reader.add_filter(lambda r: int(r.age) > 100)
             results = list(reader)
             assert len(results) == 0
 
     def test_filter_all_match(self, csv_data):
         """Test filter that matches all records."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: len(r.name) > 0)
+            reader.add_filter(lambda r: len(r.name) > 0)
             results = list(reader)
             assert len(results) == 6
 
     def test_filter_with_skip_rows(self, csv_data):
         """Test filter with skip_rows (should work but log warning)."""
         with CSVReader(open(csv_data), skip_rows=1) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             # Skipped Bob (row 1 after header), so should get Charlie, Diana, Frank
             assert len(results) == 3
@@ -522,13 +522,13 @@ Frank,35,US""")
     def test_filter_returns_self(self, csv_data):
         """Test that filter() returns self for chaining."""
         with CSVReader(open(csv_data)) as reader:
-            result = reader.filter(lambda r: True)
+            result = reader.add_filter(lambda r: True)
             assert result is reader
 
     def test_filter_row_num_field(self, csv_data):
         """Test that _row_num field is sequential for filtered records."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             row_nums = [r._row_num for r in results]
             assert row_nums == [1, 2, 3, 4]  # Sequential, not file row numbers
@@ -537,7 +537,7 @@ Frank,35,US""")
         """Test that filter() rejects non-callable."""
         with CSVReader(open(csv_data)) as reader:
             with pytest.raises(TypeError, match="filter\\(\\) requires a callable"):
-                reader.filter("not a callable")
+                reader.add_filter("not a callable")
 
     def test_filter_complex_function(self, csv_data):
         """Test filter with complex multi-condition function."""
@@ -545,7 +545,7 @@ Frank,35,US""")
             return record.country == 'US' and int(record.age) < 25
 
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(is_young_american)
+            reader.add_filter(is_young_american)
             results = list(reader)
             assert len(results) == 2
             names = [r.name for r in results]
@@ -555,7 +555,7 @@ Frank,35,US""")
     def test_rows_read_tracking(self, csv_data):
         """Test that _rows_read tracks all rows, not just filtered."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             # Should have read 6 rows, returned 4
             assert reader._rows_read == 6

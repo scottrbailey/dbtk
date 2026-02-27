@@ -38,27 +38,6 @@ validated along the way.
 - **Integrated Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
 - **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
 
-## The Record Class
-
-Every cursor query and file reader in DBTK returns **Record** objects - a hybrid data structure that works like a dict, tuple, and object simultaneously.
-
-**Why not just use dicts?** Dicts are optimized for n=1: one object with many keys you look up dynamically. But ETL pipelines process hundreds of thousands or millions of rows, all with the same columns. Record stores column names once on a shared class, not on every row - giving you dict-like flexibility with tuple-like memory efficiency.
-
-```python
-for row in cursor:
-    row['name']           # Dict-style access
-    row.name              # Attribute access
-    row[0]                # Index access (dicts can't do this)
-    row[1:3]              # Slicing (dicts can't do this)
-    id, name, email = row # Tuple unpacking (dicts can't do this)
-    row.get('phone', '')  # Safe access with default
-    dict(row)             # Convert to dict when needed
-```
-
-**Normalized field names** let you write resilient code. Whether your source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`, you can always access it as `row.employee_id`. This means your Table field mappings work regardless of how the source system names its columns.
-
-See [Record Objects](docs/record.md) for complete documentation.
-
 ## Installation
 
 ```bash
@@ -174,13 +153,44 @@ if dbtk.errors_logged():  # Check global error flag
 - Automatic logging with sensible global defaults - override per-pipeline when needed
 - Error tracking built-in - `dbtk.errors_logged()` tells you if anything went wrong
 
+## The Record Class
+
+Every cursor query and file reader in DBTK returns **Record** objects - a hybrid data structure that works like a dict, tuple, and object simultaneously.
+
+**Why not just use dicts?** Dicts are optimized for n=1: one object with many keys you look up dynamically. But ETL pipelines process hundreds of thousands or millions of rows, all with the same columns. Record stores column names once on a shared class, not on every row - giving you dict-like flexibility with tuple-like memory efficiency.
+
+```python
+for row in cursor:
+    row['name']           # Dict-style access
+    row.name              # Attribute access
+    row[0]                # Index access (dicts can't do this)
+    row[1:3]              # Slicing (dicts can't do this)
+    id, name, email = row # Tuple unpacking (dicts can't do this)
+    row.get('phone', '')  # Safe access with default
+    dict(row)             # Convert to dict when needed
+```
+
+**Normalized field names** let you write resilient code. Whether your source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`, you can always access it as `row.employee_id`. This means your Table field mappings work regardless of how the source system names its columns.
+
+See [Record Objects](docs/record.md) for complete documentation.
+
 ## Documentation
 
+### Getting Started
+- **[Getting Started Guide](docs/getting-started.md)** - 5-minute tutorial with complete examples
+- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- **[API Reference](docs/api-reference.md)** - Complete method and function reference
+
+### Core Features
 - **[Record Objects](docs/record.md)** - DBTK's universal data structure with dict, tuple, and attribute access
 - **[Configuration & Security](docs/configuration.md)** - Set up encrypted passwords, YAML config files, and command-line tools
-- **[Database Connections](docs/database-connections.md)** - Connect to any database, use smart cursors, manage transactions
+- **[Database Connections](docs/database-connections.md)** - Connect to any database, use smart cursors, SQL file execution, manage transactions
 - **[Readers & Writers](docs/readers-writers.md)** - Read from and write to CSV, Excel, JSON, XML, fixed-width files
-- **[ETL Framework](docs/etl.md)** - Build production ETL pipelines with Table, DataSurge, BulkSurge, transforms, and logging
+
+### ETL Framework
+- **[ETL: Table & Transforms](docs/table.md)** - Field mapping, column config, data transforms, database lookups
+- **[ETL: DataSurge & BulkSurge](docs/datasurge.md)** - High-performance bulk loading for any database
+- **[ETL: Tools & Logging](docs/etl-tools.md)** - IdentityManager, ValidationCollector, and integration script logging
 - **[Advanced Features](docs/advanced.md)** - Custom drivers, multiple config locations, and performance tuning
 
 ## Performance Highlights
