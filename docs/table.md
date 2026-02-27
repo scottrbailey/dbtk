@@ -35,11 +35,13 @@ with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
     for recruit in reader:
         phoenix_king_army.set_values(recruit)
         if phoenix_king_army.is_ready('insert'):  # Fast O(1) cached check
+            # phoenix_king_army.execute('merge') also available
             existing_soldier = phoenix_king_army.fetch()
             if existing_soldier:
                 phoenix_king_army.execute('update')
             else:
                 phoenix_king_army.execute('insert')
+                
         else:
             missing = phoenix_king_army.reqs_missing('insert')
             print(f"Recruit {phoenix_king_army.values['name']} ({phoenix_king_army.values['soldier_id']}) rejected: missing {missing}")
@@ -93,7 +95,9 @@ columns_config = {
 
     # Multiple transformations (compose your own function)
     'phone': {'field': 'phone_number', 'fn': lambda x: phone_format(phone_clean(x))},
-
+    # same as above but with a pipeline
+    'phone': {'field': 'phone_number', 'fn': [phone_clean, phone_format]}
+  
     # Whole record access for multi-field decisions
     'vip_status': {
         'field': '*',  # Asterisk passes entire record to function
@@ -243,22 +247,24 @@ elif table.is_ready('insert'):
     table.execute('insert')
 ```
 - Returns True if all required columns have values for the operation
-- Updated automatically by `set_values()` using bit flags
+- Calculated automatically every time `set_values()` is called
 - **Use this for performance-critical code**
 
-**`reqs_met(operation)` → bool** - Slower non-cached validation (rarely needed)
+If you directly modify table.values, you must recalculate requirements 
+**`refresh_readiness()`** Recalculates requirements and caches results
+**`reqs_met(operation)`** Recalculates requirements no caching
+
 ```python
-# ❌ Avoid in loops - recalculates every call
+table.set_values(record)
+# reqs_met calculates requirements but does not cache results
 if table.reqs_met('insert'):
     table.execute('insert')
-
-# ✓ Only use when verifying after direct modifications
-table.values['status'] = 'active'  # Direct modification
-if table.reqs_met('insert'):  # Recalculates from scratch
-    table.execute('insert')
+else:
+  table.values['status'] = 'active'  # Direct modification
+  table.refresh_readiness()          # Recalculates requirements and caches results
+  if table.is_ready('insert'):
+      table.execute('insert')
 ```
-- Recalculates requirements on every call (no cache)
-- Only needed when bypassing `set_values()` and can't use `refresh_readiness()`
 
 **`reqs_missing(operation)` → Set[str]** - Get missing column names
 ```python
@@ -279,21 +285,6 @@ for record in reader:
 - Returns set of column names that are missing values
 - Empty set means record is ready
 - Perfect for error messages and validation reporting
-
-**When to use `refresh_readiness()`:**
-
-If you modify `table.values` directly (bypassing `set_values()`), call `refresh_readiness()` to update the cached state:
-
-```python
-# Direct modification requires manual refresh
-table.set_values(record)
-table.values['status'] = 'active'  # Direct modification
-table.refresh_readiness()  # Update cached state
-
-# Now is_ready() reflects the changes
-if table.is_ready('insert'):
-    table.execute('insert')
-```
 
 ### Fetching Existing Records
 
@@ -418,8 +409,8 @@ Built-in transformation functions handle common data cleaning tasks:
 from dbtk.etl import transforms as tx
 
 # Date and time parsing with flexible formats
-tx.parse_date("Year 100 AG, Day 15")
-tx.parse_datetime("100 AG Summer Solstice T14:30:00Z")  # With timezone support
+tx.parse_date("20 May 2025")
+tx.parse_datetime("2025-05-20T18:13:27Z")  # With timezone support
 
 # International phone number handling (requires phonenumbers library)
 tx.phone_clean("5551234567")              # -> "(555) 123-4567"
@@ -446,51 +437,50 @@ Complete list of built-in transform functions in `dbtk.etl.transforms`:
 
 #### Type Conversions
 
-| Function | Description | Example | Returns |
-|----------|-------------|---------|---------|
-| `get_int(value, default=None)` | Parse integer, return default if invalid | `get_int('123')` | `123` |
-| | | `get_int('abc', 0)` | `0` |
-| `get_float(value, default=None)` | Parse float, return default if invalid | `get_float('12.34')` | `12.34` |
-| | | `get_float('$1,234.56')` | `1234.56` |
-| `get_bool(value)` | Parse boolean from various formats | `get_bool('yes')` | `True` |
-| | | `get_bool('0')` | `False` |
-| `get_digits(value)` | Extract digits only | `get_digits('(555) 123-4567')` | `'5551234567'` |
-| `to_number(value)` | Auto-detect int/float | `to_number('42')` | `42` (int) |
-| | | `to_number('3.14')` | `3.14` (float) |
+| Function                         | Description                              | Example                        | Returns |
+|----------------------------------|------------------------------------------|--------------------------------|---------|
+| `get_int(value, default=None)`   | Parse integer, return default if invalid | `get_int('123')`               | `123` |
+|                                  |                                          | `get_int('abc', 0)`            | `0` |
+| `get_float(value, default=None)` | Parse float, return default if invalid   | `get_float('12.34')`           | `12.34` |
+|                                  |                                          | `get_float('$1,234.56')`       | `1234.56` |
+| `get_bool(value)`                | Parse boolean from various formats       | `get_bool('yes')`              | `True` |
+|                                  |                                          | `get_bool('0')`                | `False` |
+| `get_digits(value)`              | Extract digits only                      | `get_digits('(555) 123-4567')` | `'5551234567'` |
+| `to_number(value)`               | Auto-detect int/float                    | `to_number('42')`              | `42` (int) |
+|                                  |                                          | `to_number('3.14')`            | `3.14` (float) |
 
 #### String Operations
 
-| Function | Description | Example | Returns |
-|----------|-------------|---------|---------|
-| `capitalize(value)` | Capitalize first letter | `capitalize('john')` | `'John'` |
+| Function                      | Description              | Example                            | Returns |
+|-------------------------------|--------------------------|------------------------------------|---------|
+| `capitalize(value)`           | Capitalize first letter  | `capitalize('john')`               | `'John'` |
 | `normalize_whitespace(value)` | Collapse multiple spaces | `normalize_whitespace('a  b   c')` | `'a b c'` |
 
 #### Date and Time
 
-| Function | Description | Example | Notes |
-|----------|-------------|---------|-------|
-| `parse_date(value)` | Parse date from various formats | `parse_date('2024-01-15')` | Auto-detects format |
-| | | `parse_date('Jan 15, 2024')` | Returns `datetime.date` |
-| `parse_datetime(value)` | Parse datetime with timezone support | `parse_datetime('2024-01-15T10:30:00Z')` | Returns `datetime.datetime` |
+| Function                 | Description                          | Example                                  | Notes                       |
+|--------------------------|--------------------------------------|------------------------------------------|-----------------------------|
+| `parse_date(value)`      | Parse date from various formats      | `parse_date('2024-01-15')`               | Auto-detects format         |
+| `parse_datetime(value)`  | Parse datetime with timezone support | `parse_datetime('2024-01-15T10:30:00Z')` | Returns `datetime.datetime` |
 
 #### Email
 
-| Function | Description | Example | Returns |
-|----------|-------------|---------|---------|
-| `email_validate(value)` | Validate email format | `email_validate('user@example.com')` | `True` |
-| | | `email_validate('invalid')` | `False` |
-| `email_clean(value)` | Clean and lowercase email | `email_clean(' USER@EXAMPLE.COM ')` | `'user@example.com'` |
+| Function                | Description                | Example                              | Returns               |
+|-------------------------|----------------------------|--------------------------------------|-----------------------|
+| `email_validate(value)` | Validate email format      | `email_validate('user@example.com')` | `True`                |
+|                         |                            | `email_validate('invalid')`          | `False`               |
+| `email_clean(value)`    | Clean and lowercase email  | `email_clean(' USER@EXAMPLE.COM ')`  | `'user@example.com'`  |
 
 #### Phone Numbers
 
 Requires `phonenumbers` library: `pip install phonenumbers`
 
-| Function | Description | Example | Notes |
-|----------|-------------|---------|-------|
-| `phone_validate(value, country='US')` | Validate phone number | `phone_validate('555-1234')` | Returns bool |
-| `phone_clean(value, country='US')` | Clean and format phone | `phone_clean('5551234567')` | `'(555) 123-4567'` |
-| `phone_format(value, format=PhoneFormat.NATIONAL)` | Format with specific style | `phone_format('+1-555-123-4567', PhoneFormat.E164)` | `'+15551234567'` |
-| `phone_get_type(value)` | Get phone type | `phone_get_type('+1-800-555-0100')` | `'toll_free'` |
+| Function                                           | Description                | Example                                             | Notes              |
+|----------------------------------------------------|----------------------------|-----------------------------------------------------|--------------------|
+| `phone_validate(value, country='US')`              | Validate phone number      | `phone_validate('555-1234')`                        | Returns bool       |
+| `phone_clean(value, country='US')`                 | Clean and format phone     | `phone_clean('5551234567')`                         | `'(555) 123-4567'` |
+| `phone_format(value, format=PhoneFormat.NATIONAL)` | Format with specific style | `phone_format('+1-555-123-4567', PhoneFormat.E164)` | `'+15551234567'`   |
+| `phone_get_type(value)`                            | Get phone type             | `phone_get_type('+1-800-555-0100')`                 | `'toll_free'`      |
 
 **PhoneFormat options:** `E164`, `INTERNATIONAL`, `NATIONAL`, `RFC3966`
 
@@ -498,27 +488,27 @@ Requires `phonenumbers` library: `pip install phonenumbers`
 
 Requires `usaddress` library: `pip install usaddress`
 
-| Function | Description | Example | Notes |
-|----------|-------------|---------|-------|
-| `validate_us_address(value)` | Validate US address format | `validate_us_address('123 Main St')` | Returns bool |
-| `standardize_address(value)` | Standardize address format | `standardize_address('123 main street')` | `'123 Main St'` |
+| Function                      | Description                 | Example                                    | Notes           |
+|-------------------------------|-----------------------------|--------------------------------------------|-----------------|
+| `validate_us_address(value)`  | Validate US address format  | `validate_us_address('123 Main St')`       | Returns bool    |
+| `standardize_address(value)` | Standardize address format  | `standardize_address('123 main street')`   | `'123 Main St'` |
 
 #### Lists and Parsing
 
-| Function | Description | Example | Returns |
-|----------|-------------|---------|---------|
-| `parse_list(value, delimiter=',')` | Split string to list | `parse_list('a,b,c')` | `['a', 'b', 'c']` |
-| `get_list_item(lst, index, default=None)` | Get item by index safely | `get_list_item(['a','b'], 5, 'N/A')` | `'N/A'` |
+| Function                                  | Description              | Example                               | Returns           |
+|-------------------------------------------|--------------------------|---------------------------------------|-------------------|
+| `parse_list(value, delimiter=',')`        | Split string to list     | `parse_list('a,b,c')`                 | `['a', 'b', 'c']` |
+| `get_list_item(lst, index, default=None)` | Get item by index safely | `get_list_item(['a','b'], 5, 'N/A')`  | `'N/A'`           |
 
 #### Utilities
 
-| Function | Description | Example | Returns |
-|----------|-------------|---------|---------|
-| `coalesce(*values)` | Return first non-None value | `coalesce(None, '', 'first', 'second')` | `'first'` |
-| `indicator(value, true_val='Y', false_val=None, invert=False)` | Boolean to indicator | `indicator(True)` | `'Y'` |
-| | | `indicator(False)` | `None` |
-| | | `indicator(True, 'Active', 'Inactive')` | `'Active'` |
-| `format_number(value, decimals=2, thousands_sep=',')` | Format number | `format_number(1234.567)` | `'1,234.57'` |
+| Function                                                      | Description                 | Example                                 | Returns      |
+|---------------------------------------------------------------|-----------------------------|-----------------------------------------|--------------|
+| `coalesce(*values)`                                           | Return first non-None value | `coalesce(None, '', 'first', 'second')` | `'first'`    |
+| `indicator(value, true_val='Y', false_val=None, invert=False)` | Boolean to indicator       | `indicator(True)`                       | `'Y'`        |
+|                                                               |                             | `indicator(False)`                      | `None`       |
+|                                                               |                             | `indicator(True, 'Active', 'Inactive')` | `'Active'`   |
+| `format_number(value, decimals=2, thousands_sep=',')`         | Format number               | `format_number(1234.567)`               | `'1,234.57'` |
 
 #### Using in Table Definitions
 
@@ -576,25 +566,25 @@ table = dbtk.etl.Table('movies', {
 
 **Supported shorthands:**
 
-| Shorthand | Function | Example | Result |
-|-----------|----------|---------|--------|
-| `'int'` | Parse integer | `'123'` → `123` | |
-| `'int:0'` | Parse int with default | `''` → `0` | |
-| `'float'` | Parse float | `'$1,234.56'` → `1234.56` | |
-| `'bool'` | Parse boolean | `'yes'` → `True` | |
-| `'digits'` | Extract digits only | `'(800) 123-4567'` → `'8001234567'` | |
-| `'number'` | Convert to number | `'$42.35'` → `42.35` | |
-| `'lower'` / `'upper'` / `'strip'` | String ops | `'  AANG  '` → `'aang'` | |
-| `'maxlen:n'` | Truncate to n chars | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'` | |
-| `'indicator'` | Boolean → Y/None | `True` → `'Y'`, `False` → `None` | |
-| `'indicator:inv'` | Inverted indicator | `False` → `'Y'`, `True` → `None` | |
-| `'indicator:Y/N'` | Custom true/false | `True` → `'Y'`, `False` → `'N'` | |
-| `'split:,'` | Split on delimiter | `'a,b,c'` → `['a', 'b', 'c']` | |
-| `'split:\t'` | Split on tab | `'a\tb\tc'` → `['a', 'b', 'c']` | |
-| `'nth:0'` | Get first item | `'action,comedy,drama'` → `'action'` | |
-| `'nth:2:\t'` | Get 3rd tab-delimited | `'a\tb\tc'` → `'c'` | |
-| `'lookup:...'` | Database lookup | See below ↓ | |
-| `'validate:...'` | Database validation | See below ↓ | |
+| Shorthand                         | Function               | Example                                           |
+|-----------------------------------|------------------------|---------------------------------------------------|
+| `'int'`                           | Parse integer          | `'123'` → `123`                                   |
+| `'int:0'`                         | Parse int with default | `''` → `0`                                        |
+| `'float'`                         | Parse float            | `'$1,234.56'` → `1234.56`                         |
+| `'bool'`                          | Parse boolean          | `'yes'` → `True`                                  |
+| `'digits'`                        | Extract digits only    | `'(800) 123-4567'` → `'8001234567'`               |
+| `'number'`                        | Convert to number      | `'$42.35'` → `42.35`                              | 
+| `'lower'` / `'upper'` / `'strip'` | String ops             | `'  AANG  '` → `'aang'`                           |
+| `'maxlen:n'`                      | Truncate to n chars    | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'` |
+| `'indicator'`                     | Boolean → Y/None       | `True` → `'Y'`, `False` → `None`                  |
+| `'indicator:inv'`                 | Inverted indicator     | `False` → `'Y'`, `True` → `None`                  |         |
+| `'indicator:Y/N'`                 | Custom true/false      | `True` → `'Y'`, `False` → `'N'`                   |
+| `'split:,'`                       | Split on delimiter     | `'a,b,c'` → `['a', 'b', 'c']`                     |
+| `'split:\t'`                      | Split on tab           | `'a\tb\tc'` → `['a', 'b', 'c']`                   |
+| `'nth:0'`                         | Get first item         | `'action,comedy,drama'` → `'action'`              |
+| `'nth:2:\t'`                      | Get 3rd tab-delimited  | `'a\tb\tc'` → `'c'`                               |
+| `'lookup:...'`                    | Database lookup        | See below ↓                                       |
+| `'validate:...'`                  | Database validation    | See below ↓                                       |
 
 **Chaining transformations:**
 
@@ -615,7 +605,7 @@ titles_table = dbtk.etl.Table('imdb_titles', {
     'title_type': {'field': 'titleType', 'fn': 'maxlen:50'},
     'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500'},
     'original_title': {'field': 'originalTitle', 'fn': 'maxlen:500'},
-    'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y/N'},
+    'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y:N'},
     'start_year': {'field': 'startYear', 'fn': 'int:0'},
     'end_year': {'field': 'endYear', 'fn': 'int'},
     'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
@@ -630,7 +620,6 @@ with open('title.basics.tsv') as f:
         titles_table.set_values(record)
         titles_table.execute('insert')
 
-# 132,440 records/sec on single machine with PostgreSQL!
 ```
 
 ## Database Lookups and Validation

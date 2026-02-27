@@ -1,6 +1,7 @@
 # Database Connections
 
-DBTK provides a unified interface for connecting to multiple database types with consistent APIs and smart cursor handling.
+DBTK provides a unified interface for connecting to multiple database types 
+with consistent APIs and smart cursor handling.
 
 ## Quick Start
 
@@ -140,7 +141,7 @@ cursor = db.cursor(
 )
 
 # With return_cursor=True, you can chain calls
-cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
+user = cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
 ```
 
 Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`.
@@ -194,7 +195,7 @@ cursor.execute_file('queries/create_schema.sql', {'status': 'active'})
 ```
 
 ### Prepared Statements
-For queries executed repeatedly with different parameters, PreparedStatement loads the SQL once and caches the parameter mapping:
+For queries executed repeatedly with different parameters, PreparedStatement transforms the SQL to match the database's `paramstyle` and caches the parameter mapping.
 
 ```python
 from dbtk.cursors import PreparedStatement

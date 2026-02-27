@@ -43,7 +43,7 @@ BulkSurge provides maximum throughput by leveraging database-specific bulk loadi
 ### Supported Databases
 
 **PostgreSQL & Redshift**
-- Uses COPY FROM STDIN protocol with background writer thread
+- **Direct:** Uses COPY FROM STDIN protocol with background writer thread
 - Streaming with zero temp files
 - 200K+ rec/s sustained throughput
 
@@ -85,7 +85,7 @@ with dbtk.readers.get_reader('sensor_data.csv.gz') as reader:
 
 BulkSurge automatically selects the optimal loading strategy, but you can override with the `method` parameter:
 
-**Direct Method (default)**
+**Direct Method (default)** Streams data directly over the connected cursor.
 ```python
 # Streams data using native Python drivers - no temp files
 surge.load(reader)  # method='direct' is default
@@ -93,7 +93,7 @@ surge.load(reader)  # method='direct' is default
 # Works for: PostgreSQL, Oracle (with python-oracledb 3.4+), MySQL (with local_infile=1)
 ```
 
-**External Method**
+**External Method** Dumps data to a file (typically CSV) and calls an external tool (`bcp`, `sqlldr`)
 ```python
 # Uses command-line tools - requires named connection
 surge.load(reader, method='external')
@@ -260,21 +260,21 @@ This saves time by eliminating manual control file creation and ensures the colu
 
 ### BulkSurge vs DataSurge Comparison
 
-| Feature | DataSurge | BulkSurge |
-|---------|-----------|-----------|
-| **Speed** | 90-120K rec/s | 200K+ rec/s |
-| **Method** | executemany batching | Native bulk loading |
-| **Temp files** | Never | Only for external tools |
-| **db_expr support** | Yes | No (raw data only) |
-| **MERGE/upsert** | Yes | No (INSERT only) |
-| **Databases** | All (universal) | PostgreSQL, Oracle, MySQL, SQL Server |
-| **Setup** | Works everywhere | May require server config (MySQL local_infile) |
-| **Credentials** | Uses connection | External tools need named connection |
+| Feature             | DataSurge            | BulkSurge                                      |
+|---------------------|----------------------|------------------------------------------------|
+| **Speed**           | 90-120K rec/s        | 200K+ rec/s                                    |
+| **Method**          | executemany batching | Native bulk loading                            |
+| **Temp files**      | Never                | Only for external tools                        |
+| **db_expr support** | Yes                  | No (raw data only)                             |
+| **MERGE/upsert**    | Yes                  | No (INSERT only)                               |
+| **Databases**       | All (universal)      | PostgreSQL, Oracle, MySQL, SQL Server          |
+| **Setup**           | Works everywhere     | May require server config (MySQL local_infile) |
+| **Credentials**     | Uses connection      | External tools need named connection           |
 
 ### When to Use BulkSurge
 
 **Use BulkSurge when:**
-- Loading millions of rows (5M+ records)
+- Loading millions of rows
 - Simple INSERT operations (no upsert/merge needed)
 - No database functions required (`db_expr` not used)
 - Maximum throughput is critical

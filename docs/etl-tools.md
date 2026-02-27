@@ -12,6 +12,17 @@ to target-system identifiers. It tracks every entity's resolution status, messag
 errors across an entire import run, and can persist that state to JSON so multi-stage
 pipelines can resume without re-querying resolved records.
 
+The `source_key` should be the primary key of the source system (i.e. CRM_ID) and should be 
+present on every record coming from the source system. 
+
+The `target_key` should be the primary key of the target system (i.e. ERP_ID). The resolver may
+match additional keys but the entity will not be marked as resolved until a target_key has been found.
+
+The `alternate_keys` parameter can be used to define additional identifiers either used to aid 
+identification (i.e. SSN, email, username) or used during processing (i.e. staging_id). When `set_id`
+method is used to manually set an identifier, the `id_type` must be the value of `target_key` or
+listed in `alternate_keys`.
+
 ```python
 from dbtk.etl import IdentityManager, EntityStatus
 ```
@@ -20,14 +31,14 @@ from dbtk.etl import IdentityManager, EntityStatus
 
 Every entity in the cache carries a `_status` value from these constants:
 
-| Status | Value | Meaning |
-|--------|-------|---------|
-| `PENDING` | `"pending"` | Registered but resolution not yet attempted |
-| `RESOLVED` | `"resolved"` | Successfully matched; `target_key` is populated |
-| `STAGED` | `"staged"` | Exists in a staging table; not yet confirmed in target |
-| `NOT_FOUND` | `"not_found"` | Resolution attempted but no match found |
-| `ERROR` | `"error"` | An error occurred while creating or updating the entity — downstream table processing for this entity should be skipped |
-| `SKIPPED` | `"skipped"` | Resolution intentionally bypassed |
+| Status      | Value         | Meaning                                                                                                                 |
+|-------------|---------------|-------------------------------------------------------------------------------------------------------------------------|
+| `PENDING`   | `"pending"`   | Registered but resolution not yet attempted                                                                             |
+| `RESOLVED`  | `"resolved"`  | Successfully matched; `target_key` is populated                                                                         |
+| `STAGED`    | `"staged"`    | Exists in a staging table; not yet confirmed in target                                                                  |
+| `NOT_FOUND` | `"not_found"` | Resolution attempted but no match found                                                                                 |
+| `ERROR`     | `"error"`     | An error occurred while creating or updating the entity — downstream table processing for this entity should be skipped |
+| `SKIPPED`   | `"skipped"`   | Resolution intentionally bypassed                                                                                       |
 
 ### Instantiation
 
@@ -88,14 +99,14 @@ Track additional identifiers per entity alongside `target_key`:
 
 ```python
 im = IdentityManager('crm_id', 'erp_id', resolver=stmt,
-                     alternate_keys=['banner_id', 'legacy_id'])
+                     alternate_keys=['staging_id', 'legacy_id'])
 
 entity = im.resolve(row)
 # entity['banner_id'] is populated if the resolver returns it
 
 # Read or write any tracked key directly
-im.set_id(source_id, 'banner_id', 'B00123')
-banner = im.get_id(source_id, 'banner_id')
+im.set_id(source_id, 'staging_id', 'B00123')
+banner = im.get_id(source_id, 'staging_id')
 ```
 
 ### add_error / add_message
@@ -286,7 +297,7 @@ import dbtk
 import logging
 
 # One-line setup with automatic script name detection
-dbtk.setup_logging()  # Creates logs/my_script_20251031_154505.log
+dbtk.setup_logging()  # Log settings in config (dbtk.yml), see below
 
 # Or specify name and options
 dbtk.setup_logging('fire_nation_etl', log_dir='/var/log/etl', level='DEBUG')

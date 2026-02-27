@@ -58,7 +58,7 @@ db = dbtk.connect('database_name')
 
 ## Configuration File Structure
 
-The config file has three main sections: `settings`, `connections`, and optionally `passwords` and `drivers`.
+The config file has two main sections: `settings`, `connections`, and optionally `passwords` and `drivers`.
 
 ### Settings
 
@@ -67,9 +67,8 @@ settings:
   default_batch_size: 1000
   default_country: US
   default_timezone: UTC
-
-  # Logging configuration for integration scripts 
-  # can be overwritten in a script level dbtk.setup_logging(level='DEBUG')
+  
+  # Logging settings can be overwritten in a script level dbtk.setup_logging(level='DEBUG')
   logging:
     directory: ./logs
     level: INFO
@@ -90,7 +89,8 @@ settings:
 
 ### Database Connections
 
-Each connection is defined under the `connections:` key with a `type` field indicating the database type:
+Each connection is defined under the `connections:` key with a `type` field indicating the database type. 
+Some database drivers use non-standard parameter names (`db` instead `database`). DBTK will automatically map standard names to driver specific names if needed.
 
 ```yaml
 connections:
@@ -123,25 +123,6 @@ connections:
     driver: pyodbc_postgres
     dsn: MY_DSN
     password: '${MY_PASSWORD}'    # Pull from environment variable
-```
-
-### Cursor Settings
-
-Set default cursor behavior for all cursors created from a connection:
-
-```yaml
-connections:
-  my_database:
-    type: postgres
-    host: localhost
-    database: mydb
-    user: myuser
-    encrypted_password: gAAAAABh...
-    cursor:
-      batch_size: 4000          # Rows to process at once in bulk operations
-      debug: false              # Print SQL queries and bind variables
-      return_cursor: true       # execute() returns cursor for method chaining
-      fast_executemany: true    # For pyodbc SQL Server bulk inserts
 ```
 
 ### Driver-Specific Examples
@@ -202,6 +183,25 @@ connections:
   sqlite_db:
     type: sqlite
     database: /path/to/database.db
+```
+
+### Cursor Settings
+
+Set default cursor behavior for all cursors created from a connection:
+
+```yaml
+connections:
+  my_database:
+    type: postgres
+    host: localhost
+    database: mydb
+    user: myuser
+    encrypted_password: gAAAAABh...
+    cursor:
+      batch_size: 4000          # Rows to process at once in bulk operations
+      debug: false              # Print SQL queries and bind variables
+      return_cursor: true       # execute() returns cursor for method chaining
+      fast_executemany: true    # For pyodbc SQL Server bulk inserts
 ```
 
 ## Password Encryption
@@ -322,6 +322,9 @@ $ dbtk encrypt-config dbtk.yml
 
 **Key rotation:**
 
+Use `dbtk migrate-config` to migrate a config file to a new environment without having shared encryption keys. 
+The passwords will be decrypted with your current key and encrypted with the new key.
+
 ```bash
 export DBTK_ENCRYPTION_KEY="current_key"
 NEW_KEY=$(dbtk generate-key)
@@ -343,7 +346,8 @@ passwords:
 
 ## Custom Driver Registration
 
-Register custom database drivers in the config file:
+Register custom database drivers in the config file. By registering a driver for and DB-API 2.0 compliant, DBTK can support 
+additional databases. Some features like `Table.merge`, `DataSurge.merge`, and `BulkSurge` are database specific and will not work.
 
 ```yaml
 drivers:
@@ -352,7 +356,7 @@ drivers:
     module: firebird.driver        # Only needed if name doesn't match module
     priority: 1
     param_map: {'database': 'db', 'password': 'passwd'}  # Map non-standard parameter names
-    required_params: [{'host', 'database', 'user'}, {'dsn'}]
+    required_params: [{'host', 'database', 'user'}, {'dsn'}] 
     optional_params: {'port', 'protocol'}
     connection_method: kwargs      # connection_string (postgres), dsn (oracle), odbc_string (odbc), kwargs (all others)
     default_port: 3050
