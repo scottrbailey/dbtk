@@ -193,10 +193,6 @@ class EDIReader(FixedReader):
             used in logging or output fields.
         auto_trim : bool, default True
             Trim whitespace from field values
-        skip_rows : int, default 0
-            Number of initial data rows to skip after headers (if any)
-        null_values : Collection[Any], optional
-            Values to interpret as None
         **kwargs
             Additional arguments passed to FixedReader base class
 
@@ -214,7 +210,7 @@ class EDIReader(FixedReader):
         ... }
         >>> reader = EDIReader(open('ach_file.ach'), columns=columns)
         >>> for record in reader:
-        ...     print(record._record_type, record.company_name, record.amount)
+        ...     print(record.company_name)  # fields available depend on record type
         """
 
     def __init__(
@@ -243,6 +239,18 @@ class EDIReader(FixedReader):
 
         self._type_factories: Dict[str, type[Record]] = {}
 
+    def _read_headers(self) -> List[str]:
+        """EDIReader has no fixed headers; each record type has its own field set."""
+        return []
+
+    def _setup_record_class(self):
+        """Skip base class record class creation; EDIReader uses per-type factories."""
+        self._headers_initialized = True
+
+    def _create_record(self, row_data):
+        """Pass through the Record object yielded by _generate_rows."""
+        return row_data
+
     def _get_columns(self, type_code: str) -> List[FixedColumn]:
         return self.columns.get(type_code)
 
@@ -258,7 +266,8 @@ class EDIReader(FixedReader):
         return self._type_factories[type_code]
 
     def _generate_rows(self) -> Iterator[Record]:
-        for line in self._rdr:
+        for line in self.fp:
+            line = line.rstrip('\n')
             if len(line) < self._record_type_len:
                 logger.debug("Line too short — skipping")
                 continue
@@ -269,16 +278,12 @@ class EDIReader(FixedReader):
                 logger.debug(f"Skipping unknown record type '{type_code}'")
                 continue
 
-            # Parse fields
             row_values = []
             for col in cols:
-                val = line[col.start_idx:col.end_idx]
+                val = line[col.start_idx:col.end_pos]
                 if self.auto_trim:
                     val = val.strip()
                 row_values.append(val)
-
-            if self.add_record_type:
-                row_values.append(type_code)
 
             record = self._get_factory(type_code)(*row_values)
             yield record
