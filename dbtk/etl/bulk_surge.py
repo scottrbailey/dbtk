@@ -86,7 +86,10 @@ class BulkSurge(BaseSurge):
     batch_size : int, optional
         Number of records per batch (default: 10,000)
     pass_through : bool, optional
-        Skip transformation/validation (default: False)
+        Skip transformation and validation, using source data directly (default: False).
+        Use this for trusted database-to-database copies where the source schema
+        matches the destination and you want maximum performance. Skips all type
+        coercion, constraint checking, and Table.set_values() overhead.
 
     Attributes
     ----------
@@ -132,6 +135,12 @@ class BulkSurge(BaseSurge):
         db = dbtk.connect('prod_mssql')  # Named connection required
         surge = BulkSurge(table)
         surge.load(reader)  # Uses bcp
+
+    Fast database-to-database copy (no transformation)::
+
+        # Source and destination schemas match - skip validation for speed
+        surge = BulkSurge(dest_table, pass_through=True)
+        surge.load(source_cursor.fetchall())
 
     See Also
     --------
