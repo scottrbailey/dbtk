@@ -3,6 +3,7 @@
 """Fixed-width text file reader with column position specifications."""
 
 import logging
+import os
 from typing import TextIO, List, Dict, Any, Optional, Iterator
 
 from .base import Reader, Record
@@ -92,9 +93,17 @@ class FixedReader(Reader):
         elif hasattr(fp, 'buffer'):
             # Text mode file - use buffer for better performance
             self._trackable = fp.buffer
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
         else:
             # Binary mode or other file type
             self._trackable = fp
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
 
         self.columns = columns
         self.auto_trim = auto_trim
