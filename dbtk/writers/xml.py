@@ -60,8 +60,8 @@ class XMLWriter(BaseWriter):
     ----------
     data : Iterable[RecordLike]
         Data to write
-    filename : str, Path, TextIO, or BinaryIO, optional
-        Output filename or file handle. If None, writes to stdout.
+    file : str, Path, TextIO, or BinaryIO, optional
+        Output file or file handle. If None, writes to stdout.
     columns : List[str], optional
         Column names for list-of-lists data
     encoding : str, default 'utf-8'
@@ -84,7 +84,7 @@ class XMLWriter(BaseWriter):
     def __init__(
             self,
             data=None,
-            filename: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+            file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
@@ -101,7 +101,7 @@ class XMLWriter(BaseWriter):
             encoding = encoding.replace('-sig', '')
             logger.warning(f'A BOM encoding ({encoding}-sig) is not supported by LXML and most parsers. Using {encoding} instead.')
 
-        super().__init__(data, filename, columns, encoding)
+        super().__init__(data, file, columns, encoding)
         self._xml_columns = {col: _sanitize_element_name(col) for col in self.columns}
 
     def _write_data(self, file_obj: Union[TextIO, BinaryIO]) -> None:
@@ -136,8 +136,8 @@ class XMLStreamer(BatchWriter):
     ----------
     data : Iterable[RecordLike], optional
         Initial data. For streaming mode, use data=None.
-    filename : str, Path, or BinaryIO, optional
-        Output filename or binary file handle. Must be binary mode for streaming.
+    file : str, Path, or BinaryIO, optional
+        Output file or binary file handle. Must be binary mode for streaming.
     columns : List[str], optional
         Column names for list-of-lists data
     encoding : str, default 'utf-8'
@@ -152,13 +152,13 @@ class XMLStreamer(BatchWriter):
     Streaming mode::
 
         with open('output.xml', 'wb') as f:
-            with XMLStreamer(data=None, filename=f, root_element='data') as writer:
+            with XMLStreamer(data=None, file=f, root_element='data') as writer:
                 for batch in surge.batched(records):
                     writer.write_batch(batch)
 
     Single-shot mode::
 
-        XMLStreamer(data=records, filename='output.xml').write()
+        XMLStreamer(data=records, file='output.xml').write()
 
     Notes
     -----
@@ -171,7 +171,7 @@ class XMLStreamer(BatchWriter):
     def __init__(
             self,
             data=None,
-            filename: Optional[Union[str, Path, BinaryIO]] = None,
+            file: Optional[Union[str, Path, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
@@ -190,7 +190,7 @@ class XMLStreamer(BatchWriter):
 
         super().__init__(
             data=data,
-            filename=filename,
+            file=file,
             columns=columns,
             encoding=encoding,
             preserve_types=True,  # We'll convert in _prepare_record_for_xml
@@ -215,19 +215,19 @@ class XMLStreamer(BatchWriter):
         ValueError
             If a text stream is provided instead of binary
         """
-        if self.filename is None:
+        if self.file is None:
             return sys.stdout.buffer, False
 
-        if hasattr(self.filename, 'write'):
+        if hasattr(self.file, 'write'):
             # Validate it's a binary stream
-            if isinstance(self.filename, io.TextIOWrapper):
+            if isinstance(self.file, io.TextIOWrapper):
                 raise ValueError(
                     "XMLStreamer requires a binary file handle, got TextIOWrapper. "
                     "Open file in 'wb' mode or use file.buffer"
                 )
-            if hasattr(self.filename, 'mode') and 'b' not in self.filename.mode:
+            if hasattr(self.file, 'mode') and 'b' not in self.file.mode:
                 raise ValueError(
-                    f"XMLStreamer requires binary mode, file opened in '{self.filename.mode}' mode. "
+                    f"XMLStreamer requires binary mode, file opened in '{self.file.mode}' mode. "
                     "Use 'wb' mode instead."
                 )
         return super()._open_file_handle('wb')
@@ -303,7 +303,7 @@ class XMLStreamer(BatchWriter):
 
 def to_xml(
         data,
-        filename: Optional[Union[str, Path]] = None,
+        file: Optional[Union[str, Path]] = None,
         encoding: str = 'utf-8',
         root_element: str = 'data',
         record_element: str = 'record',
@@ -317,8 +317,8 @@ def to_xml(
     ----------
     data : Iterable[RecordLike]
         Cursor object or list of records
-    filename : str or Path, optional
-        Output filename. If None, writes to stdout (limited to 20 rows)
+    file : str or Path, optional
+        Output file. If None, writes to stdout (limited to 20 rows)
     encoding : str, default 'utf-8'
         XML encoding declaration
     root_element : str, default 'data'
@@ -360,7 +360,7 @@ def to_xml(
     if stream:
         with XMLStreamer(
             data=data,
-            filename=filename,
+            file=file,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
@@ -369,7 +369,7 @@ def to_xml(
     else:
         with XMLWriter(
             data=data,
-            filename=filename,
+            file=file,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,

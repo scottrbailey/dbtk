@@ -311,7 +311,7 @@ For large XML exports, `XMLStreamer` writes records incrementally without buildi
 from dbtk.writers import XMLStreamer
 
 # Stream millions of records to XML
-with XMLStreamer(filename='large_export.xml', root_element='records',
+with XMLStreamer(file='large_export.xml', root_element='records',
                  record_element='item') as writer:
     for batch in data_source.batches(10000):
         writer.write_batch(batch)
@@ -329,7 +329,7 @@ from dbtk.writers import XMLStreamer
 # Basic usage with cursor
 cursor.execute("SELECT * FROM users WHERE active = true")
 
-with XMLStreamer(filename='active_users.xml', root_element='users',
+with XMLStreamer(file='active_users.xml', root_element='users',
                  record_element='user', encoding='utf-8') as streamer:
     for record in cursor:
         streamer.write_record(record)
@@ -338,7 +338,7 @@ with XMLStreamer(filename='active_users.xml', root_element='users',
 # Batch processing for performance
 cursor.execute("SELECT * FROM orders")
 
-with XMLStreamer(filename='orders.xml', root_element='orders',
+with XMLStreamer(file='orders.xml', root_element='orders',
                  record_element='order') as streamer:
     batch = []
     for record in cursor:
@@ -350,7 +350,7 @@ with XMLStreamer(filename='orders.xml', root_element='orders',
         streamer.write_batch(batch)
 
 # Custom element attributes
-with XMLStreamer(filename='products.xml', root_element='catalog',
+with XMLStreamer(file='products.xml', root_element='catalog',
                  record_element='product') as streamer:
     for record in cursor:
         # Records with nested data work automatically
@@ -387,7 +387,7 @@ streamer.close()  # Must call close() to finalize XML
 from dbtk.writers import LinkedExcelWriter
 
 # Create workbook with multiple sheets
-with LinkedExcelWriter(filename='monthly_report.xlsx') as workbook:
+with LinkedExcelWriter(file='monthly_report.xlsx') as workbook:
     # Sheet 1: Sales data
     cursor.execute("SELECT * FROM sales WHERE month = :month", {'month': 'January'})
     workbook.write_sheet(cursor, 'Sales')
@@ -407,7 +407,7 @@ with LinkedExcelWriter(filename='monthly_report.xlsx') as workbook:
 # Workbook is automatically saved and closed
 
 # Complex multi-source report
-with LinkedExcelWriter(filename='quarterly_report.xlsx') as wb:
+with LinkedExcelWriter(file='quarterly_report.xlsx') as wb:
     # Active customers
     cursor.execute("SELECT * FROM customers WHERE status = 'active'")
     wb.write_sheet(cursor, 'Active Customers')
@@ -441,7 +441,7 @@ writers.to_excel(expenses_data, 'report.xlsx', sheet='Expenses', append=True)
 # Works but inefficient - reopens file
 
 # ✅ CORRECT: Efficient multi-sheet creation
-with LinkedExcelWriter(filename='report.xlsx') as wb:
+with LinkedExcelWriter(file='report.xlsx') as wb:
     wb.write_sheet(sales_data, 'Sales')
     wb.write_sheet(expenses_data, 'Expenses')
 # File written once at close

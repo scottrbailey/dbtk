@@ -120,7 +120,7 @@ class BaseWriter(ABC):
     def __init__(
             self,
             data: Iterable[RecordLike],
-            filename: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+            file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
             encoding: str = "utf-8",
             write_headers: bool = True,
@@ -133,7 +133,7 @@ class BaseWriter(ABC):
         ----------
         data : Iterable[RecordLike]
             Data source (cursor, list of records, etc.)
-        filename : str, Path, TextIO, or BinaryIO, optional
+        file : str, Path, TextIO, or BinaryIO, optional
             Output file. None writes to stdout.
         columns : List[str], optional
             Column names for list-of-lists
@@ -144,7 +144,7 @@ class BaseWriter(ABC):
         **fmt_kwargs
             Format-specific arguments
         """
-        self.filename = filename
+        self.file = file
         self.encoding = encoding
         self.write_headers = write_headers
         self._headers_written = False
@@ -157,7 +157,7 @@ class BaseWriter(ABC):
             raise ValueError("No data to export")
 
         # Limit stdout output to 20 rows
-        if filename is None:
+        if file is None:
             self.data_iterator = itertools.islice(self.data_iterator, 20)
 
         # File handling
@@ -169,9 +169,9 @@ class BaseWriter(ABC):
             self._file_obj, self._should_close_file = self._open_file_handle()
         else:
             # Writers that manage their own files (ExcelWriter, DatabaseWriter)
-            if filename is None:
+            if file is None:
                 raise ValueError(f"{self.__class__.__name__} requires an output file path")
-            self.output_path = Path(filename)
+            self.output_path = Path(file)
 
     def _open_file_handle(self, mode: str = "w") -> tuple[Union[TextIO, BinaryIO], bool]:
         """
@@ -187,20 +187,20 @@ class BaseWriter(ABC):
         tuple[Union[TextIO, BinaryIO], bool]
             (file_handle, should_close_flag)
         """
-        if self.filename is None:
+        if self.file is None:
             # Write to stdout
             return (sys.stdout.buffer if "b" in mode else sys.stdout), False
 
-        if hasattr(self.filename, "write"):
+        if hasattr(self.file, "write"):
             # Already an open file handle
-            return self.filename, False
+            return self.file, False
 
         # Open file from path
         kwargs = {}
         if "b" not in mode:
             kwargs["newline"] = ""
             kwargs["encoding"] = self.encoding
-        return open(self.filename, mode, **kwargs), True
+        return open(self.file, mode, **kwargs), True
 
     @property
     def row_count(self) -> int:
@@ -227,7 +227,7 @@ class BaseWriter(ABC):
         file_obj = self._file_obj if self.accepts_file_handle else self.output_path
         try:
             self._write_data(file_obj)
-            logger.info(f"Wrote {self._row_num} rows to {self.filename or 'stdout'}")
+            logger.info(f"Wrote {self._row_num} rows to {self.file or 'stdout'}")
             return self._row_num
         finally:
             self.close()
@@ -452,16 +452,16 @@ class BatchWriter(BaseWriter):
     Usage Patterns
     --------------
     **Pattern 1: Traditional (single-shot)**
-        >>> writer = CSVWriter(data=all_records, filename='output.csv')
+        >>> writer = CSVWriter(data=all_records, file='output.csv')
         >>> writer.write()
 
     **Pattern 2: Pure streaming**
-        >>> with CSVWriter(data=None, filename='output.csv') as writer:
+        >>> with CSVWriter(data=None, file='output.csv') as writer:
         ...     for batch in surge.batched(records):
         ...         writer.write_batch(batch)
 
     **Pattern 3: Hybrid**
-        >>> writer = CSVWriter(data=first_batch, filename='output.csv')
+        >>> writer = CSVWriter(data=first_batch, file='output.csv')
         >>> writer.write()  # Process initial batch
         >>> writer.write_batch(second_batch)  # Continue streaming
         >>> writer.write_batch(third_batch)
@@ -471,7 +471,7 @@ class BatchWriter(BaseWriter):
     data : Iterable[RecordLike], optional
         Initial data. If None, setup is deferred until first write_batch().
         This enables streaming use cases where data arrives in batches.
-    filename : str, Path, TextIO, or BinaryIO, optional
+    file : str, Path, TextIO, or BinaryIO, optional
         Output destination. For streaming, pass an open file handle.
     columns : List[str], optional
         Explicit column names. If not provided, inferred from first batch.
@@ -503,7 +503,7 @@ class BatchWriter(BaseWriter):
     def __init__(
             self,
             data: Optional[Iterable[RecordLike]] = None,
-            filename: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+            file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
             headers: Optional[List[str]] = None,
             encoding: Optional[str] = 'utf-8',
@@ -517,7 +517,7 @@ class BatchWriter(BaseWriter):
         ----------
         data : Iterable[RecordLike], optional
             Initial data. If None, setup is deferred until first write_batch().
-        filename : str, Path, TextIO, or BinaryIO, optional
+        file : str, Path, TextIO, or BinaryIO, optional
             Output destination.
         columns : List[str], optional
             Explicit column names. If not provided, inferred from data.
@@ -544,7 +544,7 @@ class BatchWriter(BaseWriter):
                 "Either remove the 'headers' parameter or set write_headers=True."
             )
 
-        self.filename = filename
+        self.file = file
         self.write_headers = write_headers
         self.encoding = encoding
         self._format_kwargs = fmt_kwargs
@@ -662,7 +662,7 @@ class BatchWriter(BaseWriter):
 
         try:
             self._write_data(self._file_obj)
-            logger.info(f"Wrote {self._row_num} rows to {self.filename or 'stdout'}")
+            logger.info(f"Wrote {self._row_num} rows to {self.file or 'stdout'}")
             return self._row_num
         finally:
             # Clear iterator after writing to allow subsequent write_batch() calls

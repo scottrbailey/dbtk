@@ -87,9 +87,20 @@ class BulkSurge(BaseSurge):
         Number of records per batch (default: 10,000)
     pass_through : bool, optional
         Skip transformation and validation, using source data directly (default: False).
-        Use this for trusted database-to-database copies where the source schema
-        matches the destination and you want maximum performance. Skips all type
-        coercion, constraint checking, and Table.set_values() overhead.
+
+        **When to use:**
+
+        - Database-to-database copies with identical schemas
+        - Pre-transformed data from upstream pipelines (already validated)
+        - Cursor-to-cursor streaming (maximum throughput)
+        - Raw positional tuples pre-ordered for binding parameters
+
+        **What's skipped:** Field mapping, type coercion, default values, null value
+        handling, required field validation, and Table.set_values() overhead.
+
+        **Warning:** Do NOT use if records might have missing required fields, mismatched
+        field names, need type transformations, or data quality is uncertain. All database
+        constraints (primary keys, foreign keys) still apply.
 
     Attributes
     ----------
@@ -136,11 +147,17 @@ class BulkSurge(BaseSurge):
         surge = BulkSurge(table)
         surge.load(reader)  # Uses bcp
 
-    Fast database-to-database copy (no transformation)::
+    Fast database-to-database copy (matching schemas)::
 
-        # Source and destination schemas match - skip validation for speed
+        # Source and destination schemas match exactly
         surge = BulkSurge(dest_table, pass_through=True)
         surge.load(source_cursor.fetchall())
+
+    Pre-transformed data (already validated)::
+
+        # Data already transformed and validated by upstream process
+        surge = BulkSurge(table, pass_through=True)
+        surge.load(validated_records)
 
     See Also
     --------
@@ -298,7 +315,7 @@ class BulkSurge(BaseSurge):
         def writer_thread():
             nonlocal exception
             try:
-                writer = CSVWriter(data=None, filename=buffer, write_headers=False, null_string='\\N')
+                writer = CSVWriter(data=None, file=buffer, write_headers=False, null_string='\\N')
                 for batch in self.batched(records):
                     writer.write_batch(batch)
             except Exception as e:
@@ -442,7 +459,7 @@ class BulkSurge(BaseSurge):
 
         # Dump CSV
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, filename=csv_path, delimiter=',', quotechar='"')
+        self.dump(records, file=csv_path, delimiter=',', quotechar='"')
         # dump automatically creates .ctl file if connected to Oracle
         ctl_path = self.control_path
         log_path = self.log_dir +  self.dump_path.stem + '.log'
@@ -535,7 +552,7 @@ class BulkSurge(BaseSurge):
 
         self.dump(
             records,
-            filename=dump_path,
+            file=dump_path,
             write_headers=False,
             delimiter='\x1f',  # Unit Separator — super safe
             quotechar=None,    # No quoting needed
@@ -597,7 +614,7 @@ class BulkSurge(BaseSurge):
         """
         # Dump to CSV file
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, filename=csv_path, lineterminator='\n')
+        self.dump(records, file=csv_path, lineterminator='\n')
 
         # Execute LOAD DATA LOCAL INFILE from the temp file
         # Use forward slashes for MySQL (works on Windows too, avoids escape issues)
@@ -738,7 +755,7 @@ class BulkSurge(BaseSurge):
         self.dump_path = dump_path
         with open(dump_path, "w", encoding=encoding, newline='') as fp:
             writer = CSVWriter(data=None,
-                               filename=fp,
+                               file=fp,
                                write_headers=write_headers,
                                headers=headers,
                                delimiter=delimiter, **csv_args)

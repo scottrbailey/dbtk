@@ -18,7 +18,7 @@ class JSONWriter(BaseWriter):
 
     def __init__(self,
                  data=None,
-                 filename: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  indent: Optional[int] = 2,
@@ -28,14 +28,14 @@ class JSONWriter(BaseWriter):
 
         Args:
             data: Cursor object or list of records
-            filename: Output filename. If None, writes to stdout
+            file: Output file. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
             **json_kwargs: Additional arguments passed to json.dump
         """
         # Preserve data types for JSON output
-        super().__init__(data, filename, columns, encoding, indent=indent, **json_kwargs)
+        super().__init__(data, file, columns, encoding, indent=indent, **json_kwargs)
 
     def to_string(self, obj: Any) -> Any:
         """Convert object to string. For JSON just convert dates and times. """
@@ -59,7 +59,7 @@ class NDJSONWriter(BatchWriter):
 
     def __init__(self,
                  data=None,
-                 filename: Optional[Union[str, Path]] = None,
+                 file: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  **json_kwargs):
@@ -68,13 +68,13 @@ class NDJSONWriter(BatchWriter):
 
         Args:
             data: Cursor object or list of records
-            filename: Output filename. If None, writes to stdout
+            file: Output file. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             **json_kwargs: Additional arguments passed to json.dumps
         """
         # NDJSON doesn't use indentation
-        super().__init__(data, filename, columns=columns, encoding=encoding, indent=None, **json_kwargs)
+        super().__init__(data, file, columns=columns, encoding=encoding, indent=None, **json_kwargs)
 
     def to_string(self, obj: Any) -> Any:
         """Convert object to string. For JSON just convert dates and times. """
@@ -93,7 +93,7 @@ class NDJSONWriter(BatchWriter):
         file_obj.flush()
 
 def to_json(data,
-            filename: Optional[Union[str, Path]] = None,
+            file: Optional[Union[str, Path]] = None,
             encoding: str = 'utf-8',
             indent: Optional[int] = 2,
             **json_kwargs) -> None:
@@ -102,7 +102,7 @@ def to_json(data,
 
     Args:
         data: Cursor object or list of records
-        filename: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         encoding: File encoding
         indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
         **json_kwargs: Additional arguments passed to json.dump
@@ -119,7 +119,7 @@ def to_json(data,
     """
     with JSONWriter(
         data=data,
-        filename=filename,
+        file=file,
         encoding=encoding,
         indent=indent,
         **json_kwargs
@@ -128,7 +128,7 @@ def to_json(data,
 
 
 def to_ndjson(data,
-              filename: Optional[Union[str, Path]] = None,
+              file: Optional[Union[str, Path]] = None,
               encoding: str = 'utf-8',
               **json_kwargs) -> None:
     """
@@ -136,7 +136,7 @@ def to_ndjson(data,
 
     Args:
         data: Cursor object or list of records
-        filename: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         encoding: File encoding
         **json_kwargs: Additional arguments passed to json.dumps
 
@@ -149,7 +149,7 @@ def to_ndjson(data,
     """
     with NDJSONWriter(
         data=data,
-        filename=filename,
+        file=file,
         encoding=encoding,
         **json_kwargs
     ) as writer:

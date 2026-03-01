@@ -50,7 +50,7 @@ def test_mode_2():
 
     try:
         # Pure streaming
-        with ExcelWriter(filename=filepath) as writer:
+        with ExcelWriter(file=filepath) as writer:
             writer.write_batch(data1)
             writer.write_batch(data2)
 
@@ -90,7 +90,7 @@ def test_sheet_name_support():
         filepath = tmp.name
 
     try:
-        with ExcelWriter(filename=filepath, sheet_name='TestSheet') as writer:
+        with ExcelWriter(file=filepath, sheet_name='TestSheet') as writer:
             writer.write_batch(data1)
 
         print(f"  ✓ Created sheet with custom name")

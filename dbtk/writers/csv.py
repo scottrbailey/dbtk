@@ -16,7 +16,7 @@ class CSVWriter(BatchWriter):
 
     def __init__(self,
                  data=None,
-                 filename: Optional[Union[str, Path, TextIO]] = None,
+                 file: Optional[Union[str, Path, TextIO]] = None,
                  columns: Optional[List[str]] = None,
                  headers: Optional[List[str]] = None,
                  write_headers: bool = True,
@@ -27,7 +27,7 @@ class CSVWriter(BatchWriter):
 
         Args:
             data: Cursor object or list of records
-            filename: Output filename. If None, writes to stdout
+            file: Output file. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             headers: Header row text. If None, checks data.description for original column names,
                     then falls back to detected column names. Useful when field names have been
@@ -37,7 +37,7 @@ class CSVWriter(BatchWriter):
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, filename, columns, headers=headers, write_headers=write_headers, **csv_kwargs)
+        super().__init__(data, file, columns, headers=headers, write_headers=write_headers, **csv_kwargs)
         self.null_string = null_string or settings.get('null_string_csv', '')
 
     def to_string(self, obj: Any) -> str:
@@ -67,7 +67,7 @@ class CSVWriter(BatchWriter):
             self._row_num += 1
 
 def to_csv(data,
-           filename: Optional[Union[str, Path]] = None,
+           file: Optional[Union[str, Path]] = None,
            headers: Optional[List[str]] = None,
            write_headers: bool = True,
            null_string: str = None,
@@ -77,7 +77,7 @@ def to_csv(data,
 
     Args:
         data: Cursor object or list of records
-        filename: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         headers: Header row text. If None, uses cursor.description or detected column names
         write_headers: Whether to include column headers
         null_string: String representation for null values
@@ -98,7 +98,7 @@ def to_csv(data,
     """
     with CSVWriter(
         data=data,
-        filename=filename,
+        file=file,
         headers=headers,
         write_headers=write_headers,
         null_string=null_string,

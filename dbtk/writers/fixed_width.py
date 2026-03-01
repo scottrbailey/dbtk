@@ -24,7 +24,7 @@ class FixedWidthWriter(BatchWriter):
     ----------
     data : Iterable[RecordLike], optional
         Initial data to write. Can be None for streaming mode.
-    filename : str, Path, TextIO, or BinaryIO, optional
+    file : str, Path, TextIO, or BinaryIO, optional
         Output file or file handle. If None, writes to stdout.
     column_widths : Sequence[int]
         List of column widths in characters. Must match number of columns in data.
@@ -84,7 +84,7 @@ class FixedWidthWriter(BatchWriter):
 
     def __init__(self,
                  data: Optional[Iterable[RecordLike]] = None,
-                 filename: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+                 file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
                  column_widths: Sequence[int] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
@@ -103,7 +103,7 @@ class FixedWidthWriter(BatchWriter):
         # Initialize BatchWriter (handles data=None case)
         super().__init__(
             data=data,
-            filename=filename,
+            file=file,
             columns=columns,
             encoding=encoding,
             write_headers=False  # Fixed-width doesn't have headers
@@ -231,7 +231,7 @@ class FixedWidthWriter(BatchWriter):
 
 def to_fixed_width(data,
                    column_widths: Sequence[int],
-                   filename: Optional[Union[str, Path]] = None,
+                   file: Optional[Union[str, Path]] = None,
                    encoding: str = 'utf-8',
                    right_align_numbers: bool = True,
                    truncate_overflow: bool = True,
@@ -242,7 +242,7 @@ def to_fixed_width(data,
     Args:
         data: Cursor object or list of records
         column_widths: List of column widths in characters
-        filename: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         encoding: File encoding
         right_align_numbers: Whether to right-align numeric values
         truncate_overflow: Whether to truncate values that exceed column width
@@ -258,7 +258,7 @@ def to_fixed_width(data,
     """
     writer = FixedWidthWriter(
         data=data,
-        filename=filename,
+        file=file,
         column_widths=column_widths,
         encoding=encoding,
         right_align_numbers=right_align_numbers,

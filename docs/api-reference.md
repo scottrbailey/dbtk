@@ -100,11 +100,11 @@ db = sqlite(database, **kwargs)
 - Executes query multiple times with different parameters
 - Params_list: list of dicts or list of tuples
 
-**`execute_file(filename, params=None)`**
+**`execute_file(file, params=None)`**
 - Loads SQL from file and executes with parameter conversion
 - Automatically converts :named or %(name)s to driver's paramstyle
 
-**`prepare_file(filename)`**
+**`prepare_file(file)`**
 - Creates PreparedStatement from SQL file
 - Returns: `PreparedStatement` object
 
@@ -280,7 +280,7 @@ BulkSurge(table, batch_size=None)
 - Method: 'direct' (default) or 'external'
 - Returns: number of records loaded
 
-**`dump(records, filename=None, write_headers=True, delimiter=',', encoding='utf-8', **csv_args)`** → int
+**`dump(records, file=None, write_headers=True, delimiter=',', encoding='utf-8', **csv_args)`** → int
 - Exports transformed records to CSV
 - Auto-generates Oracle control file if connected to Oracle
 - Returns: number of records written
@@ -387,23 +387,23 @@ All writers accept cursor or materialized results (list of Records/dicts/tuples)
 
 ### Writer Functions
 
-**`to_csv(data, filename, delimiter=',', **kwargs)`**
+**`to_csv(data, file, delimiter=',', **kwargs)`**
 - Writes to CSV file
-- Pass `None` for filename to print to stdout
+- Pass `None` for file to print to stdout
 
-**`to_excel(data, filename, sheet='Sheet1', append=False, **kwargs)`**
+**`to_excel(data, file, sheet='Sheet1', append=False, **kwargs)`**
 - Writes to Excel file (.xlsx)
 
-**`to_json(data, filename, indent=2, **kwargs)`**
+**`to_json(data, file, indent=2, **kwargs)`**
 - Writes to JSON file (array of objects)
 
-**`to_ndjson(data, filename, **kwargs)`**
+**`to_ndjson(data, file, **kwargs)`**
 - Writes to NDJSON file (one object per line)
 
-**`to_xml(data, filename, root_element='root', record_element='record', **kwargs)`**
+**`to_xml(data, file, root_element='root', record_element='record', **kwargs)`**
 - Writes to XML file
 
-**`to_fixed_width(data, column_widths, filename, **kwargs)`**
+**`to_fixed_width(data, column_widths, file, **kwargs)`**
 - Writes to fixed-width text file
 
 **`cursor_to_cursor(source_cursor, dest_cursor, table_name, batch_size=None)`**
@@ -427,7 +427,7 @@ close()               # Finalize XML
 For multiple sheets in same workbook:
 
 ```python
-LinkedExcelWriter(filename)
+LinkedExcelWriter(file)
 
 # Methods
 write_sheet(data, sheet_name)  # Add sheet
@@ -548,10 +548,10 @@ IdentityManager(source_key, target_key, resolver=None, alternate_keys=None)
 **`calc_stats()`** → dict
 - Returns stats dict: {pending: N, resolved: N, ...}
 
-**`save_state(filename)`**
+**`save_state(file)`**
 - Persists state to JSON
 
-**`load_state(filename, resolver=None)`** *(classmethod)*
+**`load_state(file, resolver=None)`** *(classmethod)*
 - Loads state from JSON
 - Returns: IdentityManager object
 
