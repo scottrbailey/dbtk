@@ -144,7 +144,7 @@ class BaseWriter(ABC):
         **fmt_kwargs
             Format-specific arguments
         """
-        self.filenamename = filename
+        self.filename = filename
         self.encoding = encoding
         self.write_headers = write_headers
         self._headers_written = False
