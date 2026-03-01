@@ -2,22 +2,30 @@
 
 """Fixed-width text file reader with column position specifications."""
 
-import re
-from typing import TextIO, List, Any, Optional, Iterator
-from collections import Counter, defaultdict
-from .base import Reader, Clean
+import logging
+from typing import TextIO, List, Dict, Any, Optional, Iterator
+
+from .base import Reader, Record
 from ..etl.transforms.datetime import parse_date, parse_datetime, parse_timestamp
 
+logger = logging.getLogger(__name__)
 
 class FixedColumn(object):
     """ Column definition for fixed width files """
 
-    def __init__(self, name, start_pos, end_pos, column_type='text'):
+    def __init__(self, name:str, start_pos:int, end_pos:int,
+                 column_type:str='text',
+                 comment: Optional[str] = None,
+                 alignment: Optional[str] = None,
+                 pad_char: Optional[str] = None):
         """
         :param str name:  database column name
         :param int start_pos: start position of field, first position is 1 not 0
         :param int end_pos: end position of field
         :param str column_type: text, int, float, date
+        :param str comment: discription for column usage/options
+        :param str alignment: override alignment (left, right, center)
+        :param str pad_char: override pad character
 
         FixedColumn('birthdate', 25, 35, 'date')
         """
@@ -26,9 +34,23 @@ class FixedColumn(object):
         self.end_pos = end_pos if end_pos else start_pos
         self.column_type = column_type
         self.start_idx = start_pos - 1
+        self.comment = comment
+        self.alignment = alignment
+        self.pad_char = pad_char
+
+    @property
+    def width(self) -> int:
+        return self.end_pos - self.start_pos + 1
 
     def __repr__(self):
-        return f"FixedColumn('{self.name}', {self.start_pos}, {self.end_pos}, '{self.column_type}')"
+        parts = [f"'{self.name}'", str(self.start_pos), str(self.end_pos), f"'{self.column_type}'"]
+        if self.comment:
+            parts.append(f"comment='{self.comment}'")
+        if self.alignment:
+            parts.append(f"alignment='{self.alignment}'")
+        if self.pad_char:
+            parts.append(f"pad_char='{self.pad_char}'")
+        return f"FixedColumn({', '.join(parts)})"
 
 
 class FixedReader(Reader):
@@ -115,59 +137,6 @@ class FixedReader(Reader):
             self.fp.close()
 
     @classmethod
-    def infer_columns(cls, fp: TextIO, min_occurrences: int = 5) -> List[FixedColumn]:
-        """
-        Infers column boundaries and types from a fixed-width file using regex.
-
-        Args:
-            fp: A file-like object opened in text mode.
-            min_occurrences: Minimum number of times a (start, end) pair must appear to be considered a column.
-
-        Returns:
-            A list of FixedColumn objects.
-        """
-
-        def guess_type(value: str) -> str:
-            if re.fullmatch(r"-?\d+", value):
-                return "int"
-            elif re.fullmatch(r"-?\d+\.\d+", value):
-                return "float"
-            elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) or re.fullmatch(r"\d{2}/\d{2}/\d{4}", value):
-                return "date"
-            else:
-                return "text"
-
-        boundary_counts = Counter()
-        type_counts = defaultdict(Counter)
-
-        for line in fp:
-            for match in re.finditer(r'\S+', line.rstrip('\n')):
-                start, end = match.start(), match.end()
-                value = match.group()
-                boundary_counts[(start, end)] += 1
-                type_counts[(start, end)][guess_type(value)] += 1
-
-        columns = []
-        i = 0
-        for (start, end), count in boundary_counts.items():
-            if count >= min_occurrences:
-                i += 1
-                most_common_type, _ = type_counts[(start, end)].most_common(1)[0]
-                add_column = True
-                for col in columns:
-                    if col.start_pos == start + 1:
-                        add_column = False
-                        if col.end_pos > end + 1:
-                            col.end_pos = end + 1
-                if add_column:
-                    columns.append(FixedColumn(f'column_{i:02d}',
-                                               start_pos=start + 1,
-                                               end_pos=end + 1,
-                                               column_type=most_common_type))
-
-        return sorted(columns, key=lambda col: col.start_pos)
-
-    @classmethod
     def visualize_columns(cls,
                           fp: TextIO,
                           columns: List[FixedColumn] = None,
@@ -193,3 +162,129 @@ class FixedReader(Reader):
             if col.start_pos <= max_len:
                 boundary_line[col.start_pos - 1] = '|'
         return f'{ruler_10s}\n{ruler_1s}\n{"".join(boundary_line)}\n' + '\n'.join(lines)
+
+
+class EDIReader(FixedReader):
+    """
+        Reader for fixed-width files containing multiple record types (EDI-like formats).
+
+        Parses files where each line's layout is determined by a type identifier prefix
+        (e.g., NACHA ACH files with '1', '5', '6', '7', '8', '9' record types). Each record
+        type uses its own set of FixedColumn definitions, allowing different column positions
+        and formats per type.
+
+        Record type codes must all be the same length (automatically detected from keys).
+        The reader dispatches parsing based on the prefix of each line and returns typed
+        Record instances (one dynamic subclass per record type).
+
+        Supports common legacy formats such as NACHA ACH, COBOL copybooks, and other
+        multi-layout fixed-width EDI-style files. The column specifications for several
+        common EDI-like files, including ACH, are defined in `dbtk.readers.edi_formats.py`
+
+        Parameters
+        ----------
+        fp : TextIO
+            Open file pointer in text mode
+        columns : Dict[str, List[FixedColumn]]
+            Mapping of record type codes (keys) to their column definitions.
+            All keys must be strings of identical length.
+        type_name_map : Dict[str, str], optional
+            Optional friendly names for record types (e.g., {'1': 'File Header'})
+            used in logging or output fields.
+        add_record_type : bool, default False
+            If True, adds a '_record_type' field to each Record with the matched code.
+        auto_trim : bool, default True
+            Trim whitespace from field values
+        skip_rows : int, default 0
+            Number of initial data rows to skip after headers (if any)
+        null_values : Collection[Any], optional
+            Values to interpret as None
+        **kwargs
+            Additional arguments passed to FixedReader base class
+
+        Raises
+        ------
+        ValueError
+            If record type keys have inconsistent lengths or columns dict is invalid
+
+        Example
+        -------
+        >>> columns = {
+        ...     '1': [FixedColumn('record_type', 1, 1), FixedColumn('priority_code', 2, 3), ...],
+        ...     '5': [FixedColumn('record_type', 1, 1), FixedColumn('service_class_code', 2, 4), ...],
+        ...     # ... other types ...
+        ... }
+        >>> reader = EDIReader(open('ach_file.ach'), columns=columns)
+        >>> for record in reader:
+        ...     print(record._record_type, record.company_name, record.amount)
+        """
+
+    def __init__(
+            self,
+            fp: TextIO,
+            columns: Dict[str, List[FixedColumn]],
+            type_name_map: Optional[Dict[str, str]] = None,
+            add_record_type: bool = False,
+            # ... pass through all FixedReader params ...
+            **kwargs
+    ):
+        super().__init__(fp, columns=None, **kwargs)  # no single columns
+
+        self.columns = columns
+        self.type_name_map = type_name_map or {}
+        self.add_record_type = add_record_type
+
+        # Auto-detect record type length from keys
+        if columns:
+            lengths = {len(k) for k in columns}
+            if len(lengths) != 1:
+                raise ValueError("All record type keys must have the same length")
+            self._record_type_len = next(iter(lengths))
+            if self._record_type_len == 0:
+                raise ValueError("Record type keys cannot be empty")
+        else:
+            raise ValueError("columns dict is required for TypedFixedReader")
+
+        self._type_factories: Dict[str, type[Record]] = {}
+
+    def _get_columns(self, type_code: str) -> List[FixedColumn]:
+        return self.columns.get(type_code)
+
+    def _get_factory(self, type_code: str) -> type[Record]:
+        if type_code not in self._type_factories:
+            cols = self._get_columns(type_code)
+            if cols is None:
+                raise ValueError(f"No column definition for record type '{type_code}'")
+            fields = [c.name for c in cols]
+            if self.add_record_type:
+                fields.append('_record_type')
+            RecordClass = type(f'EDI_{type_code}_Record', (Record,), {})
+            RecordClass.set_fields(fields)
+            self._type_factories[type_code] = RecordClass
+        return self._type_factories[type_code]
+
+    def _generate_rows(self) -> Iterator[Record]:
+        for line in self._rdr:
+            if len(line) < self._record_type_len:
+                logger.debug("Line too short — skipping")
+                continue
+
+            type_code = line[:self._record_type_len]
+            cols = self._get_columns(type_code)
+            if cols is None:
+                logger.debug(f"Skipping unknown record type '{type_code}'")
+                continue
+
+            # Parse fields
+            row_values = []
+            for col in cols:
+                val = line[col.start_idx:col.end_idx]
+                if self.auto_trim:
+                    val = val.strip()
+                row_values.append(val)
+
+            if self.add_record_type:
+                row_values.append(type_code)
+
+            record = self._get_factory(type_code)(*row_values)
+            yield record
