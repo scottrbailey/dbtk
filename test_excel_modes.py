@@ -30,7 +30,7 @@ def test_mode_1():
 
     try:
         # Single-shot write
-        writer = ExcelWriter(filepath, data1)
+        writer = ExcelWriter(data1, filepath)
         rows_written = writer.write()
 
         print(f"  ✓ Wrote {rows_written} rows in mode 1")
@@ -70,7 +70,7 @@ def test_mode_3():
 
     try:
         # Hybrid mode
-        with ExcelWriter(filepath, data1) as writer:
+        with ExcelWriter(data1, filepath) as writer:
             writer.write()  # Write initial batch
             writer.write_batch(data2)  # Stream additional
             writer.write_batch(data3)  # Stream more

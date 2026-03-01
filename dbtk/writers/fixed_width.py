@@ -24,10 +24,10 @@ class FixedWidthWriter(BatchWriter):
     ----------
     data : Iterable[RecordLike], optional
         Initial data to write. Can be None for streaming mode.
-    column_widths : Sequence[int]
-        List of column widths in characters. Must match number of columns in data.
     file : str, Path, TextIO, or BinaryIO, optional
         Output file or file handle. If None, writes to stdout.
+    column_widths : Sequence[int]
+        List of column widths in characters. Must match number of columns in data.
     columns : List[str], optional
         Column names for list-of-lists data
     encoding : str, default 'utf-8'
@@ -50,12 +50,12 @@ class FixedWidthWriter(BatchWriter):
     **Traditional single-write mode**::
 
         widths = [10, 25, 15, 8]
-        writer = FixedWidthWriter(data, widths, 'report.txt')
+        writer = FixedWidthWriter(data, 'report.txt', widths)
         writer.write()
 
     **Batch streaming mode**::
 
-        with FixedWidthWriter(None, [10, 25, 15], 'output.txt') as writer:
+        with FixedWidthWriter(None, 'output.txt', [10, 25, 15]) as writer:
             for batch in batched_data:
                 writer.write_batch(batch)
 
@@ -63,8 +63,8 @@ class FixedWidthWriter(BatchWriter):
 
         writer = FixedWidthWriter(
             data,
-            [15, 30, 10],
             'custom.txt',
+            [15, 30, 10],
             right_align_numbers=False,
             fill_char='.',
             truncate_overflow=True
@@ -83,9 +83,9 @@ class FixedWidthWriter(BatchWriter):
     preserve_types = False  # Always convert to strings for fixed-width
 
     def __init__(self,
+                 data: Optional[Iterable[RecordLike]] = None,
                  file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
                  column_widths: Sequence[int] = None,
-                 data: Optional[Iterable[RecordLike]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  right_align_numbers: bool = True,
@@ -242,7 +242,7 @@ def to_fixed_width(data,
     Args:
         data: Cursor object or list of records
         column_widths: List of column widths in characters
-        file: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         encoding: File encoding
         right_align_numbers: Whether to right-align numeric values
         truncate_overflow: Whether to truncate values that exceed column width
@@ -257,9 +257,9 @@ def to_fixed_width(data,
         to_fixed_width(cursor, [15, 30], right_align_numbers=False)
     """
     writer = FixedWidthWriter(
+        data=data,
         file=file,
         column_widths=column_widths,
-        data=data,
         encoding=encoding,
         right_align_numbers=right_align_numbers,
         truncate_overflow=truncate_overflow,

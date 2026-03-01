@@ -61,7 +61,7 @@ class XMLWriter(BaseWriter):
     data : Iterable[RecordLike]
         Data to write
     file : str, Path, TextIO, or BinaryIO, optional
-        Output filename or file handle. If None, writes to stdout.
+        Output file or file handle. If None, writes to stdout.
     columns : List[str], optional
         Column names for list-of-lists data
     encoding : str, default 'utf-8'
@@ -83,8 +83,8 @@ class XMLWriter(BaseWriter):
 
     def __init__(
             self,
+            data=None,
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
-            data = None,
             columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
@@ -137,7 +137,7 @@ class XMLStreamer(BatchWriter):
     data : Iterable[RecordLike], optional
         Initial data. For streaming mode, use data=None.
     file : str, Path, or BinaryIO, optional
-        Output filename or binary file handle. Must be binary mode for streaming.
+        Output file or binary file handle. Must be binary mode for streaming.
     columns : List[str], optional
         Column names for list-of-lists data
     encoding : str, default 'utf-8'
@@ -170,8 +170,8 @@ class XMLStreamer(BatchWriter):
 
     def __init__(
             self,
+            data=None,
             file: Optional[Union[str, Path, BinaryIO]] = None,
-            data = None,
             columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
@@ -303,7 +303,7 @@ class XMLStreamer(BatchWriter):
 
 def to_xml(
         data,
-        filename: Optional[Union[str, Path]] = None,
+        file: Optional[Union[str, Path]] = None,
         encoding: str = 'utf-8',
         root_element: str = 'data',
         record_element: str = 'record',
@@ -317,8 +317,8 @@ def to_xml(
     ----------
     data : Iterable[RecordLike]
         Cursor object or list of records
-    filename : str or Path, optional
-        Output filename. If None, writes to stdout (limited to 20 rows)
+    file : str or Path, optional
+        Output file. If None, writes to stdout (limited to 20 rows)
     encoding : str, default 'utf-8'
         XML encoding declaration
     root_element : str, default 'data'
@@ -359,8 +359,8 @@ def to_xml(
 
     if stream:
         with XMLStreamer(
-            file=filename,
             data=data,
+            file=file,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,
@@ -368,8 +368,8 @@ def to_xml(
             writer.write()
     else:
         with XMLWriter(
-            file=filename,
             data=data,
+            file=file,
             encoding=encoding,
             root_element=root_element,
             record_element=record_element,

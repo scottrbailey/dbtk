@@ -42,14 +42,14 @@ class ExcelWriter(BatchWriter):
     Usage examples:
 
     # Mode 1: Traditional single-shot write
-    ExcelWriter('report.xlsx', cursor).write()
+    ExcelWriter(cursor, 'report.xlsx').write()
 
     # Mode 2: Pure streaming with write_batch()
     with ExcelWriter(file='report.xlsx') as writer:
         writer.write_batch(cursor)  # goes to sheet 'Data'
 
     # Mode 3: Hybrid - initial data + streaming
-    with ExcelWriter('report.xlsx', first_batch) as writer:
+    with ExcelWriter(first_batch, 'report.xlsx') as writer:
         writer.write()  # Write initial batch
         writer.write_batch(second_batch)  # Stream additional batches
 
@@ -70,8 +70,8 @@ class ExcelWriter(BatchWriter):
 
     def __init__(
         self,
-        file: Optional[Union[str, Path]] = None,
         data: Optional[Iterable[RecordLike]] = None,
+        file: Optional[Union[str, Path]] = None,
         sheet_name: Optional[str] = None,
         headers: Optional[List[str]] = None,
         write_headers: bool = True,
@@ -81,10 +81,10 @@ class ExcelWriter(BatchWriter):
 
         Parameters
         ----------
-        file : str or Path, optional
-            Output Excel filename (.xlsx). Required for Excel output.
         data : Iterable[RecordLike], optional
             Initial data to write. If None, use write_batch() for streaming mode.
+        file : str or Path, optional
+            Output Excel file (.xlsx). Required for Excel output.
         sheet_name : str, optional
             Default/active sheet name to use for write_batch() calls without explicit sheet_name
         headers : List[str], optional
@@ -385,7 +385,7 @@ class ExcelWriter(BatchWriter):
 
 def to_excel(
     data,
-    filename: Union[str, Path],
+    file: Union[str, Path],
     sheet: str = 'Data',
     headers: Optional[List[str]] = None,
     write_headers: bool = True,
@@ -397,8 +397,8 @@ def to_excel(
     ----------
     data : Iterable[RecordLike]
         Data to write (cursor, list of Records, etc.)
-    filename : str or Path
-        Output Excel filename (.xlsx)
+    file : str or Path
+        Output Excel file (.xlsx)
     sheet : str, default 'Data'
         Sheet name to write to
     headers : List[str], optional
@@ -416,7 +416,7 @@ def to_excel(
 
     For multi-sheet or advanced reports, use ExcelWriter as a context manager with write_batch().
     """
-    with ExcelWriter(data=None, file=filename, headers=headers, write_headers=write_headers) as writer:
+    with ExcelWriter(data=None, file=file, headers=headers, write_headers=write_headers) as writer:
         writer.write_batch(data=data, sheet_name=sheet)
 
 
@@ -760,7 +760,7 @@ class LinkedExcelWriter(ExcelWriter):
     Parameters
     ----------
     file : str or Path
-        Output Excel filename (.xlsx)
+        Output Excel file (.xlsx)
     data : Iterable[RecordLike], optional
         Initial data to write. If None, use write_batch() for streaming mode.
     sheet_name : str, optional
@@ -884,13 +884,13 @@ class LinkedExcelWriter(ExcelWriter):
 
     def __init__(
         self,
-        file: Optional[Union[str, Path]] = None,
         data: Optional[Iterable[RecordLike]] = None,
+        file: Optional[Union[str, Path]] = None,
         sheet_name: Optional[str] = None,
         headers: Optional[List[str]] = None,
         write_headers: bool = True,
     ):
-        super().__init__(file=file, data=data, sheet_name=sheet_name, headers=headers, write_headers=write_headers)
+        super().__init__(data=data, file=file, sheet_name=sheet_name, headers=headers, write_headers=write_headers)
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:

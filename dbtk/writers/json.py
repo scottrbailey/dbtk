@@ -17,8 +17,8 @@ class JSONWriter(BaseWriter):
     """JSON writer class that extends BaseWriter."""
 
     def __init__(self,
+                 data=None,
                  file: Optional[Union[str, Path]] = None,
-                 data = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  indent: Optional[int] = 2,
@@ -27,8 +27,8 @@ class JSONWriter(BaseWriter):
         Initialize JSON writer.
 
         Args:
-            file: Output filename. If None, writes to stdout
             data: Cursor object or list of records
+            file: Output file. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
@@ -58,8 +58,8 @@ class NDJSONWriter(BatchWriter):
     """NDJSON (newline-delimited JSON) writer."""
 
     def __init__(self,
+                 data=None,
                  file: Optional[Union[str, Path]] = None,
-                 data = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  **json_kwargs):
@@ -67,8 +67,8 @@ class NDJSONWriter(BatchWriter):
         Initialize NDJSON writer.
 
         Args:
-            file: Output filename. If None, writes to stdout
             data: Cursor object or list of records
+            file: Output file. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             **json_kwargs: Additional arguments passed to json.dumps
@@ -93,7 +93,7 @@ class NDJSONWriter(BatchWriter):
         file_obj.flush()
 
 def to_json(data,
-            filename: Optional[Union[str, Path]] = None,
+            file: Optional[Union[str, Path]] = None,
             encoding: str = 'utf-8',
             indent: Optional[int] = 2,
             **json_kwargs) -> None:
@@ -102,7 +102,7 @@ def to_json(data,
 
     Args:
         data: Cursor object or list of records
-        filename: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         encoding: File encoding
         indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
         **json_kwargs: Additional arguments passed to json.dump
@@ -118,8 +118,8 @@ def to_json(data,
         to_json(cursor, 'data.json', indent=None)
     """
     with JSONWriter(
-        file=filename,
         data=data,
+        file=file,
         encoding=encoding,
         indent=indent,
         **json_kwargs
@@ -128,7 +128,7 @@ def to_json(data,
 
 
 def to_ndjson(data,
-              filename: Optional[Union[str, Path]] = None,
+              file: Optional[Union[str, Path]] = None,
               encoding: str = 'utf-8',
               **json_kwargs) -> None:
     """
@@ -136,7 +136,7 @@ def to_ndjson(data,
 
     Args:
         data: Cursor object or list of records
-        filename: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         encoding: File encoding
         **json_kwargs: Additional arguments passed to json.dumps
 
@@ -148,8 +148,8 @@ def to_ndjson(data,
         to_ndjson(cursor)
     """
     with NDJSONWriter(
-        file=filename,
         data=data,
+        file=file,
         encoding=encoding,
         **json_kwargs
     ) as writer:

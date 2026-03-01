@@ -19,6 +19,31 @@ class DataSurge(BaseSurge):
     Note: The Table instance's state (self.values) is modified during processing.
     Ensure the Table is not used concurrently by other operations or threads.
 
+    Parameters
+    ----------
+    table : Table
+        Table instance with column definitions and cursor
+    batch_size : int, optional
+        Number of records per batch (default: cursor.batch_size or 1000)
+    use_transaction : bool, optional
+        Wrap all operations in a transaction (default: False)
+    pass_through : bool, optional
+        Skip transformation and validation, using source data directly (default: False).
+
+        **When to use:**
+
+        - Database-to-database copies with identical schemas
+        - Pre-transformed data from upstream pipelines (already validated)
+        - Cursor-to-cursor streaming (maximum throughput)
+        - Raw positional tuples pre-ordered for binding parameters
+
+        **What's skipped:** Field mapping, type coercion, default values, null value
+        handling, required field validation, and Table.set_values() overhead.
+
+        **Warning:** Do NOT use if records might have missing required fields, mismatched
+        field names, need type transformations, or data quality is uncertain. All database
+        constraints (primary keys, foreign keys) still apply.
+
     Attributes
     ----------
     total_read : int
@@ -39,16 +64,28 @@ class DataSurge(BaseSurge):
 
             {frozenset({'primary_name'}): {'count': 5, 'sample': [937887, 957847, ...]}}
 
-    Example
-    -------
-    ::
+    Examples
+    --------
+    Standard ETL with transformation::
 
         table = Table(..., cursor=cursor)
-        surge = DataSurge(table, batch_size=1000, use_transaction=True))
+        surge = DataSurge(table, batch_size=1000, use_transaction=True)
         errors = surge.insert(records, raise_error=False)
+
+    Fast database-to-database copy (matching schemas)::
+
+        # Source and destination schemas match exactly
+        surge = DataSurge(dest_table, batch_size=5000, pass_through=True)
+        surge.insert(source_cursor.fetchall())
+
+    Pre-transformed data (already validated)::
+
+        # Data already transformed and validated by upstream process
+        surge = DataSurge(table, pass_through=True)
+        surge.insert(validated_records)
     """
 
-    def __init__(self, table, batch_size: Optional[int] = None, use_transaction: bool = False):
+    def __init__(self, table, batch_size: Optional[int] = None, use_transaction: bool = False, pass_through: bool = False):
         """
         Initialize DataSurge for bulk operations.
 
@@ -56,8 +93,9 @@ class DataSurge(BaseSurge):
             table: Table instance with schema metadata
             batch_size: Number of records per batch
             use_transaction: Use transaction for all operations (default: False)
+            pass_through: Skip transformation/validation for trusted data (default: False)
         """
-        super().__init__(table, batch_size=batch_size)
+        super().__init__(table, batch_size=batch_size, pass_through=pass_through)
         self.use_transaction = use_transaction
         # Swap to positional parameters if named to save memory in bind parameters
         self.table.force_positional()

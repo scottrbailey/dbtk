@@ -46,7 +46,7 @@ class BaseWriter(ABC):
         * List of dictionaries
         * List of lists/tuples (requires columns parameter)
 
-    file : str, Path, TextIO, or BinaryIO, optional
+    filename : str, Path, TextIO, or BinaryIO, optional
         Output filename or file handle. If None, writes to stdout (limited to 20 rows for preview).
     columns : List[str], optional
         Column names for list-of-lists data. Ignored for other data types which

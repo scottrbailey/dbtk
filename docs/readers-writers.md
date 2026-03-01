@@ -387,7 +387,7 @@ streamer.close()  # Must call close() to finalize XML
 from dbtk.writers import LinkedExcelWriter
 
 # Create workbook with multiple sheets
-with LinkedExcelWriter('monthly_report.xlsx') as workbook:
+with LinkedExcelWriter(file='monthly_report.xlsx') as workbook:
     # Sheet 1: Sales data
     cursor.execute("SELECT * FROM sales WHERE month = :month", {'month': 'January'})
     workbook.write_sheet(cursor, 'Sales')
@@ -407,7 +407,7 @@ with LinkedExcelWriter('monthly_report.xlsx') as workbook:
 # Workbook is automatically saved and closed
 
 # Complex multi-source report
-with LinkedExcelWriter('quarterly_report.xlsx') as wb:
+with LinkedExcelWriter(file='quarterly_report.xlsx') as wb:
     # Active customers
     cursor.execute("SELECT * FROM customers WHERE status = 'active'")
     wb.write_sheet(cursor, 'Active Customers')
@@ -441,7 +441,7 @@ writers.to_excel(expenses_data, 'report.xlsx', sheet='Expenses', append=True)
 # Works but inefficient - reopens file
 
 # ✅ CORRECT: Efficient multi-sheet creation
-with LinkedExcelWriter('report.xlsx') as wb:
+with LinkedExcelWriter(file='report.xlsx') as wb:
     wb.write_sheet(sales_data, 'Sales')
     wb.write_sheet(expenses_data, 'Expenses')
 # File written once at close

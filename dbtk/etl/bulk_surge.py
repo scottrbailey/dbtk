@@ -86,7 +86,21 @@ class BulkSurge(BaseSurge):
     batch_size : int, optional
         Number of records per batch (default: 10,000)
     pass_through : bool, optional
-        Skip transformation/validation (default: False)
+        Skip transformation and validation, using source data directly (default: False).
+
+        **When to use:**
+
+        - Database-to-database copies with identical schemas
+        - Pre-transformed data from upstream pipelines (already validated)
+        - Cursor-to-cursor streaming (maximum throughput)
+        - Raw positional tuples pre-ordered for binding parameters
+
+        **What's skipped:** Field mapping, type coercion, default values, null value
+        handling, required field validation, and Table.set_values() overhead.
+
+        **Warning:** Do NOT use if records might have missing required fields, mismatched
+        field names, need type transformations, or data quality is uncertain. All database
+        constraints (primary keys, foreign keys) still apply.
 
     Attributes
     ----------
@@ -132,6 +146,18 @@ class BulkSurge(BaseSurge):
         db = dbtk.connect('prod_mssql')  # Named connection required
         surge = BulkSurge(table)
         surge.load(reader)  # Uses bcp
+
+    Fast database-to-database copy (matching schemas)::
+
+        # Source and destination schemas match exactly
+        surge = BulkSurge(dest_table, pass_through=True)
+        surge.load(source_cursor.fetchall())
+
+    Pre-transformed data (already validated)::
+
+        # Data already transformed and validated by upstream process
+        surge = BulkSurge(table, pass_through=True)
+        surge.load(validated_records)
 
     See Also
     --------
@@ -433,7 +459,7 @@ class BulkSurge(BaseSurge):
 
         # Dump CSV
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, filename=csv_path, delimiter=',', quotechar='"')
+        self.dump(records, file=csv_path, delimiter=',', quotechar='"')
         # dump automatically creates .ctl file if connected to Oracle
         ctl_path = self.control_path
         log_path = self.log_dir +  self.dump_path.stem + '.log'
@@ -526,7 +552,7 @@ class BulkSurge(BaseSurge):
 
         self.dump(
             records,
-            filename=dump_path,
+            file=dump_path,
             write_headers=False,
             delimiter='\x1f',  # Unit Separator — super safe
             quotechar=None,    # No quoting needed
@@ -588,7 +614,7 @@ class BulkSurge(BaseSurge):
         """
         # Dump to CSV file
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, filename=csv_path, lineterminator='\n')
+        self.dump(records, file=csv_path, lineterminator='\n')
 
         # Execute LOAD DATA LOCAL INFILE from the temp file
         # Use forward slashes for MySQL (works on Windows too, avoids escape issues)
