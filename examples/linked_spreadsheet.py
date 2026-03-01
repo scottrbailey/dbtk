@@ -63,7 +63,7 @@ if __name__ == '__main__':
     output_path = Path.cwd()  /  'output'
     output_path.mkdir(parents=True, exist_ok=True)
     query_path = Path.cwd()
-    with dbtk.writers.LinkedExcelWriter(str(output_path / 'IMDB_Linked.xlsx')) as writer:
+    with dbtk.writers.LinkedExcelWriter(filename=str(output_path / 'IMDB_Linked.xlsx')) as writer:
         # title_links will be used both to create external links on the "Movies" tab
         # and create internal links from "Cast" and "Crew" tabs to that movie on the "Movies" tab
         title_links = dbtk.writers.LinkSource('titles',

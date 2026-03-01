@@ -289,7 +289,7 @@ class BulkSurge(BaseSurge):
         def writer_thread():
             nonlocal exception
             try:
-                writer = CSVWriter(data=None, file=buffer, write_headers=False, null_string='\\N')
+                writer = CSVWriter(data=None, filename=buffer, write_headers=False, null_string='\\N')
                 for batch in self.batched(records):
                     writer.write_batch(batch)
             except Exception as e:
@@ -729,7 +729,7 @@ class BulkSurge(BaseSurge):
         self.dump_path = dump_path
         with open(dump_path, "w", encoding=encoding, newline='') as fp:
             writer = CSVWriter(data=None,
-                               file=fp,
+                               filename=fp,
                                write_headers=write_headers,
                                headers=headers,
                                delimiter=delimiter, **csv_args)
