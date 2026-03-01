@@ -191,8 +191,6 @@ class EDIReader(FixedReader):
         type_name_map : Dict[str, str], optional
             Optional friendly names for record types (e.g., {'1': 'File Header'})
             used in logging or output fields.
-        add_record_type : bool, default False
-            If True, adds a '_record_type' field to each Record with the matched code.
         auto_trim : bool, default True
             Trim whitespace from field values
         skip_rows : int, default 0
@@ -224,7 +222,6 @@ class EDIReader(FixedReader):
             fp: TextIO,
             columns: Dict[str, List[FixedColumn]],
             type_name_map: Optional[Dict[str, str]] = None,
-            add_record_type: bool = False,
             # ... pass through all FixedReader params ...
             **kwargs
     ):
@@ -232,9 +229,8 @@ class EDIReader(FixedReader):
 
         self.columns = columns
         self.type_name_map = type_name_map or {}
-        self.add_record_type = add_record_type
 
-        # Auto-detect record type length from keys
+        # Auto-detect _record_type_len from keys
         if columns:
             lengths = {len(k) for k in columns}
             if len(lengths) != 1:
@@ -256,8 +252,6 @@ class EDIReader(FixedReader):
             if cols is None:
                 raise ValueError(f"No column definition for record type '{type_code}'")
             fields = [c.name for c in cols]
-            if self.add_record_type:
-                fields.append('_record_type')
             RecordClass = type(f'EDI_{type_code}_Record', (Record,), {})
             RecordClass.set_fields(fields)
             self._type_factories[type_code] = RecordClass
