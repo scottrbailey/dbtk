@@ -67,7 +67,8 @@ Quick Start
    record
    configuration
    database-connections
-   readers-writers
+   readers
+   writers
    etl
    advanced
    api
