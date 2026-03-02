@@ -110,6 +110,7 @@ class Record(list):
     _fields: List[str] = []  # Original field names (e.g., 'Start Year')
     _fields_normalized: List[str] = []  # Normalized for access (e.g., 'start_year')
     _field_len: int = 0 # cached for fast hot path
+    mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
 
     def __init__(self, *args, **kwargs):
         # Lazy attributes
@@ -203,6 +204,10 @@ class Record(list):
             return
 
         # 4. New field — add to runtime dict
+        if not self.__class__.mutable_schema:
+            raise TypeError(
+                f"Cannot add field '{key}': schema is fixed (mutable_schema=False)"
+            )
         if self._added is None:
             object.__setattr__(self, "_added", {})
         self._added[key] = value
@@ -343,6 +348,10 @@ class Record(list):
     def pop(self, key: str, default: object = object()) -> Any:
         if not isinstance(key, str):
             raise TypeError("pop() key must be str")
+        if not self.__class__.mutable_schema:
+            raise TypeError(
+                f"Cannot delete field '{key}': schema is fixed (mutable_schema=False)"
+            )
 
         # 1. Runtime-added field?
         if self._added and key in self._added:
@@ -565,6 +574,7 @@ class FixedWidthRecord(Record):
     _widths: List[int] = []
     _alignment: str = ''
     _pad_chars: str = ''
+    mutable_schema: bool = False
 
     @classmethod
     def set_fields(cls, fields: List[FixedColumn]):
