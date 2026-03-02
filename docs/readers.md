@@ -124,7 +124,9 @@ Fixed-width files have no delimiters — every field occupies a specific charact
 
 ### Defining Columns
 
-`FixedColumn(name, start_pos, end_pos, column_type='text')` — positions are **1-indexed** (the first character is position 1, not 0) and the end position is **inclusive**.
+`FixedColumn(name, start_pos, end_pos, column_type='text', alignment=None, pad_char=None, comment=None)`
+
+Positions are **1-indexed** (the first character is position 1, not 0) and the end position is **inclusive**.
 
 ```python
 columns = [
@@ -150,6 +152,32 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 | `datetime` | Parses to `datetime.datetime` |
 | `timestamp` | Parses to `datetime.datetime` (with timezone) |
 
+**`alignment` and `pad_char` — output formatting for `to_line()`**
+
+These parameters only affect how `FixedWidthRecord.to_line()` reconstructs a line; they are ignored during reading. When not set, defaults are inferred from `column_type`:
+
+| `column_type` | Default alignment | Default pad_char |
+|--------------|-------------------|-----------------|
+| `text`, `date`, `datetime` | left | `' '` (space) |
+| `int`, `float` | right | `'0'` (zero) |
+
+Accepted alignment values: `'left'`/`'l'`/`'<'`, `'right'`/`'r'`/`'>'`, `'center'`/`'c'`.
+
+```python
+# Numeric field — zero-padded, right-aligned by default
+readers.FixedColumn('amount', 1, 10, 'int')
+# value 42  →  '0000000042'
+
+# Override to space-padded right-aligned (common for routing numbers)
+readers.FixedColumn('routing_number', 1, 10, alignment='right', pad_char=' ')
+# value '061000104'  →  ' 061000104'
+```
+
+> **Note:** `alignment` and `pad_char` are independent. Explicitly setting `alignment='left'`
+> on an `int` column does *not* automatically change the pad character — it will still default
+> to `'0'` and produce left-aligned zero-padded output (`'42        '` becomes `'4200000000'`).
+> When overriding alignment on a numeric column, set `pad_char=' '` explicitly too.
+
 ### Verifying Column Layout
 
 When working from a file specification, use `visualize_columns()` to confirm your positions match the actual data:
@@ -160,6 +188,72 @@ with open('claims.txt') as fp:
 ```
 
 This prints a character ruler with column boundary markers (`|`) over several sample lines from the file, making it easy to spot off-by-one errors before processing millions of rows.
+
+### Reconstructing Lines — `to_line()`
+
+Records returned by `FixedReader` are `FixedWidthRecord` instances that know their column layout. Call `to_line()` to reconstruct the original fixed-width line — useful for writing modified records back to a file without disturbing untouched columns.
+
+```python
+with readers.FixedReader(open('claims.txt'), columns) as reader:
+    with open('updated_claims.txt', 'w') as out:
+        for claim in reader:
+            if claim.status == 'P':
+                claim['status'] = 'A'
+            out.write(claim.to_line() + '\n')
+```
+
+`to_line()` builds its output by position, not by column order: it creates a space-filled buffer of the total line length and splices each formatted value into its exact byte range. Gaps between defined columns remain as spaces, and columns defined out of position order are placed correctly.
+
+```python
+# truncate_overflow=True silently trims values that exceed their column width
+# truncate_overflow=False (default) raises ValueError, naming the offending field
+claim.to_line(truncate_overflow=True)
+```
+
+See [Record Objects — FixedWidthRecord](record.md#fixedwidthrecord) for full details.
+
+### EDI / Multi-Record-Type Fixed-Width Files
+
+Some fixed-width formats interleave different record types in the same file — each line starts with a type code that determines its layout. Use `EDIReader` with a dict mapping type codes to column lists.
+
+DBTK ships with pre-defined layouts for NACHA ACH files:
+
+```python
+from dbtk.readers.fixed_width import EDIReader
+from dbtk.readers.edi_formats import ACH_COLUMNS
+
+with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
+    for record in reader:
+        if record.record_type_code == '6':   # Entry Detail
+            print(f"{record.individual_name}: ${int(record.amount) / 100:.2f}")
+```
+
+`ACH_COLUMNS` covers all standard NACHA record types:
+
+| Key | Record type |
+|-----|-------------|
+| `'1'` | File Header |
+| `'5'` | Batch Header |
+| `'6'` | Entry Detail |
+| `'7'` | Addenda |
+| `'8'` | Batch Control |
+| `'9'` | File Control |
+
+For custom multi-record formats, supply your own dict:
+
+```python
+custom_layouts = {
+    'H': [FixedColumn('record_type', 1, 1), FixedColumn('file_date', 2, 9)],
+    'D': [FixedColumn('record_type', 1, 1), FixedColumn('account_id', 2, 11), ...],
+    'T': [FixedColumn('record_type', 1, 1), FixedColumn('record_count', 2, 9, 'int')],
+}
+
+with EDIReader(open('data.txt'), custom_layouts) as reader:
+    for record in reader:
+        process(record)
+```
+
+The type-code key can be any length — `EDIReader` slices the beginning of each line to match the longest key in your dict.
 
 ## XML Files
 
