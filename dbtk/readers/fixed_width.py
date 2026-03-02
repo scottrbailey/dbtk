@@ -20,7 +20,7 @@ class FixedReader(Reader):
     def __init__(self,
                  fp: TextIO,
                  columns: List[FixedColumn],
-                 auto_trim: bool = False,
+                 auto_trim: bool = True,
                  add_row_num: bool = True,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
@@ -149,10 +149,11 @@ class FixedReader(Reader):
                 raise ValueError("Header '_row_num' already exists. Remove it or set add_row_num=False.")
             self._headers.append('_row_num')
 
-        # Create Record subclass and set fields
-        # set_fields() will automatically normalize for attribute access
+        # Create Record subclass: set_fields(columns) captures widths/alignment/padding,
+        # then re-call Record.set_fields with full _headers so _row_num is registered.
         self._record_class = type('FileFWRecord', (FixedWidthRecord,), {})
         self._record_class.set_fields(self.columns)
+        Record.set_fields.__func__(self._record_class, self._headers)
 
         self._headers_initialized = True
 
@@ -186,7 +187,7 @@ class EDIReader(FixedReader):
             used in logging or output fields.
         strict : bool, default False
             If True raise error if record type code not mapped in columns, else skipped and logged
-        auto_trim : bool, default False
+        auto_trim : bool, default True
             Trim whitespace from field values
         **kwargs
             Additional arguments passed to FixedReader base class

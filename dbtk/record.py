@@ -604,13 +604,12 @@ class FixedWidthRecord(Record):
         Reconstruct the original fixed-width line from this record's values.
 
         Formats each field according to the class-level _widths, _alignment,
-        and _pad_chars. Alignment defaults to left unless overridden; numeric
-        fields auto-right-align when alignment is 'a'. Missing values are treated
-        as empty strings.
+        and _pad_chars. Iterates only the column fields (stops before _row_num
+        or any other appended fields). Missing values are treated as empty strings.
 
         Args:
-            truncate_overflow: If True (default), silently truncate values that
-                               exceed their column width. If False, raise ValueError.
+            truncate_overflow: If False (default), raise ValueError when a value
+                               exceeds its column width. If True, silently truncate.
 
         Returns:
             A string exactly matching the fixed-width format for this record type.
@@ -621,11 +620,10 @@ class FixedWidthRecord(Record):
         Example:
             record.to_line()  # -> '1234567890ABC       0000012345'
         """
+        cls = self.__class__
         line = ''
-        for i, (name, value) in enumerate(self.items()):
-            width = self.__class__._widths[i]
-            align = self.__class__._alignment[i]
-            pad_char = self.__class__._pad_chars[i]
+        for width, align, pad_char, (name, value) in zip(
+                cls._widths, cls._alignment, cls._pad_chars, self.items()):
             str_val = to_string(value)
             if len(str_val) > width:
                 if truncate_overflow:
@@ -633,7 +631,7 @@ class FixedWidthRecord(Record):
                 else:
                     raise ValueError(f'Value too large for {name} limit: {width}')
             elif len(str_val) < width:
-                if align == 'r' or (align == 'a' and isinstance(value, (int, float))):
+                if align == 'r':
                     str_val = str_val.rjust(width, pad_char)
                 elif align == 'c':
                     str_val = str_val.center(width, pad_char)
