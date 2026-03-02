@@ -132,7 +132,8 @@ class TestToLineBasic:
         cls = make_class(cols)
         r = cls('hi')
         line = r.to_line()
-        assert line == '    hi     '     # center of width 11
+        assert line == 'hi'.center(11, ' ')   # delegate to Python — avoids off-by-one counting
+        assert len(line) == 11
 
     def test_empty_string_value(self, contiguous_class):
         r = contiguous_class('', '', '')
@@ -250,13 +251,15 @@ class TestToLineRoundTrip:
         from dbtk.readers import FixedReader
 
         fixed_file = Path(__file__).parent / 'fixtures' / 'readers' / 'sample_data.txt'
+        # The monks fixture uses left-aligned, space-padded numerics, so we must
+        # override the int/float defaults (right-aligned, zero-padded) to match.
         cols = [
-            FixedColumn('trainee_id',       1,   5, 'int'),
+            FixedColumn('trainee_id',       1,   5, 'int',   alignment='left', pad_char=' '),
             FixedColumn('monk_name',         6,  35, 'text'),
             FixedColumn('home_temple',      36,  65, 'text'),
-            FixedColumn('mastery_rank',     66,  70, 'int'),
+            FixedColumn('mastery_rank',     66,  70, 'int',   alignment='left', pad_char=' '),
             FixedColumn('bison_companion',  71,  82, 'text'),
-            FixedColumn('daily_meditation', 83,  90, 'float'),
+            FixedColumn('daily_meditation', 83,  90, 'float', alignment='left', pad_char=' '),
             FixedColumn('birth_date',       91, 102, 'date'),
             FixedColumn('last_training',   103, 122, 'datetime'),
         ]
@@ -275,3 +278,39 @@ class TestToLineRoundTrip:
                     f'  original:      {repr(original)}\n'
                     f'  reconstructed: {repr(reconstructed)}'
                 )
+
+
+# ---------------------------------------------------------------------------
+# ACH padding regression
+# ---------------------------------------------------------------------------
+
+class TestACHPadding:
+    """immediate_destination and immediate_origin must be space-padded, not zero-padded."""
+
+    def _make_header_record(self, **overrides):
+        from dbtk.readers.edi_formats import ACH_COLUMNS
+        cls = make_class(ACH_COLUMNS['1'])
+        values = {col.name: '' for col in ACH_COLUMNS['1']}
+        values.update(overrides)
+        return cls(*[values[col.name] for col in ACH_COLUMNS['1']])
+
+    def test_immediate_destination_space_padded(self):
+        r = self._make_header_record(immediate_destination='061000104')   # 9 chars → 1 pad
+        line = r.to_line()
+        assert line[3:13] == ' 061000104', repr(line[3:13])
+
+    def test_immediate_destination_not_zero_padded(self):
+        r = self._make_header_record(immediate_destination='61000104')    # 8 chars → 2 pads
+        line = r.to_line()
+        assert line[3:13] == '  61000104', repr(line[3:13])
+        assert not line[3:5].replace(' ', ''), 'leading chars should be spaces, not zeros'
+
+    def test_immediate_origin_space_padded(self):
+        r = self._make_header_record(immediate_origin='123456789')        # 9 chars → 1 pad
+        line = r.to_line()
+        assert line[13:23] == ' 123456789', repr(line[13:23])
+
+    def test_immediate_destination_exact_fit(self):
+        r = self._make_header_record(immediate_destination='1234567890')  # 10 chars → no pad
+        line = r.to_line()
+        assert line[3:13] == '1234567890', repr(line[3:13])

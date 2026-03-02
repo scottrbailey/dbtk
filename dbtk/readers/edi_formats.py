@@ -23,8 +23,8 @@ ACH_COLUMNS = {
     '1': [  # File Header Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "1" (File Header)'),
         FixedColumn('priority_code',             2,   3,   comment='Usually "01" (high priority)'),
-        FixedColumn('immediate_destination',     4,  13,   alignment='right', pad_char='0', comment='10-digit routing number of destination bank (leading space or zero)'),
-        FixedColumn('immediate_origin',         14,  23,   alignment='right', pad_char='0', comment='10-digit originator ID (usually "1" + tax ID)'),
+        FixedColumn('immediate_destination',     4,  13,   alignment='right', comment='Routing number of destination bank (right-justified, leading space)'),
+        FixedColumn('immediate_origin',         14,  23,   alignment='right', comment='Originator ID (right-justified, leading space)'),
         FixedColumn('file_creation_date',       24,  29,   comment='YYMMDD format (date file was created)'),
         FixedColumn('file_creation_time',       30,  33,   comment='HHMM 24-hour format (time file was created)'),
         FixedColumn('file_id_modifier',         34,  34,   comment='A-Z or 0-9 to make file unique on same day'),
