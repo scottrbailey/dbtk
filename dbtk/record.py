@@ -4,7 +4,7 @@ Record classes for database result sets.
 """
 
 from typing import List, Any, Iterator, Tuple, Union
-from .utils import to_string, normalize_field_name
+from .utils import to_string, normalize_field_name, FixedColumn
 
 
 class Record(list):
@@ -532,3 +532,113 @@ class Record(list):
         for key in keys_to_use:
             value = self[key]
             print(template.format(key, to_string(value)))
+
+
+class FixedWidthRecord(Record):
+    """
+    A Record subclass optimized for fixed-width data parsing and reconstruction.
+
+    Instances represent a single row from a fixed-width file, with values accessible
+    by name, attribute, or index. The class stores per-field formatting rules
+    (_widths, _alignment, _pad_chars) to enable exact reproduction of the original
+    line format via `to_line()`.
+
+    Designed for use with `FixedReader` or `EDIReader`, where each record type
+    gets its own dynamic subclass with the appropriate column definitions.
+
+    Class attributes (set automatically by `set_fields`):
+        _widths : List[int]
+            Width of each field in characters.
+        _alignment : str
+            String of length equal to number of fields: 'l' (left), 'r' (right),
+            'c' (center), or 'a' (auto-right for numbers).
+        _pad_chars : str
+            String of length equal to number of fields, specifying the padding
+            character for each field (' ' or '0' typical).
+
+    Example usage:
+        # In reader factory
+        RecordClass.set_fields(columns)  # columns is List[FixedColumn]
+        record = RecordClass(*row_values)
+        original_line = record.to_line()  # reconstructs formatted string
+    """
+    _widths: List[int] = []
+    _alignment: str = ''
+    _pad_chars: str = ''
+
+    @classmethod
+    def set_fields(cls, fields: List[FixedColumn]):
+        """
+        Set field names and formatting rules from a list of FixedColumn objects.
+
+        Extracts field names for the base Record and derives _widths, _alignment,
+        and _pad_chars for formatting. Alignment defaults to 'l' (left) except
+        numeric types ('r' right). Padding defaults to ' ' except numeric ('0').
+
+        Args:
+            fields: Ordered list of FixedColumn definitions for this record type.
+        """
+        names = [col.name for col in fields]
+        super().set_fields(names)
+        cls._widths = [col.width for col in fields]
+        align = []
+        pad = []
+        for i, col in enumerate(fields):
+            if col.alignment:
+                align.append(col.alignment.lower()[0])
+            elif col.column_type in ('int', 'float'):
+                align.append('r')
+            else:
+                align.append('l')
+            if col.pad_char is not None:
+                pad.append(col.pad_char)
+            elif col.column_type in ('int', 'float'):
+                pad.append('0')
+            else:
+                pad.append(' ')
+        cls._alignment = ''.join(align)
+        cls._pad_chars = ''.join(pad)
+
+    def to_line(self, truncate_overflow: bool = False):
+        """
+        Reconstruct the original fixed-width line from this record's values.
+
+        Formats each field according to the class-level _widths, _alignment,
+        and _pad_chars. Alignment defaults to left unless overridden; numeric
+        fields auto-right-align when alignment is 'a'. Missing values are treated
+        as empty strings.
+
+        Args:
+            truncate_overflow: If True (default), silently truncate values that
+                               exceed their column width. If False, raise ValueError.
+
+        Returns:
+            A string exactly matching the fixed-width format for this record type.
+
+        Raises:
+            ValueError: If truncate_overflow=False and any value exceeds its width.
+
+        Example:
+            record.to_line()  # -> '1234567890ABC       0000012345'
+        """
+        line = ''
+        for i, (name, value) in enumerate(self.items()):
+            width = self.__class__._widths[i]
+            align = self.__class__._alignment[i]
+            pad_char = self.__class__._pad_chars[i]
+            str_val = to_string(value)
+            if len(str_val) > width:
+                if truncate_overflow:
+                    str_val = str_val[:width]
+                else:
+                    raise ValueError(f'Value too large for {name} limit: {width}')
+            elif len(str_val) < width:
+                if align == 'r' or (align == 'a' and isinstance(value, (int, float))):
+                    str_val = str_val.rjust(width, pad_char)
+                elif align == 'c':
+                    str_val = str_val.center(width, pad_char)
+                else:
+                    str_val = str_val.ljust(width, pad_char)
+            line += str_val
+        return line
+
