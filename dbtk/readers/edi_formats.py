@@ -13,7 +13,7 @@ Use with EDIReader:
     )
 """
 
-from .fixed_width import FixedColumn
+from ..utils import FixedColumn
 
 # ───────────────────────────────────────────────
 # NACHA ACH (US Automated Clearing House)
@@ -56,7 +56,7 @@ ACH_COLUMNS = {
         FixedColumn('receiving_dfi_id',          4,  11,   alignment='right', pad_char='0', comment='Receiving bank routing number (8 digits)'),
         FixedColumn('check_digit',              12,  12,   comment='Check digit for receiving DFI ID'),
         FixedColumn('dfi_account_number',       13,  29,   comment='Receiving account number (left-justified, space-padded)'),
-        FixedColumn('amount',                   30,  39,   alignment='right', pad_char='0', comment='Amount in cents (right-justified, zero-padded, implied decimal)'),
+        FixedColumn('amount',                   30,  39,   alignment='right', pad_char='0', column_type='int', comment='Amount in cents (right-justified, zero-padded, implied decimal)'),
         FixedColumn('individual_id_number',     40,  54,   comment='Individual identification number'),
         FixedColumn('individual_name',          55,  76,   comment='Receiving individual/company name (left-justified)'),
         FixedColumn('discretionary_data',       77,  78,   comment='Optional company use'),
@@ -73,10 +73,10 @@ ACH_COLUMNS = {
     '8': [  # Batch Control Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "8" (Batch Control)'),
         FixedColumn('service_class_code',        2,   4,   comment='Same as batch header (200/220/225)'),
-        FixedColumn('entry_addenda_count',       5,  10,   alignment='right', pad_char='0', comment='Total entry and addenda records in batch'),
-        FixedColumn('entry_hash',               11,  20,   alignment='right', pad_char='0', comment='Sum of receiving DFI IDs (right 8 digits, modulo 10^10)'),
-        FixedColumn('total_debit',              21,  32,   alignment='right', pad_char='0', comment='Total debit amount in cents (implied decimal)'),
-        FixedColumn('total_credit',             33,  44,   alignment='right', pad_char='0', comment='Total credit amount in cents (implied decimal)'),
+        FixedColumn('entry_addenda_count',       5,  10,   alignment='right', pad_char='0', column_type='int', comment='Total entry and addenda records in batch'),
+        FixedColumn('entry_hash',               11,  20,   alignment='right', pad_char='0', column_type='int', comment='Sum of receiving DFI IDs (right 8 digits, modulo 10^10)'),
+        FixedColumn('total_debit',              21,  32,   alignment='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
+        FixedColumn('total_credit',             33,  44,   alignment='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
         FixedColumn('company_identification',   45,  54,   alignment='right', pad_char='0', comment='Same as batch header company ID'),
         FixedColumn('message_authentication_code',55, 73,  comment='MAC for authentication (spaces if unused)'),
         FixedColumn('reserved',                 74,  79,   comment='Reserved (spaces)'),
@@ -89,8 +89,8 @@ ACH_COLUMNS = {
         FixedColumn('block_count',               8,  13,   alignment='right', pad_char='0', comment='Total number of 10-record blocks (including padding)'),
         FixedColumn('entry_addenda_count',      14,  21,   alignment='right', pad_char='0', comment='Total entry and addenda records in file'),
         FixedColumn('entry_hash',               22,  31,   alignment='right', pad_char='0', comment='Sum of all receiving DFI IDs (right 10 digits, modulo 10^10)'),
-        FixedColumn('total_debit',              32,  43,   alignment='right', pad_char='0', comment='Total debit amount in cents (implied decimal)'),
-        FixedColumn('total_credit',             44,  55,   alignment='right', pad_char='0', comment='Total credit amount in cents (implied decimal)'),
+        FixedColumn('total_debit',              32,  43,   alignment='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
+        FixedColumn('total_credit',             44,  55,   alignment='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
         FixedColumn('reserved',                 56,  94,   comment='Reserved (spaces)'),
     ],
 }
