@@ -572,6 +572,8 @@ class FixedWidthRecord(Record):
         original_line = record.to_line()  # reconstructs formatted string
     """
     _widths: List[int] = []
+    _start_indices: List[int] = []
+    _line_len: int = 0
     _alignment: str = ''
     _pad_chars: str = ''
     mutable_schema: bool = False
@@ -581,19 +583,23 @@ class FixedWidthRecord(Record):
         """
         Set field names and formatting rules from a list of FixedColumn objects.
 
-        Extracts field names for the base Record and derives _widths, _alignment,
-        and _pad_chars for formatting. Alignment defaults to 'l' (left) except
-        numeric types ('r' right). Padding defaults to ' ' except numeric ('0').
+        Extracts field names for the base Record and derives _widths,
+        _start_indices, _line_len, _alignment, and _pad_chars for formatting.
+        Alignment defaults to 'l' (left) except numeric types ('r' right).
+        Padding defaults to ' ' except numeric ('0').
 
         Args:
-            fields: Ordered list of FixedColumn definitions for this record type.
+            fields: FixedColumn definitions for this record type. Order does not
+                    matter — to_line() places each value by start_idx position.
         """
         names = [col.name for col in fields]
         super().set_fields(names)
         cls._widths = [col.width for col in fields]
+        cls._start_indices = [col.start_idx for col in fields]
+        cls._line_len = max(col.end_pos for col in fields) if fields else 0
         align = []
         pad = []
-        for i, col in enumerate(fields):
+        for col in fields:
             if col.alignment:
                 align.append(col.alignment.lower()[0])
             elif col.column_type in ('int', 'float'):
@@ -613,9 +619,11 @@ class FixedWidthRecord(Record):
         """
         Reconstruct the original fixed-width line from this record's values.
 
-        Formats each field according to the class-level _widths, _alignment,
-        and _pad_chars. Iterates only the column fields (stops before _row_num
-        or any other appended fields). Missing values are treated as empty strings.
+        Builds a space-filled buffer of _line_len characters and splices each
+        field value into its position using start_idx. Column order in the
+        definition does not matter; gaps between columns remain as spaces.
+        Iterates only the column fields (stops before _row_num or any other
+        appended fields). Missing values are treated as empty strings.
 
         Args:
             truncate_overflow: If False (default), raise ValueError when a value
@@ -631,9 +639,9 @@ class FixedWidthRecord(Record):
             record.to_line()  # -> '1234567890ABC       0000012345'
         """
         cls = self.__class__
-        line = ''
-        for width, align, pad_char, (name, value) in zip(
-                cls._widths, cls._alignment, cls._pad_chars, self.items()):
+        line = [' '] * cls._line_len
+        for start, width, align, pad_char, (name, value) in zip(
+                cls._start_indices, cls._widths, cls._alignment, cls._pad_chars, self.items()):
             str_val = to_string(value)
             if len(str_val) > width:
                 if truncate_overflow:
@@ -647,6 +655,6 @@ class FixedWidthRecord(Record):
                     str_val = str_val.center(width, pad_char)
                 else:
                     str_val = str_val.ljust(width, pad_char)
-            line += str_val
-        return line
+            line[start:start + width] = str_val
+        return ''.join(line)
 
