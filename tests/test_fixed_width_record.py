@@ -1,10 +1,11 @@
 # tests/test_fixed_width_record.py
 """
-Tests for FixedWidthRecord.set_fields() and to_line().
+Tests for FixedWidthRecord.set_fields(), to_line(), and pprint().
 
 Covers the splice-based to_line() implementation: positional placement,
 gap preservation, out-of-order column definitions, alignment/padding,
 overflow handling, and reader round-trip fidelity.
+Also covers the pprint() override and its add_comments parameter.
 """
 
 import pytest
@@ -316,3 +317,76 @@ class TestACHPadding:
         r = self._make_header_record(immediate_destination='1234567890')  # 10 chars → no pad
         line = r.to_line()
         assert line[3:13] == '1234567890', repr(line[3:13])
+
+
+# ---------------------------------------------------------------------------
+# pprint() override
+# ---------------------------------------------------------------------------
+
+class TestPprint:
+    """FixedWidthRecord.pprint() with add_comments parameter."""
+
+    @pytest.fixture()
+    def cls_with_comments(self):
+        return make_class([
+            FixedColumn('code',   1,  1,  comment='Record type'),
+            FixedColumn('name',   2, 11,  comment='Vendor name'),
+            FixedColumn('amount', 12, 21, 'int'),   # no comment
+        ])
+
+    @pytest.fixture()
+    def cls_no_comments(self):
+        return make_class([
+            FixedColumn('code',   1,  1),
+            FixedColumn('name',   2, 11),
+            FixedColumn('amount', 12, 21, 'int'),
+        ])
+
+    def test_default_no_comments(self, cls_with_comments, capsys):
+        r = cls_with_comments('A', 'Acme', '100')
+        r.pprint()
+        out = capsys.readouterr().out
+        assert 'Record type' not in out
+        assert 'code   : A' in out
+
+    def test_add_comments_false_explicit(self, cls_with_comments, capsys):
+        r = cls_with_comments('A', 'Acme', '100')
+        r.pprint(add_comments=False)
+        out = capsys.readouterr().out
+        assert 'Record type' not in out
+
+    def test_add_comments_shows_comment_text(self, cls_with_comments, capsys):
+        r = cls_with_comments('A', 'Acme', '100')
+        r.pprint(add_comments=True)
+        out = capsys.readouterr().out
+        assert 'Record type' in out
+        assert 'Vendor name' in out
+
+    def test_add_comments_blank_for_missing_comment(self, cls_with_comments, capsys):
+        r = cls_with_comments('A', 'Acme', '100')
+        r.pprint(add_comments=True)
+        lines = capsys.readouterr().out.splitlines()
+        amount_line = next(l for l in lines if l.startswith('amount'))
+        # trailing content after value should be blank (no comment for amount)
+        assert 'amount' in amount_line
+        assert amount_line.rstrip() == amount_line.rstrip()  # no spurious text
+        assert not any(w for w in amount_line.split('100', 1)[1].split() if w)
+
+    def test_add_comments_all_blank_falls_through_to_base(self, cls_no_comments, capsys):
+        """When no column has a comment, output should look like base pprint."""
+        r = cls_no_comments('A', 'Acme', '100')
+        r.pprint(add_comments=True)
+        lines_with = capsys.readouterr().out.splitlines()
+
+        r.pprint(add_comments=False)
+        lines_without = capsys.readouterr().out.splitlines()
+
+        assert lines_with == lines_without
+
+    def test_values_aligned_in_column(self, cls_with_comments, capsys):
+        r = cls_with_comments('A', 'Acme Corp', '999')
+        r.pprint(add_comments=True)
+        lines = capsys.readouterr().out.splitlines()
+        # All ' : ' separators should be at the same position
+        positions = [l.index(' : ') for l in lines]
+        assert len(set(positions)) == 1

@@ -642,3 +642,44 @@ class FixedWidthRecord(Record):
             line[col.start_idx:col.start_idx + col.width] = str_val
         return ''.join(line)
 
+    def pprint(self, normalized: bool = False, add_comments: bool = False) -> None:
+        """
+        Pretty-print the record with aligned columns.
+
+        Args:
+            normalized:   If True, use normalized field names.
+            add_comments: If True, append each column's comment (from the
+                          FixedColumn definition) after the value.  Columns
+                          without a comment are left blank in that position.
+                          Has no effect when there are no _columns defined.
+        """
+        if not add_comments or not self.__class__._columns:
+            super().pprint(normalized=normalized)
+            return
+
+        keys = self.keys(normalized=normalized)
+        if not keys:
+            print("<Empty Record>")
+            return
+
+        col_map = {col.name: col for col in self.__class__._columns}
+        key_width = max(len(k) for k in keys)
+        val_width = max(
+            len(to_string(self[k])) for k in keys
+        )
+        template = f"{{:<{key_width}}} : {{:<{val_width}}}  {{}}"
+        no_comment_template = f"{{:<{key_width}}} : {{}}"
+
+        comments_present = any(
+            col_map[k].comment for k in keys if k in col_map
+        )
+
+        for key in keys:
+            value = to_string(self[key])
+            col = col_map.get(key)
+            comment = col.comment if col else None
+            if comments_present:
+                print(template.format(key, value, comment or ''))
+            else:
+                print(no_comment_template.format(key, value))
+
