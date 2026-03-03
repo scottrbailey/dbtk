@@ -679,7 +679,7 @@ class FixedWidthRecord(Record):
             col = col_map.get(key)
             comment = col.comment if col else None
             if comments_present:
-                print(template.format(key, value, comment or ''))
+                print(template.format(key, value, f'# {comment}' if comment else ''))
             else:
                 print(no_comment_template.format(key, value))
 

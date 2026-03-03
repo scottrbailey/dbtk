@@ -359,8 +359,8 @@ class TestPprint:
         r = cls_with_comments('A', 'Acme', '100')
         r.pprint(add_comments=True)
         out = capsys.readouterr().out
-        assert 'Record type' in out
-        assert 'Vendor name' in out
+        assert '# Record type' in out
+        assert '# Vendor name' in out
 
     def test_add_comments_blank_for_missing_comment(self, cls_with_comments, capsys):
         r = cls_with_comments('A', 'Acme', '100')
