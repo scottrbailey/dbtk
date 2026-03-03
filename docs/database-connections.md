@@ -331,4 +331,5 @@ except db.driver.IntegrityError as e:
 - [Configuration & Security](configuration.md) - YAML config files and password encryption
 - [ETL: Table & Transforms](table.md) - Using cursors with Table and DataSurge
 - [ETL: Tools & Logging](etl-tools.md) - IdentityManager and ValidationCollector
-- [Readers & Writers](readers-writers.md) - Moving data between databases and files
+- [Readers](readers.md) - Reading data from files and databases
+- [Writers](writers.md) - Writing data to files and databases

@@ -3,6 +3,7 @@
 """XML file reader with XPath support for element extraction."""
 
 import logging
+import os
 from pathlib import Path
 from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
 from .base import Reader, Clean
@@ -73,9 +74,17 @@ class XMLReader(Reader):
         elif hasattr(fp, 'buffer'):
             # Text mode file - use buffer for better performance
             self._trackable = fp.buffer
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
         else:
             # Binary mode or other file type
             self._trackable = fp
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
 
         self.record_xpath = record_xpath
         self.custom_columns = columns or []

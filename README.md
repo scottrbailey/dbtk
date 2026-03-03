@@ -185,7 +185,8 @@ See [Record Objects](docs/record.md) for complete documentation.
 - **[Record Objects](docs/record.md)** - DBTK's universal data structure with dict, tuple, and attribute access
 - **[Configuration & Security](docs/configuration.md)** - Set up encrypted passwords, YAML config files, and command-line tools
 - **[Database Connections](docs/database-connections.md)** - Connect to any database, use smart cursors, SQL file execution, manage transactions
-- **[Readers & Writers](docs/readers-writers.md)** - Read from and write to CSV, Excel, JSON, XML, fixed-width files
+- **[File Readers](docs/readers.md)** - Read from CSV, Excel, JSON, XML, and fixed-width files
+- **[Data Writers](docs/writers.md)** - Write to CSV, Excel, JSON, XML, fixed-width files, and between databases
 
 ### ETL Framework
 - **[ETL: Table & Transforms](docs/table.md)** - Field mapping, column config, data transforms, database lookups

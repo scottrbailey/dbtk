@@ -251,3 +251,77 @@ cursor.execute("SELECT order_id, total, status FROM orders")
 ```
 
 This is why Record can offer dict-like convenience without dict-like memory overhead when processing millions of rows. The same pattern applies to file readers - each reader creates a Record subclass based on the file's header row.
+
+## FixedWidthRecord
+
+`FixedWidthRecord` is a `Record` subclass returned by `FixedReader` and `EDIReader`. It carries the column layout alongside the values, enabling exact reconstruction of the original fixed-width line via `to_line()`.
+
+### `to_line(truncate_overflow=False)`
+
+Reconstructs the original fixed-width line from the record's current values.
+
+```python
+with readers.FixedReader(open('claims.txt'), columns) as reader:
+    for claim in reader:
+        original_line = claim.to_line()   # reproduces the source line exactly
+```
+
+**How it works:** `to_line()` allocates a space-filled buffer as wide as the longest column's end position, then splices each formatted value into its exact byte range using the column's `start_pos`. Because placement is position-based rather than sequential:
+
+- Columns defined in any order are placed at the correct positions
+- Gaps between columns (bytes not covered by any column definition) stay as spaces
+- The output width is determined by the rightmost column end position, not the number of columns
+
+**Alignment and padding** are applied per-column before splicing. Defaults follow the column's `column_type`:
+
+| `column_type` | Default alignment | Default pad |
+|--------------|-------------------|-------------|
+| `text`, `date`, `datetime` | left | space |
+| `int`, `float` | right | `'0'` |
+
+Override with explicit `alignment=` and `pad_char=` on `FixedColumn`. Both must be set together when overriding numeric columns — setting `alignment` alone does not change the pad character:
+
+```python
+# Wrong: left-aligned but still zero-padded → '4200000000'
+FixedColumn('amount', 1, 10, 'int', alignment='left')
+
+# Correct: left-aligned and space-padded → '42        '
+FixedColumn('amount', 1, 10, 'int', alignment='left', pad_char=' ')
+```
+
+**Overflow handling:**
+
+```python
+# Default: raises ValueError naming the offending field
+record.to_line()
+
+# Silently truncate values that exceed column width
+record.to_line(truncate_overflow=True)
+```
+
+### Modifying Records Before Writing
+
+Because values are spliced by position, only the modified fields change — the rest of the line is reproduced exactly:
+
+```python
+with readers.FixedReader(open('payments.txt'), columns) as reader:
+    with open('payments_updated.txt', 'w') as out:
+        for record in reader:
+            if record.status == 'P':
+                record['status'] = 'C'      # only this field changes
+            out.write(record.to_line() + '\n')
+```
+
+### ACH File Round-Trip Example
+
+```python
+from dbtk.readers.fixed_width import EDIReader
+from dbtk.readers.edi_formats import ACH_COLUMNS
+
+with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
+    with open('payroll_modified.ach', 'w') as out:
+        for record in reader:
+            if record.record_type_code == '6':
+                record['individual_name'] = record.individual_name.upper()
+            out.write(record.to_line() + '\n')
+```

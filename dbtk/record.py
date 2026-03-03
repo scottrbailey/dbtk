@@ -4,7 +4,7 @@ Record classes for database result sets.
 """
 
 from typing import List, Any, Iterator, Tuple, Union
-from .utils import to_string, normalize_field_name
+from .utils import to_string, normalize_field_name, FixedColumn
 
 
 class Record(list):
@@ -110,6 +110,7 @@ class Record(list):
     _fields: List[str] = []  # Original field names (e.g., 'Start Year')
     _fields_normalized: List[str] = []  # Normalized for access (e.g., 'start_year')
     _field_len: int = 0 # cached for fast hot path
+    mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
 
     def __init__(self, *args, **kwargs):
         # Lazy attributes
@@ -203,6 +204,10 @@ class Record(list):
             return
 
         # 4. New field — add to runtime dict
+        if not self.__class__.mutable_schema:
+            raise TypeError(
+                f"Cannot add field '{key}': schema is fixed (mutable_schema=False)"
+            )
         if self._added is None:
             object.__setattr__(self, "_added", {})
         self._added[key] = value
@@ -343,6 +348,10 @@ class Record(list):
     def pop(self, key: str, default: object = object()) -> Any:
         if not isinstance(key, str):
             raise TypeError("pop() key must be str")
+        if not self.__class__.mutable_schema:
+            raise TypeError(
+                f"Cannot delete field '{key}': schema is fixed (mutable_schema=False)"
+            )
 
         # 1. Runtime-added field?
         if self._added and key in self._added:
@@ -532,3 +541,145 @@ class Record(list):
         for key in keys_to_use:
             value = self[key]
             print(template.format(key, to_string(value)))
+
+
+class FixedWidthRecord(Record):
+    """
+    A Record subclass optimized for fixed-width data parsing and reconstruction.
+
+    Instances represent a single row from a fixed-width file, with values accessible
+    by name, attribute, or index. The class retains the original List[FixedColumn]
+    definitions so that `to_line()` can reconstruct the exact source line by splicing
+    each formatted value into its correct byte position.
+
+    Designed for use with `FixedReader` or `EDIReader`, where each record type
+    gets its own dynamic subclass with the appropriate column definitions.
+
+    Class attributes (set automatically by `set_fields`):
+        _columns : List[FixedColumn]
+            Full column definitions in definition order, including name, position,
+            type, alignment, pad character, and comment.
+        _line_len : int
+            Total line width in characters (max end_pos across all columns).
+
+    Example usage:
+        # In reader factory
+        RecordClass.set_fields(columns)  # columns is List[FixedColumn]
+        record = RecordClass(*row_values)
+        original_line = record.to_line()  # reconstructs formatted string
+    """
+    _columns: List[FixedColumn] = []
+    _line_len: int = 0
+    mutable_schema: bool = False
+
+    @classmethod
+    def set_fields(cls, fields: List[FixedColumn]):
+        """
+        Set field names and column definitions from a list of FixedColumn objects.
+
+        Stores the column list as-is on the class (preserving position, type,
+        alignment, pad character, and comment for introspection) and pre-computes
+        _line_len as the rightmost end_pos across all columns.
+
+        Args:
+            fields: FixedColumn definitions for this record type. Definition order
+                    determines value order on instances; to_line() places each value
+                    by start_idx so out-of-position-order definitions work correctly.
+        """
+        names = [col.name for col in fields]
+        super().set_fields(names)
+        cls._columns = list(fields)
+        cls._line_len = max(col.end_pos for col in fields) if fields else 0
+
+    def to_line(self, truncate_overflow: bool = False):
+        """
+        Reconstruct the original fixed-width line from this record's values.
+
+        Builds a space-filled buffer of _line_len characters and splices each
+        field value into its position using start_idx. Column order in the
+        definition does not matter; gaps between columns remain as spaces.
+        Iterates only the column fields (stops before _row_num or any other
+        appended fields). Missing values are treated as empty strings.
+
+        Args:
+            truncate_overflow: If False (default), raise ValueError when a value
+                               exceeds its column width. If True, silently truncate.
+
+        Returns:
+            A string exactly matching the fixed-width format for this record type.
+
+        Raises:
+            ValueError: If truncate_overflow=False and any value exceeds its width.
+
+        Example:
+            record.to_line()  # -> '1234567890ABC       0000012345'
+        """
+        cls = self.__class__
+        line = [' '] * cls._line_len
+        for col, (name, value) in zip(cls._columns, self.items()):
+            str_val = to_string(value)
+            if len(str_val) > col.width:
+                if truncate_overflow:
+                    str_val = str_val[:col.width]
+                else:
+                    raise ValueError(f'Value too large for {name} limit: {col.width}')
+            elif len(str_val) < col.width:
+                if col.alignment:
+                    align = col.alignment[0]  # 'left'→'l', 'right'→'r', 'center'→'c'
+                elif col.column_type in ('int', 'float'):
+                    align = 'r'
+                else:
+                    align = 'l'
+                pad = col.pad_char if col.pad_char is not None else (
+                    '0' if col.column_type in ('int', 'float') else ' '
+                )
+                if align == 'r':
+                    str_val = str_val.rjust(col.width, pad)
+                elif align == 'c':
+                    str_val = str_val.center(col.width, pad)
+                else:
+                    str_val = str_val.ljust(col.width, pad)
+            line[col.start_idx:col.start_idx + col.width] = str_val
+        return ''.join(line)
+
+    def pprint(self, normalized: bool = False, add_comments: bool = False) -> None:
+        """
+        Pretty-print the record with aligned columns.
+
+        Args:
+            normalized:   If True, use normalized field names.
+            add_comments: If True, append each column's comment (from the
+                          FixedColumn definition) after the value.  Columns
+                          without a comment are left blank in that position.
+                          Has no effect when there are no _columns defined.
+        """
+        if not add_comments or not self.__class__._columns:
+            super().pprint(normalized=normalized)
+            return
+
+        keys = self.keys(normalized=normalized)
+        if not keys:
+            print("<Empty Record>")
+            return
+
+        col_map = {col.name: col for col in self.__class__._columns}
+        key_width = max(len(k) for k in keys)
+        val_width = max(
+            len(to_string(self[k])) for k in keys
+        )
+        template = f"{{:<{key_width}}} : {{:<{val_width}}}  {{}}"
+        no_comment_template = f"{{:<{key_width}}} : {{}}"
+
+        comments_present = any(
+            col_map[k].comment for k in keys if k in col_map
+        )
+
+        for key in keys:
+            value = to_string(self[key])
+            col = col_map.get(key)
+            comment = col.comment if col else None
+            if comments_present:
+                print(template.format(key, value, f'# {comment}' if comment else ''))
+            else:
+                print(no_comment_template.format(key, value))
+

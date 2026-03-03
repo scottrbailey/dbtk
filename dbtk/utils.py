@@ -6,7 +6,7 @@ Utility functions for dbtk.
 import logging
 import re
 import datetime as dt
-from typing import Tuple, List, Any, Union, Dict, Iterable
+from typing import Tuple, List, Any, Union, Dict, Iterable, Optional
 from .defaults import settings
 try:
     from typing import Mapping
@@ -137,6 +137,52 @@ class ParamStyle:
             return '%s'
         return ''
 
+
+class FixedColumn(object):
+    """ Column definition for fixed width files """
+
+    def __init__(self, name:str, start_pos:int, end_pos:int,
+                 column_type:str='text',
+                 comment: Optional[str] = None,
+                 alignment: Optional[str] = None,
+                 pad_char: Optional[str] = None):
+        """
+        :param str name:  database column name
+        :param int start_pos: start position of field, first position is 1 not 0
+        :param int end_pos: end position of field
+        :param str column_type: text, int, float, date
+        :param str comment: discription for column usage/options
+        :param str alignment: override alignment (left, right, center)
+        :param str pad_char: override pad character
+
+        FixedColumn('birthdate', 25, 35, 'date')
+        """
+        align_map = {'left': 'left', 'l': 'left', '<': 'left',
+                     'right': 'right', 'r': 'right', '>': 'right',
+                     'center': 'center', 'c': 'center'}
+
+        self.name = name
+        self.start_pos = start_pos
+        self.end_pos = end_pos if end_pos else start_pos
+        self.column_type = column_type
+        self.start_idx = start_pos - 1
+        self.comment = comment
+        self.alignment = align_map.get(str(alignment).lower())
+        self.pad_char = pad_char[0] if pad_char else None
+
+    @property
+    def width(self) -> int:
+        return self.end_pos - self.start_pos + 1
+
+    def __repr__(self):
+        parts = [f"'{self.name}'", str(self.start_pos), str(self.end_pos), f"'{self.column_type}'"]
+        if self.comment:
+            parts.append(f"comment='{self.comment}'")
+        if self.alignment:
+            parts.append(f"alignment='{self.alignment}'")
+        if self.pad_char:
+            parts.append(f"pad_char='{self.pad_char}'")
+        return f"FixedColumn({', '.join(parts)})"
 
 class QueryLogger:
     """Simple query logger."""

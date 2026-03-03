@@ -20,6 +20,7 @@ from ..defaults import settings
 
 logger = logging.getLogger(__name__)
 
+
 class Clean:
     """Header cleaning levels for column names."""
     NOOP = 0  # Leave unchanged
@@ -87,7 +88,6 @@ class Clean:
             return re.sub(r'[^a-z0-9]+|code$', '', val)
         else:
             return val
-
 
 
 class _Progress:

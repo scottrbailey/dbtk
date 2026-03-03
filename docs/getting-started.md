@@ -287,7 +287,8 @@ See [ETL: Tools & Logging](etl-tools.md) for details.
 ### Essential Documentation
 - **[Database Connections](database-connections.md)** - Cursors, transactions, SQL files
 - **[Record Objects](record.md)** - Universal data structure
-- **[Readers & Writers](readers-writers.md)** - File I/O for all formats
+- **[Readers](readers.md)** - Reading data from files and databases
+- **[Writers](writers.md)** - Writing data to files and databases
 - **[ETL: Table & Transforms](table.md)** - Field mapping, transformations
 - **[ETL: DataSurge & BulkSurge](datasurge.md)** - High-performance loading
 

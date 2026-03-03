@@ -13,7 +13,7 @@ Use with EDIReader:
     )
 """
 
-from .fixed_width import FixedColumn
+from ..utils import FixedColumn
 
 # ───────────────────────────────────────────────
 # NACHA ACH (US Automated Clearing House)
@@ -23,8 +23,8 @@ ACH_COLUMNS = {
     '1': [  # File Header Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "1" (File Header)'),
         FixedColumn('priority_code',             2,   3,   comment='Usually "01" (high priority)'),
-        FixedColumn('immediate_destination',     4,  13,   alignment='right', pad_char='0', comment='10-digit routing number of destination bank (leading space or zero)'),
-        FixedColumn('immediate_origin',         14,  23,   alignment='right', pad_char='0', comment='10-digit originator ID (usually "1" + tax ID)'),
+        FixedColumn('immediate_destination',     4,  13,   alignment='right', comment='Routing number of destination bank (right-justified, leading space)'),
+        FixedColumn('immediate_origin',         14,  23,   alignment='right', comment='Originator ID (right-justified, leading space)'),
         FixedColumn('file_creation_date',       24,  29,   comment='YYMMDD format (date file was created)'),
         FixedColumn('file_creation_time',       30,  33,   comment='HHMM 24-hour format (time file was created)'),
         FixedColumn('file_id_modifier',         34,  34,   comment='A-Z or 0-9 to make file unique on same day'),
@@ -38,17 +38,17 @@ ACH_COLUMNS = {
     '5': [  # Batch Header Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "5" (Batch Header)'),
         FixedColumn('service_class_code',        2,   4,   comment='200=credits only, 220=debits only, 225=mixed credits/debits'),
-        FixedColumn('company_name',              5,  40,   comment='Company/originator name (left-justified, space-padded)'),
-        FixedColumn('company_discretionary_data',41, 54,   comment='Optional company-defined data (left-justified)'),
-        FixedColumn('company_identification',   55,  64,   alignment='right', pad_char='0', comment='Company ID (usually "1" + 9-digit tax ID)'),
-        FixedColumn('standard_entry_class_code',65,  67,   comment='SEC code (e.g., PPD=direct deposit, CCD=corporate credit, WEB=internet-initiated)'),
-        FixedColumn('company_entry_description',68,  87,   comment='Description of entry (e.g., "PAYROLL", "VENDOR PMT")'),
-        FixedColumn('company_descriptive_date', 88,  94,   comment='Optional YYMMDD or descriptive text'),
-        FixedColumn('effective_entry_date',     95, 100,   comment='Effective date of entries YYMMDD'),
-        FixedColumn('settlement_date',         101, 103,   comment='Julian day of settlement (optional)'),
-        FixedColumn('originator_status_code',  104, 104,   comment='Always "1" (ACH operator)'),
-        FixedColumn('originating_dfi_id',      105, 113,   alignment='right', pad_char='0', comment='Originating bank routing number (9 digits)'),
-        FixedColumn('batch_number',            114, 120,   alignment='right', pad_char='0', comment='Batch number (sequential per file)'),
+        FixedColumn('company_name',              5,  20,   comment='Company/originator name (left-justified, space-padded)'),
+        FixedColumn('company_discretionary_data',21,  40,  comment='Optional company-defined data (left-justified)'),
+        FixedColumn('company_identification',   41,  50,   alignment='right', pad_char='0', comment='Company ID (usually "1" + 9-digit tax ID)'),
+        FixedColumn('standard_entry_class_code',51,  53,   comment='SEC code (e.g., PPD=direct deposit, CCD=corporate credit, WEB=internet-initiated)'),
+        FixedColumn('company_entry_description',54,  63,   comment='Description of entry (e.g., "PAYROLL", "VENDOR PMT")'),
+        FixedColumn('company_descriptive_date', 64,  69,   comment='Optional YYMMDD or descriptive text'),
+        FixedColumn('effective_entry_date',     70,  75,   comment='Effective date of entries YYMMDD'),
+        FixedColumn('settlement_date',          76,  78,   comment='Julian day of settlement (set by ACH operator)'),
+        FixedColumn('originator_status_code',   79,  79,   comment='Always "1" (ACH operator)'),
+        FixedColumn('originating_dfi_id',       80,  87,   alignment='right', pad_char='0', comment='Originating bank routing number (8 digits)'),
+        FixedColumn('batch_number',             88,  94,   alignment='right', pad_char='0', comment='Batch number (sequential per file)'),
     ],
     '6': [  # Entry Detail Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "6" (Entry Detail)'),
@@ -56,7 +56,7 @@ ACH_COLUMNS = {
         FixedColumn('receiving_dfi_id',          4,  11,   alignment='right', pad_char='0', comment='Receiving bank routing number (8 digits)'),
         FixedColumn('check_digit',              12,  12,   comment='Check digit for receiving DFI ID'),
         FixedColumn('dfi_account_number',       13,  29,   comment='Receiving account number (left-justified, space-padded)'),
-        FixedColumn('amount',                   30,  39,   alignment='right', pad_char='0', comment='Amount in cents (right-justified, zero-padded, implied decimal)'),
+        FixedColumn('amount',                   30,  39,   alignment='right', pad_char='0', column_type='int', comment='Amount in cents (right-justified, zero-padded, implied decimal)'),
         FixedColumn('individual_id_number',     40,  54,   comment='Individual identification number'),
         FixedColumn('individual_name',          55,  76,   comment='Receiving individual/company name (left-justified)'),
         FixedColumn('discretionary_data',       77,  78,   comment='Optional company use'),
@@ -73,24 +73,25 @@ ACH_COLUMNS = {
     '8': [  # Batch Control Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "8" (Batch Control)'),
         FixedColumn('service_class_code',        2,   4,   comment='Same as batch header (200/220/225)'),
-        FixedColumn('entry_addenda_count',       5,  10,   alignment='right', pad_char='0', comment='Total entry and addenda records in batch'),
-        FixedColumn('entry_hash',               11,  20,   alignment='right', pad_char='0', comment='Sum of receiving DFI IDs (right 8 digits, modulo 10^10)'),
-        FixedColumn('total_debit',              21,  40,   alignment='right', pad_char='0', comment='Total debit amount in cents (implied decimal)'),
-        FixedColumn('total_credit',             41,  60,   alignment='right', pad_char='0', comment='Total credit amount in cents (implied decimal)'),
-        FixedColumn('company_identification',   61,  70,   alignment='right', pad_char='0', comment='Same as batch header company ID'),
-        FixedColumn('message_authentication_code',71, 80,   comment='MAC for authentication (optional)'),
-        FixedColumn('originating_dfi_id',       81,  89,   alignment='right', pad_char='0', comment='Originating DFI routing number'),
-        FixedColumn('batch_number',             90,  94,   alignment='right', pad_char='0', comment='Same as batch header batch number'),
+        FixedColumn('entry_addenda_count',       5,  10,   alignment='right', pad_char='0', column_type='int', comment='Total entry and addenda records in batch'),
+        FixedColumn('entry_hash',               11,  20,   alignment='right', pad_char='0', column_type='int', comment='Sum of receiving DFI IDs (right 8 digits, modulo 10^10)'),
+        FixedColumn('total_debit',              21,  32,   alignment='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
+        FixedColumn('total_credit',             33,  44,   alignment='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
+        FixedColumn('company_identification',   45,  54,   alignment='right', pad_char='0', comment='Same as batch header company ID'),
+        FixedColumn('message_authentication_code',55, 73,  comment='MAC for authentication (spaces if unused)'),
+        FixedColumn('reserved',                 74,  79,   comment='Reserved (spaces)'),
+        FixedColumn('originating_dfi_id',       80,  87,   alignment='right', pad_char='0', comment='Originating DFI routing number (8 digits)'),
+        FixedColumn('batch_number',             88,  94,   alignment='right', pad_char='0', comment='Same as batch header batch number'),
     ],
     '9': [  # File Control Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "9" (File Control)'),
         FixedColumn('batch_count',               2,   7,   alignment='right', pad_char='0', comment='Total number of batches in file'),
         FixedColumn('block_count',               8,  13,   alignment='right', pad_char='0', comment='Total number of 10-record blocks (including padding)'),
         FixedColumn('entry_addenda_count',      14,  21,   alignment='right', pad_char='0', comment='Total entry and addenda records in file'),
-        FixedColumn('entry_hash',               22,  41,   alignment='right', pad_char='0', comment='Sum of all receiving DFI IDs (right 8 digits, modulo 10^10)'),
-        FixedColumn('total_debit',              42,  61,   alignment='right', pad_char='0', comment='Total debit amount in cents (implied decimal)'),
-        FixedColumn('total_credit',             62,  81,   alignment='right', pad_char='0', comment='Total credit amount in cents (implied decimal)'),
-        FixedColumn('reserved',                 82,  94,   comment='Reserved (spaces)'),
+        FixedColumn('entry_hash',               22,  31,   alignment='right', pad_char='0', comment='Sum of all receiving DFI IDs (right 10 digits, modulo 10^10)'),
+        FixedColumn('total_debit',              32,  43,   alignment='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
+        FixedColumn('total_credit',             44,  55,   alignment='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
+        FixedColumn('reserved',                 56,  94,   comment='Reserved (spaces)'),
     ],
 }
 
@@ -164,7 +165,7 @@ X12_835_COLUMNS = {
 # Registry for easy lookup / from_format support
 # ───────────────────────────────────────────────
 FORMATS = {
-    'nach_ach': {
+    'nacha_ach': {
         'columns': ACH_COLUMNS,
         'name': 'NACHA ACH (US Automated Clearing House)',
         'description': 'Standard US ACH file format (94-char records)',

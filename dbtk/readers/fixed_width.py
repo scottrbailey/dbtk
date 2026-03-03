@@ -3,54 +3,15 @@
 """Fixed-width text file reader with column position specifications."""
 
 import logging
+import os
 from typing import TextIO, List, Dict, Any, Optional, Iterator
 
-from .base import Reader, Record
+from .base import Reader
+from ..record import Record, FixedWidthRecord
+from ..utils import FixedColumn
 from ..etl.transforms.datetime import parse_date, parse_datetime, parse_timestamp
 
 logger = logging.getLogger(__name__)
-
-class FixedColumn(object):
-    """ Column definition for fixed width files """
-
-    def __init__(self, name:str, start_pos:int, end_pos:int,
-                 column_type:str='text',
-                 comment: Optional[str] = None,
-                 alignment: Optional[str] = None,
-                 pad_char: Optional[str] = None):
-        """
-        :param str name:  database column name
-        :param int start_pos: start position of field, first position is 1 not 0
-        :param int end_pos: end position of field
-        :param str column_type: text, int, float, date
-        :param str comment: discription for column usage/options
-        :param str alignment: override alignment (left, right, center)
-        :param str pad_char: override pad character
-
-        FixedColumn('birthdate', 25, 35, 'date')
-        """
-        self.name = name
-        self.start_pos = start_pos
-        self.end_pos = end_pos if end_pos else start_pos
-        self.column_type = column_type
-        self.start_idx = start_pos - 1
-        self.comment = comment
-        self.alignment = alignment
-        self.pad_char = pad_char
-
-    @property
-    def width(self) -> int:
-        return self.end_pos - self.start_pos + 1
-
-    def __repr__(self):
-        parts = [f"'{self.name}'", str(self.start_pos), str(self.end_pos), f"'{self.column_type}'"]
-        if self.comment:
-            parts.append(f"comment='{self.comment}'")
-        if self.alignment:
-            parts.append(f"alignment='{self.alignment}'")
-        if self.pad_char:
-            parts.append(f"pad_char='{self.pad_char}'")
-        return f"FixedColumn({', '.join(parts)})"
 
 
 class FixedReader(Reader):
@@ -92,9 +53,17 @@ class FixedReader(Reader):
         elif hasattr(fp, 'buffer'):
             # Text mode file - use buffer for better performance
             self._trackable = fp.buffer
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
         else:
             # Binary mode or other file type
             self._trackable = fp
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
 
         self.columns = columns
         self.auto_trim = auto_trim
@@ -163,6 +132,31 @@ class FixedReader(Reader):
                 boundary_line[col.start_pos - 1] = '|'
         return f'{ruler_10s}\n{ruler_1s}\n{"".join(boundary_line)}\n' + '\n'.join(lines)
 
+    def _setup_record_class(self):
+        """Initialize headers and create Record subclass with original field names."""
+        if self._headers_initialized:
+            return
+
+        # Read raw headers from file (original field names)
+        raw_headers = self._read_headers()
+
+        # Store original headers (no normalization - Record.set_fields() handles it)
+        self._headers = raw_headers[:]
+
+        # Add _row_num if requested and not already present
+        if self.add_row_num:
+            if '_row_num' in self._headers:
+                raise ValueError("Header '_row_num' already exists. Remove it or set add_row_num=False.")
+            self._headers.append('_row_num')
+
+        # Create Record subclass: set_fields(columns) captures widths/alignment/padding,
+        # then re-call Record.set_fields with full _headers so _row_num is registered.
+        self._record_class = type('FileFWRecord', (FixedWidthRecord,), {})
+        self._record_class.set_fields(self.columns)
+        Record.set_fields.__func__(self._record_class, self._headers)
+
+        self._headers_initialized = True
+
 
 class EDIReader(FixedReader):
     """
@@ -191,12 +185,10 @@ class EDIReader(FixedReader):
         type_name_map : Dict[str, str], optional
             Optional friendly names for record types (e.g., {'1': 'File Header'})
             used in logging or output fields.
+        strict : bool, default False
+            If True raise error if record type code not mapped in columns, else skipped and logged
         auto_trim : bool, default True
             Trim whitespace from field values
-        skip_rows : int, default 0
-            Number of initial data rows to skip after headers (if any)
-        null_values : Collection[Any], optional
-            Values to interpret as None
         **kwargs
             Additional arguments passed to FixedReader base class
 
@@ -214,7 +206,7 @@ class EDIReader(FixedReader):
         ... }
         >>> reader = EDIReader(open('ach_file.ach'), columns=columns)
         >>> for record in reader:
-        ...     print(record._record_type, record.company_name, record.amount)
+        ...     print(record.company_name)  # fields available depend on record type
         """
 
     def __init__(
@@ -222,6 +214,7 @@ class EDIReader(FixedReader):
             fp: TextIO,
             columns: Dict[str, List[FixedColumn]],
             type_name_map: Optional[Dict[str, str]] = None,
+            strict: Optional[bool] = False,
             # ... pass through all FixedReader params ...
             **kwargs
     ):
@@ -229,6 +222,7 @@ class EDIReader(FixedReader):
 
         self.columns = columns
         self.type_name_map = type_name_map or {}
+        self.strict = strict
 
         # Auto-detect _record_type_len from keys
         if columns:
@@ -243,6 +237,18 @@ class EDIReader(FixedReader):
 
         self._type_factories: Dict[str, type[Record]] = {}
 
+    def _read_headers(self) -> List[str]:
+        """EDIReader has no fixed headers; each record type has its own field set."""
+        return []
+
+    def _setup_record_class(self):
+        """Skip base class record class creation; EDIReader uses per-type factories."""
+        self._headers_initialized = True
+
+    def _create_record(self, row_data):
+        """Pass through the Record object yielded by _generate_rows."""
+        return row_data
+
     def _get_columns(self, type_code: str) -> List[FixedColumn]:
         return self.columns.get(type_code)
 
@@ -251,14 +257,15 @@ class EDIReader(FixedReader):
             cols = self._get_columns(type_code)
             if cols is None:
                 raise ValueError(f"No column definition for record type '{type_code}'")
-            fields = [c.name for c in cols]
-            RecordClass = type(f'EDI_{type_code}_Record', (Record,), {})
-            RecordClass.set_fields(fields)
+
+            RecordClass = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {})
+            RecordClass.set_fields(cols)
             self._type_factories[type_code] = RecordClass
         return self._type_factories[type_code]
 
     def _generate_rows(self) -> Iterator[Record]:
-        for line in self._rdr:
+        for line in self.fp:
+            line = line.rstrip('\n')
             if len(line) < self._record_type_len:
                 logger.debug("Line too short — skipping")
                 continue
@@ -266,19 +273,18 @@ class EDIReader(FixedReader):
             type_code = line[:self._record_type_len]
             cols = self._get_columns(type_code)
             if cols is None:
-                logger.debug(f"Skipping unknown record type '{type_code}'")
-                continue
+                if self.strict:
+                    raise ValueError(f"Unknown record type '{type_code}' at line {self._row_num}")
+                else:
+                    logger.debug(f"Skipping unknown record type '{type_code}'")
+                    continue
 
-            # Parse fields
             row_values = []
             for col in cols:
-                val = line[col.start_idx:col.end_idx]
+                val = line[col.start_idx:col.end_pos]
                 if self.auto_trim:
                     val = val.strip()
                 row_values.append(val)
-
-            if self.add_record_type:
-                row_values.append(type_code)
 
             record = self._get_factory(type_code)(*row_values)
             yield record

@@ -3,6 +3,7 @@
 """JSON and NDJSON (newline-delimited JSON) file readers."""
 
 import json
+import os
 from typing import List, Any, Dict, Optional, TextIO, Iterator
 from .base import Reader, Clean
 
@@ -93,9 +94,17 @@ class JSONReader(Reader):
         elif hasattr(fp, 'buffer'):
             # Text mode file - use buffer for better performance
             self._trackable = fp.buffer
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
         else:
             # Binary mode or other file type
             self._trackable = fp
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
 
         self.flatten = flatten
         self._data = None
@@ -208,7 +217,21 @@ class NDJSONReader(Reader):
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.fp = fp
-        self._trackable = self.fp
+        if hasattr(fp, '_uncompressed_size'):
+            self._trackable = fp.buffer
+            self._trackable._uncompressed_size = fp._uncompressed_size
+        elif hasattr(fp, 'buffer'):
+            self._trackable = fp.buffer
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
+        else:
+            self._trackable = fp
+            try:
+                self._trackable._uncompressed_size = os.fstat(self._trackable.fileno()).st_size
+            except (AttributeError, OSError):
+                pass
         self._column_cache = None
         self._original_keys = []  # Track original keys for value extraction
         self._schema_sample_size = 100
