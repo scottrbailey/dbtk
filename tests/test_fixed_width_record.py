@@ -49,56 +49,31 @@ def contiguous_class(contiguous_cols):
 # ---------------------------------------------------------------------------
 
 class TestSetFields:
-    def test_widths(self, contiguous_cols):
+    def test_columns_stored(self, contiguous_cols):
         cls = make_class(contiguous_cols)
-        assert cls._widths == [1, 10, 10]
+        assert cls._columns == contiguous_cols
 
-    def test_start_indices(self, contiguous_cols):
+    def test_columns_is_a_copy(self, contiguous_cols):
+        """Mutating the original list must not affect the class."""
         cls = make_class(contiguous_cols)
-        assert cls._start_indices == [0, 1, 11]   # 1-based pos → 0-based idx
+        contiguous_cols.append(FixedColumn('extra', 22, 25))
+        assert len(cls._columns) == 3
 
     def test_line_len(self, contiguous_cols):
         cls = make_class(contiguous_cols)
         assert cls._line_len == 21
 
-    def test_alignment_defaults(self, contiguous_cols):
-        cls = make_class(contiguous_cols)
-        # text -> 'l', text -> 'l', int -> 'r'
-        assert cls._alignment == 'llr'
-
-    def test_pad_chars_defaults(self, contiguous_cols):
-        cls = make_class(contiguous_cols)
-        # text -> ' ', text -> ' ', int -> '0'
-        assert cls._pad_chars == '  0'
-
-    def test_explicit_alignment_override(self):
-        cols = [
-            FixedColumn('a', 1, 5, alignment='r'),
-            FixedColumn('b', 6, 10, alignment='c'),
-            FixedColumn('c', 11, 15, alignment='L'),   # case-insensitive
-        ]
-        cls = make_class(cols)
-        assert cls._alignment == 'rcl'
-
-    def test_explicit_pad_char_override(self):
-        cols = [FixedColumn('x', 1, 4, pad_char='*')]
-        cls = make_class(cols)
-        assert cls._pad_chars == '*'
-
     def test_empty_fields(self):
         cls = make_class([])
-        assert cls._widths == []
-        assert cls._start_indices == []
+        assert cls._columns == []
         assert cls._line_len == 0
-        assert cls._alignment == ''
-        assert cls._pad_chars == ''
 
     def test_subclasses_are_independent(self):
         """Two subclasses must not share class-attribute state."""
         A = make_class([FixedColumn('x', 1, 5)])
         B = make_class([FixedColumn('y', 1, 10)])
-        assert A._widths == [5]
-        assert B._widths == [10]
+        assert len(A._columns) == 1
+        assert len(B._columns) == 1
         assert A._line_len == 5
         assert B._line_len == 10
 
@@ -145,6 +120,33 @@ class TestToLineBasic:
         line_none = r.to_line()
         r2 = contiguous_class('', '', '')
         assert line_none == r2.to_line()
+
+    def test_alignment_defaults_via_output(self, contiguous_cols):
+        """text→left+space, int→right+zero, verified through to_line() output."""
+        cls = make_class(contiguous_cols)
+        r = cls('X', 'hi', '7')
+        line = r.to_line()
+        assert line[1:11] == 'hi        '   # text: left-aligned, space-padded
+        assert line[11:21] == '0000000007'   # int: right-aligned, zero-padded
+
+    def test_explicit_alignment_override(self):
+        cols = [
+            FixedColumn('a', 1,  5, alignment='r'),
+            FixedColumn('b', 6,  10, alignment='c'),
+            FixedColumn('c', 11, 15, alignment='l'),
+        ]
+        cls = make_class(cols)
+        r = cls('X', 'X', 'X')
+        line = r.to_line()
+        assert line[0:5]  == '    X'    # right
+        assert line[5:10] == '  X  '    # center
+        assert line[10:15] == 'X    '   # left
+
+    def test_explicit_pad_char_override(self):
+        cols = [FixedColumn('x', 1, 4, pad_char='*')]
+        cls = make_class(cols)
+        r = cls('A')
+        assert r.to_line() == 'A***'
 
 
 # ---------------------------------------------------------------------------

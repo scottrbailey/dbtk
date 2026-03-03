@@ -548,22 +548,19 @@ class FixedWidthRecord(Record):
     A Record subclass optimized for fixed-width data parsing and reconstruction.
 
     Instances represent a single row from a fixed-width file, with values accessible
-    by name, attribute, or index. The class stores per-field formatting rules
-    (_widths, _alignment, _pad_chars) to enable exact reproduction of the original
-    line format via `to_line()`.
+    by name, attribute, or index. The class retains the original List[FixedColumn]
+    definitions so that `to_line()` can reconstruct the exact source line by splicing
+    each formatted value into its correct byte position.
 
     Designed for use with `FixedReader` or `EDIReader`, where each record type
     gets its own dynamic subclass with the appropriate column definitions.
 
     Class attributes (set automatically by `set_fields`):
-        _widths : List[int]
-            Width of each field in characters.
-        _alignment : str
-            String of length equal to number of fields: 'l' (left), 'r' (right),
-            'c' (center), or 'a' (auto-right for numbers).
-        _pad_chars : str
-            String of length equal to number of fields, specifying the padding
-            character for each field (' ' or '0' typical).
+        _columns : List[FixedColumn]
+            Full column definitions in definition order, including name, position,
+            type, alignment, pad character, and comment.
+        _line_len : int
+            Total line width in characters (max end_pos across all columns).
 
     Example usage:
         # In reader factory
@@ -571,49 +568,28 @@ class FixedWidthRecord(Record):
         record = RecordClass(*row_values)
         original_line = record.to_line()  # reconstructs formatted string
     """
-    _widths: List[int] = []
-    _start_indices: List[int] = []
+    _columns: List[FixedColumn] = []
     _line_len: int = 0
-    _alignment: str = ''
-    _pad_chars: str = ''
     mutable_schema: bool = False
 
     @classmethod
     def set_fields(cls, fields: List[FixedColumn]):
         """
-        Set field names and formatting rules from a list of FixedColumn objects.
+        Set field names and column definitions from a list of FixedColumn objects.
 
-        Extracts field names for the base Record and derives _widths,
-        _start_indices, _line_len, _alignment, and _pad_chars for formatting.
-        Alignment defaults to 'l' (left) except numeric types ('r' right).
-        Padding defaults to ' ' except numeric ('0').
+        Stores the column list as-is on the class (preserving position, type,
+        alignment, pad character, and comment for introspection) and pre-computes
+        _line_len as the rightmost end_pos across all columns.
 
         Args:
-            fields: FixedColumn definitions for this record type. Order does not
-                    matter — to_line() places each value by start_idx position.
+            fields: FixedColumn definitions for this record type. Definition order
+                    determines value order on instances; to_line() places each value
+                    by start_idx so out-of-position-order definitions work correctly.
         """
         names = [col.name for col in fields]
         super().set_fields(names)
-        cls._widths = [col.width for col in fields]
-        cls._start_indices = [col.start_idx for col in fields]
+        cls._columns = list(fields)
         cls._line_len = max(col.end_pos for col in fields) if fields else 0
-        align = []
-        pad = []
-        for col in fields:
-            if col.alignment:
-                align.append(col.alignment.lower()[0])
-            elif col.column_type in ('int', 'float'):
-                align.append('r')
-            else:
-                align.append('l')
-            if col.pad_char is not None:
-                pad.append(col.pad_char)
-            elif col.column_type in ('int', 'float'):
-                pad.append('0')
-            else:
-                pad.append(' ')
-        cls._alignment = ''.join(align)
-        cls._pad_chars = ''.join(pad)
 
     def to_line(self, truncate_overflow: bool = False):
         """
@@ -640,21 +616,29 @@ class FixedWidthRecord(Record):
         """
         cls = self.__class__
         line = [' '] * cls._line_len
-        for start, width, align, pad_char, (name, value) in zip(
-                cls._start_indices, cls._widths, cls._alignment, cls._pad_chars, self.items()):
+        for col, (name, value) in zip(cls._columns, self.items()):
             str_val = to_string(value)
-            if len(str_val) > width:
+            if len(str_val) > col.width:
                 if truncate_overflow:
-                    str_val = str_val[:width]
+                    str_val = str_val[:col.width]
                 else:
-                    raise ValueError(f'Value too large for {name} limit: {width}')
-            elif len(str_val) < width:
+                    raise ValueError(f'Value too large for {name} limit: {col.width}')
+            elif len(str_val) < col.width:
+                if col.alignment:
+                    align = col.alignment[0]  # 'left'→'l', 'right'→'r', 'center'→'c'
+                elif col.column_type in ('int', 'float'):
+                    align = 'r'
+                else:
+                    align = 'l'
+                pad = col.pad_char if col.pad_char is not None else (
+                    '0' if col.column_type in ('int', 'float') else ' '
+                )
                 if align == 'r':
-                    str_val = str_val.rjust(width, pad_char)
+                    str_val = str_val.rjust(col.width, pad)
                 elif align == 'c':
-                    str_val = str_val.center(width, pad_char)
+                    str_val = str_val.center(col.width, pad)
                 else:
-                    str_val = str_val.ljust(width, pad_char)
-            line[start:start + width] = str_val
+                    str_val = str_val.ljust(col.width, pad)
+            line[col.start_idx:col.start_idx + col.width] = str_val
         return ''.join(line)
 
