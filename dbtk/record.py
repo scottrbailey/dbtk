@@ -653,7 +653,8 @@ class FixedWidthRecord(Record):
                           without a comment are left blank in that position.
                           Has no effect when there are no _columns defined.
         """
-        if not add_comments or not self.__class__._columns:
+        cls = self.__class__
+        if not add_comments or not cls._columns:
             super().pprint(normalized=normalized)
             return
 
@@ -662,7 +663,7 @@ class FixedWidthRecord(Record):
             print("<Empty Record>")
             return
 
-        col_map = {col.name: col for col in self.__class__._columns}
+        col_map = {col.name: col for col in cls._columns}
         key_width = max(len(k) for k in keys)
         val_width = max(
             len(to_string(self[k])) for k in keys
@@ -683,3 +684,13 @@ class FixedWidthRecord(Record):
             else:
                 print(no_comment_template.format(key, value))
 
+    def visualize(self):
+        cls = self.__class__
+        max_len = cls._line_len + 1
+        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(1, max_len))
+        ruler_1s = ''.join(str(i % 10) for i in range(1, max_len))
+        boundary_line = [' '] * max_len
+        for col in cls._columns:
+            boundary_line[col.start_idx] = '|'
+        boundary_line = ''.join(boundary_line)
+        print(f'{ruler_10s}\n{ruler_1s}\n{boundary_line}\n{self.to_line()}')
