@@ -1,16 +1,15 @@
-# dbtk/readers/edi_formats.py
+# dbtk/formats/edi.py
 """
 Pre-defined column layouts for common multi-record fixed-width EDI-like formats.
 
-Use with EDIReader:
+Use with EDIReader or EDIWriter:
 
-    from dbtk.readers.fixed_width import EDIReader, FixedColumn
-    from dbtk.readers.edi_formats import ACH_COLUMNS
+    from dbtk.formats.edi import ACH_COLUMNS
+    from dbtk.readers.fixed_width import EDIReader
+    from dbtk.writers.fixed_width import EDIWriter
 
-    reader = EDIReader(
-        fp=open('ach_file.ach'),
-        columns=ACH_COLUMNS,
-    )
+    with open('in.ach') as fp, EDIWriter('out.ach', ACH_COLUMNS) as w:
+        w.write_batch(EDIReader(fp, ACH_COLUMNS))
 """
 
 from ..utils import FixedColumn

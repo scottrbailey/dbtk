@@ -220,7 +220,7 @@ DBTK ships with pre-defined layouts for NACHA ACH files:
 
 ```python
 from dbtk.readers.fixed_width import EDIReader
-from dbtk.readers.edi_formats import ACH_COLUMNS
+from dbtk.formats.edi import ACH_COLUMNS
 
 with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
     for record in reader:

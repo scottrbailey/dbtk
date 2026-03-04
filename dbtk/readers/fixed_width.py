@@ -173,7 +173,7 @@ class EDIReader(FixedReader):
 
         Supports common legacy formats such as NACHA ACH, COBOL copybooks, and other
         multi-layout fixed-width EDI-style files. The column specifications for several
-        common EDI-like files, including ACH, are defined in `dbtk.readers.edi_formats.py`
+        common EDI-like files, including ACH, are defined in `dbtk.formats.edi`
 
         Parameters
         ----------

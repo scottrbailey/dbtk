@@ -316,7 +316,7 @@ with readers.FixedReader(open('payments.txt'), columns) as reader:
 
 ```python
 from dbtk.readers.fixed_width import EDIReader
-from dbtk.readers.edi_formats import ACH_COLUMNS
+from dbtk.formats.edi import ACH_COLUMNS
 
 with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
     with open('payroll_modified.ach', 'w') as out:

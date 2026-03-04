@@ -171,7 +171,7 @@ class EDIWriter(BatchWriter):
 
         from dbtk.readers.fixed_width import EDIReader
         from dbtk.writers.fixed_width import EDIWriter
-        from dbtk.readers.edi_formats import ACH_COLUMNS
+        from dbtk.formats.edi import ACH_COLUMNS
 
         with open('in.ach') as fp, EDIWriter('out.ach', ACH_COLUMNS) as w:
             w.write_batch(EDIReader(fp, ACH_COLUMNS))

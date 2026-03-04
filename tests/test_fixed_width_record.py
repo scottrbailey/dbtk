@@ -292,7 +292,7 @@ class TestACHPadding:
     """immediate_destination and immediate_origin must be space-padded, not zero-padded."""
 
     def _make_header_record(self, **overrides):
-        from dbtk.readers.edi_formats import ACH_COLUMNS
+        from dbtk.formats.edi import ACH_COLUMNS
         cls = make_class(ACH_COLUMNS['1'])
         values = {col.name: '' for col in ACH_COLUMNS['1']}
         values.update(overrides)
