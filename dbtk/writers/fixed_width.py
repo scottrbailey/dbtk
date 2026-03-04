@@ -1,268 +1,290 @@
 # dbtk/writers/fixed_width.py
 """
-Fixed width text writer with batch streaming support.
+Fixed-width and EDI text writers with batch streaming support.
+
+Both writers are driven by FixedColumn schema objects — the same objects used
+by FixedReader and EDIReader on the read side.  When input records are already
+FixedWidthRecord instances (e.g. round-tripped through a reader), they go
+straight to to_line().  Any other record type is cast into the appropriate
+FixedWidthRecord subclass first.
 """
 
 import logging
-from typing import Union, Optional, Sequence, List, Iterable, TextIO, BinaryIO
+from typing import Dict, Iterable, List, Optional, Union, BinaryIO, TextIO
 from pathlib import Path
 
 from .base import BatchWriter, RecordLike
+from ..record import FixedWidthRecord
+from ..utils import FixedColumn
 
 logger = logging.getLogger(__name__)
 
+
+# ------------------------------------------------------------------ #
+# Module-level helpers shared by both writers
+# ------------------------------------------------------------------ #
+
+def _cast_to_fixed_record(record: RecordLike, record_class: type) -> FixedWidthRecord:
+    """Cast any record-like to a FixedWidthRecord subclass by positional values."""
+    if isinstance(record, (list, tuple)):
+        return record_class(*record)
+    if hasattr(record, 'values'):   # dict or Record
+        return record_class(*record.values())
+    return record_class(*record)    # fallback: try iterating
+
+
+def _extract_type_code(record: RecordLike, length: int) -> str:
+    """Extract the type-code prefix from the first field of any record-like."""
+    if isinstance(record, (list, tuple)):
+        val = record[0]
+    elif hasattr(record, 'values'):
+        val = next(iter(record.values()))
+    else:
+        val = next(iter(record))
+    return str(val)[:length]
+
+
+# ------------------------------------------------------------------ #
+# FixedWidthWriter
+# ------------------------------------------------------------------ #
 
 class FixedWidthWriter(BatchWriter):
     """
     Fixed-width text file writer with batch streaming capabilities.
 
-    Writes data to fixed-width text files where each field occupies a specific number
-    of characters. Supports batch streaming for large datasets and configurable
-    formatting options including alignment, truncation, and padding.
+    Field widths, alignment, and padding are driven by a ``List[FixedColumn]``
+    schema — the same schema used by ``FixedReader``.  When input records are
+    already ``FixedWidthRecord`` instances they are written directly via
+    ``to_line()``.  Any other record type (dict, list, namedtuple, generic
+    Record) is cast into the appropriate ``FixedWidthRecord`` subclass first.
 
     Parameters
     ----------
     data : Iterable[RecordLike], optional
-        Initial data to write. Can be None for streaming mode.
+        Initial data to write.  ``None`` for streaming mode.
     file : str, Path, TextIO, or BinaryIO, optional
-        Output file or file handle. If None, writes to stdout.
-    column_widths : Sequence[int]
-        List of column widths in characters. Must match number of columns in data.
-    columns : List[str], optional
-        Column names for list-of-lists data
-    encoding : str, default 'utf-8'
-        File encoding for text output
-    right_align_numbers : bool, default True
-        If True, right-align numeric values within their columns
-    truncate_overflow : bool, default True
-        If True, truncate values that exceed column width. If False, raise ValueError.
-    fill_char : str, default ' '
-        Character used for padding to reach column width
-
-    Raises
-    ------
-    ValueError
-        If column_widths length doesn't match number of columns, or if value
-        exceeds column width when truncate_overflow=False
+        Output file or handle.  ``None`` writes to stdout.
+    columns : List[FixedColumn]
+        Column definitions — width, alignment, padding, and type per field.
+    encoding : str, default ``'utf-8'``
+        File encoding.
+    truncate_overflow : bool, default ``True``
+        Truncate values that exceed their column width.  ``False`` raises
+        ``ValueError`` instead.
 
     Examples
     --------
-    **Traditional single-write mode**::
+    **Round-trip from FixedReader**::
 
-        widths = [10, 25, 15, 8]
-        writer = FixedWidthWriter(data, 'report.txt', widths)
-        writer.write()
+        with open('input.txt') as fp:
+            records = list(FixedReader(fp, MY_COLS))
+        to_fixed_width(records, MY_COLS, 'output.txt')
 
-    **Batch streaming mode**::
+    **Write from dicts**::
 
-        with FixedWidthWriter(None, 'output.txt', [10, 25, 15]) as writer:
-            for batch in batched_data:
-                writer.write_batch(batch)
+        rows = [{'code': 'A', 'amount': 42}, ...]
+        FixedWidthWriter(rows, 'output.txt', MY_COLS).write()
 
-    **Custom formatting**::
+    **Streaming / batch mode**::
 
-        writer = FixedWidthWriter(
-            data,
-            'custom.txt',
-            [15, 30, 10],
-            right_align_numbers=False,
-            fill_char='.',
-            truncate_overflow=True
-        )
-        writer.write()
-
-    Notes
-    -----
-    * Values are always converted to strings (preserve_types=False)
-    * Numeric type detection happens on original values before string conversion
-    * Warning logged if any values are truncated
-    * Each line is exactly sum(column_widths) characters plus newline
+        with FixedWidthWriter(file='output.txt', columns=MY_COLS) as w:
+            for batch in source:
+                w.write_batch(batch)
     """
 
     accepts_file_handle = True
-    preserve_types = False  # Always convert to strings for fixed-width
+    preserve_types = True   # to_line() handles all type conversion
 
     def __init__(self,
                  data: Optional[Iterable[RecordLike]] = None,
                  file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
-                 column_widths: Sequence[int] = None,
-                 columns: Optional[List[str]] = None,
+                 columns: List[FixedColumn] = None,
                  encoding: str = 'utf-8',
-                 right_align_numbers: bool = True,
-                 truncate_overflow: bool = True,
-                 fill_char: str = ' '):
-        """Initialize fixed width writer with batch streaming support."""
-        if column_widths is None:
-            raise ValueError("column_widths is required for FixedWidthWriter")
-        self.column_widths = list(column_widths)
-        self.right_align_numbers = right_align_numbers
+                 truncate_overflow: bool = True):
+        if not columns:
+            raise ValueError("columns (List[FixedColumn]) is required for FixedWidthWriter")
+        self.fixed_columns = list(columns)
         self.truncate_overflow = truncate_overflow
-        self.fill_char = fill_char
-        self.length_warning = False
+        self._fw_record_class = None    # lazy-created FixedWidthRecord subclass
 
-        # Initialize BatchWriter (handles data=None case)
         super().__init__(
             data=data,
             file=file,
-            columns=columns,
+            columns=[c.name for c in columns],  # string names for BatchWriter
             encoding=encoding,
-            write_headers=False  # Fixed-width doesn't have headers
+            write_headers=False,
         )
 
-        # Validate column widths after columns are determined
-        # (deferred if data=None, validated on first write_batch)
-        if self.columns and len(self.column_widths) != len(self.columns):
-            raise ValueError(
-                f"Number of column widths ({len(self.column_widths)}) must match "
-                f"number of columns ({len(self.columns)})"
-            )
-
-    def write_batch(self, data: Iterable[RecordLike]) -> None:
-        """
-        Write a batch of records to fixed-width format.
-
-        Parameters
-        ----------
-        data : Iterable[RecordLike]
-            Batch of records to write
-
-        Raises
-        ------
-        ValueError
-            If value exceeds column width and truncate_overflow=False
-        """
-        if not self.file_handle:
-            raise RuntimeError("File handle not initialized. Use as context manager.")
-
-        for record in data:
-            # Detect columns on first record if not already set
-            if self.columns is None:
-                self.columns = self._detect_columns(record)
-                # Validate widths now that we have columns
-                if len(self.column_widths) != len(self.columns):
-                    raise ValueError(
-                        f"Number of column widths ({len(self.column_widths)}) must match "
-                        f"number of columns ({len(self.columns)})"
-                    )
-
-            # Extract values as strings
-            values = self._row_to_tuple(record)
-
-            line = ''
-            for i, (value, width) in enumerate(zip(values, self.column_widths)):
-                # Get original value for numeric check
-                if hasattr(record, '__getitem__'):
-                    original_value = record[i] if isinstance(record, (list, tuple)) else record[self.columns[i]]
-                else:
-                    original_value = getattr(record, self.columns[i], None)
-
-                if len(value) > width and not self.truncate_overflow:
-                    raise ValueError(
-                        f"Value '{value}' (length {len(value)}) exceeds column width {width}. "
-                        f"Set truncate_overflow=True or increase column width."
-                    )
-
-                # Determine if value should be right-aligned (numbers)
-                should_right_align = (
-                    self.right_align_numbers and
-                    isinstance(original_value, (int, float)) and
-                    original_value is not None
-                )
-
-                # Format for fixed width
-                formatted_value = self._format_fixed_width(
-                    value,
-                    width,
-                    should_right_align,
-                    self.truncate_overflow,
-                    self.fill_char
-                )
-
-                if not self.length_warning and len(value) > width:
-                    self.length_warning = True
-
-                line += formatted_value
-
-            self.file_handle.write(line + '\n')
-            self._row_num += 1
-
-        # Warn if values exceeded column widths
-        if self.length_warning and self.truncate_overflow:
-            logger.warning("Some values were truncated to fit column widths.")
+    def _get_record_class(self) -> type:
+        """Lazy-create a FixedWidthRecord subclass from fixed_columns."""
+        if self._fw_record_class is None:
+            cls = type('FWRecord', (FixedWidthRecord,), {})
+            cls.set_fields(self.fixed_columns)
+            self._fw_record_class = cls
+        return self._fw_record_class
 
     def _write_data(self, file_obj) -> None:
-        """Write fixed-width data using write_batch (legacy support)."""
-        self.file_handle = file_obj
-        if self.data_iterator:
-            self.write_batch(self.data_iterator)
-
-    def _format_fixed_width(self, value: str, width: int, right_align: bool,
-                            truncate: bool, fill_char: str) -> str:
-        """
-        Format a value to fit in a fixed width column.
-
-        Args:
-            value: String value to format
-            width: Target width
-            right_align: Whether to right-align the value
-            truncate: Whether to truncate if too long
-            fill_char: Character for padding
-
-        Returns:
-            Formatted string of exactly 'width' characters
-        """
-        if len(value) > width:
-            if truncate:
-                return value[:width]
+        for record in self.data_iterator:
+            if isinstance(record, FixedWidthRecord) and record.__class__._columns:
+                fw = record
             else:
-                # Don't truncate, but this will mess up the fixed width format
-                return value
-        elif len(value) < width:
-            # Pad to width
-            padding_needed = width - len(value)
-            if right_align:
-                return fill_char * padding_needed + value
-            else:
-                return value + fill_char * padding_needed
-        else:
-            # Exact width
-            return value
+                fw = _cast_to_fixed_record(record, self._get_record_class())
+            file_obj.write(fw.to_line(self.truncate_overflow) + '\n')
+            self._row_num += 1
 
+
+# ------------------------------------------------------------------ #
+# EDIWriter
+# ------------------------------------------------------------------ #
+
+class EDIWriter(BatchWriter):
+    """
+    Writer for fixed-width files containing multiple record types (EDI-like formats).
+
+    Symmetric counterpart to ``EDIReader``.  Takes the same
+    ``Dict[str, List[FixedColumn]]`` schema and dispatches writes by record
+    type code (always the first field of each record).
+
+    When input records are already ``FixedWidthRecord`` instances (e.g. from
+    ``EDIReader``), the type code is read from ``record[0]`` and checked
+    against the schema, then ``to_line()`` is called directly.  Any other
+    record type is cast into the appropriate ``FixedWidthRecord`` subclass.
+
+    Parameters
+    ----------
+    data : Iterable[RecordLike], optional
+        Initial data to write.  ``None`` for streaming mode.
+    file : str, Path, TextIO, or BinaryIO, optional
+        Output file or handle.  ``None`` writes to stdout.
+    columns : Dict[str, List[FixedColumn]]
+        Mapping of type codes to column definitions — same format as
+        ``EDIReader``.  All keys must be strings of identical length.
+    encoding : str, default ``'utf-8'``
+        File encoding.
+    truncate_overflow : bool, default ``False``
+        Truncate values that exceed their column width.  ``False`` (default)
+        raises ``ValueError`` — EDI files are typically length-strict.
+
+    Examples
+    --------
+    **Read-modify-write loop**::
+
+        from dbtk.readers.fixed_width import EDIReader
+        from dbtk.writers.fixed_width import EDIWriter
+        from dbtk.readers.edi_formats import ACH_COLUMNS
+
+        with open('in.ach') as fp, EDIWriter('out.ach', ACH_COLUMNS) as w:
+            w.write_batch(EDIReader(fp, ACH_COLUMNS))
+
+    **Single-shot**::
+
+        records = list(EDIReader(open('in.ach'), ACH_COLUMNS))
+        to_edi(records, ACH_COLUMNS, 'out.ach')
+    """
+
+    accepts_file_handle = True
+    preserve_types = True
+
+    def __init__(self,
+                 data: Optional[Iterable[RecordLike]] = None,
+                 file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
+                 columns: Dict[str, List[FixedColumn]] = None,
+                 encoding: str = 'utf-8',
+                 truncate_overflow: bool = False):
+        if not columns:
+            raise ValueError(
+                "columns (Dict[str, List[FixedColumn]]) is required for EDIWriter"
+            )
+        lengths = {len(k) for k in columns}
+        if len(lengths) != 1:
+            raise ValueError("All record type keys must have the same length")
+
+        self.edi_columns = dict(columns)
+        self._record_type_len = next(iter(lengths))
+        self.truncate_overflow = truncate_overflow
+        self._type_factories: Dict[str, type] = {}
+
+        super().__init__(
+            data=data,
+            file=file,
+            columns=None,   # no single column list; detected per record by BatchWriter
+            encoding=encoding,
+            write_headers=False,
+        )
+
+    def _get_factory(self, type_code: str) -> type:
+        """Lazy-create a FixedWidthRecord subclass for the given type code."""
+        if type_code not in self._type_factories:
+            cols = self.edi_columns.get(type_code)
+            if cols is None:
+                raise ValueError(f"No column definition for record type '{type_code}'")
+            cls = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {})
+            cls.set_fields(cols)
+            self._type_factories[type_code] = cls
+        return self._type_factories[type_code]
+
+    def _write_data(self, file_obj) -> None:
+        for record in self.data_iterator:
+            if isinstance(record, FixedWidthRecord) and record.__class__._columns:
+                type_code = str(record[0])[:self._record_type_len]
+                if type_code not in self.edi_columns:
+                    raise ValueError(f"Record type '{type_code}' not in schema")
+                fw = record
+            else:
+                type_code = _extract_type_code(record, self._record_type_len)
+                factory = self._get_factory(type_code)
+                fw = _cast_to_fixed_record(record, factory)
+            file_obj.write(fw.to_line(self.truncate_overflow) + '\n')
+            self._row_num += 1
+
+
+# ------------------------------------------------------------------ #
+# Convenience functions
+# ------------------------------------------------------------------ #
 
 def to_fixed_width(data,
-                   column_widths: Sequence[int],
+                   columns: List[FixedColumn],
                    file: Optional[Union[str, Path]] = None,
                    encoding: str = 'utf-8',
-                   right_align_numbers: bool = True,
-                   truncate_overflow: bool = True,
-                   fill_char: str = ' ') -> None:
+                   truncate_overflow: bool = True) -> None:
     """
-    Export cursor or result set to fixed width text file.
+    Export records to a fixed-width text file.
 
     Args:
-        data: Cursor object or list of records
-        column_widths: List of column widths in characters
-        file: Output file. If None, writes to stdout
-        encoding: File encoding
-        right_align_numbers: Whether to right-align numeric values
-        truncate_overflow: Whether to truncate values that exceed column width
-        fill_char: Character to use for padding
-
-    Example:
-        # Define column widths
-        widths = [10, 25, 15, 8]
-        to_fixed_width(cursor, widths, 'report.txt')
-
-        # Write to stdout with custom formatting
-        to_fixed_width(cursor, [15, 30], right_align_numbers=False)
+        data: Iterable of records (FixedWidthRecord, dict, list, etc.)
+        columns: FixedColumn definitions for width, alignment, and padding.
+        file: Output file path.  If None, writes to stdout.
+        encoding: File encoding.
+        truncate_overflow: Truncate values that exceed column width.
     """
-    writer = FixedWidthWriter(
+    FixedWidthWriter(
         data=data,
         file=file,
-        column_widths=column_widths,
+        columns=columns,
         encoding=encoding,
-        right_align_numbers=right_align_numbers,
         truncate_overflow=truncate_overflow,
-        fill_char=fill_char
-    )
-    writer.write()
+    ).write()
+
+
+def to_edi(data,
+           columns: Dict[str, List[FixedColumn]],
+           file: Optional[Union[str, Path]] = None,
+           encoding: str = 'utf-8',
+           truncate_overflow: bool = False) -> None:
+    """
+    Export EDI records to a fixed-width text file.
+
+    Args:
+        data: Iterable of FixedWidthRecord (or compatible) instances.
+        columns: Dict mapping type codes to FixedColumn definitions.
+        file: Output file path.  If None, writes to stdout.
+        encoding: File encoding.
+        truncate_overflow: Truncate values that exceed column width.
+    """
+    EDIWriter(
+        data=data,
+        file=file,
+        columns=columns,
+        encoding=encoding,
+        truncate_overflow=truncate_overflow,
+    ).write()
