@@ -1,11 +1,12 @@
 # tests/test_fixed_width_record.py
 """
-Tests for FixedWidthRecord.set_fields(), to_line(), and pprint().
+Tests for FixedWidthRecord.set_fields(), to_line(), pprint(), and visualize().
 
 Covers the splice-based to_line() implementation: positional placement,
 gap preservation, out-of-order column definitions, alignment/padding,
 overflow handling, and reader round-trip fidelity.
-Also covers the pprint() override and its add_comments parameter.
+Also covers the pprint() override and its add_comments parameter,
+and the visualize() diagnostic method.
 """
 
 import pytest
@@ -390,3 +391,58 @@ class TestPprint:
         # All ' : ' separators should be at the same position
         positions = [l.index(' : ') for l in lines]
         assert len(set(positions)) == 1
+
+
+class TestVisualize:
+    """Tests for FixedWidthRecord.visualize()."""
+
+    @pytest.fixture
+    def cls_3col(self):
+        """A simple 3-column, 12-char schema."""
+        cls = type('R', (FixedWidthRecord,), {})
+        cls.set_fields([
+            FixedColumn('code',   1,  2),
+            FixedColumn('amount', 3, 12, 'int', pad_char='0'),
+        ])
+        return cls
+
+    def test_returns_string(self, cls_3col):
+        out = cls_3col('AB', 42).visualize()
+        assert isinstance(out, str)
+
+    def test_four_lines(self, cls_3col):
+        lines = cls_3col('AB', 42).visualize().splitlines()
+        assert len(lines) == 4
+
+    def test_rulers_match_line_length(self, cls_3col):
+        lines = cls_3col('AB', 42).visualize().splitlines()
+        line_len = cls_3col._line_len   # 12
+        assert len(lines[0]) == line_len   # tens ruler
+        assert len(lines[1]) == line_len   # ones ruler
+
+    def test_boundary_markers_at_column_starts(self, cls_3col):
+        boundary = cls_3col('AB', 42).visualize().splitlines()[2]
+        for col in cls_3col._columns:
+            assert boundary[col.start_idx] == '|', (
+                f"Expected '|' at position {col.start_idx} for column '{col.name}'"
+            )
+
+    def test_boundary_length_matches_rulers(self, cls_3col):
+        lines = cls_3col('AB', 42).visualize().splitlines()
+        assert len(lines[2]) == len(lines[1])   # boundary == ones ruler length
+
+    def test_last_line_is_to_line(self, cls_3col):
+        r = cls_3col('AB', 42)
+        lines = r.visualize().splitlines()
+        assert lines[3] == r.to_line()
+
+    def test_ones_ruler_content(self, cls_3col):
+        ones = cls_3col('AB', 42).visualize().splitlines()[1]
+        # positions 1-9 → digits 1-9, position 10 → '0', 11 → '1', 12 → '2'
+        assert ones == '1234567890' + ''.join(str(i % 10) for i in range(11, cls_3col._line_len + 1))
+
+    def test_no_extra_trailing_chars(self, cls_3col):
+        """All four output lines must have exactly _line_len characters."""
+        line_len = cls_3col._line_len
+        for line in cls_3col('AB', 42).visualize().splitlines():
+            assert len(line) == line_len

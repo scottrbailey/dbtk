@@ -684,13 +684,26 @@ class FixedWidthRecord(Record):
             else:
                 print(no_comment_template.format(key, value))
 
-    def visualize(self):
+    def visualize(self) -> str:
+        """
+        Return a diagnostic string showing column boundaries over the record value.
+
+        Output format (4 lines)::
+
+                     1         2    ...
+            1234567890123456789012345...   ← position ruler
+            || |         |         |...   ← '|' at each column start
+            101 123456789  87654321...    ← to_line() output
+
+        Returns a string; call ``print(record.visualize())`` to display.
+        Consistent with ``FixedReader.visualize_columns()`` which also returns
+        a string.
+        """
         cls = self.__class__
-        max_len = cls._line_len + 1
-        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(1, max_len))
-        ruler_1s = ''.join(str(i % 10) for i in range(1, max_len))
-        boundary_line = [' '] * max_len
+        line_len = cls._line_len
+        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(1, line_len + 1))
+        ruler_1s  = ''.join(str(i % 10)                               for i in range(1, line_len + 1))
+        boundary_line = [' '] * line_len
         for col in cls._columns:
             boundary_line[col.start_idx] = '|'
-        boundary_line = ''.join(boundary_line)
-        print(f'{ruler_10s}\n{ruler_1s}\n{boundary_line}\n{self.to_line()}')
+        return f'{ruler_10s}\n{ruler_1s}\n{"".join(boundary_line)}\n{self.to_line()}'
