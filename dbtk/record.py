@@ -691,8 +691,6 @@ class FixedWidthRecord(Record):
         ruler_1s = ''.join(str(i % 10) for i in range(1, max_len))
         boundary_line = [' '] * max_len
         for col in cls._columns:
-            boundary_line[col.start_idx] = '<'
-            if boundary_line[col.end_pos] == ' ':
-                boundary_line[col.end_pos] = '>'
+            boundary_line[col.start_idx] = '|'
         boundary_line = ''.join(boundary_line)
         print(f'{ruler_10s}\n{ruler_1s}\n{boundary_line}\n{self.to_line()}')
