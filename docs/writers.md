@@ -25,8 +25,9 @@ writers.to_ndjson(cursor, 'battle_logs.ndjson')
 writers.to_xml(cursor, 'citizens.xml', record_element='earth_kingdom_citizen')
 
 # Fixed-width format for legacy systems
-column_widths = [20, 15, 10, 12]
-writers.to_fixed_width(cursor, column_widths, 'ba_sing_se_daily_announcements.txt')
+from dbtk.utils import FixedColumn
+columns = [FixedColumn('name', 1, 20), FixedColumn('region', 21, 35), FixedColumn('population', 36, 45)]
+writers.to_fixed_width(cursor, columns, 'ba_sing_se_daily_announcements.txt')
 
 # Direct database-to-database transfer
 source_cursor.execute("SELECT * FROM water_tribe_defenses")
@@ -60,7 +61,7 @@ For incremental writes — pagination, chunked ETL, or appending from multiple s
 subclass directly and call `write_batch()` in a loop. Calling a `to_*` function multiple times with the same file will overwrite
 the previous file. The exception is `to_excel` which will overwrite a worksheet if it already exists but not the entire workbook.
 
-Supported batch writers: `CSVWriter`, `NDJSONWriter`, `ExcelWriter`, `LinkedExcelWriter`, `XMLStreamer`.
+Supported batch writers: `CSVWriter`, `NDJSONWriter`, `ExcelWriter`, `LinkedExcelWriter`, `XMLStreamer`, `FixedWidthWriter`, `EDIWriter`.
 
 ```python
 from dbtk.writers import CSVWriter
@@ -130,6 +131,72 @@ This is memory-efficient for large datasets where `to_xml()` would consume too m
 - Memory-constrained environments
 - Long-running exports that need progress tracking
 - Need to process multiple cursors into one XML file
+
+## Fixed-Width Files with FixedWidthWriter
+
+`FixedWidthWriter` writes fixed-width text files driven by a `List[FixedColumn]` schema — the same schema used by `FixedReader` on the read side. Each column definition specifies position, width, alignment, and padding, so the writer handles all formatting automatically.
+
+```python
+from dbtk.utils import FixedColumn
+from dbtk.writers import FixedWidthWriter, to_fixed_width
+
+COLS = [
+    FixedColumn('record_type',  1,  2),
+    FixedColumn('account',      3, 14, alignment='right', pad_char='0'),
+    FixedColumn('amount',      15, 24, alignment='right', pad_char='0', column_type='int'),
+    FixedColumn('description', 25, 54),
+]
+
+# Single-shot
+to_fixed_width(records, COLS, 'output.txt')
+
+# Batch / streaming
+with FixedWidthWriter(file='output.txt', columns=COLS) as w:
+    for batch in source.batches(10_000):
+        w.write_batch(batch)
+```
+
+Input records can be `FixedWidthRecord` instances (written directly via `to_line()`), dicts, lists, tuples, or namedtuples — all are cast positionally into the column schema.
+
+By default `truncate_overflow=True` silently truncates values that exceed their column width. Pass `truncate_overflow=False` to raise `ValueError` instead.
+
+## EDI / Multi-Record Fixed-Width with EDIWriter
+
+`EDIWriter` is the write-side counterpart to `EDIReader`. It handles fixed-width files where different record types have different layouts — NACHA ACH, COBOL bank extracts, X12 835 remittances, and similar formats.
+
+The schema is a `Dict[str, List[FixedColumn]]` mapping type codes to column definitions. The type code is always the first field of each record; `EDIWriter` reads it to select the right layout for each row.
+
+**Read-modify-write (the primary use case):**
+
+```python
+from dbtk.readers.fixed_width import EDIReader
+from dbtk.writers.fixed_width import EDIWriter
+from dbtk.formats.edi import ACH_COLUMNS
+
+with open('in.ach') as fp, EDIWriter(file='out.ach', columns=ACH_COLUMNS) as w:
+    for record in EDIReader(fp, ACH_COLUMNS):
+        # records are FixedWidthRecord — modify fields, then write
+        if record[0] == '6':   # Entry Detail
+            record = record._replace(amount=record.amount + 100)
+        w.write_batch([record])
+```
+
+**Single-shot from a list:**
+
+```python
+from dbtk.writers import to_edi
+
+records = list(EDIReader(open('in.ach'), ACH_COLUMNS))
+to_edi(records, ACH_COLUMNS, 'out.ach')
+```
+
+**Pre-built schemas** for common formats are in `dbtk.formats.edi`:
+
+```python
+from dbtk.formats.edi import ACH_COLUMNS, COBOL_BANK_EXTRACT_COLUMNS, X12_835_COLUMNS, FORMATS
+```
+
+By default `truncate_overflow=False` — EDI files are length-strict and silent truncation would corrupt the file. Pass `truncate_overflow=True` only if you know what you're doing.
 
 ## Multiple Sheets with ExcelWriter
 
