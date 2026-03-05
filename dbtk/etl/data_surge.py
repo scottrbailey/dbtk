@@ -29,12 +29,12 @@ class DataSurge(BaseSurge):
         Wrap all operations in a transaction (default: False)
     pass_through : bool, optional
         Skip transformation and validation, using source data directly (default: False).
+        Only compatible for inserts. Not compatible with columns with database expressions `db_expr`
 
         **When to use:**
 
         - Database-to-database copies with identical schemas
         - Pre-transformed data from upstream pipelines (already validated)
-        - Cursor-to-cursor streaming (maximum throughput)
         - Raw positional tuples pre-ordered for binding parameters
 
         **What's skipped:** Field mapping, type coercion, default values, null value
@@ -76,7 +76,7 @@ class DataSurge(BaseSurge):
 
         # Source and destination schemas match exactly
         surge = DataSurge(dest_table, batch_size=5000, pass_through=True)
-        surge.insert(source_cursor.fetchall())
+        surge.insert(source_cursor)
 
     Pre-transformed data (already validated)::
 
@@ -169,7 +169,20 @@ class DataSurge(BaseSurge):
         self.start_time = time.monotonic()
         operation = (operation or self.operation).lower()
         if operation not in ("insert", "update", "delete", "merge"):
-            raise ValueError(f"Invalid operation: {operation}")
+            msg = f"Invalid operation: {operation}"
+            logger.exception(msg)
+            raise ValueError(msg)
+        if self.pass_through:
+            if operation != "insert":
+                msg = f"Operation {operation} is not compatible with pass_through mode."
+                logger.exception(msg)
+                raise ValueError(msg)
+            expr_cols = self.table.db_expr_cols()
+            if expr_cols:
+                msg = f"Columns with `db_expr` are incompatible with pass_through mode.  cols: {expr_cols}"
+                logger.exception(msg)
+                raise ValueError(msg)
+
         self.operation = operation
         sql = self.get_sql(operation)
 
@@ -190,11 +203,8 @@ class DataSurge(BaseSurge):
             return 0
 
         db_type = self.cursor.connection.database_type
-        if db_type == 'postgres' and self.cursor.connection.server_version < 150000:
-            raise NotImplementedError(
-                f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
-            )
-        elif db_type == 'oracle':
+        # Postgres and MySQL will
+        if db_type == 'oracle':
             temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
 
             # Get column definitions from table

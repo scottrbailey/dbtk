@@ -177,10 +177,7 @@ class BulkSurge(BaseSurge):
 
     def _valid_for_bulk(self):
         """ Determine if table is compatible with bulk loading. """
-        expr_cols = []
-        for col, info in self.table.columns.items():
-            if info.get('db_expr', None) is not None:
-                expr_cols.append(col)
+        expr_cols = self.table.db_expr_cols()
         if expr_cols:
             cols = ','.join(expr_cols)
             msg = f"Columns with `db_expr` are incompatible with BulkSurge. Use DataSurge instead.  cols: {cols}"
