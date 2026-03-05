@@ -423,8 +423,8 @@ class TestVisualize:
     def test_boundary_markers_at_column_starts(self, cls_3col):
         boundary = cls_3col('AB', 42).visualize().splitlines()[2]
         for col in cls_3col._columns:
-            assert boundary[col.start_idx] == '|', (
-                f"Expected '|' at position {col.start_idx} for column '{col.name}'"
+            assert boundary[col.start_idx] == '├', (
+                f"Expected '├' at position {col.start_idx} for column '{col.name}'"
             )
 
     def test_boundary_length_matches_rulers(self, cls_3col):
