@@ -105,7 +105,7 @@ class FixedReader(Reader):
         if self.fp and hasattr(self.fp, 'close'):
             self.fp.close()
 
-    def visualize_columns(self, sample_lines: int = 2) -> str:
+    def visualize(self, sample_lines: int = 2) -> str:
         """
         Visualize column boundaries over sample data from the file.
 
@@ -282,7 +282,7 @@ class EDIReader(FixedReader):
             self._type_factories[type_code] = RecordClass
         return self._type_factories[type_code]
 
-    def visualize_columns(self) -> str:
+    def visualize(self) -> str:
         """
         Visualize column boundaries for each record type found in the file.
 

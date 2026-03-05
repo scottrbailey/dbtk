@@ -696,12 +696,11 @@ class FixedWidthRecord(Record):
             101 123456789  87654321...    ← to_line() output
 
         Returns a string; call ``print(record.visualize())`` to display.
-        Consistent with ``FixedReader.visualize_columns()`` which also returns
-        a string.
+        Consistent with ``FixedReader.visualize()`` which also returns a string.
         """
         cls = self.__class__
         line_len = cls._line_len
-        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(1, line_len + 1))
+        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(line_len))
         ruler_1s  = ''.join(str(i % 10)                               for i in range(1, line_len + 1))
         boundary_line = ['─'] * line_len
         for col in cls._columns:
