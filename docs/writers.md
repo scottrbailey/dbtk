@@ -298,5 +298,7 @@ For large datasets, here's when to use each writer:
 - **CSV**: Best for all sizes, especially large datasets
 - **Excel**: Great for < 100K records, business reports
 - **JSON**: Good for < 100K records, API integration
+- **NDJSON**: Good for all sizes, streaming/log formats, API integration
 - **XML**: Use XMLStreamer for > 100K records
 - **ExcelWriter / LinkedExcelWriter**: Multi-sheet reports (any size per sheet < 1M)
+- **Fixed-width / EDI**: Legacy system integration, NACHA ACH, mainframe extracts
