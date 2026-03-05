@@ -11,11 +11,25 @@ from datetime import date, datetime
 from collections import namedtuple
 
 from dbtk.readers import CSVReader
+from dbtk.utils import FixedColumn
 from dbtk.writers import (
     CSVWriter, ExcelWriter, FixedWidthWriter,
     JSONWriter, NDJSONWriter, XMLWriter,
     to_csv, to_excel, to_fixed_width, to_json, to_ndjson, to_xml
 )
+
+# FixedColumn schema matching the sample_data fixtures (8 fields, 122 chars/line)
+SAMPLE_COLUMNS = [
+    FixedColumn('trainee_id',        1,   5, 'int'),
+    FixedColumn('monk_name',         6,  35),
+    FixedColumn('home_temple',      36,  65),
+    FixedColumn('mastery_rank',     66,  70, 'int'),
+    FixedColumn('bison_companion',  71,  82),
+    FixedColumn('daily_meditation', 83,  90, 'float'),
+    FixedColumn('birth_date',       91, 102),
+    FixedColumn('last_training',   103, 122),
+]
+SAMPLE_LINE_WIDTH = sum(c.width for c in SAMPLE_COLUMNS)  # 122
 
 
 # Fixtures
@@ -546,82 +560,96 @@ class TestExcelWriter:
         assert ws.cell(2, 3).value == 'alice@example.com'
 
 
+@pytest.fixture
+def fw_records(csv_file):
+    """Load first 10 records from CSV (no Excel dependency) for FixedWidth tests."""
+    with CSVReader(open(csv_file), add_row_num=False) as reader:
+        return [r for i, r in enumerate(reader) if i < 10]
+
+
 class TestFixedWidthWriter:
     """Tests specific to fixed-width writer."""
 
-    def test_write_fixed_width(self, tmp_path, sample_records):
-        """Test basic fixed-width writing."""
+    def test_write_fixed_width(self, tmp_path, fw_records):
+        """Basic write: each line is exactly the sum of column widths."""
         output_file = tmp_path / "output.txt"
-        column_widths = [5, 30, 30, 5, 12, 8, 12, 20]
+        to_fixed_width(fw_records, SAMPLE_COLUMNS, output_file)
+        assert output_file.exists()
+        with open(output_file, encoding='utf-8-sig') as f:
+            first_line = f.readline()
+        assert len(first_line.rstrip('\n')) == SAMPLE_LINE_WIDTH
 
-        to_fixed_width(sample_records, column_widths, output_file)
+    def test_int_fields_right_aligned(self, tmp_path, fw_records):
+        """Integer columns are right-aligned with leading spaces (from FixedColumn type)."""
+        output_file = tmp_path / "output.txt"
+        to_fixed_width(fw_records, SAMPLE_COLUMNS, output_file)
+        with open(output_file, encoding='utf-8-sig') as f:
+            first_line = f.readline()
+        trainee_id = first_line[:5]     # width-5 int column
+        assert trainee_id.strip('0') == '1'
+        assert trainee_id.startswith('0')   # int column: right-aligned, zero-padded
 
+    def test_text_fields_left_aligned(self, tmp_path, fw_records):
+        """Text columns are left-aligned with trailing spaces."""
+        output_file = tmp_path / "output.txt"
+        to_fixed_width(fw_records, SAMPLE_COLUMNS, output_file)
+        with open(output_file, encoding='utf-8-sig') as f:
+            first_line = f.readline()
+        monk_name = first_line[5:35]    # width-30 text column
+        assert monk_name.rstrip() == 'Master Aang'
+        assert monk_name.endswith(' ')  # left-aligned → trailing spaces
+
+    def test_truncate_overflow_true(self, tmp_path, fw_records):
+        """truncate_overflow=True silently clips values that exceed column width."""
+        narrow = [
+            FixedColumn('trainee_id',        1,   5, 'int'),
+            FixedColumn('monk_name',         6,  10),           # too narrow for long names
+            FixedColumn('home_temple',      11,  15),
+            FixedColumn('mastery_rank',     16,  20, 'int'),
+            FixedColumn('bison_companion',  21,  32),
+            FixedColumn('daily_meditation', 33,  40, 'float'),
+            FixedColumn('birth_date',       41,  52),
+            FixedColumn('last_training',    53,  72),
+        ]
+        output_file = tmp_path / "output.txt"
+        to_fixed_width(fw_records, narrow, output_file, truncate_overflow=True)
         assert output_file.exists()
 
-        # Read back and check structure
-        with open(output_file, encoding='utf-8-sig') as f:
-            first_line = f.readline()
-            # Line should be sum of column widths
-            assert len(first_line.rstrip('\n')) == sum(column_widths)
-
-    def test_right_align_numbers_true(self, tmp_path, sample_records):
-        """Test right_align_numbers=True aligns numbers to the right."""
+    def test_truncate_overflow_false(self, tmp_path, fw_records):
+        """truncate_overflow=False raises ValueError on overflow."""
+        narrow = [
+            FixedColumn('trainee_id',        1,   5, 'int'),
+            FixedColumn('monk_name',         6,  10),           # too narrow
+            FixedColumn('home_temple',      11,  15),
+            FixedColumn('mastery_rank',     16,  20, 'int'),
+            FixedColumn('bison_companion',  21,  32),
+            FixedColumn('daily_meditation', 33,  40, 'float'),
+            FixedColumn('birth_date',       41,  52),
+            FixedColumn('last_training',    53,  72),
+        ]
         output_file = tmp_path / "output.txt"
-        column_widths = [5, 30, 30, 5, 12, 8, 12, 20]
+        with pytest.raises(ValueError, match="too large"):
+            to_fixed_width(fw_records, narrow, output_file, truncate_overflow=False)
 
-        to_fixed_width(sample_records, column_widths, output_file, right_align_numbers=True)
+    def test_fixed_width_record_passthrough(self, tmp_path):
+        """FixedWidthRecord input goes straight to to_line() without re-casting."""
+        from dbtk.record import FixedWidthRecord
+        cols = [FixedColumn('code', 1, 2), FixedColumn('amount', 3, 12, 'int', pad_char='0')]
+        cls = type('R', (FixedWidthRecord,), {})
+        cls.set_fields(cols)
+        records = [cls('AB', 42), cls('CD', 999)]
 
-        with open(output_file, encoding='utf-8-sig') as f:
-            first_line = f.readline()
-            # trainee_id (int) should be right-aligned in first 5 chars
-            trainee_id = first_line[:5]
-            assert trainee_id.strip() == '1'
-            # Should have leading spaces
-            assert trainee_id.startswith(' ')
-
-    def test_right_align_numbers_false(self, tmp_path, sample_records):
-        """Test right_align_numbers=False left-aligns all values."""
         output_file = tmp_path / "output.txt"
-        column_widths = [5, 30, 30, 5, 12, 8, 12, 20]
+        to_fixed_width(records, cols, output_file)
 
-        to_fixed_width(sample_records, column_widths, output_file, right_align_numbers=False)
+        lines = output_file.read_text().splitlines()
+        assert lines[0] == 'AB0000000042'
+        assert lines[1] == 'CD0000000999'
 
-        with open(output_file, encoding='utf-8-sig') as f:
-            first_line = f.readline()
-            # trainee_id should be left-aligned
-            trainee_id = first_line[:5]
-            assert trainee_id.strip() == '1'
-            # Should have trailing spaces
-            assert trainee_id.endswith(' ')
-
-    def test_truncate_overflow_true(self, tmp_path, sample_records):
-        """Test truncate_overflow=True truncates values exceeding column width."""
-        output_file = tmp_path / "output.txt"
-        # Make columns too narrow
-        column_widths = [5, 10, 10, 5, 12, 8, 12, 20]
-
-        # Should not raise error with truncate=True
-        to_fixed_width(sample_records, column_widths, output_file, truncate_overflow=True)
-
-        assert output_file.exists()
-
-    def test_truncate_overflow_false(self, tmp_path, sample_records):
-        """Test truncate_overflow=False raises error on overflow."""
-        output_file = tmp_path / "output.txt"
-        # Make columns too narrow
-        column_widths = [5, 10, 10, 5, 12, 8, 12, 20]
-
-        with pytest.raises(ValueError, match="exceeds column width"):
-            to_fixed_width(sample_records, column_widths, output_file, truncate_overflow=False)
-
-    def test_column_width_mismatch(self, tmp_path, sample_records):
-        """Test error when column widths don't match column count."""
-        output_file = tmp_path / "output.txt"
-        # Wrong number of widths
-        column_widths = [5, 30, 30]
-
-        with pytest.raises(ValueError, match="must match"):
-            to_fixed_width(sample_records, column_widths, output_file)
+    def test_columns_required(self, tmp_path, fw_records):
+        """Omitting columns raises ValueError."""
+        with pytest.raises(ValueError, match="columns"):
+            FixedWidthWriter(fw_records, tmp_path / "out.txt")
 
 
 class TestJSONWriter:
