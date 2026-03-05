@@ -1195,14 +1195,24 @@ class Table:
         return self._exec_sql(sql, params, operation, raise_error)
 
     def force_positional(self):
+        """ If cursor paramstyle is named style, switch to the corresponding positional style then rebuild all SQL. """
         if self._paramstyle in ParamStyle.positional_styles():
             return
-        if self._paramstyle == 'named':
-            self._paramstyle = 'numeric'
-        elif self._paramstyle == 'pyformat':
-            self._paramstyle = 'format'
+        self._paramstyle = ParamStyle.get_positional_style(self._paramstyle)
         # rebuild SQL and parameter maps
         self._reset()
+
+    def db_expr_cols(self) -> list:
+        """
+        Return list of all columns that use database expressions.
+        Having db_expr on columns will make the table incompatible with some features such as all BulkSurge operations
+        and DataSurge operations in pass_through mode.
+        """
+        expr_cols = []
+        for col, info in self.columns.items():
+            if info.get('db_expr', None) is not None:
+                expr_cols.append(col)
+        return expr_cols
 
     def __repr__(self) -> str:
         return f"Table('{self.name}', {len(self.columns)} columns, {self.paramstyle})"

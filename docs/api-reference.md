@@ -246,11 +246,8 @@ DataSurge(table, batch_size=None, use_transaction=False)
 
 **`merge(records)`** → int
 - Bulk merge (upsert) records
-- Uses native MERGE or temp table strategy
+- Uses native UPSERT or MERGE with temp table
 - Returns: number of errors
-
-**`upsert(records)`** → int
-- Alias for merge()
 
 **`load(records)`** → int
 - Generic load method (same as insert)
