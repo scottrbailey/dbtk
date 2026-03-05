@@ -79,6 +79,22 @@ class TestSetFields:
         assert A._line_len == 5
         assert B._line_len == 10
 
+    def test_width_kwarg_computes_end_pos(self):
+        col = FixedColumn('amount', 5, width=10)
+        assert col.end_pos == 14
+        assert col.width == 10
+
+    def test_width_kwarg_equivalent_to_end_pos(self):
+        by_end = FixedColumn('amount', 5, 14)
+        by_width = FixedColumn('amount', 5, width=10)
+        assert by_width.start_pos == by_end.start_pos
+        assert by_width.end_pos == by_end.end_pos
+        assert by_width.width == by_end.width
+
+    def test_width_and_end_pos_both_raises(self):
+        with pytest.raises(ValueError):
+            FixedColumn('amount', 5, 14, width=10)
+
 
 # ---------------------------------------------------------------------------
 # to_line — basic formatting
