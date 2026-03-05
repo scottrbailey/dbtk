@@ -55,9 +55,12 @@ writers.to_csv(cursor, 'output.csv')  # Cursor consumed once, no list in memory
 
 ## Writing in Batches
 
-The `to_*` helper functions are single-shot: they create a writer, write all data, then close and discard the writer. For incremental writes — pagination, chunked ETL, or appending from multiple sources — you need to instantiate a `BatchWriter` subclass directly and call `write_batch()` in a loop.
+The `to_*` helper functions are single-shot: they create a writer, write all data, then close and discard the writer. 
+For incremental writes — pagination, chunked ETL, or appending from multiple sources — you need to instantiate a `BatchWriter` 
+subclass directly and call `write_batch()` in a loop. Calling a `to_*` function multiple times with the same file will overwrite
+the previous file. The exception is `to_excel` which will overwrite a worksheet if it already exists but not the entire workbook.
 
-Supported batch writers: `CSVWriter`, `NDJSONWriter`, `ExcelWriter`, `XMLStreamer`.
+Supported batch writers: `CSVWriter`, `NDJSONWriter`, `ExcelWriter`, `LinkedExcelWriter`, `XMLStreamer`.
 
 ```python
 from dbtk.writers import CSVWriter
@@ -71,15 +74,16 @@ with CSVWriter(file='large_export.csv') as writer:
 The first `write_batch()` call writes the header row; subsequent calls append data rows without repeating it.
 
 **Why not just use `to_csv()` for this?**
-`to_csv(cursor, 'output.csv')` works fine for a single cursor — it streams row-by-row internally. But if your data comes from multiple queries, multiple pages, or multiple cursors, `write_batch()` is the only way to funnel them all into one file:
+`to_csv(cursor, 'output.csv')` works fine for a single cursor — it streams row-by-row internally. But if your data comes 
+from multiple queries, or multiple cursors, or you need to write large datasets to multiple targest, `write_batch()` is the way to go.
 
 ```python
-from dbtk.writers import CSVWriter
+from dbtk.writers import ExcelWriter
 
-with CSVWriter(file='combined.csv') as writer:
+with ExcelWriter(file='combined.xlsx') as writer:
     for region in ['north', 'south', 'east', 'west']:
         cursor.execute("SELECT * FROM sales WHERE region = :r", {'r': region})
-        writer.write_batch(cursor.fetchall())
+        writer.write_batch(cursor, sheet_name=region)
 ```
 
 ## Quick Preview to Stdout
@@ -114,12 +118,12 @@ This is memory-efficient for large datasets where `to_xml()` would consume too m
 
 **XMLStreamer vs to_xml():**
 
-| Feature | XMLStreamer | to_xml() |
-|---------|-------------|----------|
-| Memory usage | Constant (streaming) | O(n) — loads all in memory |
-| Best for | Millions of records | < 100K records |
-| Control | Fine-grained batching | Single operation |
-| Speed | Slower (incremental writes) | Faster (bulk write) |
+| Feature      | XMLStreamer                 | to_xml()                   |
+|--------------|-----------------------------|----------------------------|
+| Memory usage | Constant (streaming)        | O(n) — loads all in memory |
+| Best for     | Millions of records         | < 100K records             |
+| Control      | Fine-grained batching       | Single operation           |
+| Speed        | Slower (incremental writes) | Faster (bulk write)        |
 
 **When to use XMLStreamer:**
 - Exporting > 100K records to XML
@@ -149,31 +153,33 @@ with ExcelWriter(file='monthly_report.xlsx') as wb:
     wb.write_batch(summary, sheet_name='Summary')
 # Workbook saved and closed automatically
 ```
-
-**Why not call `to_excel()` multiple times?** Each `to_excel()` call opens a fresh workbook and overwrites the file — only the last call survives. `ExcelWriter` keeps one workbook open for the duration of the `with` block.
+If you are writing to different worksheets, you can call `to_excel` on the same file multiple times.
+`ExcelWriter.write_batch` will overwrite an existing sheet (with same name) the first time writing to that sheet name, 
+but will append data on subsequent writes to that sheet_name.
 
 ## Hyperlinked Reports with LinkedExcelWriter
 
 `LinkedExcelWriter` extends `ExcelWriter` with internal and external hyperlinks. It is for creating navigable reports — not simply for writing multiple sheets (use plain `ExcelWriter` for that).
 
 The workflow: define `LinkSource` objects describing linkable entities, register them with the writer, write the source sheets first, then write detail sheets specifying which columns should become hyperlinks.
+Links can be either internal (to sheet, row and column where record was written on `source_sheet`) or external (https: mailto:)
 
 ```python
 from dbtk.writers import LinkedExcelWriter, LinkSource
 
 # Define the linkable entity
 customer_link = LinkSource(
-    name="customer",
-    source_sheet="Customers",   # Sheet that will be written first
+    name="customer",            # link_source_name 
+    source_sheet="Customers",   # Sheet where internal links will point to. Sheet must be written before internal link used
     key_column="customer_id",   # Column that uniquely identifies each row
-    url_template="https://crm.company.com/customers/{customer_id}",
-    text_template="{company_name} ({customer_id})"
+    url_template="https://crm.company.com/customers/{customer_id}", # external link
+    text_template="{company_name} ({customer_id})" # Link text 
 )
 
 with LinkedExcelWriter(file='sales_report.xlsx') as writer:
     writer.register_link_source(customer_link)
 
-    # Write source sheet first — rows are cached as they're written
+    # Write source sheet first — location and link_text are cached as they're written
     writer.write_batch(customers_data, sheet_name='Customers')
 
     # Write detail sheet — 'customer' column becomes a hyperlink
@@ -186,13 +192,13 @@ with LinkedExcelWriter(file='sales_report.xlsx') as writer:
 
 **Link types:**
 
-| Suffix | Result |
-|--------|--------|
-| `"customer"` | External URL (from `url_template`), or internal if no URL |
-| `"customer:internal"` | Always links to the row in the source sheet |
-| `"customer:external"` | Always links to the external URL |
+| Suffix                | Result                                                    |
+|-----------------------|-----------------------------------------------------------|
+| `"customer"`          | External URL (from `url_template`), or internal if no URL |
+| `"customer:internal"` | Always links to the row in the source sheet               |
+| `"customer:external"` | Always links to the external URL                          |
 
-**External-only links** (`external_only=True`) generate URLs directly from the current row without caching, so they can be reused across multiple sheets:
+**External-only links** (`external_only=True`) generate URLs directly from the current row without caching row location for internal links.
 
 ```python
 imdb_link = LinkSource(
@@ -214,12 +220,12 @@ with LinkedExcelWriter(file='movies.xlsx') as writer:
 
 For large datasets, here's when to use each writer:
 
-| Records | CSV | Excel | JSON | XML | XMLStreamer |
-|---------|-----|-------|------|-----|-------------|
-| < 10K | ✅ Fast | ✅ Fast | ✅ Fast | ✅ Fast | ❌ Overkill |
-| 10K – 100K | ✅ Fast | ✅ OK | ✅ OK | ⚠️ Slow | ⚠️ Better |
-| 100K – 1M | ✅ Fast | ⚠️ Slow | ⚠️ Slow | ❌ Memory | ✅ Use this |
-| > 1M | ✅ Fast | ❌ Very slow | ❌ Memory | ❌ Memory | ✅ Use this |
+| Records    | CSV    | Excel         | JSON     | NDJSON    | XML      | XMLStreamer |
+|------------|--------|---------------|----------|-----------|----------|-------------|
+| < 10K      | ✅ Fast | ✅ Fast        | ✅ Fast   | ✅ Fast    | ✅ Fast   | ❌ Overkill  |
+| 10K – 100K | ✅ Fast | ✅ OK          | ✅ OK     | ✅ OK      | ⚠️ Slow  | ⚠️ Better   |
+| 100K – 1M  | ✅ Fast | ⚠️ Slow       | ⚠️ Slow  | ✅ OK      | ❌ Memory | ✅ Use this  |
+| > 1M       | ✅ Fast | ❌ Not Allowed | ❌ Memory | ✅ OK      | ❌ Memory | ✅ Use this  |
 
 **Recommendations:**
 - **CSV**: Best for all sizes, especially large datasets
