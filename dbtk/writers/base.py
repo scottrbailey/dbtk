@@ -204,7 +204,7 @@ class BaseWriter(ABC):
 
     @property
     def row_count(self) -> int:
-        """Number of rows written so far."""
+        """Number of rows written (updated during write operation)"""
         return self._row_num
 
     def write(self) -> int:

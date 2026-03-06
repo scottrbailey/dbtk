@@ -251,7 +251,7 @@ for record in reader:
     genre_name = genre_collector(record['genre_code'])  # Returns enriched name
 ```
 
-For detailed `TableLookup` documentation including caching strategies and string shorthand syntax, see [Table Lookups and Validation](table.md#database-lookups-and-validation).
+For detailed `TableLookup` documentation including caching strategies and string shorthand syntax, see [Table Lookups and Validation](07-table.md#database-lookups-and-validation).
 
 **Filtering with `in` operator:**
 

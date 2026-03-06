@@ -216,7 +216,7 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 claim.to_line(truncate_overflow=True)
 ```
 
-See [Record Objects — FixedWidthRecord](record.md#fixedwidthrecord) for full details.
+See [Record Objects — FixedWidthRecord](04-record.md#fixedwidthrecord) for full details.
 
 ### EDI / Multi-Record-Type Fixed-Width Files
 

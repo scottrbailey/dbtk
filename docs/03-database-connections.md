@@ -145,7 +145,7 @@ user = cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
 ```
 
 Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`.
-See [Configuration](configuration.md#database-connections) for detailed connection configuration documentation.
+See [Configuration](02-configuration.md#database-connections) for detailed connection configuration documentation.
 
 ```yaml
 connections:
