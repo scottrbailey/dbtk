@@ -75,7 +75,7 @@ The first `write_batch()` call writes the header row; subsequent calls append da
 
 **Why not just use `to_csv()` for this?**
 `to_csv(cursor, 'output.csv')` works fine for a single cursor — it streams row-by-row internally. But if your data comes 
-from multiple queries, or multiple cursors, or you need to write large datasets to multiple targest, `write_batch()` is the way to go.
+from multiple queries, or multiple cursors, or you need to write large datasets to multiple targets, `write_batch()` is the way to go.
 
 ```python
 from dbtk.writers import ExcelWriter
@@ -159,10 +159,18 @@ but will append data on subsequent writes to that sheet_name.
 
 ## Hyperlinked Reports with LinkedExcelWriter
 
-`LinkedExcelWriter` extends `ExcelWriter` with internal and external hyperlinks. It is for creating navigable reports — not simply for writing multiple sheets (use plain `ExcelWriter` for that).
+`LinkedExcelWriter` extends `ExcelWriter` with internal and external hyperlinks. It is for creating navigable reports.
 
-The workflow: define `LinkSource` objects describing linkable entities, register them with the writer, write the source sheets first, then write detail sheets specifying which columns should become hyperlinks.
-Links can be either internal (to sheet, row and column where record was written on `source_sheet`) or external (https: mailto:)
+The workflow: define one or more `LinkSource` objects describing linkable entities, register them with the writer, write 
+the source sheets first, then write detail sheets specifying which columns should become hyperlinks.
+Links can be either internal (to sheet, row and column where record was written on `source_sheet`) or external (https:// or mailto:)
+
+Because the link text is constructed and cached on the source sheet (master), the queries for subsequent sheets (detail)
+often only need to return the key which can simplify queries. See linked_spreadsheet.py in the examples directory.
+Rows in the Cast and Crew tabs contain internal links for up to four movies and displays title and release year for each. 
+When the Movies tab (source sheet) was written, text_template ('{primary_title} ({start_year})}') was formatted and cached.
+The queries for the Cast and Crew simply return the keys (tconst) instead of needing complex subqueries to look them up.
+
 
 ```python
 from dbtk.writers import LinkedExcelWriter, LinkSource
@@ -186,7 +194,7 @@ with LinkedExcelWriter(file='sales_report.xlsx') as writer:
     writer.write_batch(
         orders_data,
         sheet_name='Orders',
-        links={'customer': 'customer'}   # column_name: link_source_name
+        links={'customer': 'customer:external'}   # column_name: link_source_name
     )
 ```
 
