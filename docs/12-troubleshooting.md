@@ -619,7 +619,7 @@ If you're still stuck:
    - [Database Connections](03-database-connections.md)
    - [ETL: Table & Transforms](07-table.md)
    - [ETL: DataSurge & BulkSurge](08-datasurge.md)
-   - [API Reference](11-api-reference.md)
+   - [API Reference](api.rst)
 
 4. **Report issues:**
    - GitHub Issues: https://github.com/yourusername/dbtk/issues

@@ -312,7 +312,7 @@ See [ETL: Tools & Logging](09-etl-tools.md) for details.
 
 ### Get Help
 - Check [Troubleshooting](12-troubleshooting.md) for common issues
-- Review [API Reference](11-api-reference.md) for all methods
+- Review [API Reference](api.rst) for all methods
 - See examples in the `/examples` folder
 - Report issues at [GitHub Issues](https://github.com/yourusername/dbtk/issues)
 
