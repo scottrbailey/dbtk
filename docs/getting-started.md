@@ -127,7 +127,8 @@ if dbtk.errors_logged():
 
 ### 1. Record Objects
 
-Every cursor and file reader returns **Record** objects - a hybrid data structure:
+Every cursor and file reader returns **Record** objects - that strike a balance between the memory efficiency and speed lists
+and the functionality of dicts.
 
 ```python
 for row in cursor:
@@ -142,12 +143,23 @@ See [Record Objects](record.md) for details.
 
 ### 2. Portable SQL
 
-Write SQL once with named parameters - works on any database:
+Write SQL once with named parameters - parameter style is mapped to your database
 
 ```python
-# Write SQL with :named or %(named)s parameters
-cursor.execute("SELECT * FROM users WHERE status = :status AND age > :age",
-               {'status': 'active', 'age': 18})
+# Write SQL with :named or %(pyformat)s parameters
+from dbtk.cursors import PreparedStatement
+
+# Create PreparedStatement from file
+statement = cursor.prepare_file('users.sql')
+statement.execute({'status': 'active', 'age': 18})
+
+# Create PreparedStatement from query
+sql = "SELECT * FROM users WHERE status = :status AND age > :age",
+statement = PreparedStatement(cursor, query=sql)
+statement.execute({'status': 'active', 'age': 18})
+
+# One time query from file
+cursor.execute_file('users.sql', {'status': 'active', 'age': 18})
 
 # DBTK converts to your database's native format automatically
 # Oracle: :status, :age
@@ -180,11 +192,11 @@ Process millions of records efficiently:
 ```python
 from dbtk.etl import DataSurge, BulkSurge
 
-# DataSurge: Fast batching with executemany (90-120K rec/s)
+# DataSurge: Fast batching with executemany 
 surge = DataSurge(table)
 surge.insert(records)     # Supports MERGE, UPDATE, DELETE too
 
-# BulkSurge: Maximum speed with native loading (200K+ rec/s)
+# BulkSurge: Maximum speed with native loading
 surge = BulkSurge(table)
 surge.load(records)       # Uses COPY/direct-path/bcp depending on database
 ```
@@ -235,22 +247,16 @@ See [Configuration & Security](configuration.md) for details.
 for record in reader:
     table.set_values(record)
     existing = table.fetch()  # Check if record exists
-
-    if existing:
-        table.execute('update')
-    else:
-        table.execute('insert')
+    operation = 'update' if existing else 'insert'
+    
+    if table.is_ready(operation):
+        err = table.execute(operation, raise_error=False)
+        if err:
+            logger.warning(f"{operation} failed: {table.last_error.message}")
+        elif operation == 'insert':
+            id = cursor.lastrowid
 ```
 
-### Error Handling
-
-```python
-for record in reader:
-    table.set_values(record)
-    if table.execute('insert', raise_error=False):
-        # On error, last_error contains details
-        print(f"Failed: {table.last_error.message}")
-```
 
 ### Filtering Records
 
@@ -267,6 +273,8 @@ with dbtk.readers.get_reader('data.csv') as reader:
 ```python
 from dbtk.etl import IdentityManager, EntityStatus
 
+stmt = cursor.prepare_file('identity_lookup.sql')
+
 # Map source IDs to target IDs with caching
 im = IdentityManager('source_id', 'target_id', resolver=stmt)
 
@@ -274,7 +282,12 @@ for record in reader:
     entity = im.resolve(record)  # Gets target_id, writes to record
     if entity['_status'] == EntityStatus.RESOLVED:
         table.set_values(record)
-        table.execute('insert')
+        if not table.is_ready('insert'):
+            missing = ', '.join(table.reqs_missing('insert'))
+            im.add_message(record.source_id, f"Skipped - missing values: {missing}")
+        err = table.execute('insert')
+        if err:
+            im.add_error(record.source_id, table.last_error)
 
 # Save state for next run
 im.save_state('state/entities.json')

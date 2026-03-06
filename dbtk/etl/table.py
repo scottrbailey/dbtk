@@ -59,7 +59,7 @@ class Table:
           context (CLI args, job IDs, etc.) that aren't available when columns are
           defined::
 
-              conf_vars = {}  # populated later after args are parsed
+              conf_vars = {}  # populated later after table is initialized
               columns = {
                   'user_id': {'default': lambda: conf_vars['user_id']},
               }

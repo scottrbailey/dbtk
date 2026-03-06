@@ -29,16 +29,42 @@ with dbtk.readers.get_reader('soldier_updates.csv') as reader:
 
 **DataSurge features:**
 - Automatic batching for optimal performance
-- Smart merge strategies (native MERGE vs temp table based on database capabilities)
+- Smart merge strategies (native MERGE/UPSERT vs temp table -> MERGE based on database capabilities)
 - Configurable error handling
 - Progress tracking and logging
 - Support for INSERT, UPDATE, DELETE, MERGE operations
 
 **Performance impact:** DataSurge can be 10-100x faster than row-by-row operations, depending on your database and network latency.
 
+### Pass Through Mode
+
+DataSurge and BulkSurge both support `pass_through` mode. Pass through mode uses the data directly from the reader or cursor. 
+- Fastest possible execution, in a running-with-scissors kind of way
+- Source data must exactly match column order and count
+- No transforms or parameter reordering will be done
+- No columns with `db_expr` are allowed
+- DataSurge only supports INSERT operations
+- Great for copying from database to database
+
+```python
+import dbtk
+
+source_cursor = dbtk.connect('prod_db')
+target_cursor = dbtk.connect('report_db')
+
+source_cursor.execute('SELECT * FROM fire_nation_soldiers')
+
+# Define table configuration
+recruit_table = dbtk.etl.Table('fire_nation_soldiers', columns_config, target_cursor)
+# create DataSurge in pass_through mode
+bulk_writer = dbtk.etl.DataSurge(recruit_table, pass_through=True)
+bulk_writer.insert(source_cursor)
+```
+
 ## BulkSurge
 
-BulkSurge provides maximum throughput by leveraging database-specific bulk loading mechanisms. It supports both **direct streaming** (zero temp files) and **external tool-based** loading depending on your database and requirements.
+BulkSurge provides maximum throughput by leveraging database-specific bulk loading mechanisms. It supports both 
+**direct streaming** (zero temp files) and **external tool-based** loading depending on your database and requirements.
 
 ### Supported Databases
 
@@ -184,44 +210,8 @@ surge.load(reader, method='external')  # Uses tempfile.gettempdir()
 
 ### Named Connections for External Tools
 
-External tools (bcp, sqlldr) require credentials, which are retrieved securely from your named connection:
-
-```yaml
-# dbtk.yml
-connections:
-  oracle_prod:
-    type: oracle
-    host: oracle-db.company.com
-    port: 1521
-    database: PRODDB
-    user: etl_user
-    encrypted_password: gAAAAABh...  # Encrypted with dbtk encrypt-config
-
-  mssql_prod:
-    type: sqlserver
-    host: sql-server.company.com
-    database: production
-    user: sa
-    encrypted_password: gAAAAABh...
-```
-
-**Why named connections?**
-- Credentials stored securely in config (encrypted)
-- External tools need username/password at runtime
-- Direct database connections don't expose credentials
-- BulkSurge retrieves them only when needed for external tools
-
-**Error if connection_name missing:**
-```python
-# This will fail for SQL Server (requires named connection)
-db = dbtk.sqlserver(host='server', user='sa', password='secret')  # Direct connection
-surge = BulkSurge(table)
-surge.load(reader)  # RuntimeError: BCP needs credentials. Please set up a named connection in the config file.
-
-# Solution: Use named connection
-db = dbtk.connect('mssql_prod')  # Named connection ✓
-surge.load(reader)  # Works!
-```
+External tools (bcp, sqlldr) require credentials. In order to get those credentials, the
+table's cursor object must be from a named connection (from dbtk.yml settings) instead of manually configured.
 
 ### Manual CSV Export
 
@@ -256,8 +246,6 @@ surge.dump(reader, '/staging/export.csv')
 #   sqlldr userid=USER/PASS@DB control=/staging/export_a1b2c3d4.ctl data=/staging/export.csv
 ```
 
-This saves time by eliminating manual control file creation and ensures the column mappings match your Table definition.
-
 ### BulkSurge vs DataSurge Comparison
 
 | Feature             | DataSurge            | BulkSurge                                      |
@@ -267,6 +255,7 @@ This saves time by eliminating manual control file creation and ensures the colu
 | **Temp files**      | Never                | Only for external tools                        |
 | **db_expr support** | Yes                  | No (raw data only)                             |
 | **MERGE/upsert**    | Yes                  | No (INSERT only)                               |
+| **pass_through**    | INSERT only          | If no `db_expr` columns                        |
 | **Databases**       | All (universal)      | PostgreSQL, Oracle, MySQL, SQL Server          |
 | **Setup**           | Works everywhere     | May require server config (MySQL local_infile) |
 | **Credentials**     | Uses connection      | External tools need named connection           |
@@ -281,7 +270,7 @@ This saves time by eliminating manual control file creation and ensures the colu
 - You have appropriate server permissions (MySQL local_infile, etc.)
 
 **Use DataSurge when:**
-- Need MERGE/upsert operations
+- Need UPDATE, MERGE/upsert operations
 - Using `db_expr` for database functions
 - Loading moderate datasets (< 5M records)
 - Want universal compatibility without configuration
