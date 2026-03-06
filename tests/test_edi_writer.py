@@ -7,7 +7,7 @@ from pathlib import Path
 from dbtk.utils import FixedColumn
 from dbtk.record import FixedWidthRecord
 from dbtk.readers.fixed_width import EDIReader
-from dbtk.readers.edi_formats import ACH_COLUMNS
+from dbtk.formats.edi import ACH_COLUMNS
 from dbtk.writers.fixed_width import EDIWriter, to_edi
 
 

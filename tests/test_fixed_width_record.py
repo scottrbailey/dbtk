@@ -1,11 +1,12 @@
 # tests/test_fixed_width_record.py
 """
-Tests for FixedWidthRecord.set_fields(), to_line(), and pprint().
+Tests for FixedWidthRecord.set_fields(), to_line(), pprint(), and visualize().
 
 Covers the splice-based to_line() implementation: positional placement,
 gap preservation, out-of-order column definitions, alignment/padding,
 overflow handling, and reader round-trip fidelity.
-Also covers the pprint() override and its add_comments parameter.
+Also covers the pprint() override and its add_comments parameter,
+and the visualize() diagnostic method.
 """
 
 import pytest
@@ -78,6 +79,22 @@ class TestSetFields:
         assert A._line_len == 5
         assert B._line_len == 10
 
+    def test_width_kwarg_computes_end_pos(self):
+        col = FixedColumn('amount', 5, width=10)
+        assert col.end_pos == 14
+        assert col.width == 10
+
+    def test_width_kwarg_equivalent_to_end_pos(self):
+        by_end = FixedColumn('amount', 5, 14)
+        by_width = FixedColumn('amount', 5, width=10)
+        assert by_width.start_pos == by_end.start_pos
+        assert by_width.end_pos == by_end.end_pos
+        assert by_width.width == by_end.width
+
+    def test_width_and_end_pos_both_raises(self):
+        with pytest.raises(ValueError):
+            FixedColumn('amount', 5, 14, width=10)
+
 
 # ---------------------------------------------------------------------------
 # to_line — basic formatting
@@ -104,7 +121,7 @@ class TestToLineBasic:
         assert len(r.to_line()) == 21
 
     def test_center_alignment(self):
-        cols = [FixedColumn('label', 1, 11, alignment='c')]
+        cols = [FixedColumn('label', 1, 11, align='c')]
         cls = make_class(cols)
         r = cls('hi')
         line = r.to_line()
@@ -132,9 +149,9 @@ class TestToLineBasic:
 
     def test_explicit_alignment_override(self):
         cols = [
-            FixedColumn('a', 1,  5, alignment='r'),
-            FixedColumn('b', 6,  10, alignment='c'),
-            FixedColumn('c', 11, 15, alignment='l'),
+            FixedColumn('a', 1,  5, align='r'),
+            FixedColumn('b', 6,  10, align='c'),
+            FixedColumn('c', 11, 15, align='l'),
         ]
         cls = make_class(cols)
         r = cls('X', 'X', 'X')
@@ -257,12 +274,12 @@ class TestToLineRoundTrip:
         # The monks fixture uses left-aligned, space-padded numerics, so we must
         # override the int/float defaults (right-aligned, zero-padded) to match.
         cols = [
-            FixedColumn('trainee_id',       1,   5, 'int',   alignment='left', pad_char=' '),
+            FixedColumn('trainee_id',       1,   5, 'int',   align='left', pad_char=' '),
             FixedColumn('monk_name',         6,  35, 'text'),
             FixedColumn('home_temple',      36,  65, 'text'),
-            FixedColumn('mastery_rank',     66,  70, 'int',   alignment='left', pad_char=' '),
+            FixedColumn('mastery_rank',     66,  70, 'int',   align='left', pad_char=' '),
             FixedColumn('bison_companion',  71,  82, 'text'),
-            FixedColumn('daily_meditation', 83,  90, 'float', alignment='left', pad_char=' '),
+            FixedColumn('daily_meditation', 83,  90, 'float', align='left', pad_char=' '),
             FixedColumn('birth_date',       91, 102, 'date'),
             FixedColumn('last_training',   103, 122, 'datetime'),
         ]
@@ -291,7 +308,7 @@ class TestACHPadding:
     """immediate_destination and immediate_origin must be space-padded, not zero-padded."""
 
     def _make_header_record(self, **overrides):
-        from dbtk.readers.edi_formats import ACH_COLUMNS
+        from dbtk.formats.edi import ACH_COLUMNS
         cls = make_class(ACH_COLUMNS['1'])
         values = {col.name: '' for col in ACH_COLUMNS['1']}
         values.update(overrides)
@@ -390,3 +407,58 @@ class TestPprint:
         # All ' : ' separators should be at the same position
         positions = [l.index(' : ') for l in lines]
         assert len(set(positions)) == 1
+
+
+class TestVisualize:
+    """Tests for FixedWidthRecord.visualize()."""
+
+    @pytest.fixture
+    def cls_3col(self):
+        """A simple 3-column, 12-char schema."""
+        cls = type('R', (FixedWidthRecord,), {})
+        cls.set_fields([
+            FixedColumn('code',   1,  2),
+            FixedColumn('amount', 3, 12, 'int', pad_char='0'),
+        ])
+        return cls
+
+    def test_returns_string(self, cls_3col):
+        out = cls_3col('AB', 42).visualize()
+        assert isinstance(out, str)
+
+    def test_four_lines(self, cls_3col):
+        lines = cls_3col('AB', 42).visualize().splitlines()
+        assert len(lines) == 4
+
+    def test_rulers_match_line_length(self, cls_3col):
+        lines = cls_3col('AB', 42).visualize().splitlines()
+        line_len = cls_3col._line_len   # 12
+        assert len(lines[0]) == line_len   # tens ruler
+        assert len(lines[1]) == line_len   # ones ruler
+
+    def test_boundary_markers_at_column_starts(self, cls_3col):
+        boundary = cls_3col('AB', 42).visualize().splitlines()[2]
+        for col in cls_3col._columns:
+            assert boundary[col.start_idx] == '├', (
+                f"Expected '├' at position {col.start_idx} for column '{col.name}'"
+            )
+
+    def test_boundary_length_matches_rulers(self, cls_3col):
+        lines = cls_3col('AB', 42).visualize().splitlines()
+        assert len(lines[2]) == len(lines[1])   # boundary == ones ruler length
+
+    def test_last_line_is_to_line(self, cls_3col):
+        r = cls_3col('AB', 42)
+        lines = r.visualize().splitlines()
+        assert lines[3] == r.to_line()
+
+    def test_ones_ruler_content(self, cls_3col):
+        ones = cls_3col('AB', 42).visualize().splitlines()[1]
+        # positions 1-9 → digits 1-9, position 10 → '0', 11 → '1', 12 → '2'
+        assert ones == '1234567890' + ''.join(str(i % 10) for i in range(11, cls_3col._line_len + 1))
+
+    def test_no_extra_trailing_chars(self, cls_3col):
+        """All four output lines must have exactly _line_len characters."""
+        line_len = cls_3col._line_len
+        for line in cls_3col('AB', 42).visualize().splitlines():
+            assert len(line) == line_len

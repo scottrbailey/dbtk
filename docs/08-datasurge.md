@@ -307,6 +307,11 @@ surge.load(reader, method='external')  # Uses SQL*Loader
 
 ## See Also
 
-- [ETL: Table & Transforms](table.md) - Table configuration, field mapping, transforms
-- [ETL: Tools & Logging](etl-tools.md) - IdentityManager, ValidationCollector, logging
-- [Database Connections](database-connections.md) - Connections, cursors, SQL file execution
+- [ETL: Table & Transforms](07-table.md) - Table configuration, field mapping, transforms
+- [ETL: Tools & Logging](09-etl-tools.md) - IdentityManager, ValidationCollector, logging
+- [Database Connections](03-database-connections.md) - Connections, cursors, SQL file execution
+
+> **Examples:**
+> - [`examples/data_load_imdb_subset.py`](../examples/data_load_imdb_subset.py) — `DataSurge` ETL pipeline loading a filtered IMDB subset with validation
+> - [`examples/bulk_load_imdb_subset_pg.py`](../examples/bulk_load_imdb_subset_pg.py) — `BulkSurge` high-throughput variant for PostgreSQL
+> - [`examples/bulk_load_titles.py`](../examples/bulk_load_titles.py) — `BulkSurge` loading 12M+ title records via Polars `DataFrameReader`

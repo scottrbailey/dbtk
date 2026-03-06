@@ -391,6 +391,6 @@ register_user_drivers({
 
 ## See Also
 
-- [Database Connections](database-connections.md) - Using the Database and Cursor classes
-- [ETL Framework](etl.md) - Building production ETL pipelines
-- [Advanced Features](advanced.md) - Custom drivers and performance tuning
+- [Database Connections](03-database-connections.md) - Using the Database and Cursor classes
+- [ETL Framework](09-etl-tools.md) - Building production ETL pipelines
+- [Advanced Features](10-advanced.md) - Custom drivers and performance tuning

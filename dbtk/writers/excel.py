@@ -21,6 +21,7 @@ try:
     HAS_OPENPYXL = True
 except ImportError:
     HAS_OPENPYXL = False
+    InvalidFileException = Exception  # fallback so except clause is valid
 
 logger = logging.getLogger(__name__)
 
@@ -39,30 +40,30 @@ class ExcelWriter(BatchWriter):
     2. Batch write (no data on init) + write_batch()
     3. Hybrid: data on init + write() + write_batch()
 
-    Usage examples:
+    Usage examples::
 
-    # Mode 1: Traditional single-shot write
-    ExcelWriter(cursor, 'report.xlsx').write()
+        # Mode 1: Traditional single-shot write
+        ExcelWriter(cursor, 'report.xlsx').write()
 
-    # Mode 2: Pure streaming with write_batch()
-    with ExcelWriter(file='report.xlsx') as writer:
-        writer.write_batch(cursor)  # goes to sheet 'Data'
+        # Mode 2: Pure streaming with write_batch()
+        with ExcelWriter(file='report.xlsx') as writer:
+            writer.write_batch(cursor)  # goes to sheet 'Data'
 
-    # Mode 3: Hybrid - initial data + streaming
-    with ExcelWriter(first_batch, 'report.xlsx') as writer:
-        writer.write()  # Write initial batch
-        writer.write_batch(second_batch)  # Stream additional batches
+        # Mode 3: Hybrid - initial data + streaming
+        with ExcelWriter(first_batch, 'report.xlsx') as writer:
+            writer.write()  # Write initial batch
+            writer.write_batch(second_batch)  # Stream additional batches
 
-    # Multi-sheet report
-    with ExcelWriter(file='report.xlsx', sheet_name='Summary') as writer:
-        writer.write_batch(summary_data, sheet_name='Summary')
-        writer.write_batch(users_data, sheet_name='Users')
-        writer.write_batch(orders_data, sheet_name='Orders')
+        # Multi-sheet report
+        with ExcelWriter(file='report.xlsx', sheet_name='Summary') as writer:
+            writer.write_batch(summary_data, sheet_name='Summary')
+            writer.write_batch(users_data, sheet_name='Users')
+            writer.write_batch(orders_data, sheet_name='Orders')
 
-    # Streaming / batch mode
-    with ExcelWriter(file='large.xlsx') as writer:
-        for batch in large_generator:
-            writer.write_batch(batch, sheet_name='Data')  # appends to 'Data'
+        # Streaming / batch mode
+        with ExcelWriter(file='large.xlsx') as writer:
+            for batch in large_generator:
+                writer.write_batch(batch, sheet_name='Data')  # appends to 'Data'
     """
 
     accepts_file_handle = False
@@ -94,6 +95,8 @@ class ExcelWriter(BatchWriter):
         write_headers : bool, default True
             Whether to write column headers (only when sheet is empty)
         """
+        if not HAS_OPENPYXL:
+            raise ImportError("ExcelWriter requires openpyxl: pip install openpyxl")
         if file is None:
             raise ValueError("ExcelWriter requires an output file path")
 
@@ -768,11 +771,6 @@ class LinkedExcelWriter(ExcelWriter):
     write_headers : bool, default True
         Whether to write column headers
 
-    Attributes
-    ----------
-    link_sources : Dict[str, LinkSource]
-        Registered LinkSource instances, keyed by name
-
     Examples
     --------
     **Basic internal linking between sheets**::
@@ -891,6 +889,7 @@ class LinkedExcelWriter(ExcelWriter):
         write_headers: bool = True,
     ):
         super().__init__(data=data, file=file, sheet_name=sheet_name, headers=headers, write_headers=write_headers)
+        #: Registered LinkSource instances, keyed by name.
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:

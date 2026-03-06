@@ -13,7 +13,7 @@ from dbtk.readers import (
     XMLReader, FixedReader, FixedColumn, Clean, get_reader
 )
 from dbtk.readers.fixed_width import EDIReader
-from dbtk.readers.edi_formats import ACH_COLUMNS, FORMATS
+from dbtk.formats.edi import ACH_COLUMNS, FORMATS
 from dbtk.record import Record
 
 

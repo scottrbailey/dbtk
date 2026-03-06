@@ -4,7 +4,7 @@
 
 **The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation. Use `:named` or `%(pyformat)s` SQL parameters throughout — DBTK converts them to whatever your database requires.
 
-For SQL file execution and `PreparedStatement`, see [Database Connections](database-connections.md).
+For SQL file execution and `PreparedStatement`, see [Database Connections](03-database-connections.md).
 
 ## Table Class for ETL
 
@@ -738,7 +738,7 @@ four_nations_census = dbtk.etl.Table('population_registry', {
 
 ## See Also
 
-- [Database Connections](database-connections.md) - SQL file execution and PreparedStatement
-- [ETL: DataSurge & BulkSurge](datasurge.md) - High-performance bulk loading
-- [ETL: Tools & Logging](etl-tools.md) - IdentityManager, ValidationCollector, logging
-- [Record Objects](record.md) - DBTK's universal data structure
+- [Database Connections](03-database-connections.md) - SQL file execution and PreparedStatement
+- [ETL: DataSurge & BulkSurge](08-datasurge.md) - High-performance bulk loading
+- [ETL: Tools & Logging](09-etl-tools.md) - IdentityManager, ValidationCollector, logging
+- [Record Objects](04-record.md) - DBTK's universal data structure

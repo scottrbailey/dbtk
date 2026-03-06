@@ -129,7 +129,7 @@ for user in cursor:
 
 Records also normalize column names for attribute access, so `row.employee_id` works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
 
-See [Record Objects](record.md) for full documentation on access patterns, normalization, mutation, and performance characteristics.
+See [Record Objects](04-record.md) for full documentation on access patterns, normalization, mutation, and performance characteristics.
 
 ### Cursor Configuration
 
@@ -145,7 +145,7 @@ user = cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
 ```
 
 Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`.
-See [Configuration](configuration.md#database-connections) for detailed connection configuration documentation.
+See [Configuration](02-configuration.md#database-connections) for detailed connection configuration documentation.
 
 ```yaml
 connections:
@@ -327,9 +327,9 @@ except db.driver.IntegrityError as e:
 
 ## See Also
 
-- [Record Objects](record.md) - Full documentation on DBTK's universal data structure
-- [Configuration & Security](configuration.md) - YAML config files and password encryption
-- [ETL: Table & Transforms](table.md) - Using cursors with Table and DataSurge
-- [ETL: Tools & Logging](etl-tools.md) - IdentityManager and ValidationCollector
-- [Readers](readers.md) - Reading data from files and databases
-- [Writers](writers.md) - Writing data to files and databases
+- [Record Objects](04-record.md) - Full documentation on DBTK's universal data structure
+- [Configuration & Security](02-configuration.md) - YAML config files and password encryption
+- [ETL: Table & Transforms](07-table.md) - Using cursors with Table and DataSurge
+- [ETL: Tools & Logging](09-etl-tools.md) - IdentityManager and ValidationCollector
+- [Readers](05-readers.md) - Reading data from files and databases
+- [Writers](06-writers.md) - Writing data to files and databases

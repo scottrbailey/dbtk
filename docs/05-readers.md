@@ -107,7 +107,6 @@ with readers.get_reader('names.zip', delimiter='\t') as reader:
 
 ## Performance Characteristics
 
-- **Large buffer (1MB default)** — Optimized for fast decompression of large files
 - **Progress tracking** — GZIP and ZIP files show accurate progress bars without decompressing entire file
 - **Memory efficient** — Streaming decompression, constant memory usage regardless of file size
 - **Real-world speed** — 500k+ records/sec reading compressed IMDB dataset (14.7M rows) with full transforms
@@ -124,16 +123,18 @@ Fixed-width files have no delimiters — every field occupies a specific charact
 
 ### Defining Columns
 
-`FixedColumn(name, start_pos, end_pos, column_type='text', alignment=None, pad_char=None, comment=None)`
+`FixedColumn(name, start_pos, end_pos, column_type='text', align=None, pad_char=None, comment=None)`
 
-Positions are **1-indexed** (the first character is position 1, not 0) and the end position is **inclusive**.
+Positions are **1-indexed** (the first character is position 1, not 0) and the end position is **inclusive**. While programmers 
+typically think in zero indexed arrays and strings, most interface file specifications use 1-indexed positions. 
+FixedColumn can also be initialized with start position and width as many specification are given in this format.
 
 ```python
 columns = [
     readers.FixedColumn('claim_id',    1,  12),           # text (default) — strips whitespace
     readers.FixedColumn('amount',     13,  22, 'float'),  # parsed to float; None if blank
     readers.FixedColumn('claim_date', 23,  32, 'date'),   # parsed to Python date object
-    readers.FixedColumn('status',     33,  34),           # 2-char status code, text
+    readers.FixedColumn('status',     33,  width=2),      # 2-char status code, text
 ]
 
 with readers.FixedReader(open('claims.txt'), columns) as reader:
@@ -143,23 +144,23 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 
 **Column types:**
 
-| Type | Behavior |
-|------|----------|
-| `text` (default) | Strips leading/trailing whitespace, returns string |
-| `int` | Converts to integer; returns `None` if field is blank |
-| `float` | Converts to float; returns `None` if field is blank |
-| `date` | Parses to `datetime.date` |
-| `datetime` | Parses to `datetime.datetime` |
-| `timestamp` | Parses to `datetime.datetime` (with timezone) |
+| Type             | Behavior                                              |
+|------------------|-------------------------------------------------------|
+| `text` (default) | Strips leading/trailing whitespace, returns string    |
+| `int`            | Converts to integer; returns `None` if field is blank |
+| `float`          | Converts to float; returns `None` if field is blank   |
+| `date`           | Parses to `datetime.date`                             |
+| `datetime`       | Parses to `datetime.datetime`                         |
+| `timestamp`      | Parses to `datetime.datetime` (with timezone)         |
 
-**`alignment` and `pad_char` — output formatting for `to_line()`**
+**`align` and `pad_char` — output formatting for `to_line()`**
 
 These parameters only affect how `FixedWidthRecord.to_line()` reconstructs a line; they are ignored during reading. When not set, defaults are inferred from `column_type`:
 
-| `column_type` | Default alignment | Default pad_char |
-|--------------|-------------------|-----------------|
-| `text`, `date`, `datetime` | left | `' '` (space) |
-| `int`, `float` | right | `'0'` (zero) |
+| `column_type`              | Default alignment  | Default pad_char |
+|----------------------------|--------------------|------------------|
+| `text`, `date`, `datetime` | left               | `' '` (space)    |
+| `int`, `float`             | right              | `'0'` (zero)     |
 
 Accepted alignment values: `'left'`/`'l'`/`'<'`, `'right'`/`'r'`/`'>'`, `'center'`/`'c'`.
 
@@ -169,22 +170,27 @@ readers.FixedColumn('amount', 1, 10, 'int')
 # value 42  →  '0000000042'
 
 # Override to space-padded right-aligned (common for routing numbers)
-readers.FixedColumn('routing_number', 1, 10, alignment='right', pad_char=' ')
+readers.FixedColumn('routing_number', 1, 10, align='right', pad_char=' ')
 # value '061000104'  →  ' 061000104'
 ```
 
-> **Note:** `alignment` and `pad_char` are independent. Explicitly setting `alignment='left'`
+> **Note:** `align` and `pad_char` are independent. Explicitly setting `align='left'`
 > on an `int` column does *not* automatically change the pad character — it will still default
-> to `'0'` and produce left-aligned zero-padded output (`'42        '` becomes `'4200000000'`).
+> to `'0'` and produce left-aligned zero-padded output (`'42        '` becomes `'4200000000'`)!
 > When overriding alignment on a numeric column, set `pad_char=' '` explicitly too.
 
 ### Verifying Column Layout
 
-When working from a file specification, use `visualize_columns()` to confirm your positions match the actual data:
+When working from a file specification, use `visualize()` to confirm your positions match the actual data:
 
 ```python
-with open('claims.txt') as fp:
-    print(readers.FixedReader.visualize_columns(fp, columns))
+with readers.FixedReader(open('claims.txt'), columns) as reader:
+    print(reader.visualize())
+# Output:
+#          1         2         3         4         5         6         7         8         9
+# 1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234
+# ├├┤├────────┤├────────┤├────┤├──┤├├─┤├┤├├─────────────────────┤├─────────────────────┤├──────┤
+# 101 02100002101234567892603011200A094101TEST BANK              TEST COMPANY
 ```
 
 This prints a character ruler with column boundary markers (`|`) over several sample lines from the file, making it easy to spot off-by-one errors before processing millions of rows.
@@ -210,17 +216,17 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 claim.to_line(truncate_overflow=True)
 ```
 
-See [Record Objects — FixedWidthRecord](record.md#fixedwidthrecord) for full details.
+See [Record Objects — FixedWidthRecord](04-record.md#fixedwidthrecord) for full details.
 
 ### EDI / Multi-Record-Type Fixed-Width Files
 
-Some fixed-width formats interleave different record types in the same file — each line starts with a type code that determines its layout. Use `EDIReader` with a dict mapping type codes to column lists.
+EDI (Electronic Data Interchange) formats interleave different record types in the same file — each line starts with a type code that determines its layout. Use `EDIReader` with a dict mapping type codes to column lists.
 
 DBTK ships with pre-defined layouts for NACHA ACH files:
 
 ```python
 from dbtk.readers.fixed_width import EDIReader
-from dbtk.readers.edi_formats import ACH_COLUMNS
+from dbtk.formats.edi import ACH_COLUMNS
 
 with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
     for record in reader:
@@ -230,14 +236,14 @@ with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
 
 `ACH_COLUMNS` covers all standard NACHA record types:
 
-| Key | Record type |
-|-----|-------------|
-| `'1'` | File Header |
-| `'5'` | Batch Header |
-| `'6'` | Entry Detail |
-| `'7'` | Addenda |
+| Key   | Record type   |
+|-------|---------------|
+| `'1'` | File Header   |
+| `'5'` | Batch Header  |
+| `'6'` | Entry Detail  |
+| `'7'` | Addenda       |
 | `'8'` | Batch Control |
-| `'9'` | File Control |
+| `'9'` | File Control  |
 
 For custom multi-record formats, supply your own dict:
 
@@ -257,7 +263,8 @@ The type-code key can be any length — `EDIReader` slices the beginning of each
 
 ## XML Files
 
-`XMLReader` needs a `record_xpath` to locate the repeating record elements. Everything else is optional.
+`XMLReader` needs a `record_xpath` to locate the repeating record elements.
+
 
 ### Auto-Discovered Columns
 
@@ -306,12 +313,12 @@ with readers.XMLReader(open('avatar_chronicles.xml'),
 
 **When you need XMLColumn:**
 
-| Situation | XPath pattern |
-|-----------|--------------|
-| Attribute on the record element | `@attr_name` |
-| Attribute on a child element | `./child/@attr_name` |
-| Nested sub-element text | `.//parent/child/text()` |
-| Element in a specific namespace | `./ns:child/text()` |
+| Situation                       | XPath pattern            |
+|---------------------------------|--------------------------|
+| Attribute on the record element | `@attr_name`             |
+| Attribute on a child element    | `./child/@attr_name`     |
+| Nested sub-element text         | `.//parent/child/text()` |
+| Element in a specific namespace | `./ns:child/text()`      |
 
 **When you don't need XMLColumn:** any element whose text content is a direct child of the record node is auto-discovered. You only need to add explicit definitions for the fields listed above.
 

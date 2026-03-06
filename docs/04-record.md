@@ -226,6 +226,17 @@ row.pprint(normalized=True)
 # status      : active
 ```
 
+`FixedWidthRecord.pprint()` accepts an additional `add_comments=True` option that appends each column's comment (from the `FixedColumn` definition) inline:
+
+```python
+row.pprint(add_comments=True)
+# record_type_code : 6          # Entry Detail
+# routing_number   : 021000021  # 9-digit ABA
+# amount           : 0000015000 # Cents, no decimal
+```
+
+Columns without a comment are left blank in that position.
+
 ### String Representation
 
 ```python
@@ -279,14 +290,14 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 | `text`, `date`, `datetime` | left | space |
 | `int`, `float` | right | `'0'` |
 
-Override with explicit `alignment=` and `pad_char=` on `FixedColumn`. Both must be set together when overriding numeric columns — setting `alignment` alone does not change the pad character:
+Override with explicit `align=` and `pad_char=` on `FixedColumn`. Both must be set together when overriding numeric columns — setting `align` alone does not change the pad character:
 
 ```python
 # Wrong: left-aligned but still zero-padded → '4200000000'
-FixedColumn('amount', 1, 10, 'int', alignment='left')
+FixedColumn('amount', 1, 10, 'int', align='left')
 
 # Correct: left-aligned and space-padded → '42        '
-FixedColumn('amount', 1, 10, 'int', alignment='left', pad_char=' ')
+FixedColumn('amount', 1, 10, 'int', align='left', pad_char=' ')
 ```
 
 **Overflow handling:**
@@ -316,7 +327,7 @@ with readers.FixedReader(open('payments.txt'), columns) as reader:
 
 ```python
 from dbtk.readers.fixed_width import EDIReader
-from dbtk.readers.edi_formats import ACH_COLUMNS
+from dbtk.formats.edi import ACH_COLUMNS
 
 with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
     with open('payroll_modified.ach', 'w') as out:

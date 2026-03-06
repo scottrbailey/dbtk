@@ -105,32 +105,51 @@ class FixedReader(Reader):
         if self.fp and hasattr(self.fp, 'close'):
             self.fp.close()
 
-    @classmethod
-    def visualize_columns(cls,
-                          fp: TextIO,
-                          columns: List[FixedColumn] = None,
-                          sample_lines: int = 4) -> str:
+    def visualize(self, sample_lines: int = 2) -> str:
         """
-        Visualizes column boundaries and sample data from a fixed-width file.
+        Visualize column boundaries over sample data from the file.
+
+        Seeks to the beginning of the file, reads up to ``sample_lines`` records,
+        then restores the file pointer. Output shows the rulers and column boundary
+        markers once, then for each record both the raw source line and the
+        interpreted line reconstructed via ``record.to_line()``.
 
         Args:
-            fp: file pointer or file-like object in text mode
-            columns: list of columns
-            sample_lines: number of lines to show in preview
+            sample_lines: Number of records to include in the preview.
 
         Returns:
-            String representation of column layout
+            String representation of column layout with sample data.
         """
-        fp.seek(0)
-        lines = [next(fp).rstrip('\n') for _ in range(sample_lines)]
-        max_len = max([len(line) for line in lines])
-        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(1, max_len))
-        ruler_1s = ''.join(str(i % 10) for i in range(1, max_len))
-        boundary_line = [' '] * max_len
-        for col in columns:
-            if col.start_pos <= max_len:
-                boundary_line[col.start_pos - 1] = '|'
-        return f'{ruler_10s}\n{ruler_1s}\n{"".join(boundary_line)}\n' + '\n'.join(lines)
+        temp_cls = type('_VizRecord', (FixedWidthRecord,), {})
+        temp_cls.set_fields(self.columns)
+
+        pos = self.fp.tell()
+        self.fp.seek(0)
+        pairs = []  # list of (raw_line, record)
+        try:
+            for line in self.fp:
+                raw = line.rstrip('\n')
+                if not raw:
+                    continue
+                row_values = [raw[col.start_idx:col.end_pos] for col in self.columns]
+                pairs.append((raw, temp_cls(*row_values)))
+                if len(pairs) >= sample_lines:
+                    break
+        finally:
+            self.fp.seek(pos)
+
+        if not pairs:
+            return ''
+
+        # Rulers + boundary from the first record (same for all rows of this type)
+        header = '\n'.join(pairs[0][1].visualize().split('\n')[:3])
+        parts = [header]
+        for i, (raw, record) in enumerate(pairs):
+            if i > 0:
+                parts.append('')
+            parts.append(f'{raw}  ← source')
+            parts.append(f'{record.to_line()}  ← interpreted')
+        return '\n'.join(parts)
 
     def _setup_record_class(self):
         """Initialize headers and create Record subclass with original field names."""
@@ -173,7 +192,7 @@ class EDIReader(FixedReader):
 
         Supports common legacy formats such as NACHA ACH, COBOL copybooks, and other
         multi-layout fixed-width EDI-style files. The column specifications for several
-        common EDI-like files, including ACH, are defined in `dbtk.readers.edi_formats.py`
+        common EDI-like files, including ACH, are defined in `dbtk.formats.edi`
 
         Parameters
         ----------
@@ -262,6 +281,56 @@ class EDIReader(FixedReader):
             RecordClass.set_fields(cols)
             self._type_factories[type_code] = RecordClass
         return self._type_factories[type_code]
+
+    def visualize(self) -> str:
+        """
+        Visualize column boundaries for each record type found in the file.
+
+        Scans the entire file, emitting one block per record type the first time
+        that type is encountered. Each block shows the rulers, column boundary
+        markers, the raw source line, and the interpreted line. Blocks are
+        separated by blank lines. The file pointer is saved and restored.
+
+        Returns:
+            String with one visualization block per record type.
+        """
+        pos = self.fp.tell()
+        self.fp.seek(0)
+        seen = {}  # type_code -> (raw_line, record, cols)
+        try:
+            for line in self.fp:
+                raw = line.rstrip('\n')
+                if len(raw) < self._record_type_len:
+                    continue
+                type_code = raw[:self._record_type_len]
+                if type_code in seen:
+                    continue
+                cols = self._get_columns(type_code)
+                if cols is None:
+                    continue
+                factory = self._get_factory(type_code)
+                row_values = [raw[col.start_idx:col.end_pos] for col in cols]
+                seen[type_code] = (raw, factory(*row_values), cols)
+        finally:
+            self.fp.seek(pos)
+
+        if not seen:
+            return ''
+
+        blocks = []
+        for type_code, (raw, record, cols) in seen.items():
+            label = self.type_name_map.get(type_code, f"type '{type_code}'")
+            type_comment = cols[0].comment
+            heading = f"Record {label}" + (f"  # {type_comment}" if type_comment else '') + ':'
+            rulers_boundary = '\n'.join(record.visualize().split('\n')[:3])
+            block = (
+                f"{heading}\n"
+                f"{rulers_boundary}\n"
+                f"{raw}  ← source\n"
+                f"{record.to_line()}  ← interpreted"
+            )
+            blocks.append(block)
+        return '\n\n'.join(blocks)
 
     def _generate_rows(self) -> Iterator[Record]:
         for line in self.fp:

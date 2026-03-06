@@ -1,16 +1,15 @@
-# dbtk/readers/edi_formats.py
+# dbtk/formats/edi.py
 """
 Pre-defined column layouts for common multi-record fixed-width EDI-like formats.
 
-Use with EDIReader:
+Use with EDIReader or EDIWriter:
 
-    from dbtk.readers.fixed_width import EDIReader, FixedColumn
-    from dbtk.readers.edi_formats import ACH_COLUMNS
+    from dbtk.formats.edi import ACH_COLUMNS
+    from dbtk.readers.fixed_width import EDIReader
+    from dbtk.writers.fixed_width import EDIWriter
 
-    reader = EDIReader(
-        fp=open('ach_file.ach'),
-        columns=ACH_COLUMNS,
-    )
+    with open('in.ach') as fp, EDIWriter('out.ach', ACH_COLUMNS) as w:
+        w.write_batch(EDIReader(fp, ACH_COLUMNS))
 """
 
 from ..utils import FixedColumn
@@ -23,8 +22,8 @@ ACH_COLUMNS = {
     '1': [  # File Header Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "1" (File Header)'),
         FixedColumn('priority_code',             2,   3,   comment='Usually "01" (high priority)'),
-        FixedColumn('immediate_destination',     4,  13,   alignment='right', comment='Routing number of destination bank (right-justified, leading space)'),
-        FixedColumn('immediate_origin',         14,  23,   alignment='right', comment='Originator ID (right-justified, leading space)'),
+        FixedColumn('immediate_destination',     4,  13,   align='right', comment='Routing number of destination bank (right-justified, leading space)'),
+        FixedColumn('immediate_origin',         14,  23,   align='right', comment='Originator ID (right-justified, leading space)'),
         FixedColumn('file_creation_date',       24,  29,   comment='YYMMDD format (date file was created)'),
         FixedColumn('file_creation_time',       30,  33,   comment='HHMM 24-hour format (time file was created)'),
         FixedColumn('file_id_modifier',         34,  34,   comment='A-Z or 0-9 to make file unique on same day'),
@@ -40,57 +39,57 @@ ACH_COLUMNS = {
         FixedColumn('service_class_code',        2,   4,   comment='200=credits only, 220=debits only, 225=mixed credits/debits'),
         FixedColumn('company_name',              5,  20,   comment='Company/originator name (left-justified, space-padded)'),
         FixedColumn('company_discretionary_data',21,  40,  comment='Optional company-defined data (left-justified)'),
-        FixedColumn('company_identification',   41,  50,   alignment='right', pad_char='0', comment='Company ID (usually "1" + 9-digit tax ID)'),
+        FixedColumn('company_identification',   41,  50,   align='right', pad_char='0', comment='Company ID (usually "1" + 9-digit tax ID)'),
         FixedColumn('standard_entry_class_code',51,  53,   comment='SEC code (e.g., PPD=direct deposit, CCD=corporate credit, WEB=internet-initiated)'),
         FixedColumn('company_entry_description',54,  63,   comment='Description of entry (e.g., "PAYROLL", "VENDOR PMT")'),
         FixedColumn('company_descriptive_date', 64,  69,   comment='Optional YYMMDD or descriptive text'),
         FixedColumn('effective_entry_date',     70,  75,   comment='Effective date of entries YYMMDD'),
         FixedColumn('settlement_date',          76,  78,   comment='Julian day of settlement (set by ACH operator)'),
         FixedColumn('originator_status_code',   79,  79,   comment='Always "1" (ACH operator)'),
-        FixedColumn('originating_dfi_id',       80,  87,   alignment='right', pad_char='0', comment='Originating bank routing number (8 digits)'),
-        FixedColumn('batch_number',             88,  94,   alignment='right', pad_char='0', comment='Batch number (sequential per file)'),
+        FixedColumn('originating_dfi_id',       80,  87,   align='right', pad_char='0', comment='Originating bank routing number (8 digits)'),
+        FixedColumn('batch_number',             88,  94,   align='right', pad_char='0', comment='Batch number (sequential per file)'),
     ],
     '6': [  # Entry Detail Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "6" (Entry Detail)'),
         FixedColumn('transaction_code',          2,   3,   comment='e.g., 22=checking credit, 27=checking debit, 32=savings credit, 37=savings debit'),
-        FixedColumn('receiving_dfi_id',          4,  11,   alignment='right', pad_char='0', comment='Receiving bank routing number (8 digits)'),
+        FixedColumn('receiving_dfi_id',          4,  11,   align='right', pad_char='0', comment='Receiving bank routing number (8 digits)'),
         FixedColumn('check_digit',              12,  12,   comment='Check digit for receiving DFI ID'),
         FixedColumn('dfi_account_number',       13,  29,   comment='Receiving account number (left-justified, space-padded)'),
-        FixedColumn('amount',                   30,  39,   alignment='right', pad_char='0', column_type='int', comment='Amount in cents (right-justified, zero-padded, implied decimal)'),
+        FixedColumn('amount',                   30,  39,   align='right', pad_char='0', column_type='int', comment='Amount in cents (right-justified, zero-padded, implied decimal)'),
         FixedColumn('individual_id_number',     40,  54,   comment='Individual identification number'),
         FixedColumn('individual_name',          55,  76,   comment='Receiving individual/company name (left-justified)'),
         FixedColumn('discretionary_data',       77,  78,   comment='Optional company use'),
         FixedColumn('addenda_indicator',        79,  79,   comment='"0"=no addenda, "1"=addenda follows'),
-        FixedColumn('trace_number',             80,  94,   alignment='right', pad_char='0', comment='Trace number (originating DFI + batch + entry seq)'),
+        FixedColumn('trace_number',             80,  94,   align='right', pad_char='0', comment='Trace number (originating DFI + batch + entry seq)'),
     ],
     '7': [  # Addenda Record (same layout for all addenda types)
         FixedColumn('record_type_code',          1,   1,   comment='Always "7" (Addenda)'),
         FixedColumn('addenda_type_code',         2,   3,   comment='Usually "05" for payment-related info'),
         FixedColumn('payment_related_info',      4,  83,   comment='Free-form payment-related information (left-justified)'),
-        FixedColumn('addenda_sequence_number',  84,  87,   alignment='right', pad_char='0', comment='Sequence number within entry'),
-        FixedColumn('entry_detail_sequence_number',88, 94,   alignment='right', pad_char='0', comment='Sequence number of related entry detail record'),
+        FixedColumn('addenda_sequence_number',  84,  87,   align='right', pad_char='0', comment='Sequence number within entry'),
+        FixedColumn('entry_detail_sequence_number',88, 94,   align='right', pad_char='0', comment='Sequence number of related entry detail record'),
     ],
     '8': [  # Batch Control Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "8" (Batch Control)'),
         FixedColumn('service_class_code',        2,   4,   comment='Same as batch header (200/220/225)'),
-        FixedColumn('entry_addenda_count',       5,  10,   alignment='right', pad_char='0', column_type='int', comment='Total entry and addenda records in batch'),
-        FixedColumn('entry_hash',               11,  20,   alignment='right', pad_char='0', column_type='int', comment='Sum of receiving DFI IDs (right 8 digits, modulo 10^10)'),
-        FixedColumn('total_debit',              21,  32,   alignment='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
-        FixedColumn('total_credit',             33,  44,   alignment='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
-        FixedColumn('company_identification',   45,  54,   alignment='right', pad_char='0', comment='Same as batch header company ID'),
+        FixedColumn('entry_addenda_count',       5,  10,   align='right', pad_char='0', column_type='int', comment='Total entry and addenda records in batch'),
+        FixedColumn('entry_hash',               11,  20,   align='right', pad_char='0', column_type='int', comment='Sum of receiving DFI IDs (right 8 digits, modulo 10^10)'),
+        FixedColumn('total_debit',              21,  32,   align='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
+        FixedColumn('total_credit',             33,  44,   align='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
+        FixedColumn('company_identification',   45,  54,   align='right', pad_char='0', comment='Same as batch header company ID'),
         FixedColumn('message_authentication_code',55, 73,  comment='MAC for authentication (spaces if unused)'),
         FixedColumn('reserved',                 74,  79,   comment='Reserved (spaces)'),
-        FixedColumn('originating_dfi_id',       80,  87,   alignment='right', pad_char='0', comment='Originating DFI routing number (8 digits)'),
-        FixedColumn('batch_number',             88,  94,   alignment='right', pad_char='0', comment='Same as batch header batch number'),
+        FixedColumn('originating_dfi_id',       80,  87,   align='right', pad_char='0', comment='Originating DFI routing number (8 digits)'),
+        FixedColumn('batch_number',             88,  94,   align='right', pad_char='0', comment='Same as batch header batch number'),
     ],
     '9': [  # File Control Record
         FixedColumn('record_type_code',          1,   1,   comment='Always "9" (File Control)'),
-        FixedColumn('batch_count',               2,   7,   alignment='right', pad_char='0', comment='Total number of batches in file'),
-        FixedColumn('block_count',               8,  13,   alignment='right', pad_char='0', comment='Total number of 10-record blocks (including padding)'),
-        FixedColumn('entry_addenda_count',      14,  21,   alignment='right', pad_char='0', comment='Total entry and addenda records in file'),
-        FixedColumn('entry_hash',               22,  31,   alignment='right', pad_char='0', comment='Sum of all receiving DFI IDs (right 10 digits, modulo 10^10)'),
-        FixedColumn('total_debit',              32,  43,   alignment='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
-        FixedColumn('total_credit',             44,  55,   alignment='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
+        FixedColumn('batch_count',               2,   7,   align='right', pad_char='0', comment='Total number of batches in file'),
+        FixedColumn('block_count',               8,  13,   align='right', pad_char='0', comment='Total number of 10-record blocks (including padding)'),
+        FixedColumn('entry_addenda_count',      14,  21,   align='right', pad_char='0', comment='Total entry and addenda records in file'),
+        FixedColumn('entry_hash',               22,  31,   align='right', pad_char='0', comment='Sum of all receiving DFI IDs (right 10 digits, modulo 10^10)'),
+        FixedColumn('total_debit',              32,  43,   align='right', pad_char='0', column_type='int', comment='Total debit amount in cents (implied decimal)'),
+        FixedColumn('total_credit',             44,  55,   align='right', pad_char='0', column_type='int', comment='Total credit amount in cents (implied decimal)'),
         FixedColumn('reserved',                 56,  94,   comment='Reserved (spaces)'),
     ],
 }
@@ -109,17 +108,17 @@ COBOL_BANK_EXTRACT_COLUMNS = {
     ],
     'DT': [  # Detail Record (account-level)
         FixedColumn('record_type',   1,   2, comment='Always "DT"'),
-        FixedColumn('account_number',3,  22, alignment='right', pad_char='0', comment='Account number (left-padded)'),
+        FixedColumn('account_number',3,  22, align='right', pad_char='0', comment='Account number (left-padded)'),
         FixedColumn('customer_name',23,  62, comment='Customer full name (left-justified)'),
-        FixedColumn('current_balance',63,  80, alignment='right', pad_char='0', comment='Current balance (implied decimal, e.g., 00000123456 = 123.456)'),
+        FixedColumn('current_balance',63,  80, align='right', pad_char='0', comment='Current balance (implied decimal, e.g., 00000123456 = 123.456)'),
         FixedColumn('last_activity_date',81,  88, comment='YYYYMMDD last activity'),
         FixedColumn('status_code',   89,  90, comment='Account status (e.g., "AC" active)'),
         FixedColumn('filler',        91, 200, comment='Reserved/spaces'),
     ],
     'TR': [  # Trailer Record
         FixedColumn('record_type',   1,   2, comment='Always "TR"'),
-        FixedColumn('record_count',  3,  12, alignment='right', pad_char='0', comment='Total detail records'),
-        FixedColumn('total_balance',13,  30, alignment='right', pad_char='0', comment='Sum of all balances (implied decimal)'),
+        FixedColumn('record_count',  3,  12, align='right', pad_char='0', comment='Total detail records'),
+        FixedColumn('total_balance',13,  30, align='right', pad_char='0', comment='Sum of all balances (implied decimal)'),
         FixedColumn('filler',        31, 200, comment='Reserved/spaces'),
     ],
 }

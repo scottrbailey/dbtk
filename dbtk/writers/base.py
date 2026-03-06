@@ -64,9 +64,6 @@ class BaseWriter(ABC):
         Column names detected from data or provided explicitly
     data_iterator : Iterator
         Iterator over data records
-    row_count : int
-        Number of rows written (updated during write operation)
-
     Examples
     --------
     Subclasses implement specific formats::
@@ -204,7 +201,7 @@ class BaseWriter(ABC):
 
     @property
     def row_count(self) -> int:
-        """Number of rows written so far."""
+        """Number of rows written (updated during write operation)"""
         return self._row_num
 
     def write(self) -> int:
@@ -634,8 +631,7 @@ class BatchWriter(BaseWriter):
         if isinstance(source, (list, tuple)) and source:
             first = source[0]
             if hasattr(first, 'keys'):
-                # Use keys(normalized=False) to get original field names
-                return list(first.keys(normalized=False))
+                return list(first.keys())
 
         # Fallback to detected column names
         return self.columns
