@@ -226,6 +226,17 @@ row.pprint(normalized=True)
 # status      : active
 ```
 
+`FixedWidthRecord.pprint()` accepts an additional `add_comments=True` option that appends each column's comment (from the `FixedColumn` definition) inline:
+
+```python
+row.pprint(add_comments=True)
+# record_type_code : 6          # Entry Detail
+# routing_number   : 021000021  # 9-digit ABA
+# amount           : 0000015000 # Cents, no decimal
+```
+
+Columns without a comment are left blank in that position.
+
 ### String Representation
 
 ```python

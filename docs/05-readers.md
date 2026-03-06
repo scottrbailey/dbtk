@@ -220,7 +220,7 @@ See [Record Objects — FixedWidthRecord](04-record.md#fixedwidthrecord) for ful
 
 ### EDI / Multi-Record-Type Fixed-Width Files
 
-Some fixed-width formats interleave different record types in the same file — each line starts with a type code that determines its layout. Use `EDIReader` with a dict mapping type codes to column lists.
+EDI (Electronic Data Interchange) formats interleave different record types in the same file — each line starts with a type code that determines its layout. Use `EDIReader` with a dict mapping type codes to column lists.
 
 DBTK ships with pre-defined layouts for NACHA ACH files:
 

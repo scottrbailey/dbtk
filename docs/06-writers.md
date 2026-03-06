@@ -252,7 +252,7 @@ Input records can be `FixedWidthRecord` instances (written directly via `to_line
 
 By default `truncate_overflow=True` silently truncates values that exceed their column width. Pass `truncate_overflow=False` to raise `ValueError` instead.
 
-## EDI / Multi-Record Fixed-Width with EDIWriter
+## EDI (Electronic Data Interchange) Fixed-Width with EDIWriter
 
 `EDIWriter` is the write-side counterpart to `EDIReader`. It handles Electronic Data Interchange files where different record types have different layouts — NACHA ACH, COBOL bank extracts, X12 835 remittances, and similar formats.
 
