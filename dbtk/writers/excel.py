@@ -21,6 +21,7 @@ try:
     HAS_OPENPYXL = True
 except ImportError:
     HAS_OPENPYXL = False
+    InvalidFileException = Exception  # fallback so except clause is valid
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,8 @@ class ExcelWriter(BatchWriter):
         write_headers : bool, default True
             Whether to write column headers (only when sheet is empty)
         """
+        if not HAS_OPENPYXL:
+            raise ImportError("ExcelWriter requires openpyxl: pip install openpyxl")
         if file is None:
             raise ValueError("ExcelWriter requires an output file path")
 

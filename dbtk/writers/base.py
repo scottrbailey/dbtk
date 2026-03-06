@@ -631,8 +631,9 @@ class BatchWriter(BaseWriter):
         if isinstance(source, (list, tuple)) and source:
             first = source[0]
             if hasattr(first, 'keys'):
-                # Use keys(normalized=False) to get original field names
-                return list(first.keys(normalized=False))
+                if hasattr(first, '_fields'):  # Record
+                    return list(first.keys(normalized=False))
+                return list(first.keys())
 
         # Fallback to detected column names
         return self.columns

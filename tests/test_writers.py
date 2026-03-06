@@ -339,6 +339,11 @@ class TestCSVWriter:
 class TestExcelWriter:
     """Tests specific to Excel writer."""
 
+    pytestmark = pytest.mark.skipif(
+        __import__("importlib").util.find_spec("openpyxl") is None,
+        reason="openpyxl not installed",
+    )
+
     def test_write_to_excel(self, tmp_path, sample_records):
         """Test basic Excel writing."""
         output_file = tmp_path / "output.xlsx"
