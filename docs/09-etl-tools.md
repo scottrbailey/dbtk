@@ -473,3 +473,7 @@ for your specific business logic, not for database operations, file reading, or 
 - [ETL: Table & Transforms](07-table.md) - Table configuration, transforms, TableLookup
 - [ETL: DataSurge & BulkSurge](08-datasurge.md) - High-performance bulk loading
 - [Database Connections](03-database-connections.md) - Connections, cursors, SQL file execution, PreparedStatement
+
+> **Examples:**
+> - [`examples/data_load_imdb_subset.py`](../examples/data_load_imdb_subset.py) — `ValidationCollector` and `IdentityManager` used together in a complete ETL pipeline
+> - [`examples/data_load_names.py`](../examples/data_load_names.py) — profession normalization with `TableLookup` and array column handling

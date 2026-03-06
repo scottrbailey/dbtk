@@ -193,6 +193,9 @@ with LinkedExcelWriter(file='movies.xlsx') as writer:
                        links={'primary_title': 'imdb'})
 ```
 
+> **Example:** [`examples/linked_spreadsheet.py`](../examples/linked_spreadsheet.py) builds a
+> full multi-sheet IMDB report with both internal and external hyperlinks.
+
 ## Streaming XML with XMLStreamer
 
 For large XML exports, `XMLStreamer` writes records incrementally without building the entire tree in memory:
