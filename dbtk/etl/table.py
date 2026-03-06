@@ -304,7 +304,7 @@ class Table:
         self.values: Dict[str, Any] = {}
         self._ops_ready: int = 0
 
-        self.generate_sql('insert')
+        self._generate_sql('insert')
 
         for col_name, col_def in self._columns.items():
             fn = col_def.get('fn')
@@ -765,7 +765,7 @@ class Table:
         else:
             return self._create_merge_statement()
 
-    def generate_sql(self, operation: str) -> None:
+    def _generate_sql(self, operation: str) -> None:
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'. Must be one of {self.OPERATIONS}")
 
@@ -786,11 +786,12 @@ class Table:
         self._finalize_sql(operation, sql)
 
     def get_sql(self, operation: str) -> str:
+        """Returns SQL for an operation. Automatically generates SQL if it hasn't been created yet (lazy)."""
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'. Must be one of {self.OPERATIONS}")
 
         if self._sql_statements[operation] is None:
-            self.generate_sql(operation)
+            self._generate_sql(operation)
         return self._sql_statements[operation]
 
     def get_bind_params(self, operation: str, mode: str = None) -> Union[dict, tuple]:
