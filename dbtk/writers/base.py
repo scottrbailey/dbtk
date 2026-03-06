@@ -64,9 +64,6 @@ class BaseWriter(ABC):
         Column names detected from data or provided explicitly
     data_iterator : Iterator
         Iterator over data records
-    row_count : int
-        Number of rows written (updated during write operation)
-
     Examples
     --------
     Subclasses implement specific formats::

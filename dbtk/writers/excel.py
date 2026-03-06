@@ -768,11 +768,6 @@ class LinkedExcelWriter(ExcelWriter):
     write_headers : bool, default True
         Whether to write column headers
 
-    Attributes
-    ----------
-    link_sources : Dict[str, LinkSource]
-        Registered LinkSource instances, keyed by name
-
     Examples
     --------
     **Basic internal linking between sheets**::
@@ -891,6 +886,7 @@ class LinkedExcelWriter(ExcelWriter):
         write_headers: bool = True,
     ):
         super().__init__(data=data, file=file, sheet_name=sheet_name, headers=headers, write_headers=write_headers)
+        #: Registered LinkSource instances, keyed by name.
         self.link_sources: Dict[str, LinkSource] = {}
 
     def register_link_source(self, source: LinkSource) -> None:

@@ -41,7 +41,7 @@ source_suffix = {
 }
 
 templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '11-api-reference.md']
 
 # Autodoc configuration
 autodoc_default_options = {
@@ -65,8 +65,6 @@ autodoc_typehints_description_target = "documented"
 
 # Simplify complex type annotations
 python_use_unqualified_type_names = True
-
-suppress_warnings = ['autodoc.duplicate']
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
