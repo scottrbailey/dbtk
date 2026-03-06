@@ -715,8 +715,8 @@ dbtk config-setup                    # Configuration wizard
 
 ## See Also
 
-- [Getting Started](getting-started.md) - Quick start guide
-- [Database Connections](database-connections.md) - Detailed connection guide
-- [ETL: Table & Transforms](table.md) - Column config and transforms
-- [ETL: DataSurge & BulkSurge](datasurge.md) - Bulk operations
-- [Troubleshooting](troubleshooting.md) - Common issues and solutions
+- [Getting Started](01-getting-started.md) - Quick start guide
+- [Database Connections](03-database-connections.md) - Detailed connection guide
+- [ETL: Table & Transforms](07-table.md) - Column config and transforms
+- [ETL: DataSurge & BulkSurge](08-datasurge.md) - Bulk operations
+- [Troubleshooting](12-troubleshooting.md) - Common issues and solutions

@@ -139,7 +139,7 @@ for row in cursor:
     id, name, email = row # Unpacking
 ```
 
-See [Record Objects](record.md) for details.
+See [Record Objects](04-record.md) for details.
 
 ### 2. Portable SQL
 
@@ -167,7 +167,7 @@ cursor.execute_file('users.sql', {'status': 'active', 'age': 18})
 # MySQL/SQLite: ?, ? (and reorders parameters)
 ```
 
-See [Database Connections](database-connections.md) for details.
+See [Database Connections](03-database-connections.md) for details.
 
 ### 3. Field Mapping and Transforms
 
@@ -183,7 +183,7 @@ table = dbtk.etl.Table('employees', {
 }, cursor=cursor)
 ```
 
-See [ETL: Table & Transforms](table.md) for details.
+See [ETL: Table & Transforms](07-table.md) for details.
 
 ### 4. Bulk Operations
 
@@ -201,7 +201,7 @@ surge = BulkSurge(table)
 surge.load(records)       # Uses COPY/direct-path/bcp depending on database
 ```
 
-See [ETL: DataSurge & BulkSurge](datasurge.md) for details.
+See [ETL: DataSurge & BulkSurge](08-datasurge.md) for details.
 
 ## Configuration
 
@@ -237,7 +237,7 @@ dbtk encrypt-password mypassword
 dbtk encrypt-config dbtk.yml
 ```
 
-See [Configuration & Security](configuration.md) for details.
+See [Configuration & Security](02-configuration.md) for details.
 
 ## Common Patterns
 
@@ -293,26 +293,26 @@ for record in reader:
 im.save_state('state/entities.json')
 ```
 
-See [ETL: Tools & Logging](etl-tools.md) for details.
+See [ETL: Tools & Logging](09-etl-tools.md) for details.
 
 ## Next Steps
 
 ### Essential Documentation
-- **[Database Connections](database-connections.md)** - Cursors, transactions, SQL files
-- **[Record Objects](record.md)** - Universal data structure
-- **[Readers](readers.md)** - Reading data from files and databases
-- **[Writers](writers.md)** - Writing data to files and databases
-- **[ETL: Table & Transforms](table.md)** - Field mapping, transformations
-- **[ETL: DataSurge & BulkSurge](datasurge.md)** - High-performance loading
+- **[Database Connections](03-database-connections.md)** - Cursors, transactions, SQL files
+- **[Record Objects](04-record.md)** - Universal data structure
+- **[Readers](05-readers.md)** - Reading data from files and databases
+- **[Writers](06-writers.md)** - Writing data to files and databases
+- **[ETL: Table & Transforms](07-table.md)** - Field mapping, transformations
+- **[ETL: DataSurge & BulkSurge](08-datasurge.md)** - High-performance loading
 
 ### Advanced Topics
-- **[ETL: Tools & Logging](etl-tools.md)** - IdentityManager, ValidationCollector
-- **[Configuration & Security](configuration.md)** - Encryption, environment variables
-- **[Advanced Features](advanced.md)** - Performance tuning, custom drivers
+- **[ETL: Tools & Logging](09-etl-tools.md)** - IdentityManager, ValidationCollector
+- **[Configuration & Security](02-configuration.md)** - Encryption, environment variables
+- **[Advanced Features](10-advanced.md)** - Performance tuning, custom drivers
 
 ### Get Help
-- Check [Troubleshooting](troubleshooting.md) for common issues
-- Review [API Reference](api-reference.md) for all methods
+- Check [Troubleshooting](12-troubleshooting.md) for common issues
+- Review [API Reference](11-api-reference.md) for all methods
 - See examples in the `/examples` folder
 - Report issues at [GitHub Issues](https://github.com/yourusername/dbtk/issues)
 

@@ -172,27 +172,27 @@ for row in cursor:
 
 **Normalized field names** let you write resilient code. Whether your source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`, you can always access it as `row.employee_id`. This means your Table field mappings work regardless of how the source system names its columns.
 
-See [Record Objects](docs/record.md) for complete documentation.
+See [Record Objects](docs/04-record.md) for complete documentation.
 
 ## Documentation
 
 ### Getting Started
-- **[Getting Started Guide](docs/getting-started.md)** - 5-minute tutorial with complete examples
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
-- **[API Reference](docs/api-reference.md)** - Complete method and function reference
+- **[Getting Started Guide](docs/01-getting-started.md)** - 5-minute tutorial with complete examples
+- **[Troubleshooting](docs/12-troubleshooting.md)** - Common issues and solutions
+- **[API Reference](docs/11-api-reference.md)** - Complete method and function reference
 
 ### Core Features
-- **[Record Objects](docs/record.md)** - DBTK's universal data structure with dict, tuple, and attribute access
-- **[Configuration & Security](docs/configuration.md)** - Set up encrypted passwords, YAML config files, and command-line tools
-- **[Database Connections](docs/database-connections.md)** - Connect to any database, use smart cursors, SQL file execution, manage transactions
-- **[File Readers](docs/readers.md)** - Read from CSV, Excel, JSON, XML, and fixed-width files
-- **[Data Writers](docs/writers.md)** - Write to CSV, Excel, JSON, XML, fixed-width files, and between databases
+- **[Record Objects](docs/04-record.md)** - DBTK's universal data structure with dict, tuple, and attribute access
+- **[Configuration & Security](docs/02-configuration.md)** - Set up encrypted passwords, YAML config files, and command-line tools
+- **[Database Connections](docs/03-database-connections.md)** - Connect to any database, use smart cursors, SQL file execution, manage transactions
+- **[File Readers](docs/05-readers.md)** - Read from CSV, Excel, JSON, XML, and fixed-width files
+- **[Data Writers](docs/06-writers.md)** - Write to CSV, Excel, JSON, XML, fixed-width files, and between databases
 
 ### ETL Framework
-- **[ETL: Table & Transforms](docs/table.md)** - Field mapping, column config, data transforms, database lookups
-- **[ETL: DataSurge & BulkSurge](docs/datasurge.md)** - High-performance bulk loading for any database
-- **[ETL: Tools & Logging](docs/etl-tools.md)** - IdentityManager, ValidationCollector, and integration script logging
-- **[Advanced Features](docs/advanced.md)** - Custom drivers, multiple config locations, and performance tuning
+- **[ETL: Table & Transforms](docs/07-table.md)** - Field mapping, column config, data transforms, database lookups
+- **[ETL: DataSurge & BulkSurge](docs/08-datasurge.md)** - High-performance bulk loading for any database
+- **[ETL: Tools & Logging](docs/09-etl-tools.md)** - IdentityManager, ValidationCollector, and integration script logging
+- **[Advanced Features](docs/10-advanced.md)** - Custom drivers, multiple config locations, and performance tuning
 
 ## Performance Highlights
 

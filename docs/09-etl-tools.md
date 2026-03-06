@@ -470,6 +470,6 @@ for your specific business logic, not for database operations, file reading, or 
 
 ## See Also
 
-- [ETL: Table & Transforms](table.md) - Table configuration, transforms, TableLookup
-- [ETL: DataSurge & BulkSurge](datasurge.md) - High-performance bulk loading
-- [Database Connections](database-connections.md) - Connections, cursors, SQL file execution, PreparedStatement
+- [ETL: Table & Transforms](07-table.md) - Table configuration, transforms, TableLookup
+- [ETL: DataSurge & BulkSurge](08-datasurge.md) - High-performance bulk loading
+- [Database Connections](03-database-connections.md) - Connections, cursors, SQL file execution, PreparedStatement

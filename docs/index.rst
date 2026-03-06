@@ -64,14 +64,18 @@ Quick Start
    :maxdepth: 2
    :caption: Contents:
 
-   record
-   configuration
-   database-connections
-   readers
-   writers
-   etl
-   advanced
-   api
+   01-getting-started
+   02-configuration
+   03-database-connections
+   04-record
+   05-readers
+   06-writers
+   07-table
+   08-datasurge
+   09-etl-tools
+   10-advanced
+   11-api-reference
+   12-troubleshooting
 
 Indices and tables
 ==================

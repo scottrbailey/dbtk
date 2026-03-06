@@ -613,13 +613,13 @@ If you're still stuck:
 
 2. **Check the examples:**
    - Look in `/examples` folder for working code
-   - Review [Getting Started](getting-started.md)
+   - Review [Getting Started](01-getting-started.md)
 
 3. **Search documentation:**
-   - [Database Connections](database-connections.md)
-   - [ETL: Table & Transforms](table.md)
-   - [ETL: DataSurge & BulkSurge](datasurge.md)
-   - [API Reference](api-reference.md)
+   - [Database Connections](03-database-connections.md)
+   - [ETL: Table & Transforms](07-table.md)
+   - [ETL: DataSurge & BulkSurge](08-datasurge.md)
+   - [API Reference](11-api-reference.md)
 
 4. **Report issues:**
    - GitHub Issues: https://github.com/yourusername/dbtk/issues

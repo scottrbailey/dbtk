@@ -307,6 +307,6 @@ surge.load(reader, method='external')  # Uses SQL*Loader
 
 ## See Also
 
-- [ETL: Table & Transforms](table.md) - Table configuration, field mapping, transforms
-- [ETL: Tools & Logging](etl-tools.md) - IdentityManager, ValidationCollector, logging
-- [Database Connections](database-connections.md) - Connections, cursors, SQL file execution
+- [ETL: Table & Transforms](07-table.md) - Table configuration, field mapping, transforms
+- [ETL: Tools & Logging](09-etl-tools.md) - IdentityManager, ValidationCollector, logging
+- [Database Connections](03-database-connections.md) - Connections, cursors, SQL file execution

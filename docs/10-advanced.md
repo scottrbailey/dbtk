@@ -76,7 +76,7 @@ register_user_drivers(custom_drivers)
 
 ## IdentityManager & ValidationCollector
 
-For detailed documentation on identity resolution, validation, and logging tools for production ETL pipelines, see [ETL: Tools & Logging](etl-tools.md).
+For detailed documentation on identity resolution, validation, and logging tools for production ETL pipelines, see [ETL: Tools & Logging](09-etl-tools.md).
 
 **IdentityManager** - Resolves source-system keys to target-system identifiers with caching, status tracking, and state persistence. Essential for multi-stage imports and CRM/ERP integrations.
 
@@ -84,7 +84,7 @@ For detailed documentation on identity resolution, validation, and logging tools
 
 ## See Also
 
-- [ETL: Tools & Logging](etl-tools.md) - IdentityManager, ValidationCollector, and integration logging
-- [Configuration & Security](configuration.md) - Custom driver registration, config file locations
-- [ETL: Table & Transforms](table.md) - Using db_expr for database-side processing
-- [ETL: DataSurge & BulkSurge](datasurge.md) - Performance tuning for bulk operations
+- [ETL: Tools & Logging](09-etl-tools.md) - IdentityManager, ValidationCollector, and integration logging
+- [Configuration & Security](02-configuration.md) - Custom driver registration, config file locations
+- [ETL: Table & Transforms](07-table.md) - Using db_expr for database-side processing
+- [ETL: DataSurge & BulkSurge](08-datasurge.md) - Performance tuning for bulk operations
