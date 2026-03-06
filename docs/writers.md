@@ -269,7 +269,7 @@ with open('in.ach') as fp, EDIWriter(file='out.ach', columns=ACH_COLUMNS) as w:
     batch = []
     for record in EDIReader(fp, ACH_COLUMNS):
         # records are FixedWidthRecord — modify fields, then write
-        if record.record_type_code == '6':   # Entry Detail
+        if record[0] == '6':   # Entry Detail
             record.update(amount=record.amount + 100)
             batch.append(record)
     w.write_batch(batch)

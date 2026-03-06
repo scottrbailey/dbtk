@@ -157,7 +157,7 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 
 These parameters only affect how `FixedWidthRecord.to_line()` reconstructs a line; they are ignored during reading. When not set, defaults are inferred from `column_type`:
 
-| `column_type`              | Default alignmen t | Default pad_char |
+| `column_type`              | Default alignment  | Default pad_char |
 |----------------------------|--------------------|------------------|
 | `text`, `date`, `datetime` | left               | `' '` (space)    |
 | `int`, `float`             | right              | `'0'` (zero)     |
@@ -181,19 +181,17 @@ readers.FixedColumn('routing_number', 1, 10, alignment='right', pad_char=' ')
 
 ### Verifying Column Layout
 
-When working from a file specification, use `visualize_columns()` to confirm your positions match the actual data:
+When working from a file specification, use `visualize()` to confirm your positions match the actual data:
 
 ```python
-with open('claims.txt') as fp:
-    print(readers.FixedReader.visualize_columns(fp, columns))
-'''    
-         1         2         3         4         5         6         7         8         9    
-1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234
-├├┤├────────┤├────────┤├────┤├──┤├├─┤├┤├├─────────────────────┤├─────────────────────┤├──────┤
-101 02100002101234567892603011200A094101TEST BANK              TEST COMPANY
-'''
+with readers.FixedReader(open('claims.txt'), columns) as reader:
+    print(reader.visualize())
+# Output:
+#          1         2         3         4         5         6         7         8         9
+# 1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234
+# ├├┤├────────┤├────────┤├────┤├──┤├├─┤├┤├├─────────────────────┤├─────────────────────┤├──────┤
+# 101 02100002101234567892603011200A094101TEST BANK              TEST COMPANY
 ```
-
 
 This prints a character ruler with column boundary markers (`|`) over several sample lines from the file, making it easy to spot off-by-one errors before processing millions of rows.
 
