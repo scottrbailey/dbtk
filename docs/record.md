@@ -279,14 +279,14 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 | `text`, `date`, `datetime` | left | space |
 | `int`, `float` | right | `'0'` |
 
-Override with explicit `alignment=` and `pad_char=` on `FixedColumn`. Both must be set together when overriding numeric columns — setting `alignment` alone does not change the pad character:
+Override with explicit `align=` and `pad_char=` on `FixedColumn`. Both must be set together when overriding numeric columns — setting `align` alone does not change the pad character:
 
 ```python
 # Wrong: left-aligned but still zero-padded → '4200000000'
-FixedColumn('amount', 1, 10, 'int', alignment='left')
+FixedColumn('amount', 1, 10, 'int', align='left')
 
 # Correct: left-aligned and space-padded → '42        '
-FixedColumn('amount', 1, 10, 'int', alignment='left', pad_char=' ')
+FixedColumn('amount', 1, 10, 'int', align='left', pad_char=' ')
 ```
 
 **Overflow handling:**

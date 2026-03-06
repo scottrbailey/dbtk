@@ -121,7 +121,7 @@ class TestToLineBasic:
         assert len(r.to_line()) == 21
 
     def test_center_alignment(self):
-        cols = [FixedColumn('label', 1, 11, alignment='c')]
+        cols = [FixedColumn('label', 1, 11, align='c')]
         cls = make_class(cols)
         r = cls('hi')
         line = r.to_line()
@@ -149,9 +149,9 @@ class TestToLineBasic:
 
     def test_explicit_alignment_override(self):
         cols = [
-            FixedColumn('a', 1,  5, alignment='r'),
-            FixedColumn('b', 6,  10, alignment='c'),
-            FixedColumn('c', 11, 15, alignment='l'),
+            FixedColumn('a', 1,  5, align='r'),
+            FixedColumn('b', 6,  10, align='c'),
+            FixedColumn('c', 11, 15, align='l'),
         ]
         cls = make_class(cols)
         r = cls('X', 'X', 'X')
@@ -274,12 +274,12 @@ class TestToLineRoundTrip:
         # The monks fixture uses left-aligned, space-padded numerics, so we must
         # override the int/float defaults (right-aligned, zero-padded) to match.
         cols = [
-            FixedColumn('trainee_id',       1,   5, 'int',   alignment='left', pad_char=' '),
+            FixedColumn('trainee_id',       1,   5, 'int',   align='left', pad_char=' '),
             FixedColumn('monk_name',         6,  35, 'text'),
             FixedColumn('home_temple',      36,  65, 'text'),
-            FixedColumn('mastery_rank',     66,  70, 'int',   alignment='left', pad_char=' '),
+            FixedColumn('mastery_rank',     66,  70, 'int',   align='left', pad_char=' '),
             FixedColumn('bison_companion',  71,  82, 'text'),
-            FixedColumn('daily_meditation', 83,  90, 'float', alignment='left', pad_char=' '),
+            FixedColumn('daily_meditation', 83,  90, 'float', align='left', pad_char=' '),
             FixedColumn('birth_date',       91, 102, 'date'),
             FixedColumn('last_training',   103, 122, 'datetime'),
         ]

@@ -144,7 +144,7 @@ class FixedColumn(object):
     def __init__(self, name:str, start_pos:int, end_pos:int=None,
                  column_type:str='text',
                  comment: Optional[str] = None,
-                 alignment: Optional[str] = None,
+                 align: Optional[str] = None,
                  pad_char: Optional[str] = None,
                  width: int = None):
         """
@@ -153,7 +153,7 @@ class FixedColumn(object):
         :param int end_pos: end position of field (mutually exclusive with width)
         :param str column_type: text, int, float, date
         :param str comment: discription for column usage/options
-        :param str alignment: override alignment (left, right, center)
+        :param str align: override alignment (left, right, center)
         :param str pad_char: override pad character
         :param int width: field width in characters (mutually exclusive with end_pos)
 
@@ -175,7 +175,7 @@ class FixedColumn(object):
         self.column_type = column_type
         self.start_idx = start_pos - 1
         self.comment = comment
-        self.alignment = align_map.get(str(alignment).lower())
+        self.align = align_map.get(str(align).lower())
         self.pad_char = pad_char[0] if pad_char else None
 
     @property
@@ -186,8 +186,8 @@ class FixedColumn(object):
         parts = [f"'{self.name}'", str(self.start_pos), str(self.end_pos), f"'{self.column_type}'"]
         if self.comment:
             parts.append(f"comment='{self.comment}'")
-        if self.alignment:
-            parts.append(f"alignment='{self.alignment}'")
+        if self.align:
+            parts.append(f"align='{self.align}'")
         if self.pad_char:
             parts.append(f"pad_char='{self.pad_char}'")
         return f"FixedColumn({', '.join(parts)})"

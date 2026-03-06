@@ -624,8 +624,8 @@ class FixedWidthRecord(Record):
                 else:
                     raise ValueError(f'Value too large for {name} limit: {col.width}')
             elif len(str_val) < col.width:
-                if col.alignment:
-                    align = col.alignment[0]  # 'left'→'l', 'right'→'r', 'center'→'c'
+                if col.align:
+                    align = col.align[0]  # 'left'→'l', 'right'→'r', 'center'→'c'
                 elif col.column_type in ('int', 'float'):
                     align = 'r'
                 else:

@@ -234,8 +234,8 @@ from dbtk.writers import FixedWidthWriter, to_fixed_width
 
 COLS = [
     FixedColumn('record_type',  1,  2),
-    FixedColumn('account',      3, 14, alignment='right', pad_char='0'),
-    FixedColumn('amount',      15, 24, alignment='right', pad_char='0', column_type='int'),
+    FixedColumn('account',      3, 14, align='right', pad_char='0'),
+    FixedColumn('amount',      15, 24, align='right', pad_char='0', column_type='int'),
     FixedColumn('description', 25, 54),
 ]
 

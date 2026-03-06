@@ -123,7 +123,7 @@ Fixed-width files have no delimiters — every field occupies a specific charact
 
 ### Defining Columns
 
-`FixedColumn(name, start_pos, end_pos, column_type='text', alignment=None, pad_char=None, comment=None)`
+`FixedColumn(name, start_pos, end_pos, column_type='text', align=None, pad_char=None, comment=None)`
 
 Positions are **1-indexed** (the first character is position 1, not 0) and the end position is **inclusive**. While programmers 
 typically think in zero indexed arrays and strings, most interface file specifications use 1-indexed positions. 
@@ -153,7 +153,7 @@ with readers.FixedReader(open('claims.txt'), columns) as reader:
 | `datetime`       | Parses to `datetime.datetime`                         |
 | `timestamp`      | Parses to `datetime.datetime` (with timezone)         |
 
-**`alignment` and `pad_char` — output formatting for `to_line()`**
+**`align` and `pad_char` — output formatting for `to_line()`**
 
 These parameters only affect how `FixedWidthRecord.to_line()` reconstructs a line; they are ignored during reading. When not set, defaults are inferred from `column_type`:
 
@@ -170,11 +170,11 @@ readers.FixedColumn('amount', 1, 10, 'int')
 # value 42  →  '0000000042'
 
 # Override to space-padded right-aligned (common for routing numbers)
-readers.FixedColumn('routing_number', 1, 10, alignment='right', pad_char=' ')
+readers.FixedColumn('routing_number', 1, 10, align='right', pad_char=' ')
 # value '061000104'  →  ' 061000104'
 ```
 
-> **Note:** `alignment` and `pad_char` are independent. Explicitly setting `alignment='left'`
+> **Note:** `align` and `pad_char` are independent. Explicitly setting `align='left'`
 > on an `int` column does *not* automatically change the pad character — it will still default
 > to `'0'` and produce left-aligned zero-padded output (`'42        '` becomes `'4200000000'`)!
 > When overriding alignment on a numeric column, set `pad_char=' '` explicitly too.
