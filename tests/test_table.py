@@ -203,7 +203,7 @@ class TestTableInitialization:
         assert table.columns['meditation score']['bind_name'] == 'meditation_score'
 
         # Should generate valid SQL with quoted column name
-        table.generate_sql('insert')
+        table._generate_sql('insert')
         sql = table.get_sql('insert')
         assert '"meditation score"' in sql  # Column name quoted
         assert 'meditation_score' in table._param_config['insert']  # Bind param is sanitized
@@ -220,7 +220,7 @@ class TestSQLGeneration:
 
     def test_insert_statement_generation(self, airbender_table):
         """Test INSERT statement for Air Nomad training records."""
-        airbender_table.generate_sql('insert')
+        airbender_table._generate_sql('insert')
         sql = airbender_table.get_sql('insert')
         assert 'INSERT INTO air_nomad_training' in sql
         assert 'nomad_id' in sql
@@ -229,7 +229,7 @@ class TestSQLGeneration:
 
     def test_select_statement_generation(self, airbender_table):
         """Test SELECT statement for finding existing Air Nomads."""
-        airbender_table.generate_sql('select')
+        airbender_table._generate_sql('select')
         sql = airbender_table.get_sql('select')
         assert 'SELECT' in sql
         assert 'FROM air_nomad_training' in sql
@@ -237,7 +237,7 @@ class TestSQLGeneration:
 
     def test_update_statement_creation(self, fire_nation_table):
         """Test UPDATE statement generation for Fire Nation records."""
-        fire_nation_table.generate_sql('update')
+        fire_nation_table._generate_sql('update')
         sql = fire_nation_table.get_sql('update')
 
         assert 'UPDATE fire_nation_army' in sql
@@ -246,14 +246,14 @@ class TestSQLGeneration:
 
     def test_delete_statement_creation(self, airbender_table):
         """Test DELETE statement for removing Air Nomad records."""
-        airbender_table.generate_sql('delete')
+        airbender_table._generate_sql('delete')
         sql = airbender_table.get_sql('delete')
         assert 'DELETE FROM air_nomad_training' in sql
         assert 'WHERE' in sql
 
     def test_merge_statement_sqlite(self, airbender_table):
         """Test MERGE/upsert statement generation for SQLite."""
-        airbender_table.generate_sql('merge')
+        airbender_table._generate_sql('merge')
         sql = airbender_table.get_sql('merge')
         # SQLite uses INSERT...ON CONFLICT
         assert 'INSERT INTO air_nomad_training' in sql
@@ -713,7 +713,7 @@ class TestReset:
 
     def test_reset_clears_all_state(self, airbender_table):
         """Test that reset clears all cached state."""
-        airbender_table.generate_sql('insert')
+        airbender_table._generate_sql('insert')
         airbender_table.set_values({
             'trainee_id': 'TEST001',
             'monk_name': 'Test',
@@ -934,7 +934,7 @@ class TestAutomaticUpdateExcludes:
         fire_nation_table.set_values(all_fields_data)
 
         # Generate initial UPDATE SQL (no excludes)
-        fire_nation_table.generate_sql('update')
+        fire_nation_table._generate_sql('update')
         initial_sql = fire_nation_table._sql_statements['update']
 
         # Now manually calculate excludes with a subset of fields
@@ -945,7 +945,7 @@ class TestAutomaticUpdateExcludes:
         assert fire_nation_table._sql_statements['merge'] is None
 
         # Regenerate UPDATE SQL
-        fire_nation_table.generate_sql('update')
+        fire_nation_table._generate_sql('update')
         new_sql = fire_nation_table._sql_statements['update']
 
         # SQL should be different (excludes birthplace fields)

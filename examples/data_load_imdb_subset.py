@@ -1,9 +1,9 @@
 """
 IMDB Subset Loader: High-Performance ETL for Relational Movie Data
 
-This example demonstrates building a complete, referentially-intact subset from massive
+This example demonstrates building a complete, referentially intact subset from massive
 IMDB datasets (121M+ rows total) using dbtk's ETL capabilities. It showcases filtering
-11+ million title records down to ~16K movies, then intelligently extracting only the
+11+ million title records down to ~1000 movies, then intelligently extracting only the
 related cast, crew, and ratings data to build a cohesive relational database.
 
 The Challenge
@@ -206,7 +206,7 @@ if __name__ == '__main__':
     names_collector = ValidationCollector()
 
     #----------------------------------------------------------------------------------------------
-    # Import title.basics.tsv.gz into titles_subset - filtered to ~16K movies
+    # Import title.basics.tsv.gz into titles_subset - filtered to ~1160 movies
     #----------------------------------------------------------------------------------------------
     title_cols = {
         'tconst': {'field': 'tconst', 'primary_key': True, 'fn': title_collector},
@@ -226,7 +226,7 @@ if __name__ == '__main__':
         null_values=r"\N",
         quote_char=None,     # required for the partially quoted values in the dataset
         ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter(
+    ).add_filter(
         (pl.col("titleType") == "movie")
         & pl.col("genres").str.contains("Crime")
         & pl.col("genres").str.contains("Drama")
@@ -236,7 +236,13 @@ if __name__ == '__main__':
         surge = DataSurge(titles)
         surge.insert(reader)
 
-    # lower case original title so we can see what was updated by merge
+    #----------------------------------------------------------------------------------------------
+    # DEMO: Gloriously unnecessary second pass to showcase:
+    #   - Dynamic modification of column transforms mid-pipeline
+    #   - Cross-database MERGE / UPSERT abstraction
+    #   - Visual proof via lowercased original_title on 2021 records
+    # In real ETL: combine all year ranges into one filter + single insert/merge
+    #----------------------------------------------------------------------------------------------
     title_cols['original_title']['fn'] = [lambda x: str(x).lower() if x else '', 'maxlen:500']
     titles = Table('titles_subset', columns=title_cols, cursor=cur)
     df = pl.scan_csv(
@@ -245,13 +251,12 @@ if __name__ == '__main__':
         null_values=r"\N",
         quote_char=None,  # required for the partially quoted values in the dataset
         ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter(
+    ).add_filter(
         (pl.col("titleType") == "movie")
         & pl.col("genres").str.contains("Crime")
         & pl.col("genres").str.contains("Drama")
         & pl.col("startYear").cast(pl.Int16, strict=False).is_between(2021, 2022)
     ).collect()
-
     with dbtk.readers.DataFrameReader(df) as reader:
         surge = DataSurge(titles)
         surge.merge(reader)
@@ -274,7 +279,7 @@ if __name__ == '__main__':
         null_values=r"\N",
         quote_char=None,     # required for the partially quoted values in the dataset
         ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter(pl.col('tconst').is_in(all_titles)).collect()
+    ).add_filter(pl.col('tconst').is_in(all_titles)).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
         surge = DataSurge(title_ratings)
         surge.update(reader)
@@ -298,7 +303,7 @@ if __name__ == '__main__':
             null_values=r"\N",
             quote_char=None,  # required for the partially quoted values in the dataset
             ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter((pl.col("tconst").is_in(all_titles))).collect()
+    ).add_filter((pl.col("tconst").is_in(all_titles))).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
         surge = DataSurge(principals)
         surge.insert(reader)
@@ -322,7 +327,7 @@ if __name__ == '__main__':
             null_values=r"\N",
             quote_char=None,  # required for the partially quoted values in the dataset
             ignore_errors=True,  # Skip bad rows / insert nulls on parse errors
-    ).filter((pl.col("nconst").is_in(all_names))).collect()
+    ).add_filter((pl.col("nconst").is_in(all_names))).collect()
     with dbtk.readers.DataFrameReader(df) as reader:
         surge = DataSurge(names)
         surge.insert(reader)

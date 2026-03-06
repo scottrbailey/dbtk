@@ -4,7 +4,8 @@
 
 import datetime as dt
 import logging
-from typing import List, Any, Iterator, Optional
+from pathlib import Path
+from typing import List, Any, Iterator, Optional, Union
 from .base import Reader, Clean
 
 logger = logging.getLogger(__name__)
@@ -195,7 +196,7 @@ class XLSReader(Reader):
         pass
 
 
-def open_workbook(filename: str):
+def open_workbook(filename: Union[str, Path]):
     """Open an Excel workbook using openpyxl for .xlsx or xlrd for .xls.
 
     Args:

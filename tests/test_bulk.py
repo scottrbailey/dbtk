@@ -174,7 +174,7 @@ class TestDataSurgeInitialization:
 
         assert surge.table == airbender_table
         assert surge.cursor == airbender_table.cursor
-        assert surge.skips == 0
+        assert surge.skipped == 0
         assert surge._sql_statements == {}
 
     def test_cursor_inherited_from_table(self, fire_nation_table):
@@ -221,7 +221,7 @@ class TestInsertOperation:
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 3
-        assert surge.skips == 0
+        assert surge.skipped == 0
 
         cursor.connection.commit()
 
@@ -270,7 +270,7 @@ class TestInsertOperation:
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 1  # Only valid record inserted
-        assert surge.skips == 1
+        assert surge.skipped == 1
 
         cursor.connection.commit()
 
@@ -339,7 +339,7 @@ class TestUpdateOperation:
 
         assert errors == 0
         assert fire_nation_table.counts['update'] == 3
-        assert surge.skips == 0
+        assert surge.skipped == 0
 
         cursor.connection.commit()
 
@@ -396,7 +396,7 @@ class TestUpdateOperation:
 
         assert errors == 0
         assert fire_nation_table.counts['update'] == 1
-        assert surge.skips == 1
+        assert surge.skipped == 1
 
     def test_update_with_transaction(self, fire_nation_table, fire_nation_records, cursor):
         """Test update with transaction wrapping."""
@@ -461,7 +461,7 @@ class TestDeleteOperation:
 
         assert errors == 0
         assert airbender_table.counts['delete'] == 2
-        assert surge.skips == 1
+        assert surge.skipped == 1
 
         cursor.connection.commit()
 
@@ -595,7 +595,7 @@ class TestMergeWithUpsert:
 
         assert errors == 0
         assert airbender_table.counts['merge'] == 1
-        assert surge.skips == 1
+        assert surge.skipped == 1
 
         # Verify only valid record merged
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
@@ -672,7 +672,7 @@ class TestBatchProcessing:
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 0
-        assert surge.skips == 3
+        assert surge.skipped == 3
 
         # Verify nothing inserted
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
@@ -774,10 +774,10 @@ class TestCountTracking:
         surge = DataSurge(airbender_table)
 
         surge.insert(incomplete_records)
-        assert surge.skips == 2
+        assert surge.skipped == 2
 
         surge.update(incomplete_records)
-        assert surge.skips == 4  # Accumulated
+        assert surge.skipped == 4  # Accumulated
 
     def test_separate_operation_counts(self, airbender_table, airbender_records, cursor):
         """Test that different operations have separate counts."""
@@ -832,7 +832,7 @@ class TestComplexScenarios:
 
         assert errors == 0
         assert airbender_table.counts['insert'] == 2
-        assert surge.skips == 2
+        assert surge.skipped == 2
 
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 2

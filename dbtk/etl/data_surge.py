@@ -1,8 +1,8 @@
 # dbtk/etl/data_surge.py
 
 import logging
+import time
 import re
-from textwrap import dedent
 from typing import Iterable, Optional
 
 from .base_surge import BaseSurge
@@ -19,16 +19,73 @@ class DataSurge(BaseSurge):
     Note: The Table instance's state (self.values) is modified during processing.
     Ensure the Table is not used concurrently by other operations or threads.
 
-    Example
-    -------
-    ::
+    Parameters
+    ----------
+    table : Table
+        Table instance with column definitions and cursor
+    batch_size : int, optional
+        Number of records per batch (default: cursor.batch_size or 1000)
+    use_transaction : bool, optional
+        Wrap all operations in a transaction (default: False)
+    pass_through : bool, optional
+        Skip transformation and validation, using source data directly (default: False).
+        Only compatible for inserts. Not compatible with columns with database expressions `db_expr`
+
+        **When to use:**
+
+        - Database-to-database copies with identical schemas
+        - Pre-transformed data from upstream pipelines (already validated)
+        - Raw positional tuples pre-ordered for binding parameters
+
+        **What's skipped:** Field mapping, type coercion, default values, null value
+        handling, required field validation, and Table.set_values() overhead.
+
+        **Warning:** Do NOT use if records might have missing required fields, mismatched
+        field names, need type transformations, or data quality is uncertain. All database
+        constraints (primary keys, foreign keys) still apply.
+
+    Attributes
+    ----------
+    total_read : int
+        Total rows read from source. 1-based (first row = 1). Includes
+        both loaded and skipped rows.
+    total_loaded : int
+        Total rows successfully loaded.
+    skipped : int
+        Total rows skipped due to missing required fields.
+    skip_details : dict
+        Skip tracking grouped by reason. Key is a frozenset of missing
+        required field names. Value is a dict with:
+
+        - ``count``: total rows skipped for this reason
+        - ``sample``: list of up to 20 1-based row numbers (for debugging)
+
+        Example::
+
+            {frozenset({'primary_name'}): {'count': 5, 'sample': [937887, 957847, ...]}}
+
+    Examples
+    --------
+    Standard ETL with transformation::
 
         table = Table(..., cursor=cursor)
-        surge = DataSurge(table, batch_size=1000, use_transaction=True))
+        surge = DataSurge(table, batch_size=1000, use_transaction=True)
         errors = surge.insert(records, raise_error=False)
+
+    Fast database-to-database copy (matching schemas)::
+
+        # Source and destination schemas match exactly
+        surge = DataSurge(dest_table, batch_size=5000, pass_through=True)
+        surge.insert(source_cursor)
+
+    Pre-transformed data (already validated)::
+
+        # Data already transformed and validated by upstream process
+        surge = DataSurge(table, pass_through=True)
+        surge.insert(validated_records)
     """
 
-    def __init__(self, table, batch_size: Optional[int] = None, use_transaction: bool = False):
+    def __init__(self, table, batch_size: Optional[int] = None, use_transaction: bool = False, pass_through: bool = False):
         """
         Initialize DataSurge for bulk operations.
 
@@ -36,10 +93,10 @@ class DataSurge(BaseSurge):
             table: Table instance with schema metadata
             batch_size: Number of records per batch
             use_transaction: Use transaction for all operations (default: False)
+            pass_through: Skip transformation/validation for trusted data (default: False)
         """
-        super().__init__(table, batch_size=batch_size)
+        super().__init__(table, batch_size=batch_size, pass_through=pass_through)
         self.use_transaction = use_transaction
-        self.skips = 0
         # Swap to positional parameters if named to save memory in bind parameters
         self.table.force_positional()
         self._sql_statements = {}  # Only for modified SQL (merge temp table hack)
@@ -90,6 +147,7 @@ class DataSurge(BaseSurge):
             if batch_params:
                 try:
                     self.cursor.executemany(sql, batch_params)
+                    self.total_loaded += len(batch_params)
                     self.table.counts[operation] += len(batch_params)
                 except self.cursor.connection.driver.DatabaseError as e:
                     logger.error(f"{operation.capitalize()} batch failed for {self.table.name}: {str(e)}")
@@ -108,9 +166,23 @@ class DataSurge(BaseSurge):
         """
         Core bulk execution using executemany() — shared path for insert/update/delete/merge.
         """
+        self.start_time = time.monotonic()
         operation = (operation or self.operation).lower()
         if operation not in ("insert", "update", "delete", "merge"):
-            raise ValueError(f"Invalid operation: {operation}")
+            msg = f"Invalid operation: {operation}"
+            logger.exception(msg)
+            raise ValueError(msg)
+        if self.pass_through:
+            if operation != "insert":
+                msg = f"Operation {operation} is not compatible with pass_through mode."
+                logger.exception(msg)
+                raise ValueError(msg)
+            expr_cols = self.table.db_expr_cols()
+            if expr_cols:
+                msg = f"Columns with `db_expr` are incompatible with pass_through mode.  cols: {expr_cols}"
+                logger.exception(msg)
+                raise ValueError(msg)
+
         self.operation = operation
         sql = self.get_sql(operation)
 
@@ -120,9 +192,8 @@ class DataSurge(BaseSurge):
         else:
             errors, skipped = self._execute_batches(records, operation, sql, raise_error)
 
-        logger.info(
-            f"Batched `{self.table.name}` <{operation}s: {self.table.counts[operation]:,}; errors: {errors:,}; skips: {skipped:,}>")
-        self.skips += skipped
+        self.skipped += skipped
+        self._log_summary()
         return errors
 
     def _merge_with_temp_table(self, records: Iterable[Record], raise_error: bool) -> int:
@@ -132,15 +203,12 @@ class DataSurge(BaseSurge):
             return 0
 
         db_type = self.cursor.connection.database_type
-        if db_type == 'postgres' and self.cursor.connection.server_version < 150000:
-            raise NotImplementedError(
-                f"PostgreSQL MERGE requires version >= 15, found {self.cursor.connection.server_version}"
-            )
-        elif db_type == 'oracle':
+        # Postgres and MySQL will
+        if db_type == 'oracle':
             temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
 
             # Get column definitions from table
-            col_info = self.table.get_column_definitions()
+            col_info = self.table.get_column_definitions(all_cols=True)
             col_defs = [f"{col_name} {sql_type}" for col_name, _, _, _, _, sql_type in col_info]
             col_defs_str = ', '.join(col_defs)
             create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
@@ -156,12 +224,15 @@ class DataSurge(BaseSurge):
 
         # Drop temp table if it exists from previous run, then create fresh
         try:
-            self.cursor.execute(f"DROP TABLE {temp_name}")
+            self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+            table_exists = True
         except self.cursor.connection.driver.DatabaseError:
-            pass  # Table doesn't exist yet, which is fine
+            # Table doesn't exist yet, which is fine
+            table_exists = False
 
-        self.cursor.execute(create_sql)
-        logger.debug(f"Created temp table: {create_sql}")
+        if not table_exists:
+            self.cursor.execute(create_sql)
+            logger.debug(f"Created temp table: {create_sql}")
 
         # Use temporary table for bulk insert
         from .table import Table
@@ -175,7 +246,11 @@ class DataSurge(BaseSurge):
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
-            self.cursor.execute(f"DROP TABLE {temp_name}")
+            if db_type == 'oracle':
+                self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+                self.cursor.connection.commit()
+            else:
+                self.cursor.execute(f"DROP TABLE {temp_name}")
             return errors
 
         # Transfer record fields from temp table to main table for proper merge column exclusion
@@ -209,8 +284,11 @@ class DataSurge(BaseSurge):
             errors += len(records_list) - errors
         finally:
             try:
-                self.cursor.execute(f"DROP TABLE {temp_name}")
+                if db_type == 'oracle':
+                    self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+                else:
+                    self.cursor.execute(f"DROP TABLE {temp_name}")
             except Exception as e:
-                logger.warning(f"Failed to drop temp table {temp_name}: {e}")
+                logger.warning(f"Failed to clear temp table {temp_name}: {e}")
 
         return errors

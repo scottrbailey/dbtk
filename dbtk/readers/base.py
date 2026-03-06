@@ -20,6 +20,7 @@ from ..defaults import settings
 
 logger = logging.getLogger(__name__)
 
+
 class Clean:
     """Header cleaning levels for column names."""
     NOOP = 0  # Leave unchanged
@@ -87,7 +88,6 @@ class Clean:
             return re.sub(r'[^a-z0-9]+|code$', '', val)
         else:
             return val
-
 
 
 class _Progress:
@@ -204,8 +204,8 @@ class Reader(ABC):
 
         # Filter records with custom function
         with readers.CSVReader(open('data.csv')) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
-            reader.filter(lambda r: r.country == 'US')
+            reader.add_filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: r.country == 'US')
             for record in reader:
                 print(record.name)  # Only US adults
 
@@ -306,6 +306,7 @@ class Reader(ABC):
         self._source: str = None        # keep track of source filename for subclasses that use a file pointer directly (Excel)
         self._start_time: float = 0     # will get updated when the first record is read (time.monotonic())
         self._filters = []              # filter pipeline (list of callables)
+        self._done: bool = False        # True after StopIteration summary has been logged
 
     def __enter__(self):
         """Context manager entry."""
@@ -315,12 +316,13 @@ class Reader(ABC):
         """Context manager exit with cleanup."""
         self._cleanup()
 
-    def filter(self, func):
+    def add_filter(self, func) -> "Reader":
+
         """
         Add a filter function to the filtering pipeline.
 
         Filter functions are applied after skip_rows and null_values conversion, but before
-        the n_rows limit. Multiple calls to filter() accumulate in a pipeline - all filters
+        the n_rows limit. Multiple calls to add_filter() accumulate in a pipeline - all filters
         must return True for a record to be included.
 
         The filter operates on the final Record object, after null value conversion has
@@ -345,15 +347,15 @@ class Reader(ABC):
 
             # Single filter
             with readers.CSVReader(open('users.csv')) as reader:
-                reader.filter(lambda r: r.age >= 18)
+                reader.add_filter(lambda r: r.age >= 18)
                 for record in reader:
                     print(record.name)  # Only adults
 
             # Multiple filters (all must pass)
             with readers.CSVReader(open('users.csv')) as reader:
-                reader.filter(lambda r: r.age >= 18)
-                reader.filter(lambda r: r.country == 'US')
-                reader.filter(lambda r: r.active == 'true')
+                reader.add_filter(lambda r: r.age >= 18)
+                reader.add_filter(lambda r: r.country == 'US')
+                reader.add_filter(lambda r: r.active == 'true')
                 for record in reader:
                     print(record.name)  # US adults who are active
 
@@ -362,35 +364,35 @@ class Reader(ABC):
                 return '@' in record.email and '.' in record.email
 
             with readers.CSVReader(open('users.csv')) as reader:
-                reader.filter(valid_email)
+                reader.add_filter(valid_email)
                 for record in reader:
                     print(record.email)
 
             # Get exactly n_rows after filtering
             with readers.CSVReader(open('users.csv')) as reader:
-                reader.filter(lambda r: r.age >= 18)
+                reader.add_filter(lambda r: r.age >= 18)
                 reader.n_rows = 100  # Get 100 records that pass the filter
                 data = list(reader)
                 print(len(data))  # Will be 100 (or less if fewer than 100 match)
 
         Notes
         -----
-        * Filters are lazy - they're applied during iteration, not when filter() is called
+        * Filters are lazy - they're applied during iteration, not when add_filter() is called
         * Execution order: read → skip_rows → null_values → filter pipeline → n_rows
-        * If both skip_rows and filter() are used, a warning is logged (skip_rows applies first)
+        * If both skip_rows and add_filter() are used, a warning is logged (skip_rows applies first)
         * The n_rows limit applies after filtering, so n_rows=100 returns 100 filtered records
         * Record._row_num field reflects the count of returned (filtered) records, not raw file rows
         """
         if not callable(func):
-            raise TypeError(f"filter() requires a callable, got {type(func).__name__}")
+            raise TypeError(f"add_filter() requires a callable, got {type(func).__name__}")
 
         self._filters.append(func)
 
         # Warn if combining skip_rows with filtering (only on first filter)
         if self.skip_rows > 0 and len(self._filters) == 1:
             logger.warning(
-                "Using both skip_rows and filter() - skip_rows applies before filtering. "
-                "Consider using only filter() for clarity."
+                "Using both skip_rows and add_filter() - skip_rows applies before filtering. "
+                "Consider using only add_filter() for clarity."
             )
 
         return self
@@ -420,17 +422,19 @@ class Reader(ABC):
             try:
                 row_data = self._read_next_row()
             except StopIteration:
-                took = time.monotonic() - self._start_time
-                rate = self._row_num / took if took else 0
-                if self._big:
-                    print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
-                # Show both counts if filtering was used
-                if self._filters and self._rows_read != self._row_num:
-                    print(f"Done in {took:.2f}s - {self._rows_read:,} read → {self._row_num:,} returned ({int(rate):,} rec/s)")
-                    logger.info(f"Read {self._rows_read:,} rows, returned {self._row_num:,} in {took:.2f}s ({int(rate):,} rec/s)")
-                else:
-                    print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
-                    logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
+                if not self._done:
+                    self._done = True
+                    took = time.monotonic() - self._start_time
+                    rate = self._row_num / took if took else 0
+                    if self._big:
+                        print(f"\r{self.__class__.__name__[:-6]} → {self._prog.update(self._row_num)} ✅")
+                    # Show both counts if filtering was used
+                    if self._filters and self._rows_read != self._row_num:
+                        print(f"Done in {took:.2f}s - {self._rows_read:,} read → {self._row_num:,} returned ({int(rate):,} rec/s)")
+                        logger.info(f"Read {self._rows_read:,} rows, returned {self._row_num:,} in {took:.2f}s ({int(rate):,} rec/s)")
+                    else:
+                        print(f"Done in {took:.2f}s ({int(rate):,} rec/s)")
+                        logger.info(f"Read {self._row_num:,} rows in {took:.2f}s ({int(rate):,} rec/s)")
                 raise  # ← let for-loop end
 
             # Track total rows read (before filtering)

@@ -102,7 +102,7 @@ Normalization lowercases and replaces non-alphanumeric characters with underscor
 - **Original names** only work with dict access (`row['FULL NAME']`) - they may contain characters invalid for Python attributes
 
 ```python
-cursor.execute("SELECT Employee_ID, FULL NAME FROM users")
+cursor.execute('SELECT Employee_ID, "FULL NAME" FROM users')
 for row in cursor:
     # Normalized - works both ways
     row.employee_id       # Attribute access
@@ -111,6 +111,7 @@ for row in cursor:
     # Original - dict only
     row['FULL NAME']      # Works
     row.FULL NAME         # SyntaxError!
+
 ```
 
 ### Why This Matters
@@ -166,6 +167,10 @@ row.status = 'active'
 
 # Multiple updates
 row.update({'status': 'active', 'modified': datetime.now()})
+row.update(name='Aang', age=130)
+
+# Coalesce - only fills in None values, leaves existing values alone
+row.coalesce({'phone': 'unlisted', 'status': 'active'})
 ```
 
 ### Add New Fields
@@ -221,6 +226,17 @@ row.pprint(normalized=True)
 # status      : active
 ```
 
+`FixedWidthRecord.pprint()` accepts an additional `add_comments=True` option that appends each column's comment (from the `FixedColumn` definition) inline:
+
+```python
+row.pprint(add_comments=True)
+# record_type_code : 6          # Entry Detail
+# routing_number   : 021000021  # 9-digit ABA
+# amount           : 0000015000 # Cents, no decimal
+```
+
+Columns without a comment are left blank in that position.
+
 ### String Representation
 
 ```python
@@ -246,3 +262,77 @@ cursor.execute("SELECT order_id, total, status FROM orders")
 ```
 
 This is why Record can offer dict-like convenience without dict-like memory overhead when processing millions of rows. The same pattern applies to file readers - each reader creates a Record subclass based on the file's header row.
+
+## FixedWidthRecord
+
+`FixedWidthRecord` is a `Record` subclass returned by `FixedReader` and `EDIReader`. It carries the column layout alongside the values, enabling exact reconstruction of the original fixed-width line via `to_line()`.
+
+### `to_line(truncate_overflow=False)`
+
+Reconstructs the original fixed-width line from the record's current values.
+
+```python
+with readers.FixedReader(open('claims.txt'), columns) as reader:
+    for claim in reader:
+        original_line = claim.to_line()   # reproduces the source line exactly
+```
+
+**How it works:** `to_line()` allocates a space-filled buffer as wide as the longest column's end position, then splices each formatted value into its exact byte range using the column's `start_pos`. Because placement is position-based rather than sequential:
+
+- Columns defined in any order are placed at the correct positions
+- Gaps between columns (bytes not covered by any column definition) stay as spaces
+- The output width is determined by the rightmost column end position, not the number of columns
+
+**Alignment and padding** are applied per-column before splicing. Defaults follow the column's `column_type`:
+
+| `column_type` | Default alignment | Default pad |
+|--------------|-------------------|-------------|
+| `text`, `date`, `datetime` | left | space |
+| `int`, `float` | right | `'0'` |
+
+Override with explicit `align=` and `pad_char=` on `FixedColumn`. Both must be set together when overriding numeric columns — setting `align` alone does not change the pad character:
+
+```python
+# Wrong: left-aligned but still zero-padded → '4200000000'
+FixedColumn('amount', 1, 10, 'int', align='left')
+
+# Correct: left-aligned and space-padded → '42        '
+FixedColumn('amount', 1, 10, 'int', align='left', pad_char=' ')
+```
+
+**Overflow handling:**
+
+```python
+# Default: raises ValueError naming the offending field
+record.to_line()
+
+# Silently truncate values that exceed column width
+record.to_line(truncate_overflow=True)
+```
+
+### Modifying Records Before Writing
+
+Because values are spliced by position, only the modified fields change — the rest of the line is reproduced exactly:
+
+```python
+with readers.FixedReader(open('payments.txt'), columns) as reader:
+    with open('payments_updated.txt', 'w') as out:
+        for record in reader:
+            if record.status == 'P':
+                record['status'] = 'C'      # only this field changes
+            out.write(record.to_line() + '\n')
+```
+
+### ACH File Round-Trip Example
+
+```python
+from dbtk.readers.fixed_width import EDIReader
+from dbtk.formats.edi import ACH_COLUMNS
+
+with EDIReader(open('payroll.ach'), ACH_COLUMNS) as reader:
+    with open('payroll_modified.ach', 'w') as out:
+        for record in reader:
+            if record.record_type_code == '6':
+                record['individual_name'] = record.individual_name.upper()
+            out.write(record.to_line() + '\n')
+```

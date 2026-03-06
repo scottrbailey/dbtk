@@ -15,8 +15,8 @@ class CSVWriter(BatchWriter):
     """CSV writer class that extends BatchWriter."""
 
     def __init__(self,
+                 data=None,
                  file: Optional[Union[str, Path, TextIO]] = None,
-                 data = None,
                  columns: Optional[List[str]] = None,
                  headers: Optional[List[str]] = None,
                  write_headers: bool = True,
@@ -26,13 +26,12 @@ class CSVWriter(BatchWriter):
         Initialize CSV writer.
 
         Args:
-            file: Output filename. If None, writes to stdout
             data: Cursor object or list of records
+            file: Output file. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             headers: Header row text. If None, checks data.description for original column names,
                     then falls back to detected column names. Useful when field names have been
                     normalized but you want original database column names in the CSV header.
-            encoding: File encoding
             write_headers: Whether to include column headers
             null_string: String representation for null values
             **csv_kwargs: Additional arguments passed to csv.writer
@@ -78,12 +77,11 @@ def to_csv(data,
 
     Args:
         data: Cursor object or list of records
-        file: Output filename. If None, writes to stdout
+        file: Output file. If None, writes to stdout
         headers: Header row text. If None, uses cursor.description or detected column names
-        encoding: File encoding
         write_headers: Whether to include column headers
         null_string: String representation for null values
-         **csv_kwargs: Additional arguments passed to csv.writer
+        **csv_kwargs: Additional arguments passed to csv.writer
 
     Example:
         # Write to file
@@ -99,8 +97,8 @@ def to_csv(data,
         to_csv(cursor, 'users.csv', headers=['User ID', 'Full Name', 'Email'])
     """
     with CSVWriter(
-        file=file,
         data=data,
+        file=file,
         headers=headers,
         write_headers=write_headers,
         null_string=null_string,

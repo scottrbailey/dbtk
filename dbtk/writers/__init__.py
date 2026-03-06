@@ -16,6 +16,7 @@ Supported formats:
 - JSON: Standard and newline-delimited JSON
 - XML: Structured XML documents
 - Fixed-width: Fixed-column-width text files
+- EDI: Multi-record-type fixed-width files (ACH, NACHA, X12, etc.)
 - Database: Direct database-to-database copying
 
 Example
@@ -34,12 +35,12 @@ Example
 
 from .csv import to_csv, CSVWriter
 from .excel import to_excel, ExcelWriter, LinkedExcelWriter, LinkSource
-from .fixed_width import to_fixed_width, FixedWidthWriter
+from .fixed_width import to_fixed_width, FixedWidthWriter, to_edi, EDIWriter
 from .json import to_json, to_ndjson, JSONWriter, NDJSONWriter
 from .xml import to_xml, XMLWriter, XMLStreamer
 from .database import cursor_to_cursor, DatabaseWriter
 
 __all__ = ['to_csv', 'CSVWriter', 'to_excel', 'ExcelWriter', 'LinkedExcelWriter', 'LinkSource',
-           'to_fixed_width', 'FixedWidthWriter',
+           'to_fixed_width', 'FixedWidthWriter', 'to_edi', 'EDIWriter',
            'to_json', 'to_ndjson', 'JSONWriter', 'NDJSONWriter',
            'to_xml', 'XMLWriter', 'XMLStreamer', 'DatabaseWriter', 'cursor_to_cursor']

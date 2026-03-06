@@ -6,7 +6,7 @@ Utility functions for dbtk.
 import logging
 import re
 import datetime as dt
-from typing import Tuple, List, Any, Union, Dict, Iterable
+from typing import Tuple, List, Any, Union, Dict, Iterable, Optional
 from .defaults import settings
 try:
     from typing import Mapping
@@ -16,6 +16,52 @@ except ImportError:
 MIDNIGHT = dt.time(0, 0, 0)
 # cache format strings for performance
 _format_cache = None
+
+
+class ErrorDetail:
+    """
+    Structured error record for ETL and database operations.
+
+    Captures a single error with optional field attribution and driver-specific
+    error code. Used by :class:`dbtk.etl.table.Table` (``last_error``) and
+    :class:`dbtk.etl.managers.IdentityManager` (per-entity ``_errors`` list),
+    and round-trips cleanly through JSON via ``save_state`` / ``load_state``.
+
+    Attributes
+    ----------
+    message : str
+        Human-readable description of the error.
+    field : str, optional
+        Name of the source or target field the error is associated with.
+        ``None`` when the error is not specific to a single field.
+    code : str, optional
+        Database- or application-level error code (e.g. ``pgcode`` from
+        psycopg2, an ORA- number, or a custom application string).
+        ``None`` when no structured code is available.
+    """
+
+    __slots__ = ("message", "field", "code")
+
+    def __init__(self, message: str, field: str = None, code: str = None):
+        """
+        Create an ErrorDetail.
+
+        Parameters
+        ----------
+        message : str
+            Human-readable description of the error.
+        field : str, optional
+            Field the error relates to, or ``None``.
+        code : str, optional
+            Structured error code, or ``None``.
+        """
+        self.message = message
+        self.field = field
+        self.code = code
+
+    def __repr__(self) -> str:
+        return f"ErrorDetail(message={self.message!r}, field={self.field!r}, code={self.code!r})"
+
 
 class ParamStyle:
     """
@@ -91,6 +137,60 @@ class ParamStyle:
             return '%s'
         return ''
 
+
+class FixedColumn(object):
+    """ Column definition for fixed width files """
+
+    def __init__(self, name:str, start_pos:int, end_pos:int=None,
+                 column_type:str='text',
+                 comment: Optional[str] = None,
+                 align: Optional[str] = None,
+                 pad_char: Optional[str] = None,
+                 width: int = None):
+        """
+        :param str name:  database column name
+        :param int start_pos: start position of field, first position is 1 not 0
+        :param int end_pos: end position of field (mutually exclusive with width)
+        :param str column_type: text, int, float, date
+        :param str comment: discription for column usage/options
+        :param str align: override alignment (left, right, center)
+        :param str pad_char: override pad character
+        :param int width: field width in characters (mutually exclusive with end_pos)
+
+        FixedColumn('birthdate', 25, 35, 'date')
+        FixedColumn('birthdate', 25, width=11, column_type='date')
+        """
+        if end_pos is not None and width is not None:
+            raise ValueError("Specify end_pos or width, not both")
+        if width is not None:
+            end_pos = start_pos + width - 1
+
+        align_map = {'left': 'left', 'l': 'left', '<': 'left',
+                     'right': 'right', 'r': 'right', '>': 'right',
+                     'center': 'center', 'c': 'center'}
+
+        self.name = name
+        self.start_pos = start_pos
+        self.end_pos = end_pos if end_pos else start_pos
+        self.column_type = column_type
+        self.start_idx = start_pos - 1
+        self.comment = comment
+        self.align = align_map.get(str(align).lower())
+        self.pad_char = pad_char[0] if pad_char else None
+
+    @property
+    def width(self) -> int:
+        return self.end_pos - self.start_pos + 1
+
+    def __repr__(self):
+        parts = [f"'{self.name}'", str(self.start_pos), str(self.end_pos), f"'{self.column_type}'"]
+        if self.comment:
+            parts.append(f"comment='{self.comment}'")
+        if self.align:
+            parts.append(f"align='{self.align}'")
+        if self.pad_char:
+            parts.append(f"pad_char='{self.pad_char}'")
+        return f"FixedColumn({', '.join(parts)})"
 
 class QueryLogger:
     """Simple query logger."""
@@ -362,6 +462,55 @@ def sanitize_identifier(name: str, idx: int = 0) -> str:
     # Remove trailing underscore if present
     return sanitized.rstrip('_')
 
+
+def normalize_field_name(name: str) -> str:
+    """
+    Normalize field name for attribute access.
+
+    Converts to lowercase, replaces non-alphanumeric characters with underscores,
+    collapses consecutive underscores, and strips trailing underscores.
+    Leading underscores are preserved to maintain Python's convention for private/internal fields.
+
+    Args:
+        name: Original field name
+
+    Returns:
+        Normalized field name suitable for Python attribute access
+
+    Examples:
+        >>> normalize_field_name('Start Year')
+        'start_year'
+        >>> normalize_field_name('Start Year!')
+        'start_year'
+        >>> normalize_field_name('!Status')
+        'status'
+        >>> normalize_field_name('__id__')
+        '__id'
+        >>> normalize_field_name('_row_num')
+        '_row_num'
+        >>> normalize_field_name('#Term Code')
+        'term_code'
+        >>> normalize_field_name('2025 Sales')
+        'n2025_sales'
+    """
+    if not name:
+        return 'col'
+
+    # 1. Lowercase and strip whitespace
+    name = str(name).lower().strip()
+
+    # 2. Replace all non-alphanumeric with underscore (consecutive become single _)
+    name = re.sub(r'[^a-z0-9]+', '_', name)
+
+    # 3. Strip trailing underscores only (preserve leading for Python convention)
+    name = name.rstrip('_')
+
+    # 4. Attributes can't start with digit
+    if name and name[0].isdigit():
+        name = 'n' + name
+
+    # 5. Ensure not empty
+    return name or 'col'
 
 def batch_iterable(iterable: Iterable[Any], batch_size: int) -> Iterable[List[Any]]:
     """

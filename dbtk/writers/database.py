@@ -32,7 +32,7 @@ class DatabaseWriter(BaseWriter):
             batch_size: Number of records to insert per batch
             commit_frequency: How often to commit (in number of records)
         """
-        # Call BaseWriter with no filename (we're writing to database)
+        # Call BaseWriter with no file (we're writing to database)
         super().__init__(data, file=None)
 
         self.target_cursor = target_cursor

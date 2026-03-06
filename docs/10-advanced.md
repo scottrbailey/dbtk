@@ -73,3 +73,18 @@ register_user_drivers(custom_drivers)
    ```
 
 6. **Let the database do the work** - Use `db_expr` in Table definitions to leverage database functions instead of processing in Python.
+
+## IdentityManager & ValidationCollector
+
+For detailed documentation on identity resolution, validation, and logging tools for production ETL pipelines, see [ETL: Tools & Logging](09-etl-tools.md).
+
+**IdentityManager** - Resolves source-system keys to target-system identifiers with caching, status tracking, and state persistence. Essential for multi-stage imports and CRM/ERP integrations.
+
+**ValidationCollector** - Collects and validates coded values during processing, with optional lookup enrichment.
+
+## See Also
+
+- [ETL: Tools & Logging](09-etl-tools.md) - IdentityManager, ValidationCollector, and integration logging
+- [Configuration & Security](02-configuration.md) - Custom driver registration, config file locations
+- [ETL: Table & Transforms](07-table.md) - Using db_expr for database-side processing
+- [ETL: DataSurge & BulkSurge](08-datasurge.md) - Performance tuning for bulk operations

@@ -12,6 +12,8 @@ from dbtk.readers import (
     CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
     XMLReader, FixedReader, FixedColumn, Clean, get_reader
 )
+from dbtk.readers.fixed_width import EDIReader
+from dbtk.formats.edi import ACH_COLUMNS, FORMATS
 from dbtk.record import Record
 
 
@@ -468,7 +470,7 @@ Frank,35,US""")
     def test_single_filter(self, csv_data):
         """Test filtering with a single condition."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             assert len(results) == 4
             assert all(int(r.age) >= 18 for r in results)
@@ -478,8 +480,8 @@ Frank,35,US""")
     def test_multiple_filters_pipeline(self, csv_data):
         """Test multiple filters accumulating in a pipeline."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
-            reader.filter(lambda r: r.country == 'US')
+            reader.add_filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: r.country == 'US')
             results = list(reader)
             assert len(results) == 3
             names = [r.name for r in results]
@@ -488,7 +490,7 @@ Frank,35,US""")
     def test_filter_with_n_rows(self, csv_data):
         """Test that n_rows applies after filtering."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             reader.n_rows = 2
             results = list(reader)
             assert len(results) == 2
@@ -498,21 +500,21 @@ Frank,35,US""")
     def test_filter_no_matches(self, csv_data):
         """Test filter that matches no records."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) > 100)
+            reader.add_filter(lambda r: int(r.age) > 100)
             results = list(reader)
             assert len(results) == 0
 
     def test_filter_all_match(self, csv_data):
         """Test filter that matches all records."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: len(r.name) > 0)
+            reader.add_filter(lambda r: len(r.name) > 0)
             results = list(reader)
             assert len(results) == 6
 
     def test_filter_with_skip_rows(self, csv_data):
         """Test filter with skip_rows (should work but log warning)."""
         with CSVReader(open(csv_data), skip_rows=1) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             # Skipped Bob (row 1 after header), so should get Charlie, Diana, Frank
             assert len(results) == 3
@@ -522,13 +524,13 @@ Frank,35,US""")
     def test_filter_returns_self(self, csv_data):
         """Test that filter() returns self for chaining."""
         with CSVReader(open(csv_data)) as reader:
-            result = reader.filter(lambda r: True)
+            result = reader.add_filter(lambda r: True)
             assert result is reader
 
     def test_filter_row_num_field(self, csv_data):
         """Test that _row_num field is sequential for filtered records."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             row_nums = [r._row_num for r in results]
             assert row_nums == [1, 2, 3, 4]  # Sequential, not file row numbers
@@ -537,7 +539,7 @@ Frank,35,US""")
         """Test that filter() rejects non-callable."""
         with CSVReader(open(csv_data)) as reader:
             with pytest.raises(TypeError, match="filter\\(\\) requires a callable"):
-                reader.filter("not a callable")
+                reader.add_filter("not a callable")
 
     def test_filter_complex_function(self, csv_data):
         """Test filter with complex multi-condition function."""
@@ -545,7 +547,7 @@ Frank,35,US""")
             return record.country == 'US' and int(record.age) < 25
 
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(is_young_american)
+            reader.add_filter(is_young_american)
             results = list(reader)
             assert len(results) == 2
             names = [r.name for r in results]
@@ -555,9 +557,222 @@ Frank,35,US""")
     def test_rows_read_tracking(self, csv_data):
         """Test that _rows_read tracks all rows, not just filtered."""
         with CSVReader(open(csv_data)) as reader:
-            reader.filter(lambda r: int(r.age) >= 18)
+            reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             # Should have read 6 rows, returned 4
             assert reader._rows_read == 6
             assert reader._row_num == 4
+
+
+# ---------------------------------------------------------------------------
+# EDIReader tests
+# ---------------------------------------------------------------------------
+
+# Minimal NACHA ACH file content — 7 records, each exactly 94 chars.
+# Built programmatically so field positions are guaranteed correct.
+_FILE_HEADER = (
+    '1' '01' ' 021000021' '0123456789' '260301' '1200' 'A' '094' '10' '1'
+    + 'TEST BANK'.ljust(23)
+    + 'TEST COMPANY'.ljust(23)
+    + '        '
+)
+_BATCH_HEADER = (
+    '5' '200'
+    + 'TEST COMPANY'.ljust(16)
+    + ' ' * 20
+    + '1234567890' + 'PPD' + 'PAYROLL'.ljust(10)
+    + '260301' + '260302' + '   ' + '1'
+    + '02100002' + '0000001'
+)
+_ENTRY_1 = (
+    '6' '22'
+    + '02100002' + '1'
+    + '123456789012345'.ljust(17)
+    + '0000100000'
+    + 'ID0001'.ljust(15)
+    + 'JOHN DOE'.ljust(22)
+    + '  ' + '1'
+    + '021000020000001'
+)
+_ADDENDA = (
+    '7' '05'
+    + 'INVOICE 12345 PAYMENT'.ljust(80)
+    + '0001' + '0000001'
+)
+_ENTRY_2 = (
+    '6' '22'
+    + '03100000' + '2'
+    + '987654321098765'.ljust(17)
+    + '0000050000'
+    + 'ID0002'.ljust(15)
+    + 'JANE SMITH'.ljust(22)
+    + '  ' + '0'
+    + '021000020000002'
+)
+_BATCH_CONTROL = (
+    '8' '200'
+    + '000003' + '0005200002'
+    + '000000000000' + '000000150000'
+    + '1234567890'
+    + ' ' * 19 + ' ' * 6
+    + '02100002' + '0000001'
+)
+_FILE_CONTROL = (
+    '9'
+    + '000001' + '000001' + '00000003'
+    + '0005200002'
+    + '000000000000' + '000000150000'
+    + ' ' * 39
+)
+_ACH_RECORDS = [
+    _FILE_HEADER, _BATCH_HEADER, _ENTRY_1, _ADDENDA,
+    _ENTRY_2, _BATCH_CONTROL, _FILE_CONTROL,
+]
+_ACH_CONTENT = '\n'.join(_ACH_RECORDS) + '\n'
+assert all(len(r) == 94 for r in _ACH_RECORDS), "BUG: ACH test records must be 94 chars each"
+
+
+class TestEDIReader:
+    """Tests for EDIReader with NACHA ACH format."""
+
+    @pytest.fixture
+    def ach_path(self, fixtures_dir):
+        return fixtures_dir / 'sample_ach.ach'
+
+    @pytest.fixture
+    def reader(self, ach_path):
+        return EDIReader(open(ach_path), columns=ACH_COLUMNS)
+
+    # ------------------------------------------------------------------
+    # Basic iteration
+    # ------------------------------------------------------------------
+
+    def test_record_count(self, reader):
+        assert len(list(reader)) == 7
+
+    def test_record_types_in_order(self, reader):
+        types = [r.record_type_code for r in reader]
+        assert types == ['1', '5', '6', '7', '6', '8', '9']
+
+    # ------------------------------------------------------------------
+    # Field extraction per record type
+    # ------------------------------------------------------------------
+
+    def test_file_header_fields(self, reader):
+        rec = next(iter(reader))
+        assert rec.record_type_code == '1'
+        assert rec.priority_code == '01'
+        assert rec.file_creation_date == '260301'
+        assert rec.immediate_destination_name == 'TEST BANK'
+        assert rec.immediate_origin_name == 'TEST COMPANY'
+
+    def test_batch_header_fields(self, reader):
+        records = list(reader)
+        rec = records[1]
+        assert rec.record_type_code == '5'
+        assert rec.service_class_code == '200'
+        assert rec.company_name == 'TEST COMPANY'
+        assert rec.standard_entry_class_code == 'PPD'
+        assert rec.company_entry_description == 'PAYROLL'
+
+    def test_entry_detail_fields(self, reader):
+        records = list(reader)
+        rec = records[2]
+        assert rec.record_type_code == '6'
+        assert rec.transaction_code == '22'
+        assert rec.individual_name == 'JOHN DOE'
+        assert rec.amount == '0000100000'
+        assert rec.addenda_indicator == '1'
+
+    def test_addenda_fields(self, reader):
+        records = list(reader)
+        rec = records[3]
+        assert rec.record_type_code == '7'
+        assert rec.addenda_type_code == '05'
+        assert rec.payment_related_info.startswith('INVOICE 12345 PAYMENT')
+
+    def test_second_entry(self, reader):
+        records = list(reader)
+        rec = records[4]
+        assert rec.record_type_code == '6'
+        assert rec.individual_name == 'JANE SMITH'
+        assert rec.amount == '0000050000'
+        assert rec.addenda_indicator == '0'
+
+    # ------------------------------------------------------------------
+    # Unknown / short line handling
+    # ------------------------------------------------------------------
+
+    def test_unknown_type_skipped(self, tmp_path):
+        bad_line = 'X' + ' ' * 93  # unknown type code
+        content_with_unknown = _ACH_CONTENT.replace(
+            _FILE_HEADER + '\n',
+            _FILE_HEADER + '\n' + bad_line + '\n',
+        )
+        f = tmp_path / 'ach_with_unknown.ach'
+        f.write_text(content_with_unknown)
+        records = list(EDIReader(open(f), columns=ACH_COLUMNS))
+        assert len(records) == 7  # bad line skipped
+
+    # ------------------------------------------------------------------
+    # auto_trim
+    # ------------------------------------------------------------------
+
+    def test_auto_trim_strips_whitespace(self, reader):
+        rec = next(iter(reader))
+        assert rec.immediate_destination_name == 'TEST BANK'
+        assert not rec.immediate_destination_name.endswith(' ')
+
+    def test_auto_trim_false(self, ach_path):
+        reader = EDIReader(open(ach_path), columns=ACH_COLUMNS, auto_trim=False)
+        rec = next(iter(reader))
+        assert rec.immediate_destination_name == 'TEST BANK'.ljust(23)
+
+    # ------------------------------------------------------------------
+    # Context manager
+    # ------------------------------------------------------------------
+
+    def test_context_manager(self, ach_path):
+        with EDIReader(open(ach_path), columns=ACH_COLUMNS) as r:
+            records = list(r)
+        assert len(records) == 7
+
+    # ------------------------------------------------------------------
+    # FORMATS registry
+    # ------------------------------------------------------------------
+
+    def test_nacha_ach_format_registry(self):
+        assert 'nacha_ach' in FORMATS
+        assert FORMATS['nacha_ach']['columns'] is ACH_COLUMNS
+
+    # ------------------------------------------------------------------
+    # n_rows and skip_rows
+    # ------------------------------------------------------------------
+
+    def test_n_rows(self, ach_path):
+        reader = EDIReader(open(ach_path), columns=ACH_COLUMNS, n_rows=3)
+        assert len(list(reader)) == 3
+
+    def test_skip_rows(self, ach_path):
+        reader = EDIReader(open(ach_path), columns=ACH_COLUMNS, skip_rows=1)
+        records = list(reader)
+        assert len(records) == 6
+        assert records[0].record_type_code == '5'
+
+    # ------------------------------------------------------------------
+    # Constructor validation
+    # ------------------------------------------------------------------
+
+    def test_invalid_empty_columns_raises(self, ach_path):
+        with pytest.raises(ValueError):
+            EDIReader(open(ach_path), columns={})
+
+    def test_mixed_key_lengths_raises(self, ach_path):
+        from dbtk.readers.fixed_width import FixedColumn
+        bad_cols = {
+            '1': [FixedColumn('record_type_code', 1, 1)],
+            'AB': [FixedColumn('record_type_code', 1, 2)],
+        }
+        with pytest.raises(ValueError):
+            EDIReader(open(ach_path), columns=bad_cols)
             assert len(results) == 4

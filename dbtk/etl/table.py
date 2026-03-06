@@ -13,7 +13,7 @@ from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
 from ..database import ParamStyle
-from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike
+from ..utils import wrap_at_comma, process_sql_parameters, validate_identifier, quote_identifier, sanitize_identifier, RecordLike, ErrorDetail
 from .transforms.core import fn_resolver
 from .transforms.database import _DeferredTransform
 
@@ -38,65 +38,73 @@ class Table:
     - Automatic SQL generation: Generate INSERT, UPDATE, SELECT, DELETE, MERGE statements
     - Operation tracking: Count successful operations and incomplete records via self.counts
 
-        Column Configuration
+    Column Configuration
     --------------------
-        Each column in the columns dict is configured with a dict containing:
+    Each column in the columns dict is configured with a dict containing.
+    **Shorthand:** An empty dict ``{}`` defaults the field name to the column name.
+    For example: ``'email': {}`` is equivalent to ``'email': {'field': 'email'}``.
 
-        **Shorthand:** An empty dict ``{}`` defaults the field name to the column name.
-        For example: ``'email': {}`` is equivalent to ``'email': {'field': 'email'}``.
+    * **field** (str or list of str or '*'):
+      Source field name(s) from input records. If list, extracts multiple fields
+      as a list value. If '*', passes the entire record to the transformation
+      function instead of a single field value. If omitted, column is populated
+      via 'default' or 'db_expr'.
 
-        * **field** (str or list of str or '*'):
-          Source field name(s) from input records. If list, extracts multiple fields
-          as a list value. If '*', passes the entire record to the transformation
-          function instead of a single field value. If omitted, column is populated
-          via 'default' or 'db_expr'.
+    * **default** (any or callable, optional):
+      Default value for this column. Applied when the source field is missing,
+      empty, or None. If callable (e.g. a zero-argument lambda), it is called
+      at ``set_values()`` time so the value is resolved on each record rather
+      than at column-definition time. Useful for values that come from runtime
+      context (CLI args, job IDs, etc.) that aren't available when columns are
+      defined::
 
-        * **default** (any, optional):
-          Default/constant value to use for this column. Applied when source field
-          is missing, empty, or None.
+          conf_vars = {}  # populated later after table is initialized
+          columns = {
+              'user_id': {'default': lambda: conf_vars['user_id']},
+          }
 
-        * **fn** (callable | list[callable] | str, optional):
-          Transformation function(s) to apply to the source value.
-          - callable → applied directly
-          - list → functions applied in order (pipeline)
-          - str → magic shorthand:
-              • Pure Python: 'int', 'int:0', 'maxlen:255', 'nth:0', 'indicator:inv', 'split:\t'
-              • Database:   'lookup:states:name:abbrev', 'validate:countries:code'
-          See ``dbtk.etl.transforms.core.fn_resolver()`` for full shorthand reference.
+    * **fn** (callable | list[callable] | str, optional):
+      Transformation function(s) to apply to the source value.
+      callable: applied directly; list: functions applied in order (pipeline);
+      str: magic shorthand (e.g. 'int', 'maxlen:255', 'lookup:table:col:val').
+      See ``dbtk.etl.transforms.core.fn_resolver()`` for full shorthand reference.
 
-        * **db_expr** (str, optional):
-          Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
-          Use '#' as placeholder for the bind parameter. If specified without '#',
-          no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
+    * **db_expr** (str, optional):
+      Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
+      Use '#' as placeholder for the bind parameter. If specified without '#',
+      no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
 
-        * **primary_key** (bool, optional, default False):
-          Marks column as primary key. Automatically sets key=True and required=True.
+    * **primary_key** (bool, optional, default False):
+      Marks column as primary key. Automatically implies ``required=True``.
+      Alias: ``key``.
 
-        * **key** (bool, optional, default False):
-          Marks column as key for WHERE clauses in SELECT, UPDATE, DELETE operations.
+    * **key** (bool, optional, default False):
+      Alias for ``primary_key``.  Either may be used interchangeably.
 
-        * **auto_key** (bool, optional, default False):
-          Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
-          Ideal for typical auto-increment primary keys.
+    * **auto_key** (bool, optional, default False):
+      Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
+      Ideal for typical auto-increment primary keys.
 
-        * **nullable** (bool, optional, default True):
-          If False, marks column as required (must have non-None value for INSERT/MERGE).
+    * **nullable** (bool, optional, default True):
+      Controls whether the column must have a value for INSERT/UPDATE/MERGE.
+      ``nullable=False`` is the **anti-alias** of ``required=True`` — both
+      mark the column as required.
 
-        * **required** (bool, optional, default False):
-          Explicitly marks column as required.
+    * **required** (bool, optional, default False):
+      Explicitly marks column as required.  Anti-alias of ``nullable=False``.
 
-        * **auto_gen** (bool, optional, default False):
-          If True, the column is omitted from INSERT statements.
-          The database is expected to provide the value (e.g. AUTO_INCREMENT,
-          DEFAULT CURRENT_TIMESTAMP, GENERATED ALWAYS, etc.).
-          The column remains fully included in all other operations.
+    * **auto_gen** (bool, optional, default False):
+      If True, the column is omitted from INSERT statements.
+      The database is expected to provide the value (e.g. AUTO_INCREMENT,
+      DEFAULT CURRENT_TIMESTAMP, GENERATED ALWAYS, etc.).
+      The column remains fully included in all other operations.
 
-        * **no_update** (bool, optional, default False):
-          If True, excludes column from UPDATE and MERGE operations.
+    * **no_update** (bool, optional, default False):
+      If True, excludes column from UPDATE and MERGE operations.
 
-        * **bind_name** (str, auto-generated):
-          Sanitized parameter name for SQL bind variables. Automatically created from
-          column name (replaces special chars with underscores).
+    * **bind_name** (str, auto-generated):
+      Sanitized parameter name for SQL bind variables. Automatically created from
+      column name. Can not be specified in the column definition.
 
     Example
     -------
@@ -174,9 +182,16 @@ class Table:
 
     Attributes
     ----------
-        values (dict): Current record values (dict of column_name: value)
-        counts (dict): Operation counters (insert, update, delete, select, merge, records, incomplete)
-
+    values : dict
+        Current record values keyed by bind name (populated by :meth:`set_values`).
+    counts : dict
+        Operation counters with keys: ``insert``, ``update``, ``delete``,
+        ``select``, ``merge``, ``records``, ``incomplete``.
+    last_error : ErrorDetail or None
+        The error detail from the most recent :meth:`execute` call.
+        Set to ``None`` on success, or an :class:`dbtk.utils.ErrorDetail`
+        on ``DatabaseError`` (when ``raise_error=False``).  Cleared on
+        every successful execution and on :meth:`cursor` reassignment.
     """
 
     OPERATIONS = ('insert', 'select', 'update', 'delete', 'merge')
@@ -289,7 +304,7 @@ class Table:
         self.values: Dict[str, Any] = {}
         self._ops_ready: int = 0
 
-        self.generate_sql('insert')
+        self._generate_sql('insert')
 
         for col_name, col_def in self._columns.items():
             fn = col_def.get('fn')
@@ -392,7 +407,7 @@ class Table:
         else:
             raise ValueError(f"Invalid operation '{operation}'")
 
-        return all(self.values.get(col) is not None for col in required)
+        return all(self.values.get(col) not in (None, '') for col in required)
 
     def reqs_missing(self, operation: str) -> Set[str]:
         if operation == 'insert':
@@ -404,7 +419,7 @@ class Table:
         else:
             raise ValueError(f"Invalid operation '{operation}'")
 
-        return {col for col in required if self.values.get(col) is None}
+        return {col for col in required if self.values.get(col) in (None, '')}
 
     def is_ready(self, operation: str) -> bool:
         """Fast O(1) check if the current record is ready for the given operation."""
@@ -733,7 +748,7 @@ class Table:
             UPDATE SET {update_set}
         WHEN NOT MATCHED THEN
             INSERT ({insert_cols})
-            VALUES ({insert_values});""")
+            VALUES ({insert_values})""")
 
         logger.debug(f"Generated merge SQL for {self._name}:\n{sql}")
         return sql
@@ -750,7 +765,7 @@ class Table:
         else:
             return self._create_merge_statement()
 
-    def generate_sql(self, operation: str) -> None:
+    def _generate_sql(self, operation: str) -> None:
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'. Must be one of {self.OPERATIONS}")
 
@@ -771,11 +786,12 @@ class Table:
         self._finalize_sql(operation, sql)
 
     def get_sql(self, operation: str) -> str:
+        """Returns SQL for an operation. Automatically generates SQL if it hasn't been created yet (lazy)."""
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'. Must be one of {self.OPERATIONS}")
 
         if self._sql_statements[operation] is None:
-            self.generate_sql(operation)
+            self._generate_sql(operation)
         return self._sql_statements[operation]
 
     def get_bind_params(self, operation: str, mode: str = None) -> Union[dict, tuple]:
@@ -847,7 +863,8 @@ class Table:
                 val = None
 
             if val in ('', None) and 'default' in col_def:
-                val = col_def['default']
+                default = col_def['default']
+                val = default() if callable(default) else default
 
             if 'fn' in col_def:
                 fn = col_def['fn']
@@ -865,9 +882,11 @@ class Table:
         self.refresh_readiness()
 
     def _reset_counts(self):
+        """Reset all operation counters and clear last_error."""
         self.counts = {op: 0 for op in self.OPERATIONS}
         self.counts['records'] = 0
         self.counts['incomplete'] = 0
+        self.last_error: Optional[ErrorDetail] = None
 
     def _reset(self):
         self._sql_statements = {op: None for op in self.OPERATIONS}
@@ -884,7 +903,7 @@ class Table:
         if not err:
             return self._cursor.fetchone()
 
-    def get_column_definitions(self) -> list:
+    def get_column_definitions(self, all_cols: bool = False) -> list:
         """
         Introspect database table columns to get type information.
 
@@ -892,9 +911,13 @@ class Table:
         information for columns defined in this Table object. Validates that
         all Table columns exist in the database.
 
+        Parameters:
+            all_cols (bool): If True, return all columns from the database table.
+                If False, return only columns on the Table object.
+
         Returns:
             List of tuples: (column_name, type_obj, internal_size, precision, scale, sql_type_def)
-            where sql_type_def is the SQL type string like 'VARCHAR2(100)' or 'NUMBER(10,2)'
+            where sql_type_def is the SQL type string like 'VARCHAR(100)' or 'NUMBER(10,2)'
 
         Raises:
             ValueError: If a column defined in this Table doesn't exist in the database
@@ -919,7 +942,11 @@ class Table:
 
         # Validate and collect type info for Table-defined columns
         result = []
-        for col_name in self._columns.keys():
+        if all_cols:
+            col_list = db_columns.keys()
+        else:
+            col_list = self._columns.keys()
+        for col_name in col_list:
             col_name_upper = col_name.upper()
             if col_name_upper not in db_columns:
                 raise ValueError(
@@ -1068,13 +1095,40 @@ class Table:
 
     def _exec_sql(self, sql: str, params: Union[dict, tuple],
                   operation: str, raise_error: bool) -> int:
+        """
+        Execute a single SQL statement and update counts and last_error.
+
+        On success: increments ``counts[operation]``, sets ``last_error = None``,
+        returns 0.
+
+        On ``DatabaseError``: logs the error, stores an :class:`dbtk.utils.ErrorDetail`
+        in ``last_error``, re-raises if ``raise_error=True``, otherwise returns 1.
+
+        Parameters
+        ----------
+        sql : str
+            The SQL statement to execute.
+        params : dict or tuple
+            Bind parameters for the statement.
+        operation : str
+            One of ``OPERATIONS`` — used to update the correct counter.
+        raise_error : bool
+            If True, re-raise the ``DatabaseError`` after logging.
+
+        Returns
+        -------
+        int
+            0 on success, 1 on error (when raise_error=False).
+        """
         try:
             self._cursor.execute(sql, params)
             self.counts[operation] += 1
+            self.last_error = None
             return 0
         except self._cursor.connection.driver.DatabaseError as e:
             error_msg = f"SQL failed: {sql}\nParams: {params}\nError: {str(e)}"
             logger.error(error_msg)
+            self.last_error = ErrorDetail(message=str(e), code=getattr(e, 'pgcode', None))
             if raise_error:
                 raise
             return 1
@@ -1083,7 +1137,33 @@ class Table:
         """
         Execute the specified database operation using current record values.
 
-        Returns 0 on success, 1 on skip/error.
+        Parameters
+        ----------
+        operation : str
+            One of ``'insert'``, ``'select'``, ``'update'``, ``'delete'``, ``'merge'``.
+        raise_error : bool, default False
+            If True, re-raise ``DatabaseError`` instead of swallowing it.
+            If False, the error is captured in ``last_error`` and 1 is returned.
+
+        Returns
+        -------
+        int
+            0 on success; 1 when requirements are unmet (incomplete record)
+            or when a ``DatabaseError`` occurs and ``raise_error=False``.
+
+        Side Effects
+        ------------
+        * ``counts[operation]`` incremented on success.
+        * ``counts['incomplete']`` incremented when requirements are unmet.
+        * ``last_error`` set to ``None`` on success or an
+          :class:`dbtk.utils.ErrorDetail` on database error.
+
+        Raises
+        ------
+        ValueError
+            If ``operation`` is not valid, or required key columns are missing.
+        DatabaseError
+            If the underlying execute fails and ``raise_error=True``.
         """
         if operation not in self.OPERATIONS:
             raise ValueError(f"Invalid operation '{operation}'")
@@ -1112,14 +1192,24 @@ class Table:
         return self._exec_sql(sql, params, operation, raise_error)
 
     def force_positional(self):
+        """ If cursor paramstyle is named style, switch to the corresponding positional style then rebuild all SQL. """
         if self._paramstyle in ParamStyle.positional_styles():
             return
-        if self._paramstyle == 'named':
-            self._paramstyle = 'numeric'
-        elif self._paramstyle == 'pyformat':
-            self._paramstyle = 'format'
+        self._paramstyle = ParamStyle.get_positional_style(self._paramstyle)
         # rebuild SQL and parameter maps
         self._reset()
+
+    def db_expr_cols(self) -> list:
+        """
+        Return list of all columns that use database expressions.
+        Having db_expr on columns will make the table incompatible with some features such as all BulkSurge operations
+        and DataSurge operations in pass_through mode.
+        """
+        expr_cols = []
+        for col, info in self.columns.items():
+            if info.get('db_expr', None) is not None:
+                expr_cols.append(col)
+        return expr_cols
 
     def __repr__(self) -> str:
         return f"Table('{self.name}', {len(self.columns)} columns, {self.paramstyle})"

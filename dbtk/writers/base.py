@@ -46,12 +46,12 @@ class BaseWriter(ABC):
         * List of dictionaries
         * List of lists/tuples (requires columns parameter)
 
-    file : str, Path, TextIO, or BinaryIO, optional
+    filename : str, Path, TextIO, or BinaryIO, optional
         Output filename or file handle. If None, writes to stdout (limited to 20 rows for preview).
     columns : List[str], optional
         Column names for list-of-lists data. Ignored for other data types which
         have columns embedded.
-    encoding : str, default 'utf-8-sig'
+    encoding : str, default 'utf-8'
         File encoding for text-based formats
     write_headers : bool, default True
         If True, include header row in formats that support it.
@@ -64,9 +64,6 @@ class BaseWriter(ABC):
         Column names detected from data or provided explicitly
     data_iterator : Iterator
         Iterator over data records
-    row_count : int
-        Number of rows written (updated during write operation)
-
     Examples
     --------
     Subclasses implement specific formats::
@@ -122,7 +119,7 @@ class BaseWriter(ABC):
             data: Iterable[RecordLike],
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
-            encoding: str = "utf-8-sig",
+            encoding: str = "utf-8",
             write_headers: bool = True,
             **fmt_kwargs,
     ):
@@ -137,7 +134,7 @@ class BaseWriter(ABC):
             Output file. None writes to stdout.
         columns : List[str], optional
             Column names for list-of-lists
-        encoding : str, default 'utf-8-sig'
+        encoding : str, default 'utf-8'
             File encoding
         write_headers : bool, default True
             Include header row in output
@@ -204,7 +201,7 @@ class BaseWriter(ABC):
 
     @property
     def row_count(self) -> int:
-        """Number of rows written so far."""
+        """Number of rows written (updated during write operation)"""
         return self._row_num
 
     def write(self) -> int:
@@ -506,7 +503,7 @@ class BatchWriter(BaseWriter):
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
             columns: Optional[List[str]] = None,
             headers: Optional[List[str]] = None,
-            encoding: Optional[str] = 'utf-8-sig',
+            encoding: Optional[str] = 'utf-8',
             write_headers: bool = True,
             **fmt_kwargs,
     ):
@@ -634,8 +631,7 @@ class BatchWriter(BaseWriter):
         if isinstance(source, (list, tuple)) and source:
             first = source[0]
             if hasattr(first, 'keys'):
-                # Use keys(normalized=False) to get original field names
-                return list(first.keys(normalized=False))
+                return list(first.keys())
 
         # Fallback to detected column names
         return self.columns

@@ -47,6 +47,7 @@ DRIVERS = {
                            'client_encoding', 'options', 'sslcert', 'sslkey', 'sslrootcert'},
         'connection_method': 'connection_string',
         'default_port': 5432,
+        'note': 'pip install psycopg[binary]'
     },
     'pgdb': {
         'database_type': 'postgres',
@@ -81,7 +82,7 @@ DRIVERS = {
     },
 
     # MySQL Drivers
-    'mysqlclient': {
+    'MySQLdb': {
         'database_type': 'mysql',
         'priority': 11,
         'param_map': {'database': 'db', 'password': 'passwd'},
@@ -90,7 +91,8 @@ DRIVERS = {
                            'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
                            'read_default_group', 'unix_socket', 'port'},
         'connection_method': 'kwargs',
-        'default_port': 3306
+        'default_port': 3306,
+        'note': 'pip install mysqlclient',
     },
     'mariadb': {
         'database_type': 'mysql',
@@ -111,7 +113,8 @@ DRIVERS = {
                            'sql_mode', 'use_unicode', 'get_warnings', 'raise_on_warnings',
                            'connection_timeout', 'buffered', 'raw', 'consume_results'},
         'connection_method': 'kwargs',
-        'default_port': 3306
+        'default_port': 3306,
+        'note': 'pip install mysql-connector-python'
     },
     'pymysql': {
         'database_type': 'mysql',
@@ -121,17 +124,6 @@ DRIVERS = {
         'optional_params': {'port', 'password', 'charset', 'sql_mode', 'read_default_file',
                            'conv', 'use_unicode', 'connect_timeout', 'read_timeout', 'write_timeout',
                            'bind_address', 'unix_socket', 'autocommit'},
-        'connection_method': 'kwargs',
-        'default_port': 3306
-    },
-    'MySQLdb': {
-        'database_type': 'mysql',
-        'priority': 15,
-        'param_map': {'database': 'db', 'password': 'passwd'},
-        'required_params': [{'host', 'database', 'user'}],
-        'optional_params': {'port', 'password', 'charset', 'use_unicode', 'sql_mode', 'read_default_file',
-                           'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
-                           'read_default_group', 'unix_socket'},
         'connection_method': 'kwargs',
         'default_port': 3306
     },
@@ -479,11 +471,12 @@ class Database:
     # Attributes stored locally, others delegated to _connection
     _local_attrs = [
         '_connection', 'database_type', 'database_name', 'driver',
-        'name', 'placeholder', '_cursor_settings'
+        'connection_name', 'placeholder', '_cursor_settings'
     ]
 
     def __init__(self, connection, driver,
                  database_name: Optional[str] = None,
+                 connection_name: Optional[str] = None,
                  cursor_settings: Optional[dict] = None):
         """
         Initialize Database wrapper around an existing connection.
@@ -499,6 +492,8 @@ class Database:
             Database adapter module (psycopg2, oracledb, mysqlclient, etc.)
         database_name : str, optional
             Name of the database. If None, attempts to extract from connection.
+        connection_name : str, optional
+            Name/alias from config file (e.g., 'imdb', 'prod_db'). None if not from config.
         cursor_settings : dict, optional
             Values passed to the cursor constructor. e.g. {'batch_size': 2000}
 
@@ -518,6 +513,7 @@ class Database:
         """
         self._connection = connection
         self.driver = driver
+        self.connection_name = connection_name
 
         if database_name is None:
             database_name = (connection.get('database') or
@@ -547,13 +543,13 @@ class Database:
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying connection."""
         if key == '__name__':
-            return self.name or self.database_name or 'unknown'
+            return self.connection_name or self.database_name or 'unknown'
         else:
             return getattr(self._connection, key)
 
     def __setattr__(self, key: str, value: Any) -> None:
         """Set attributes locally or delegate to connection."""
-        if key in self._local_attrs or key in ('name',):
+        if key in self._local_attrs:
             self.__dict__[key] = value
         else:
             setattr(self._connection, key, value)
@@ -568,7 +564,9 @@ class Database:
 
     def __str__(self) -> str:
         """String representation of the database connection."""
-        if self.database_name:
+        if self.connection_name and self.database_name:
+            return f"Database('{self.connection_name}' -> {self.database_name}:{self.database_type})"
+        elif self.database_name:
             return f'Database({self.database_name}:{self.database_type})'
         else:
             return f'Database({self.database_type})'
@@ -706,12 +704,15 @@ class Database:
 
     @classmethod
     def create(cls, db_type: str, driver: Optional[str] = None,
+               connection_name: Optional[str] = None,
                cursor_settings: Optional[dict] = None, **kwargs) -> 'Database':
         """
         Factory method to create database connections.
 
         Args:
             db_type: Database type ('postgres', 'oracle', 'mysql', etc.)
+            driver: Specific driver to use (optional)
+            connection_name: Config file connection name/alias (optional)
             cursor_settings: Defaults to use when creating cursors.
             **kwargs: Connection parameters
 
@@ -770,7 +771,8 @@ class Database:
             raise ValueError(f"Unknown connection method ({driver_conf['connection_method']}) for driver '{driver_name}'")
 
         if connection:
-            db = cls(connection, db_driver, kwargs.get('database'), cursor_settings=cursor_settings)
+            db = cls(connection, db_driver, kwargs.get('database'),
+                    connection_name=connection_name, cursor_settings=cursor_settings)
             if db.database_type == 'unknown':
                 db.database_type = db_type
             return db

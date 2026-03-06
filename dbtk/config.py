@@ -8,7 +8,7 @@ import os
 from textwrap import dedent
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 from cryptography.fernet import Fernet
 from .defaults import settings # noqa: F401
 from .database import Database, _get_params_for_database
@@ -255,7 +255,7 @@ class ConfigManager:
     * Sample config is created at ~/.config/dbtk.yml on first run if no config exists
     """
 
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: Optional[Union[str, Path]] = None):
         """
         Initialize config manager and load configuration.
 
@@ -296,7 +296,7 @@ class ConfigManager:
         # Apply global settings
         self._apply_settings()
 
-    def _find_config_file(self, config_file: Optional[str]) -> Path:
+    def _find_config_file(self, config_file: Optional[Union[str, Path]]) -> Path:
         """Find the configuration file."""
         if config_file:
             path = Path(config_file)
@@ -397,17 +397,19 @@ class ConfigManager:
             timeout = config.get_setting('database.timeout', 30)
             tz = config.get_setting('default_timezone', 'UTC')
         """
-        settings = self.config.get('settings', {})
+        config_settings = self.config.get('settings', {})
 
         # Support dot notation for nested settings
         keys = key.split('.')
-        value = settings
+        value = config_settings
 
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
-            else:
+            elif default:
                 return default
+            else:
+                return settings.get(k)
 
         return value
 
@@ -717,13 +719,13 @@ def generate_encryption_key() -> str:
     return key
 
 
-def set_config_file(config_file: str) -> None:
+def set_config_file(config_file: Union[str, Path]) -> None:
     """Set the configuration file to use globally."""
     global _config_manager
     _config_manager = ConfigManager(config_file)
 
 
-def connect(name: str, password: str = None, config_file: Optional[str] = None) -> Database:
+def connect(name: str, password: str = None, config_file: Optional[Union[str, Path]] = None) -> Database:
     """
     Connect to a named database from configuration.
 
@@ -770,11 +772,12 @@ def connect(name: str, password: str = None, config_file: Optional[str] = None) 
     allowed_params = _get_params_for_database(db_type)
     config = {key: val for key, val in config.items() if key in allowed_params}
 
-    # Create database connection
-    return Database.create(db_type, driver=driver, cursor_settings=cursor_settings, **config)
+    # Create database connection with connection name
+    return Database.create(db_type, driver=driver, connection_name=name,
+                          cursor_settings=cursor_settings, **config)
 
 
-def get_password(name: str, config_file: Optional[str] = None) -> str:
+def get_password(name: str, config_file: Optional[Union[str, Path]] = None) -> str:
     """
     Get a stored password from configuration.
 
@@ -802,7 +805,7 @@ def get_password(name: str, config_file: Optional[str] = None) -> str:
     return config_mgr.get_password(name)
 
 
-def get_setting(key: str, default: Any = None, config_file: Optional[str] = None) -> Any:
+def get_setting(key: str, default: Any = None, config_file: Optional[Union[str, Path]] = None) -> Any:
     """
     Get a setting value from configuration.
 
@@ -860,7 +863,7 @@ def encrypt_password(password: str = None, encryption_key: str = None) -> str:
     return encrypted
 
 
-def encrypt_config_file(filename: str) -> None:
+def encrypt_config_file(filename: Union[str, Path]) -> None:
     """CLI Utility to encrypt all passwords in a config file."""
     temp_config = ConfigManager.__new__(ConfigManager)
     temp_config._fernet = None
