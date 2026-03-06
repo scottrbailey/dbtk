@@ -8,7 +8,7 @@
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../dbtk'))  # Points to dbtk/ package
+sys.path.insert(0, os.path.abspath('..'))  # Points to repo root containing dbtk/ package
 
 
 project = 'dbtk'
@@ -24,7 +24,21 @@ extensions = [
     'sphinx.ext.napoleon',     # Support Google/NumPy style docstrings
     'sphinx.ext.viewcode',     # Add [source] links to code
     'sphinx.ext.intersphinx',  # Link to other project docs (like Python)
+    'myst_parser',             # Parse Markdown (.md) files
 ]
+
+# MyST configuration
+myst_enable_extensions = [
+    'colon_fence',     # Allow ::: fences as alternative to ```
+    'deflist',         # Definition lists
+    'tasklist',        # GitHub-style task lists
+]
+myst_heading_anchors = 3  # Auto-generate anchors for headings h1-h3
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
@@ -51,6 +65,8 @@ autodoc_typehints_description_target = "documented"
 
 # Simplify complex type annotations
 python_use_unqualified_type_names = True
+
+suppress_warnings = ['autodoc.duplicate']
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

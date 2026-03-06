@@ -38,77 +38,73 @@ class Table:
     - Automatic SQL generation: Generate INSERT, UPDATE, SELECT, DELETE, MERGE statements
     - Operation tracking: Count successful operations and incomplete records via self.counts
 
-        Column Configuration
+    Column Configuration
     --------------------
-        Each column in the columns dict is configured with a dict containing:
+    Each column in the columns dict is configured with a dict containing.
+    **Shorthand:** An empty dict ``{}`` defaults the field name to the column name.
+    For example: ``'email': {}`` is equivalent to ``'email': {'field': 'email'}``.
 
-        **Shorthand:** An empty dict ``{}`` defaults the field name to the column name.
-        For example: ``'email': {}`` is equivalent to ``'email': {'field': 'email'}``.
+    * **field** (str or list of str or '*'):
+      Source field name(s) from input records. If list, extracts multiple fields
+      as a list value. If '*', passes the entire record to the transformation
+      function instead of a single field value. If omitted, column is populated
+      via 'default' or 'db_expr'.
 
-        * **field** (str or list of str or '*'):
-          Source field name(s) from input records. If list, extracts multiple fields
-          as a list value. If '*', passes the entire record to the transformation
-          function instead of a single field value. If omitted, column is populated
-          via 'default' or 'db_expr'.
+    * **default** (any or callable, optional):
+      Default value for this column. Applied when the source field is missing,
+      empty, or None. If callable (e.g. a zero-argument lambda), it is called
+      at ``set_values()`` time so the value is resolved on each record rather
+      than at column-definition time. Useful for values that come from runtime
+      context (CLI args, job IDs, etc.) that aren't available when columns are
+      defined::
 
-        * **default** (any or callable, optional):
-          Default value for this column. Applied when the source field is missing,
-          empty, or None. If callable (e.g. a zero-argument lambda), it is called
-          at ``set_values()`` time so the value is resolved on each record rather
-          than at column-definition time. Useful for values that come from runtime
-          context (CLI args, job IDs, etc.) that aren't available when columns are
-          defined::
+          conf_vars = {}  # populated later after table is initialized
+          columns = {
+              'user_id': {'default': lambda: conf_vars['user_id']},
+          }
 
-              conf_vars = {}  # populated later after table is initialized
-              columns = {
-                  'user_id': {'default': lambda: conf_vars['user_id']},
-              }
+    * **fn** (callable | list[callable] | str, optional):
+      Transformation function(s) to apply to the source value.
+      callable: applied directly; list: functions applied in order (pipeline);
+      str: magic shorthand (e.g. 'int', 'maxlen:255', 'lookup:table:col:val').
+      See ``dbtk.etl.transforms.core.fn_resolver()`` for full shorthand reference.
 
-        * **fn** (callable | list[callable] | str, optional):
-          Transformation function(s) to apply to the source value.
-          - callable → applied directly
-          - list → functions applied in order (pipeline)
-          - str → magic shorthand:
-              • Pure Python: 'int', 'int:0', 'maxlen:255', 'nth:0', 'indicator:inv', 'split:\t'
-              • Database:   'lookup:states:name:abbrev', 'validate:countries:code'
-          See ``dbtk.etl.transforms.core.fn_resolver()`` for full shorthand reference.
+    * **db_expr** (str, optional):
+      Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
+      Use '#' as placeholder for the bind parameter. If specified without '#',
+      no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
 
-        * **db_expr** (str, optional):
-          Database-side function call (e.g., 'CURRENT_TIMESTAMP', 'UPPER(#)').
-          Use '#' as placeholder for the bind parameter. If specified without '#',
-          no bind parameter is created (useful for CURRENT_TIMESTAMP, etc.).
+    * **primary_key** (bool, optional, default False):
+      Marks column as primary key. Automatically implies ``required=True``.
+      Alias: ``key``.
 
-        * **primary_key** (bool, optional, default False):
-          Marks column as primary key. Automatically implies ``required=True``.
-          Alias: ``key``.
+    * **key** (bool, optional, default False):
+      Alias for ``primary_key``.  Either may be used interchangeably.
 
-        * **key** (bool, optional, default False):
-          Alias for ``primary_key``.  Either may be used interchangeably.
+    * **auto_key** (bool, optional, default False):
+      Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
+      Ideal for typical auto-increment primary keys.
 
-        * **auto_key** (bool, optional, default False):
-          Convenience flag: sets both ``primary_key=True`` and ``auto_gen=True``.
-          Ideal for typical auto-increment primary keys.
+    * **nullable** (bool, optional, default True):
+      Controls whether the column must have a value for INSERT/UPDATE/MERGE.
+      ``nullable=False`` is the **anti-alias** of ``required=True`` — both
+      mark the column as required.
 
-        * **nullable** (bool, optional, default True):
-          Controls whether the column must have a value for INSERT/UPDATE/MERGE.
-          ``nullable=False`` is the **anti-alias** of ``required=True`` — both
-          mark the column as required.
+    * **required** (bool, optional, default False):
+      Explicitly marks column as required.  Anti-alias of ``nullable=False``.
 
-        * **required** (bool, optional, default False):
-          Explicitly marks column as required.  Anti-alias of ``nullable=False``.
+    * **auto_gen** (bool, optional, default False):
+      If True, the column is omitted from INSERT statements.
+      The database is expected to provide the value (e.g. AUTO_INCREMENT,
+      DEFAULT CURRENT_TIMESTAMP, GENERATED ALWAYS, etc.).
+      The column remains fully included in all other operations.
 
-        * **auto_gen** (bool, optional, default False):
-          If True, the column is omitted from INSERT statements.
-          The database is expected to provide the value (e.g. AUTO_INCREMENT,
-          DEFAULT CURRENT_TIMESTAMP, GENERATED ALWAYS, etc.).
-          The column remains fully included in all other operations.
+    * **no_update** (bool, optional, default False):
+      If True, excludes column from UPDATE and MERGE operations.
 
-        * **no_update** (bool, optional, default False):
-          If True, excludes column from UPDATE and MERGE operations.
-
-        * **bind_name** (str, auto-generated):
-          Sanitized parameter name for SQL bind variables. Automatically created from
-          column name. Can not be specified in the column definition.
+    * **bind_name** (str, auto-generated):
+      Sanitized parameter name for SQL bind variables. Automatically created from
+      column name. Can not be specified in the column definition.
 
     Example
     -------

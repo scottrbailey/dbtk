@@ -76,6 +76,7 @@ Quick Start
    10-advanced
    11-api-reference
    12-troubleshooting
+   api
 
 Indices and tables
 ==================

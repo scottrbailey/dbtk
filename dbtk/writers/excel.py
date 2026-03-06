@@ -39,30 +39,30 @@ class ExcelWriter(BatchWriter):
     2. Batch write (no data on init) + write_batch()
     3. Hybrid: data on init + write() + write_batch()
 
-    Usage examples:
+    Usage examples::
 
-    # Mode 1: Traditional single-shot write
-    ExcelWriter(cursor, 'report.xlsx').write()
+        # Mode 1: Traditional single-shot write
+        ExcelWriter(cursor, 'report.xlsx').write()
 
-    # Mode 2: Pure streaming with write_batch()
-    with ExcelWriter(file='report.xlsx') as writer:
-        writer.write_batch(cursor)  # goes to sheet 'Data'
+        # Mode 2: Pure streaming with write_batch()
+        with ExcelWriter(file='report.xlsx') as writer:
+            writer.write_batch(cursor)  # goes to sheet 'Data'
 
-    # Mode 3: Hybrid - initial data + streaming
-    with ExcelWriter(first_batch, 'report.xlsx') as writer:
-        writer.write()  # Write initial batch
-        writer.write_batch(second_batch)  # Stream additional batches
+        # Mode 3: Hybrid - initial data + streaming
+        with ExcelWriter(first_batch, 'report.xlsx') as writer:
+            writer.write()  # Write initial batch
+            writer.write_batch(second_batch)  # Stream additional batches
 
-    # Multi-sheet report
-    with ExcelWriter(file='report.xlsx', sheet_name='Summary') as writer:
-        writer.write_batch(summary_data, sheet_name='Summary')
-        writer.write_batch(users_data, sheet_name='Users')
-        writer.write_batch(orders_data, sheet_name='Orders')
+        # Multi-sheet report
+        with ExcelWriter(file='report.xlsx', sheet_name='Summary') as writer:
+            writer.write_batch(summary_data, sheet_name='Summary')
+            writer.write_batch(users_data, sheet_name='Users')
+            writer.write_batch(orders_data, sheet_name='Orders')
 
-    # Streaming / batch mode
-    with ExcelWriter(file='large.xlsx') as writer:
-        for batch in large_generator:
-            writer.write_batch(batch, sheet_name='Data')  # appends to 'Data'
+        # Streaming / batch mode
+        with ExcelWriter(file='large.xlsx') as writer:
+            for batch in large_generator:
+                writer.write_batch(batch, sheet_name='Data')  # appends to 'Data'
     """
 
     accepts_file_handle = False

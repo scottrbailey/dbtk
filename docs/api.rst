@@ -1,5 +1,5 @@
-API Reference
-=============
+Auto-generated API Reference
+============================
 
 Database Connections
 --------------------
