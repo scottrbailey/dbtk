@@ -1,5 +1,9 @@
 # ETL: DataSurge & BulkSurge
 
+<div style="float: right; padding: 20px">
+    <img src="assets/datasurge.png" height="240" align="right" />
+</div>
+
 High-performance bulk loading for any database. Both classes wrap a configured `Table` and handle batching, progress tracking, and database-specific optimisations automatically.
 
 ## DataSurge
@@ -34,6 +38,7 @@ with dbtk.readers.get_reader('soldier_updates.csv') as reader:
 - Progress tracking and logging
 - Support for INSERT, UPDATE, DELETE, MERGE operations
 
+
 **Performance impact:** DataSurge can be 10-100x faster than row-by-row operations, depending on your database and network latency.
 
 ### Pass Through Mode
@@ -62,6 +67,11 @@ bulk_writer.insert(source_cursor)
 ```
 
 ## BulkSurge
+
+<div style="float: right; padding: 20px">
+    <img src="assets/bulksurge.png" height="240" align="right" />
+</div>
+
 
 BulkSurge provides maximum throughput by leveraging database-specific bulk loading mechanisms. It supports both 
 **direct streaming** (zero temp files) and **external tool-based** loading depending on your database and requirements.

@@ -6,8 +6,9 @@
 DBTK - Data Benders ToolKit
 =================================
 
-The DBTK library is a lightweight database toolkit for ETL and data integration, designed to get
-data to and from your databases with minimal hassle.
+Like the elemental benders of Avatar, this library gives you precise control over data, the world's most rapidly growing element.
+Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go.
+This library is designed by and for data integrators.
 
 **Perfect for:**
 
@@ -22,6 +23,21 @@ data to and from your databases with minimal hassle.
 * Complex aggregations (leverage your database's strengths)
 * Data analysis and statistics
 
+**Features:**
+
+* Universal Database Connectivity - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
+* Portable SQL Queries - Write SQL once with named parameters, runs on any database regardless of parameter style
+* Smart Cursors - All cursors and readers return Record objects with the speed and efficiency of tuples and the flexibility of dicts
+* Flexible File Reading - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, DataFrame and fixed-width text files with consistent API
+* Transparent Compression - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
+* Multiple Export Formats - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
+* Advanced ETL Framework - Full-featured Table class for complex data transformations, validations, and merging
+* Data Transformations - Built-in functions for dates, phones, emails, and custom data cleaning with international support
+* High-Performance Bulk Operations - DataSurge for blazing-fast batch operations; BulkSurge for even faster direct loading when supported
+* Integrated Logging - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
+* Encrypted Configuration - YAML-based config with password encryption and environment variable support
+
+
 Philosophy
 ----------
 
@@ -33,6 +49,7 @@ If you need to pivot, aggregate, or perform complex SQL operations - write SQL a
 your database handle it. If you need dataframes and heavy analytics - reach for Pandas
 or polars. DBTK sits in between: getting your data where it needs to be, cleaned and
 validated along the way.
+
 
 Quick Start
 -----------

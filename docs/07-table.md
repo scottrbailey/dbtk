@@ -1,5 +1,9 @@
 # ETL: Table, Transforms & Lookups
 
+<div style="float: right; padding: 20px">
+    <img src="assets/table.png" height="240" align="right" />
+</div>
+
 **The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
 
 **The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation. Use `:named` or `%(pyformat)s` SQL parameters throughout — DBTK converts them to whatever your database requires.
