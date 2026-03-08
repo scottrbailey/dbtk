@@ -8,6 +8,8 @@
 
 import os
 import sys
+import shutil
+
 sys.path.insert(0, os.path.abspath('..'))  # Points to repo root containing dbtk/ package
 
 
@@ -71,3 +73,15 @@ python_use_unqualified_type_names = True
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
+
+
+def copy_assets_dir(app, exc):
+    """Copy docs/assets/ to _build/html/assets/ so <img src="assets/..."> works."""
+    if exc is None and app.builder.name == 'html':
+        src = os.path.join(app.srcdir, 'assets')
+        dst = os.path.join(app.outdir, 'assets')
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+
+def setup(app):
+    app.connect('build-finished', copy_assets_dir)
