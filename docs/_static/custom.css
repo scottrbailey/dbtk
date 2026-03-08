@@ -1,4 +1,0 @@
-/* Prevent RTD theme from overriding img height/width HTML attributes */
-img[height] {
-    max-width: none;
-}

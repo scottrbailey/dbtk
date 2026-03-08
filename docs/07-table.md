@@ -1,7 +1,7 @@
 # ETL: Table, Transforms & Lookups
 
 <div style="float: right; padding: 20px">
-    <img src="assets/table.png" height="240" align="right" />
+    <img src="assets/table.png" />
 </div>
 
 **The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.

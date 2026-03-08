@@ -1,7 +1,7 @@
 # ETL: DataSurge & BulkSurge
 
 <div style="float: right; padding: 20px">
-    <img src="assets/datasurge.png" height="240" align="right" />
+    <img src="assets/datasurge.png" />
 </div>
 
 High-performance bulk loading for any database. Both classes wrap a configured `Table` and handle batching, progress tracking, and database-specific optimisations automatically.
@@ -69,7 +69,7 @@ bulk_writer.insert(source_cursor)
 ## BulkSurge
 
 <div style="float: right; padding: 20px">
-    <img src="assets/bulksurge.png" height="240" align="right" />
+    <img src="assets/bulksurge.png" />
 </div>
 
 
