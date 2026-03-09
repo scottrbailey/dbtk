@@ -1,7 +1,7 @@
 # DBTK - Data Benders Toolkit
 
 <div style="float: right; padding: 20px">
-    <img src="/docs/assets/databender.png" height="240" align="right" />
+    <img src="https://raw.githubusercontent.com/scottrbailey/dbtk/main/docs/assets/databender.png" height="240" align="right" />
 </div>
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
