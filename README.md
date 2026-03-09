@@ -24,6 +24,11 @@ your database handle it. If you need dataframes and heavy analytics - reach for 
 or polars. DBTK sits in between: getting your data where it needs to be, cleaned and
 validated along the way.
 
+**Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
+But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will
+process 1M rows in 3-4 seconds. But even with a standard Python csv reader and numerous column transforms, DataSurge is able to
+write 1M rows to every supported database in 5-10 seconds.
+
 ## Features
 
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
@@ -216,6 +221,7 @@ MIT License - see LICENSE file for details.
 
 Documentation, testing and architectural improvements assisted by [Claude](https://claude.ai) (Anthropic).
 Architectural review and witty banter by [Grok](https://grok.com/) (xAI).
+DataBender imagery [ChatGPT](https://chatgpt.com/) (OpenAI).
 
 ## Support
 

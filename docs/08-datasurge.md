@@ -4,7 +4,7 @@ High-performance bulk loading for any database. Both classes wrap a configured `
 
 ## DataSurge
 
-<div style="float: right; padding: 20px">
+<div style="float: right; padding-left: 20px">
     <img src="assets/datasurge.png" height="240" align="right" />
 </div>
 
@@ -70,10 +70,9 @@ bulk_writer.insert(source_cursor)
 
 ## BulkSurge
 
-<div style="float: right; padding: 20px">
+<div style="float: right; padding-left: 20px">
     <img src="assets/bulksurge.png" height="240" align="right" />
 </div>
-
 
 BulkSurge provides maximum throughput by leveraging database-specific bulk loading mechanisms. It supports both 
 **direct streaming** (zero temp files) and **external tool-based** loading depending on your database and requirements.

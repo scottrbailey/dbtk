@@ -1,6 +1,6 @@
 # ETL: Table, Transforms & Lookups
 
-<div style="float: right; padding: 20px">
+<div style="float: right; padding-left: 20px">
     <img src="assets/table.png" height="240" align="right" />
 </div>
 

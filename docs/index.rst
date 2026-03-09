@@ -37,6 +37,10 @@ This library is designed by and for data integrators.
 * Integrated Logging - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
 * Encrypted Configuration - YAML-based config with password encryption and environment variable support
 
+**Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
+But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will
+process 1M rows in 3-4 seconds. But even with a standard Python csv reader and numerous column transforms, DataSurge is able to
+write 1M rows to every supported database in 5-10 seconds.
 
 Philosophy
 ----------
