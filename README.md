@@ -24,6 +24,47 @@ your database handle it. If you need dataframes and heavy analytics - reach for 
 or polars. DBTK sits in between: getting your data where it needs to be, cleaned and
 validated along the way.
 
+## Why DBTK?
+
+Most ETL tools fall into one of two traps:
+
+- **Verbose boilerplate hell** — SQLAlchemy + pandas + custom loops, repeated across every
+  interface with minor variations, slowly accreting defensive code for every edge case
+- **Opaque black box** — so much is hidden that debugging feels like reverse-engineering
+  someone else's code
+
+DBTK threads the needle. It's declarative enough to eliminate repetition, but explicit enough
+that you stay in control. When something breaks, you know exactly where to look.
+
+The architecture is intentionally layered — use what you need, skip what you don't:
+
+```
+Record          → ergonomic row handling, memory-efficient at scale
+Table           → field mapping, transforms, validation, upserts
+DataSurge       → batched inserts with progress tracking and stats
+BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throughput
+readers/writers → consistent API across every file format and compression type
+```
+
+When developers convert existing jobs to DBTK, the result is typically **half to a quarter the
+original code**. That reduction comes from specific things DBTK just handles:
+
+- **Key column validation** — DBTK throws a clear error if a key field is missing from the source.
+  No more writing null-guards before every upsert.
+- **Safe partial updates** — if a field is missing from the source, DBTK excludes it from the
+  UPDATE rather than overwriting with NULL. No more "did I just wipe a column?" paranoia.
+- **Batch loop elimination** — DataSurge handles chunking, committing, retries, and statistics.
+  No more hand-rolled batch loops.
+- **Zero-config logging** — one line sets up timestamped log files with auto-cleanup and a global
+  error flag. No logging boilerplate scattered through your pipeline.
+- **TableLookup shorthand** — define a lookup or validation in ~40 characters:
+  `'fn': 'validate:ranks:rank_code:preload'`. The `preload` hint pre-caches the table before
+  processing starts. What would otherwise be a custom class or 30-line function is a string.
+
+The code that remains is shorter, clearer, and still has all the functionality and checks. You
+finish the job and think *"that was satisfyingly elegant"* — not because corners were cut, but
+because the tool was collaborating with you instead of making you fight it.
+
 **Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
 But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will
 process 1M rows in 3-4 seconds. But even with a standard Python csv reader and numerous column transforms, DataSurge is able to
