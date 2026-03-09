@@ -8,7 +8,7 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, BinaryIO, Iterable, Iterator, List, Optional, TextIO, Union
+from typing import Any, BinaryIO, Iterable, Iterator, List, Optional, TextIO, Tuple, Union
 
 from ..utils import RecordLike, to_string
 
@@ -170,7 +170,7 @@ class BaseWriter(ABC):
                 raise ValueError(f"{self.__class__.__name__} requires an output file path")
             self.output_path = Path(file)
 
-    def _open_file_handle(self, mode: str = "w") -> tuple[Union[TextIO, BinaryIO], bool]:
+    def _open_file_handle(self, mode: str = "w") -> Tuple[Union[TextIO, BinaryIO], bool]:
         """
         Open the output file/stream and return (handle, should_close).
 
@@ -267,7 +267,7 @@ class BaseWriter(ABC):
 
     def _get_data_iterator(
             self, data: Iterable[RecordLike], columns: Optional[List[str]] = None
-    ) -> tuple[Optional[Iterator], Optional[List[str]]]:
+    ) -> Tuple[Optional[Iterator], Optional[List[str]]]:
         """
         Get data iterator and column names.
 

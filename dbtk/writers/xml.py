@@ -7,7 +7,7 @@ import io
 import logging
 import re
 import sys
-from typing import Any, BinaryIO, List, Optional, TextIO, Union
+from typing import Any, BinaryIO, List, Optional, TextIO, Tuple, Union
 from pathlib import Path
 
 try:
@@ -196,7 +196,7 @@ class XMLStreamer(BatchWriter):
             preserve_types=True,  # We'll convert in _prepare_record_for_xml
         )
 
-    def _open_file_handle(self, mode: str = 'wb') -> tuple[BinaryIO, bool]:
+    def _open_file_handle(self, mode: str = 'wb') -> Tuple[BinaryIO, bool]:
         """
         Override to use binary mode and validate binary streams.
 

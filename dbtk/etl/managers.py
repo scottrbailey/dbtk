@@ -606,7 +606,8 @@ class ValidationCollector:
             if self.desc_field:
                 return result.get(self.desc_field, "")
             for field in ("title", "description", "name", "label"):
-                if val := result.get(field):
+                val = result.get(field)
+                if val:
                     return val
             return str(result)
 
