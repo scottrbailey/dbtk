@@ -4,9 +4,23 @@ High-performance bulk loading for any database. Both classes wrap a configured `
 
 ## DataSurge
 
+<div style="float: right; padding-left: 20px">
+    <img src="assets/datasurge.png" height="240" align="right" />
+</div>
+
 **The problem:** Processing thousands or millions of records row-by-row is painfully slow. You need batching, but implementing it correctly is complex.
 
 **The solution:** DataSurge handles batching, error tracking, and optimal merge strategies automatically. It's built for high-volume data processing.
+
+DBTK will automatically: 
+- Check that all key columns are included in the data source and throw an exception if any are missing.
+- Check that non-key columns are included in the data source. If missing, log warnings and set the columns as 'no_update' to prevent database values from being nulled out by a misconfigured file.
+- Check that all required columns are populated.
+- Display progress tracker when processing large inputs.
+- Keep track of how many records were read, processed, skipped, along with elapsed time.
+- Keep track of metadata about why records where skipped (which missing columns) and line number for the first 20 skipped records to aid in troubleshooting.
+- Log information about the run.
+
 
 ```python
 from dbtk.etl import DataSurge
@@ -26,13 +40,6 @@ with dbtk.readers.get_reader('massive_conscript_list.csv') as reader:
 with dbtk.readers.get_reader('soldier_updates.csv') as reader:
     errors = bulk_writer.merge(reader)
 ```
-
-**DataSurge features:**
-- Automatic batching for optimal performance
-- Smart merge strategies (native MERGE/UPSERT vs temp table -> MERGE based on database capabilities)
-- Configurable error handling
-- Progress tracking and logging
-- Support for INSERT, UPDATE, DELETE, MERGE operations
 
 **Performance impact:** DataSurge can be 10-100x faster than row-by-row operations, depending on your database and network latency.
 
@@ -62,6 +69,10 @@ bulk_writer.insert(source_cursor)
 ```
 
 ## BulkSurge
+
+<div style="float: right; padding-left: 20px">
+    <img src="assets/bulksurge.png" height="240" align="right" />
+</div>
 
 BulkSurge provides maximum throughput by leveraging database-specific bulk loading mechanisms. It supports both 
 **direct streaming** (zero temp files) and **external tool-based** loading depending on your database and requirements.

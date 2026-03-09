@@ -54,39 +54,18 @@ with dbtk.readers.get_reader('data.csv.gz') as reader:
         print(record[0])          # Index access
 ```
 
-### Step 3: Transform and Load Data
-
-```python
-from dbtk.etl import Table, DataSurge
-
-# Define table schema with field mapping and transforms
-user_table = Table('users', {
-    'user_id': {'field': 'id', 'key': True},
-    'username': {'field': 'user_name', 'nullable': False, 'fn': 'lower'},
-    'email': {'field': 'email_address', 'fn': 'email'},
-    'signup_date': {'field': 'created_at', 'fn': 'date'},
-    'is_active': {'default': True}
-}, cursor=db.cursor())
-
-# Bulk insert with automatic batching
-with dbtk.readers.get_reader('users.csv.gz') as reader:
-    surge = DataSurge(user_table)
-    surge.insert(reader)  # Automatically shows progress bar
-
-print(f"Inserted {user_table.counts['insert']} users")
-```
-
-### Step 4: Export Data
+### Export Data
 
 ```python
 # Query database
 cursor = db.cursor()
 cursor.execute("SELECT * FROM users WHERE is_active = true")
+data = cursor.fetchall()
 
 # Export to multiple formats
-dbtk.writers.to_csv(cursor, 'active_users.csv')
-dbtk.writers.to_excel(cursor, 'active_users.xlsx', sheet='Active Users')
-dbtk.writers.to_json(cursor, 'active_users.json')
+dbtk.writers.to_csv(data, 'active_users.csv')
+dbtk.writers.to_excel(data, 'active_users.xlsx', sheet='Active Users')
+dbtk.writers.to_json(data, 'active_users.json')
 ```
 
 ## Complete Example: CSV to Database

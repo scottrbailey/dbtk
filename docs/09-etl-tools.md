@@ -1,4 +1,8 @@
-# ETL: Tools & Logging
+# ETL: Tools & Logging 
+
+<div style="float: right; padding: 20px">
+    <img src="assets/etl_tools.png" height="240" align="right" />
+</div>
 
 Utilities for orchestrating and monitoring production ETL imports: identity resolution,
 code validation/collection, and structured logging.

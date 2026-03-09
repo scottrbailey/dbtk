@@ -1,5 +1,9 @@
 # Configuration & Security
 
+<div style="float: right; padding-left: 20px">
+    <img src="assets/configuration.png" height="240" align="right" />
+</div>
+
 DBTK uses YAML configuration files to manage database connections and keep credentials secure with encryption. Running `dbtk checkup` will copy a well commented sample config file to _~/.config/dbtk_sample.yml_. 
 DBTK also has several [command line tools](#command-line-tools) to assist with configuration and encryption.
 

@@ -24,6 +24,11 @@ your database handle it. If you need dataframes and heavy analytics - reach for 
 or polars. DBTK sits in between: getting your data where it needs to be, cleaned and
 validated along the way.
 
+**Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
+But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will
+process 1M rows in 3-4 seconds. But even with a standard Python csv reader and numerous column transforms, DataSurge is able to
+write 1M rows to every supported database in 5-10 seconds.
+
 ## Features
 
 - **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
@@ -178,7 +183,6 @@ See [Record Objects](docs/04-record.md) for complete documentation.
 
 ### Getting Started
 - **[Getting Started Guide](docs/01-getting-started.md)** - 5-minute tutorial with complete examples
-- **[Troubleshooting](docs/12-troubleshooting.md)** - Common issues and solutions
 - **[API Reference](docs/11-api-reference.md)** - Complete method and function reference
 
 ### Core Features
@@ -192,7 +196,10 @@ See [Record Objects](docs/04-record.md) for complete documentation.
 - **[ETL: Table & Transforms](docs/07-table.md)** - Field mapping, column config, data transforms, database lookups
 - **[ETL: DataSurge & BulkSurge](docs/08-datasurge.md)** - High-performance bulk loading for any database
 - **[ETL: Tools & Logging](docs/09-etl-tools.md)** - IdentityManager, ValidationCollector, and integration script logging
+
+### Advanced Topics 
 - **[Advanced Features](docs/10-advanced.md)** - Custom drivers, multiple config locations, and performance tuning
+- **[Troubleshooting](docs/12-troubleshooting.md)** - Common issues and solutions
 
 ## Performance Highlights
 
@@ -201,9 +208,9 @@ See [Record Objects](docs/04-record.md) for complete documentation.
 Real-world benchmarks from production systems:
 
 - **DataFrameReader**: 1.3M rec/s reading compressed CSV with polars + transforms
-- **BulkSurge (Postgres/Oracle)**: 220K rec/s transforming, validating, and bulk loading
-- **DataSurge (Oracle/SQL Server/MySQL)**: 90-120K rec/s with native executemany
-- **IMDB Dataset**: 132K rec/s loading 12M titles with transforms and validation
+- **BulkSurge (Postgres/Oracle)**: 200-300K rec/s transforming, validating, and bulk loading
+- **DataSurge (Oracle/SQL Server/MySQL)**: 90-150K rec/s with native executemany
+- **IMDB Dataset**: 130K rec/s loading 12M titles with transforms and validation
 - **Examples**: See the Examples folder for scripts you can run against the IMDB Dataset 
 
 These aren't toy benchmarks - they're real ETL pipelines with field mapping, data validation, type conversions, and database constraints. See the examples in the example folder.
@@ -216,6 +223,7 @@ MIT License - see LICENSE file for details.
 
 Documentation, testing and architectural improvements assisted by [Claude](https://claude.ai) (Anthropic).
 Architectural review and witty banter by [Grok](https://grok.com/) (xAI).
+DataBender imagery [ChatGPT](https://chatgpt.com/) (OpenAI).
 
 ## Support
 
