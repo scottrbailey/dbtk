@@ -67,29 +67,25 @@ Integration script logging with timestamped files and error tracking:
 
 .. automodule:: dbtk.logging_utils
    :members:
-   :undoc-members:
+   :undoc-members: TableLookup
    :show-inheritance:
 
 ETL
 -----------
 
-The Table class provides schema-aware table operations:
-
-.. autoclass:: dbtk.etl.Table
+.. automodule:: dbtk.etl
    :members:
    :undoc-members:
    :show-inheritance:
 
-The DataSurge class handles bulk operations:
+ETL Transforms
+-----------
 
-.. autoclass:: dbtk.etl.DataSurge
+.. automodule:: dbtk.etl.transforms
    :members:
    :undoc-members:
    :show-inheritance:
 
-Column definition generator:
-
-.. autofunction:: dbtk.etl.column_defs_from_db
 
 Readers
 -------

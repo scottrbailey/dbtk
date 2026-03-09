@@ -76,6 +76,7 @@ def setup_logging(
     Example
     -------
     ::
+
         import dbtk
 
         # Simple - uses defaults from config
