@@ -12,7 +12,7 @@ This library is designed by and for data integrators.
 
 **DBTK aims to be fast and memory-efficient at every turn.** But it was designed to boost your productivity first and foremost.
 You have dozens, possibly hundreds, of interfaces, impossible deadlines, and multiple projects all happening at once. Your
-environment has different relational databases, each has their own quirks. You just want to get stuff done instead of writing the same
+environment has different relational databases, each has its own quirks. You just want to get stuff done instead of writing the same
 boilerplate code over and over.  
 
 **Design philosophy:** Modern databases excel at aggregating and transforming data at scale. DBTK embraces
