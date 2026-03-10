@@ -67,7 +67,8 @@ Integration script logging with timestamped files and error tracking:
 
 .. automodule:: dbtk.logging_utils
    :members:
-   :undoc-members: TableLookup
+   :undoc-members:
+   :exclude-members: TableLookup
    :show-inheritance:
 
 ETL
@@ -79,7 +80,7 @@ ETL
    :show-inheritance:
 
 ETL Transforms
------------
+--------------
 
 .. automodule:: dbtk.etl.transforms
    :members:
