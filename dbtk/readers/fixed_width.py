@@ -4,7 +4,7 @@
 
 import logging
 import os
-from typing import TextIO, List, Dict, Any, Optional, Iterator
+from typing import TextIO, List, Dict, Any, Optional, Iterator, Type
 
 from .base import Reader
 from ..record import Record, FixedWidthRecord
@@ -271,7 +271,7 @@ class EDIReader(FixedReader):
     def _get_columns(self, type_code: str) -> List[FixedColumn]:
         return self.columns.get(type_code)
 
-    def _get_factory(self, type_code: str) -> type[Record]:
+    def _get_factory(self, type_code: str) -> Type[Record]:
         if type_code not in self._type_factories:
             cols = self._get_columns(type_code)
             if cols is None:
