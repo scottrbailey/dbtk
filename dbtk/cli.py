@@ -114,7 +114,8 @@ def checkup():
 
 def main():
     parser = argparse.ArgumentParser(prog='dbtk', description='DBTK command-line utilities')
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    subparsers = parser.add_subparsers(dest='command')
+    subparsers.required = True  # required= kwarg not supported in Python 3.6
 
     # checkup
     subparsers.add_parser('checkup', help='Check for dependencies and configuration issues')

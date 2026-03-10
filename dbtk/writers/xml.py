@@ -207,7 +207,7 @@ class XMLStreamer(BatchWriter):
 
         Returns
         -------
-        tuple[BinaryIO, bool]
+        Tuple[BinaryIO, bool]
             (file_handle, should_close_flag)
 
         Raises

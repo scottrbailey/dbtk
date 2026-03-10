@@ -181,7 +181,7 @@ class BaseWriter(ABC):
 
         Returns
         -------
-        tuple[Union[TextIO, BinaryIO], bool]
+        Tuple[Union[TextIO, BinaryIO], bool]
             (file_handle, should_close_flag)
         """
         if self.file is None:
@@ -280,7 +280,7 @@ class BaseWriter(ABC):
 
         Returns
         -------
-        tuple[Optional[Iterator], Optional[List[str]]]
+        Tuple[Optional[Iterator], Optional[List[str]]]
             (iterator, column_names)
         """
         if not data:
