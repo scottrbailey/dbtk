@@ -1,7 +1,7 @@
 # DBTK - Data Benders Toolkit
 
 <div style="float: right; padding: 20px">
-    <img src="/docs/assets/databender.png" height="240" align="right" />
+    <img src="https://raw.githubusercontent.com/scottrbailey/dbtk/main/docs/assets/databender.png" height="240" align="right" />
 </div>
 
 **Control and Manipulate the Flow of Data** - A lightweight Python toolkit for data integration, transformation, and movement between systems.
@@ -11,9 +11,9 @@ Extract data from various sources, transform it through powerful operations, and
 This library is designed by and for data integrators.
 
 **DBTK aims to be fast and memory-efficient at every turn.** But it was designed to boost your productivity first and foremost.
-You have dozens (possibly hundreds) of interfaces, impossible deadlines, and multiple projects all happening at once. Your
-environment has three or more different relational databases. You just want to get stuff done instead of writing the same
-boilerplate code over and over or stressing over differences on a database server you don't use very often.  
+You have dozens, possibly hundreds, of interfaces, impossible deadlines, and multiple projects all happening at once. Your
+environment has different relational databases, each has its own quirks. You just want to get stuff done instead of writing the same
+boilerplate code over and over.  
 
 **Design philosophy:** Modern databases excel at aggregating and transforming data at scale. DBTK embraces
 this by focusing on what Python does well: flexible record-by-record transformations,
@@ -23,6 +23,47 @@ If you need to pivot, aggregate, or perform complex SQL operations - write SQL a
 your database handle it. If you need dataframes and heavy analytics - reach for Pandas
 or polars. DBTK sits in between: getting your data where it needs to be, cleaned and
 validated along the way.
+
+## Why DBTK?
+
+Most ETL tools fall into one of two traps:
+
+- **Verbose boilerplate hell** — SQLAlchemy + pandas + custom loops, repeated across every
+  interface with minor variations, slowly accreting defensive code for every edge case
+- **Opaque black box** — so much is hidden that debugging feels like reverse-engineering
+  someone else's code
+
+DBTK threads the needle. It's declarative enough to eliminate repetition, but explicit enough
+that you stay in control. When something breaks, you know exactly where to look.
+
+The architecture is intentionally layered — use what you need, skip what you don't:
+
+```
+Record          → ergonomic row handling, memory-efficient at scale
+Table           → field mapping, transforms, validation, upserts
+DataSurge       → batched inserts with progress tracking and stats
+BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throughput
+readers/writers → consistent API across every file format and compression type
+```
+
+When developers convert existing jobs to DBTK, the result can be **half to a quarter the
+original code**. That reduction comes from specific things DBTK just handles:
+
+- **Key column validation** — DBTK throws a clear error if a key field is missing from the source.
+  No more writing null-guards before every upsert.
+- **Safe partial updates** — if a field is missing from the source, DBTK excludes it from the
+  UPDATE rather than overwriting with NULL. No more "did I just wipe a column?" paranoia.
+- **Batch loop elimination** — DataSurge handles chunking, committing, retries, and statistics.
+  No more hand-rolled batch loops.
+- **Zero-config logging** — one line sets up timestamped log files with auto-cleanup and a global
+  error flag. No logging boilerplate scattered through your pipeline.
+- **TableLookup shorthand** — define a lookup or validation in ~40 characters:
+  `'fn': 'validate:ranks:rank_code:preload'`. The `preload` hint pre-caches the table before
+  processing starts. What would otherwise be a custom class or 30-line function is a string.
+
+The code that remains is shorter, clearer, and still has all the functionality and checks. You
+finish the job and think *"that was satisfyingly elegant"* — not because corners were cut, but
+because the tool was collaborating with you instead of making you fight it.
 
 **Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
 But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will

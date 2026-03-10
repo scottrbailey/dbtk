@@ -151,7 +151,6 @@ class Reader(ABC):
 
     Common Features
     ---------------
-    * **Automatic header cleaning** - Standardize messy column names
     * **Row number tracking** - Automatic _row_num field for debugging
     * **Record skipping** - Skip header rows or bad data
     * **Record limiting** - Process only first N records
@@ -172,7 +171,7 @@ class Reader(ABC):
         Maximum number of rows to read. None (default) reads all rows.
     null_values : str, list, tuple, or set, optional
         Values to convert to None. Can be a single string or a collection of strings.
-        Common examples: '\\N' (IMDB files), 'NULL', 'NA', '' (empty string)
+        Common examples: '\\N', 'NULL', 'NA', '' (empty string)
 
     Example
     -------

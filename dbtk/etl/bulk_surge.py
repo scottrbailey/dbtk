@@ -464,7 +464,7 @@ class BulkSurge(BaseSurge):
         logger.debug(f'sqlldr userid={user}/<PASSWORD>@{db} control={ctl_path} log={log_path}')
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
             if result.returncode == 0:
                 logger.info("SQL*Loader completed successfully")
@@ -565,7 +565,7 @@ class BulkSurge(BaseSurge):
         else:
             cmd += ['-T',]  # integrated auth
         # Run BCP
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         if result.returncode != 0:
             error_msg = f"bcp failed with exit code {result.returncode}"
             if result.stderr:
