@@ -78,5 +78,9 @@ Homepage = "https://github.com/scottrbailey/dbtk"
 Documentation = "https://dbtk.readthedocs.io"
 Repository = "https://github.com/scottrbailey/dbtk.git"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dbtk*"]
+
 [tool.setuptools.package-data]
 dbtk = ["dbtk_sample.yml"]
