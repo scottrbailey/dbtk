@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.2] - 2026-03-10
+
+### Fixed
+
+- **Python 3.6 compatibility** — additional fixes discovered after 0.8.1:
+  - Replace `type[Record]` annotation with `typing.Type[Record]` in `FixedWidthReader`
+    (`type[X]` syntax requires Python 3.9+)
+  - Replace `add_subparsers(required=True)` with a post-creation attribute assignment in
+    `cli.py` (`required=` kwarg was added in Python 3.7)
+  - Replace remaining `tuple[...]` / `X | Y` union syntax in docstrings for
+    `writers/base.py`, `writers/xml.py`, and `etl/table.py` with `typing` equivalents
+- **Import order** — move `readers` and `writers` imports before `etl` in `dbtk/__init__.py`
+  to prevent `dbtk/readers/csv.py` from shadowing the stdlib `csv` module during ETL init
+- **Package discovery** — add `[tool.setuptools.packages.find]` to `pyproject.toml` so
+  setuptools < 61 (shipped with Python 3.6) correctly locates all `dbtk` sub-packages
+
+### Fixed (Documentation)
+
+- Fix two Sphinx errors in `api.rst`: invalid `:undoc-members: TableLookup` directive
+  and a mismatched section underline length
+- Add missing modules to `api.rst`: `dbtk.record` (`Record`, `FixedWidthRecord`),
+  `dbtk.utils` (`ErrorDetail`, `FixedColumn`, `ParamStyle`), `dbtk.readers.data_frame`
+  (`DataFrameReader`), and `dbtk.formats.edi` (EDI/ACH layout definitions)
+- Reorder `api.rst` sections to match natural workflow:
+  Configuration → Database → Cursors → Record → Readers → Writers → ETL → Utilities →
+  Logging → CLI → Formats
+
+---
+
 ## [0.8.1] - 2026-03-10
 
 ### Fixed
@@ -98,5 +127,6 @@ Initial public release of DBTK — Data Benders Toolkit.
 
 ---
 
+[0.8.2]: https://github.com/scottrbailey/dbtk/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/scottrbailey/dbtk/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/scottrbailey/dbtk/releases/tag/v0.8.0
