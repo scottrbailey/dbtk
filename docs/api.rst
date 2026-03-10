@@ -17,6 +17,22 @@ Cursors
    :undoc-members:
    :show-inheritance:
 
+Record
+------
+
+.. automodule:: dbtk.record
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Utilities
+---------
+
+.. automodule:: dbtk.utils
+   :members: ErrorDetail, FixedColumn, ParamStyle
+   :undoc-members:
+   :show-inheritance:
+
 Configuration
 -------------
 
@@ -117,6 +133,19 @@ Readers
    :show-inheritance:
 
 .. automodule:: dbtk.readers.xml
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.readers.data_frame
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Formats
+-------
+
+.. automodule:: dbtk.formats.edi
    :members:
    :undoc-members:
    :show-inheritance:
