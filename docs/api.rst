@@ -142,14 +142,6 @@ Readers
    :undoc-members:
    :show-inheritance:
 
-Formats
--------
-
-.. automodule:: dbtk.formats.edi
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Writers
 -------
 
@@ -184,6 +176,14 @@ Writers
    :show-inheritance:
 
 .. automodule:: dbtk.writers.xml
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Formats
+-------
+
+.. automodule:: dbtk.formats.edi
    :members:
    :undoc-members:
    :show-inheritance:
