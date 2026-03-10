@@ -11,9 +11,9 @@ Extract data from various sources, transform it through powerful operations, and
 This library is designed by and for data integrators.
 
 **DBTK aims to be fast and memory-efficient at every turn.** But it was designed to boost your productivity first and foremost.
-You have dozens (possibly hundreds) of interfaces, impossible deadlines, and multiple projects all happening at once. Your
-environment has three or more different relational databases. You just want to get stuff done instead of writing the same
-boilerplate code over and over or stressing over differences on a database server you don't use very often.  
+You have dozens, possibly hundreds, of interfaces, impossible deadlines, and multiple projects all happening at once. Your
+environment has different relational databases, each has their own quirks. You just want to get stuff done instead of writing the same
+boilerplate code over and over.  
 
 **Design philosophy:** Modern databases excel at aggregating and transforming data at scale. DBTK embraces
 this by focusing on what Python does well: flexible record-by-record transformations,
@@ -46,7 +46,7 @@ BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throug
 readers/writers → consistent API across every file format and compression type
 ```
 
-When developers convert existing jobs to DBTK, the result is typically **half to a quarter the
+When developers convert existing jobs to DBTK, the result can be **half to a quarter the
 original code**. That reduction comes from specific things DBTK just handles:
 
 - **Key column validation** — DBTK throws a clear error if a key field is missing from the source.
