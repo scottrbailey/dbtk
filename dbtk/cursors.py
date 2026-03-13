@@ -404,9 +404,38 @@ class Cursor:
                 self._create_record_factory()
         return True
 
-    def execute(self, query: str, bind_vars: tuple = ()) -> None:
-        """Execute a database query."""
+    def execute(self, query: str,
+                bind_vars: Union[tuple, dict] = (),
+                convert_params: bool = False) -> None:
+        """
+        Execute a database query.
+
+        Pass convert_params=True to have the query rewritten to the cursor's paramstyle
+        and parameters handled automatically (same as PreparedStatement and execute_file).
+
+        Parameters
+        ----------
+        bind_vars : tuple or dict, default ()
+            Bind parameters to pass to the database.
+
+            When convert_params is False (the default), passed directly to the
+            underlying cursor and must already be in the format required by the
+            cursor's paramstyle.
+
+            When convert_params is True, must be a dict (or Record).
+
+        convert_params : bool, default False
+            If True, parameter order will be extracted from the query and the query
+            will be rewritten to match the cursor's paramstyle. Missing parameters
+            will be defaulted to None and extra parameters will be ignored.
+        """
+
         self._row_factory_invalid = True
+        if convert_params:
+            if bind_vars and not hasattr(bind_vars, 'items'):
+                raise ValueError(f'bind_vars must be a dict when process_params = True')
+            query, param_names = process_sql_parameters(query, self.paramstyle)
+            bind_vars = self.prepare_params(param_names, bind_vars)
 
         if self.debug:
             logger.debug(f'Query:\n{query}')
