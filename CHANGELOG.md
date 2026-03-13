@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`cursor.execute(convert_params=True)`** — opt-in query rewriting and paramstyle
+  conversion for one-off queries. Accepts a named-parameter dict, rewrites the query
+  to the cursor's paramstyle, defaults missing parameters to `None`, and ignores extra
+  parameters. Equivalent to what `execute_file()` and `PreparedStatement` do
+  automatically.
+
+---
+
 ## [0.8.2] - 2026-03-10
 
 ### Fixed

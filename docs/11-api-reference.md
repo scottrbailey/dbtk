@@ -91,9 +91,10 @@ db = sqlite(database, **kwargs)
 
 #### Execution Methods
 
-**`execute(query, params=None)`**
+**`execute(query, bind_vars=(), convert_params=False)`**
 - Executes a single SQL statement
-- Params: dict (named) or tuple/list (positional)
+- `bind_vars`: tuple/list (positional) or dict (named) — passed directly to the driver by default
+- `convert_params=True`: rewrites the query to the cursor's paramstyle and converts named `bind_vars` dict automatically (same as `execute_file` / `PreparedStatement`)
 - Returns: cursor (if return_cursor=True) or None
 
 **`executemany(query, params_list)`**

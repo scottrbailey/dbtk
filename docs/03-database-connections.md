@@ -178,8 +178,12 @@ connections:
 ### Executing Queries
 
 ```python
-# Single query
-cursor.execute("SELECT * FROM users WHERE id = :id", {'id': 42})
+# MySQL — %s (format) paramstyle
+mysql_cur.execute("SELECT * FROM users WHERE id = %s", (42,))
+# Oracle — :named paramstyle
+ora_cur.execute("SELECT * FROM users WHERE id = :id", {'id': 42})
+# MS SQL Server — ? (qmark) paramstyle, convert_params rewrites :named → ?
+mssql_cur.execute("SELECT * FROM users WHERE id = :id", {'id': 42}, convert_params=True)
 
 # Multiple rows (batch)
 cursor.executemany(
@@ -216,8 +220,9 @@ for user in user_stmt.fetchall():
 ```
 ### Parameter Conversion
 
-DBTK has tools to handle different parameter styles. You can use _named_ (`:name`) or _pyformat_ (`%(name)s`) in queries - DBTK can convert to the driver's native style. 
-`cursor.execute_file()` and `PreparedStatment` will automatically rewrite the query and format parameters to match your database's paramstyle, making your queries portable across databases.
+DBTK has tools to handle different parameter styles. You can use _named_ (`:name`) or _pyformat_ (`%(name)s`) in queries - DBTK can convert to the driver's native style.
+
+By default, `cursor.execute()` passes the query and parameters directly to the underlying driver — no rewriting is done. Use `convert_params=True` for a one-off conversion. `cursor.execute_file()` and `PreparedStatement` convert automatically.
 
 Oracle and PostgreSQL support both dictionary and positional parameters. Their default (db.driver.paramstyle) will be 
 the dictionary style. If you want force positional mode, you can override the paramstyle as in the example below.   
