@@ -376,9 +376,9 @@ class TestExecuteConvertParams:
             )
 
     def test_no_params_query_rewrite_only(self, states_db):
-        """convert_params=True with an empty dict rewrites the query without error."""
+        """convert_params=True with no bind vars rewrites the query without error."""
         cursor = states_db.cursor()
-        cursor.execute("SELECT COUNT(*) as cnt FROM states", {}, convert_params=True)
+        cursor.execute("SELECT COUNT(*) as cnt FROM states", convert_params=True)
         row = cursor.fetchone()
         assert row['cnt'] == 50
 

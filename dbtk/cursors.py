@@ -432,8 +432,10 @@ class Cursor:
 
         self._row_factory_invalid = True
         if convert_params:
-            if bind_vars and not hasattr(bind_vars, 'items'):
-                raise ValueError(f'bind_vars must be a dict when convert_params=True')
+            if not hasattr(bind_vars, 'items'):
+                if bind_vars:
+                    raise ValueError(f'bind_vars must be a dict when convert_params=True')
+                bind_vars = {}
             query, param_names = process_sql_parameters(query, self.paramstyle)
             bind_vars = self.prepare_params(param_names, bind_vars)
 
