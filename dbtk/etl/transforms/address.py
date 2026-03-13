@@ -93,7 +93,7 @@ def _check_usaddress():
     if not HAS_USADDRESS:
         raise ImportError(
             "Address functionality requires the usaddress library. "
-            "Install with: pip install usaddress"
+            "Install with: pip install usaddress==0.5.10 (Python 3.6) or pip install usaddress (Python 3.7+)"
         )
 
 

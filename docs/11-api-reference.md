@@ -198,14 +198,11 @@ Table(table_name, columns_config, cursor, null_values=('', 'NULL', '<null>', '\\
 **`get_sql(operation)`** → str
 - Returns generated SQL for operation
 
-**`generate_sql(operation)`**
-- Generates and caches SQL for operation
-
 **`get_bind_params(operation)`** → dict/list
 - Returns parameters for current `values`
 
-**`get_column_definitions()`** → str
-- Returns SQL CREATE TABLE statement for this table
+**`get_column_definitions(all_cols)`** → list
+- Returns column definitions for SQL CREATE TABLE statement
 
 ### Advanced Methods
 

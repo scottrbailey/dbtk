@@ -2,7 +2,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Iterable, Generator, Optional
+from typing import Iterable, Generator, Optional, Union
 import datetime as dt
 import tempfile
 from pathlib import Path
@@ -183,7 +183,7 @@ class BaseSurge(ABC):
         if batch:
             yield batch
 
-    def _resolve_file_path(self, path_input: Optional[str | Path] = None, extension: str = '.csv') -> Path:
+    def _resolve_file_path(self, path_input: Optional[Union[str, Path]] = None, extension: str = '.csv') -> Path:
         """
         Resolve an output file path from user input.
 

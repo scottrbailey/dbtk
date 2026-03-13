@@ -63,7 +63,7 @@ class Table:
               'user_id': {'default': lambda: conf_vars['user_id']},
           }
 
-    * **fn** (callable | list[callable] | str, optional):
+    * **fn** (Union[callable, List[callable], str], optional):
       Transformation function(s) to apply to the source value.
       callable: applied directly; list: functions applied in order (pipeline);
       str: magic shorthand (e.g. 'int', 'maxlen:255', 'lookup:table:col:val').
