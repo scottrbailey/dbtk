@@ -21,6 +21,7 @@ class CSVWriter(BatchWriter):
                  headers: Optional[List[str]] = None,
                  write_headers: bool = True,
                  null_string: str = None,
+                 compression: str = 'infer',
                  **csv_kwargs):
         """
         Initialize CSV writer.
@@ -34,10 +35,12 @@ class CSVWriter(BatchWriter):
                     normalized but you want original database column names in the CSV header.
             write_headers: Whether to include column headers
             null_string: String representation for null values
+            compression: Compression type ('infer', 'gzip', 'bz2', 'lzma', or None)
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, file, columns, headers=headers, write_headers=write_headers, **csv_kwargs)
+        super().__init__(data, file, columns, headers=headers, write_headers=write_headers,
+                         compression=compression, **csv_kwargs)
         self.null_string = null_string or settings.get('null_string_csv', '')
 
     def to_string(self, obj: Any) -> str:
@@ -71,6 +74,7 @@ def to_csv(data,
            headers: Optional[List[str]] = None,
            write_headers: bool = True,
            null_string: str = None,
+           compression: str = 'infer',
            **csv_kwargs) -> None:
     """
     Export cursor or result set to CSV file.
@@ -81,6 +85,8 @@ def to_csv(data,
         headers: Header row text. If None, uses cursor.description or detected column names
         write_headers: Whether to include column headers
         null_string: String representation for null values
+        compression: Compression type. 'infer' detects from file extension (.gz, .bz2, .xz).
+                    Pass 'gzip', 'bz2', or 'lzma' to override, or None to disable.
         **csv_kwargs: Additional arguments passed to csv.writer
 
     Example:
@@ -102,6 +108,7 @@ def to_csv(data,
         headers=headers,
         write_headers=write_headers,
         null_string=null_string,
+        compression=compression,
         **csv_kwargs
     ) as writer:
         writer.write()

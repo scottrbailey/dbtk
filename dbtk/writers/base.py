@@ -3,8 +3,11 @@
 Base classes for data writers with common file handling and data extraction patterns.
 """
 
+import bz2
+import gzip
 import itertools
 import logging
+import lzma
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -13,6 +16,18 @@ from typing import Any, BinaryIO, Iterable, Iterator, List, Optional, TextIO, Tu
 from ..utils import RecordLike, to_string
 
 logger = logging.getLogger(__name__)
+
+_COMPRESSION_EXTENSIONS = {
+    '.gz': 'gzip',
+    '.bz2': 'bz2',
+    '.xz': 'lzma',
+    '.lzma': 'lzma',
+}
+_COMPRESSION_OPENERS = {
+    'gzip': gzip.open,
+    'bz2': bz2.open,
+    'lzma': lzma.open,
+}
 
 
 class BaseWriter(ABC):
@@ -121,6 +136,7 @@ class BaseWriter(ABC):
             columns: Optional[List[str]] = None,
             encoding: str = "utf-8",
             write_headers: bool = True,
+            compression: str = 'infer',
             **fmt_kwargs,
     ):
         """
@@ -143,6 +159,7 @@ class BaseWriter(ABC):
         """
         self.file = file
         self.encoding = encoding
+        self.compression = compression
         self.write_headers = write_headers
         self._headers_written = False
         self._format_kwargs = fmt_kwargs
@@ -170,6 +187,23 @@ class BaseWriter(ABC):
                 raise ValueError(f"{self.__class__.__name__} requires an output file path")
             self.output_path = Path(file)
 
+    def _resolve_compression(self) -> Optional[str]:
+        """Return the compression type to use, or None for uncompressed."""
+        comp = self.compression
+        if comp == 'infer':
+            if self.file is None or hasattr(self.file, 'write'):
+                return None
+            ext = Path(str(self.file)).suffix.lower()
+            return _COMPRESSION_EXTENSIONS.get(ext)
+        if comp in (None, 'none', ''):
+            return None
+        # Normalize aliases
+        if comp == 'gz':
+            return 'gzip'
+        if comp == 'xz':
+            return 'lzma'
+        return comp
+
     def _open_file_handle(self, mode: str = "w") -> Tuple[Union[TextIO, BinaryIO], bool]:
         """
         Open the output file/stream and return (handle, should_close).
@@ -192,7 +226,19 @@ class BaseWriter(ABC):
             # Already an open file handle
             return self.file, False
 
-        # Open file from path
+        compression = self._resolve_compression()
+        if compression:
+            opener = _COMPRESSION_OPENERS.get(compression)
+            if opener is None:
+                raise ValueError("Unsupported compression: {!r}".format(compression))
+            compressed_mode = 'wt' if 'b' not in mode else 'wb'
+            kwargs = {}
+            if 'b' not in mode:
+                kwargs['encoding'] = self.encoding
+                kwargs['newline'] = ''
+            return opener(self.file, compressed_mode, **kwargs), True
+
+        # Open file from path (no compression)
         kwargs = {}
         if "b" not in mode:
             kwargs["newline"] = ""
@@ -505,6 +551,7 @@ class BatchWriter(BaseWriter):
             headers: Optional[List[str]] = None,
             encoding: Optional[str] = 'utf-8',
             write_headers: bool = True,
+            compression: str = 'infer',
             **fmt_kwargs,
     ):
         """
@@ -544,6 +591,7 @@ class BatchWriter(BaseWriter):
         self.file = file
         self.write_headers = write_headers
         self.encoding = encoding
+        self.compression = compression
         self._format_kwargs = fmt_kwargs
         self._row_num = 0
         self._headers_written = False
