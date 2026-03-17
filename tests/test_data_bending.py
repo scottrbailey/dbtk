@@ -310,6 +310,22 @@ class TestSQLFileExecution:
         assert 'MA' in northeast_states
         assert 'NY' in northeast_states
 
+    def test_execute_file_caller_dir_fallback(self, states_db):
+        """A path not found relative to CWD is resolved relative to the caller's directory."""
+        cursor = states_db.cursor()
+        # 'sql/get_state_info.sql' does not exist relative to CWD (/home/user/dbtk),
+        # but does exist relative to this test file's directory (tests/).
+        cursor.execute_file('sql/get_state_info.sql', {'code': 'TX'})
+        texas = cursor.fetchone()
+        assert texas['state'] == 'Texas'
+
+    def test_prepare_file_caller_dir_fallback(self, states_db):
+        """prepare_file also falls back to the caller's directory."""
+        cursor = states_db.cursor()
+        stmt = cursor.prepare_file('sql/get_state_info.sql')
+        stmt.execute({'code': 'CA'})
+        assert stmt.fetchone()['state'] == 'California'
+
 
 class TestExecuteConvertParams:
     """Test cursor.execute with convert_params=True."""

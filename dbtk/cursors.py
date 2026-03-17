@@ -4,6 +4,7 @@ Cursor classes that wrap database cursors and provide different return types.
 All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
+import inspect
 import logging
 from pathlib import Path
 from typing import List, Any, Optional, Iterator, Callable, Union
@@ -14,6 +15,21 @@ from .defaults import settings
 
 logger = logging.getLogger(__name__)
 __all__ = ['Cursor', 'PreparedStatement']
+
+
+def _resolve_sql_path(filename: Union[str, Path], caller_file: str) -> Path:
+    """Resolve a SQL filename to an existing path.
+
+    Checks the path as given first (absolute or relative to CWD), then falls
+    back to the directory containing *caller_file* so that scripts can refer to
+    sibling SQL files by bare name.
+    """
+    path = Path(filename)
+    if not path.is_absolute() and not path.exists():
+        candidate = Path(caller_file).parent / path
+        if candidate.exists():
+            return candidate
+    return path
 
 
 class PreparedStatement:
@@ -464,7 +480,8 @@ class Cursor:
         executed multiple times, use prepare_file() instead for better performance.
 
         Args:
-            filename: Path to SQL file (relative to CWD)
+            filename: Path to SQL file. Resolved relative to CWD first; if not
+                found there, falls back to the directory of the calling script.
             bind_vars: Dictionary of named parameters
             **kwargs:
                 encoding: File encoding (default: utf-8-sig)
@@ -476,10 +493,11 @@ class Cursor:
             cursor.execute_file('queries/get_user.sql', {'user_id': 123})
         """
         encoding = kwargs.get('encoding', 'utf-8-sig')
+        path = _resolve_sql_path(filename, inspect.stack()[1].filename)
 
         try:
             # Read SQL from file
-            with open(filename, encoding=encoding) as f:
+            with open(path, encoding=encoding) as f:
                 sql = f.read()
 
             # Transform SQL for this cursor's paramstyle
@@ -497,7 +515,7 @@ class Cursor:
         except Exception as e:
             statement = locals().get('transformed_sql', 'N/A')
             logger.error(
-                f"Error executing SQL file: {filename}\n"
+                f"Error executing SQL file: {path}\n"
                 f"Transformed SQL: {statement}\n"
                 f"Parameters: {bind_vars}"
             )
@@ -511,7 +529,8 @@ class Cursor:
         The returned PreparedStatement can be executed multiple times efficiently.
 
         Args:
-            filename: Path to SQL file (relative to CWD)
+            filename: Path to SQL file. Resolved relative to CWD first; if not
+                found there, falls back to the directory of the calling script.
             encoding: File encoding (default: utf-8-sig)
 
         Returns:
@@ -525,7 +544,8 @@ class Cursor:
             for user in users:
                 stmt.execute({'user_id': user.id, 'name': user.name})
         """
-        return PreparedStatement(self, filename=filename, encoding=encoding)
+        path = _resolve_sql_path(filename, inspect.stack()[1].filename)
+        return PreparedStatement(self, filename=path, encoding=encoding)
 
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:
         """Execute a query against multiple parameter sets."""
