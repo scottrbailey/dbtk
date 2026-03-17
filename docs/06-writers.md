@@ -68,6 +68,41 @@ writers.to_csv(cursor, 'soldiers.csv')
 ```
 
 
+## Compressed Output
+
+All file writers support transparent compression. By default `compression='infer'` detects the format from the file extension — no extra code required:
+
+```python
+writers.to_csv(cursor, 'archive.csv.gz')       # gzip
+writers.to_csv(cursor, 'archive.csv.bz2')      # bz2
+writers.to_csv(cursor, 'archive.csv.xz')       # lzma
+writers.to_ndjson(cursor, 'events.ndjson.gz')  # gzip
+writers.to_json(cursor, 'data.json.gz')        # gzip
+```
+
+Pass an explicit value to override extension inference, or `None` to disable it:
+
+```python
+# Force gzip even though the extension doesn't say so
+writers.to_csv(cursor, 'output.csv', compression='gzip')
+
+# Write plain text despite the .gz extension
+writers.to_csv(cursor, 'output.csv.gz', compression=None)
+```
+
+Supported values: `'infer'` (default), `'gzip'`, `'bz2'`, `'lzma'`, `None`.
+
+Compression also works with batch writers — the file is opened compressed once on entry and closed on exit:
+
+```python
+from dbtk.writers import CSVWriter
+
+with CSVWriter(file='large_archive.csv.gz') as writer:
+    while batch := cursor.fetchmany(10_000):
+        writer.write_batch(batch)
+```
+
+
 ## Writing in Batches
 
 The `to_*` helper functions are single-shot: they create a writer, write all data, then close and discard the writer. 
