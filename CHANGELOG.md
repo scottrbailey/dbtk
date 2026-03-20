@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Compression support for file writers** — `to_csv()`, `to_json()`, `to_ndjson()`,
+  `CSVWriter`, `JSONWriter`, and `NDJSONWriter` now accept a `compression` parameter.
+  The default `'infer'` detects the format from the file extension (`.gz` → gzip,
+  `.bz2` → bz2, `.xz`/`.lzma` → lzma). Pass an explicit value (`'gzip'`, `'bz2'`,
+  `'lzma'`) to override inference, or `None` to write plain text regardless of
+  extension. Compression is implemented once in `BaseWriter._open_file_handle()` so
+  all writers inherit it automatically, including batch writers.
+
 - **`cursor.execute(convert_params=True)`** — opt-in query rewriting and paramstyle
   conversion for one-off queries. Accepts a named-parameter dict, rewrites the query
   to the cursor's paramstyle, defaults missing parameters to `None`, and ignores extra
