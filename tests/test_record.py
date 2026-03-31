@@ -60,3 +60,23 @@ class TestReservedCompleteness:
             "The following names are in dir(FixedWidthRecord) but missing from "
             "_get_reserved(): " + ", ".join(sorted(missing))
         )
+
+
+# ---------------------------------------------------------------------------
+# Disabled list mutations
+# ---------------------------------------------------------------------------
+
+class TestDisabledMutations:
+    """reverse() and sort() must be blocked — they would break field-index mappings."""
+
+    def setup_method(self):
+        R = make_record_class('id', 'name', 'value')
+        self.record = R(1, 'Alice', 42)
+
+    def test_reverse_raises(self):
+        with pytest.raises(TypeError, match="field-index mappings"):
+            self.record.reverse()
+
+    def test_sort_raises(self):
+        with pytest.raises(TypeError, match="field-index mappings"):
+            self.record.sort()

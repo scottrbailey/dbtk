@@ -559,6 +559,12 @@ class Record(list):
     def __dir__(self) -> List[str]:
         return sorted(set(super().__dir__()) | set(self.keys()))
 
+    def reverse(self) -> None:
+        raise TypeError("Record.reverse() is not supported — it would break field-index mappings")
+
+    def sort(self, *args, **kwargs) -> None:
+        raise TypeError("Record.sort() is not supported — it would break field-index mappings")
+
     def pprint(self, normalized: bool = False) -> None:
         """
         Pretty-print the record with aligned columns.
