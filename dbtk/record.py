@@ -113,11 +113,19 @@ class Record(list):
     _field_len: int = 0 # cached for fast hot path
     mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
     # list of method and attribute names that normalized field names must not collide with
-    _RESERVED: frozenset = frozenset({'append', 'clear', 'coalesce', 'copy','extend', 'get', 'items', 'keys', 'pop',
-                           'pprint', 'remove', 'to_dict', 'to_list', 'update', 'values',
-                           # attributes
+    _RESERVED: frozenset = frozenset({
+                           # methods defined on Record
+                           'append', 'clear', 'coalesce', 'copy', 'extend', 'get', 'items', 'keys',
+                           'pop', 'pprint', 'remove', 'to_dict', 'update', 'values',
+                           # classmethods
+                           'set_fields', '_get_reserved',
+                           # inherited list methods not overridden
+                           'count', 'index', 'insert', 'reverse', 'sort',
+                           # attributes / slots
                            'mutable_schema', '_fields', '_fields_normalized', '_field_len', '_added',
-                           '_deleted_fields', 'mutable_schema', '_reserved'
+                           '_deleted_fields',
+                           # _RESERVED itself normalizes to _reserved
+                           '_reserved',
                            })
 
     def __init__(self, *args, **kwargs):
