@@ -88,18 +88,28 @@ for id, name, status in cursor:
 
 Record stores both original column names and normalized versions. Normalization exists because Python attribute syntax doesn't allow `row.FULL NAME` or `row.Employee-ID` - only valid Python identifiers work as attributes.
 
-Normalization lowercases and replaces non-alphanumeric characters with underscores:
+Normalization applies the following rules in order:
 
-| Original Column | Normalized Name |
-|-----------------|-----------------|
-| `Employee_ID`   | `employee_id`   |
-| `FULL NAME`     | `full_name`     |
-| `Start Year`    | `start_year`    |
-| `Contact Email!`| `contact_email` |
+1. Lowercase and strip surrounding whitespace
+2. Replace runs of non-alphanumeric characters with a single underscore
+3. Strip leading and trailing underscores — **except** an explicit leading `_` in the original name, which is preserved as a single `_`
+4. Prefix `n` if the result starts with a digit
+
+| Original Column   | Normalized Name  | Notes                                  |
+|-------------------|------------------|----------------------------------------|
+| `Employee_ID`     | `employee_id`    |                                        |
+| `FULL NAME`       | `full_name`      |                                        |
+| `Start Year`      | `start_year`     |                                        |
+| `Contact Email!`  | `contact_email`  | trailing `!` stripped                  |
+| `#Term Code`      | `term_code`      | leading `#` stripped (not an explicit `_`) |
+| `$Secret_Code!`   | `secret_code`    | leading `$` stripped                   |
+| `_internal_id`    | `_internal_id`   | explicit leading `_` preserved         |
+| `__version__`     | `_version`       | explicit `_` preserved, extras stripped |
+| `2025_sales`      | `n2025_sales`    | digit prefix gets `n`                  |
 
 **Access rules:**
 - **Normalized names** work with both attribute access (`row.employee_id`) and dict access (`row['employee_id']`)
-- **Original names** only work with dict access (`row['FULL NAME']`) - they may contain characters invalid for Python attributes
+- **Original names** only work with dict access (`row['FULL NAME']`) — they may contain characters invalid for Python attributes
 
 ```python
 cursor.execute('SELECT Employee_ID, "FULL NAME" FROM users')
@@ -111,7 +121,6 @@ for row in cursor:
     # Original - dict only
     row['FULL NAME']      # Works
     row.FULL NAME         # SyntaxError!
-
 ```
 
 ### Why This Matters
@@ -130,14 +139,35 @@ employee_table = Table('employees', {
 
 You write the mapping once. DBTK handles the column name variations.
 
-### Collision Handling
+### Duplicate Column Names
 
-If normalization creates duplicates, Record appends `_2`, `_3`, etc:
+If normalization produces duplicate names, Record appends `_2`, `_3`, etc.:
 
 ```python
 # Columns: "Status", "STATUS", "status!"
 # Normalized: "status", "status_2", "status_3"
 ```
+
+### Reserved Name Collisions
+
+Record has its own methods and attributes (`get`, `keys`, `values`, `items`, `update`,
+`pop`, `copy`, etc.). If a database column normalizes to one of these names it would
+shadow the method, making the Record unusable. To prevent this, `set_fields()` checks
+normalized names against a reserved set and renames any collision the same way it handles
+duplicates — appending `_2`, `_3`, etc. — and logs a warning so the rename is visible:
+
+```python
+# Column named "values" would shadow Record.values()
+# → normalized to "values_2", warning logged:
+# WARNING: Attribute access for 'values' was renamed to 'values_2' due to
+#          collision with existing Record method/attribute.
+row['values']    # still works via original name
+row.values_2     # attribute access uses the renamed form
+row.values()     # the method is still intact
+```
+
+The same applies to internal attributes like `_fields`, `_added`, and classmethods like
+`set_fields`. The full reserved set is available as `Record._RESERVED`.
 
 ### Accessing Both Forms
 
