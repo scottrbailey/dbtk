@@ -167,7 +167,7 @@ row.values()     # the method is still intact
 ```
 
 The same applies to internal attributes like `_fields`, `_added`, and classmethods like
-`set_fields`. The full reserved set is available as `Record._RESERVED`.
+`set_fields`.
 
 ### Accessing Both Forms
 
