@@ -80,3 +80,7 @@ class TestDisabledMutations:
     def test_sort_raises(self):
         with pytest.raises(TypeError, match="field-index mappings"):
             self.record.sort()
+
+    def test_insert_raises(self):
+        with pytest.raises(TypeError, match="field-index mappings"):
+            self.record.insert(0, 'extra')

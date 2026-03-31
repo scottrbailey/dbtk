@@ -565,6 +565,9 @@ class Record(list):
     def sort(self, *args, **kwargs) -> None:
         raise TypeError("Record.sort() is not supported — it would break field-index mappings")
 
+    def insert(self, index: int, value: object) -> None:
+        raise TypeError("Record.insert() is not supported — it would break field-index mappings")
+
     def pprint(self, normalized: bool = False) -> None:
         """
         Pretty-print the record with aligned columns.
