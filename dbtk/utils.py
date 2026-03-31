@@ -468,8 +468,10 @@ def normalize_field_name(name: str) -> str:
     Normalize field name for attribute access.
 
     Converts to lowercase, replaces non-alphanumeric characters with underscores,
-    collapses consecutive underscores, and strips trailing underscores.
-    Leading underscores are preserved to maintain Python's convention for private/internal fields.
+    collapses consecutive underscores, and strips leading/trailing underscores.
+    A single leading underscore is preserved only if the original name explicitly
+    started with one — underscores synthesized from other leading characters (e.g.
+    ``$``, ``#``) are stripped.
 
     Args:
         name: Original field name
@@ -484,8 +486,12 @@ def normalize_field_name(name: str) -> str:
         'start_year'
         >>> normalize_field_name('!Status')
         'status'
+        >>> normalize_field_name('_Secret_Code!')
+        '_secret_code'
+        >>> normalize_field_name('$Secret_Code!')
+        'secret_code'
         >>> normalize_field_name('__id__')
-        '__id'
+        '_id'
         >>> normalize_field_name('_row_num')
         '_row_num'
         >>> normalize_field_name('#Term Code')
@@ -499,17 +505,24 @@ def normalize_field_name(name: str) -> str:
     # 1. Lowercase and strip whitespace
     name = str(name).lower().strip()
 
-    # 2. Replace all non-alphanumeric with underscore (consecutive become single _)
+    # 2. Note whether the original starts with an explicit underscore
+    had_leading_underscore = name.startswith('_')
+
+    # 3. Replace all non-alphanumeric chars with single underscores
     name = re.sub(r'[^a-z0-9]+', '_', name)
 
-    # 3. Strip trailing underscores only (preserve leading for Python convention)
-    name = name.rstrip('_')
+    # 4. Strip ALL leading and trailing underscores
+    name = name.strip('_')
 
-    # 4. Attributes can't start with digit
+    # 5. Restore a single leading underscore if the original had one
+    if had_leading_underscore:
+        name = '_' + name
+
+    # 6. Attributes can't start with a digit
     if name and name[0].isdigit():
         name = 'n' + name
 
-    # 5. Ensure not empty
+    # 7. Ensure not empty
     return name or 'col'
 
 def batch_iterable(iterable: Iterable[Any], batch_size: int) -> Iterable[List[Any]]:
