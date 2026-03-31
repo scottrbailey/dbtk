@@ -2,10 +2,11 @@
 """
 Record classes for database result sets.
 """
-
+import logging
 from typing import List, Any, Iterator, Tuple, Union
 from .utils import to_string, normalize_field_name, FixedColumn
 
+logger = logging.getLogger(__name__)
 
 class Record(list):
     """
@@ -111,6 +112,13 @@ class Record(list):
     _fields_normalized: List[str] = []  # Normalized for access (e.g., 'start_year')
     _field_len: int = 0 # cached for fast hot path
     mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
+    # list of method and attribute names that normalized field names must not collide with
+    _RESERVED: frozenset = frozenset({'append', 'clear', 'coalesce', 'copy','extend', 'get', 'items', 'keys', 'pop',
+                           'pprint', 'remove', 'to_dict', 'to_list', 'update', 'values',
+                           # attributes
+                           'mutable_schema', '_fields', '_fields_normalized', '_field_len', '_added',
+                           '_deleted_fields', 'mutable_schema', '_reserved'
+                           })
 
     def __init__(self, *args, **kwargs):
         # Lazy attributes
@@ -253,6 +261,18 @@ class Record(list):
         return self._added and key in self._added
 
     @classmethod
+    def _get_reserved(cls) -> frozenset:
+        """Return all reserved names, including those from parent classes."""
+        reserved = cls._RESERVED
+
+        # Walk the MRO and collect reserved names from all base classes
+        for base in cls.__mro__:
+            if hasattr(base, '_RESERVED'):
+                reserved = reserved | base._RESERVED
+
+        return reserved
+
+    @classmethod
     def set_fields(cls, fields: List[str]) -> None:
         """
         Set the field names for this Record class.
@@ -275,16 +295,25 @@ class Record(list):
         # Normalize and handle collisions
         normalized = []
         seen = {}
-        for field in fields:
-            norm = normalize_field_name(field)
-            if norm in seen:
-                # Collision: append _2, _3, etc.
-                count = seen[norm] + 1
-                seen[norm] = count
-                norm = f"{norm}_{count}"
-            else:
-                seen[norm] = 1
+        reserved = cls._get_reserved()
+
+        for original in fields:
+            norm = normalize_field_name(original) # normalize name for attribute access
+            original_norm = norm
+            counter = 1
+
+            while norm in seen or norm in reserved:
+                counter += 1
+                norm = f"{original_norm}_{counter}"
+            if norm != original_norm:
+                logger.warning(
+                    f"Attribute access for '{original}' was renamed to '{norm}' due to collision "
+                    "with existing Record method/attribute."
+                )
+
+            seen[norm] = True
             normalized.append(norm)
+
         cls._fields_normalized = normalized
 
 
@@ -571,6 +600,7 @@ class FixedWidthRecord(Record):
     _columns: List[FixedColumn] = []
     _line_len: int = 0
     mutable_schema: bool = False
+    _RESERVED: frozenset = frozenset({'_columns', '_line_len', 'to_line', 'visualize'})
 
     @classmethod
     def set_fields(cls, fields: List[FixedColumn]):
