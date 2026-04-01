@@ -547,6 +547,30 @@ class Cursor:
         path = _resolve_sql_path(filename, inspect.stack()[1].filename)
         return PreparedStatement(self, filename=path, encoding=encoding)
 
+    def prepare_query(self, query: str) -> PreparedStatement:
+        """
+        Prepare a SQL statement from a query string for repeated execution.
+
+        The parameter conversion is performed once.
+        The returned PreparedStatement can be executed multiple times efficiently.
+
+        Args:
+            query:
+
+        Returns:
+            PreparedStatement object
+
+        Example
+        -------
+        ::
+
+            stmt = cursor.prepare_query('SELECT * FROM users WHERE user_id = :user_id')
+            for user in users:
+                stmt.execute({'user_id': user.id})
+        """
+        return PreparedStatement(self, query=query)
+
+
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:
         """Execute a query against multiple parameter sets."""
         self._row_factory_invalid = True
