@@ -5,7 +5,7 @@
 import json
 import os
 from typing import List, Any, Dict, Optional, TextIO, Iterator
-from .base import Reader, Clean
+from .base import Reader
 
 
 class JSONReader(Reader):

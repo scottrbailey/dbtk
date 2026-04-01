@@ -21,75 +21,6 @@ from ..defaults import settings
 logger = logging.getLogger(__name__)
 
 
-class Clean:
-    """Header cleaning levels for column names."""
-    NOOP = 0  # Leave unchanged
-    LOWER = 1  # Lower case header
-    LOWER_NOSPACE = 2  # Lower case and replace spaces with _
-    LOWER_ALPHANUM = 3  # Lower case, remove all non-alphanum characters
-    STANDARDIZE = 4  # Lower case, remove non-alphanum, strip "code" endings
-    DEFAULT = LOWER_NOSPACE
-
-    @classmethod
-    def from_string(cls, value):
-        """Convert string to Clean constant, or pass through if already int."""
-        if isinstance(value, int):
-            return value
-
-        string_map = {
-            'noop': cls.NOOP,
-            'lower': cls.LOWER,
-            'lower_nospace': cls.LOWER_NOSPACE,
-            'lower_alphanum': cls.LOWER_ALPHANUM,
-            'standardize': cls.STANDARDIZE
-        }
-        return string_map.get(value.lower(), cls.NOOP)
-
-    @staticmethod
-    def normalize(val: Any, clean_level: Union[int, 'Clean', None] = None) -> str:
-        """
-        Normalize column header names.
-
-        Args:
-            val: Column name (any type, will be converted to string)
-            clean_level: Cleaning level, either an integer (0-4), a Clean class constant,
-                        or None to use Clean.DEFAULT
-
-        Returns:
-            Normalized column name string
-
-        Examples:
-            Clean.normalize("#Term Code", Clean.NOOP)           # -> "#Term Code"
-            Clean.normalize("#Term Code", Clean.LOWER)          # -> "#term code"
-            Clean.normalize("#Term Code", Clean.LOWER_NOSPACE)  # -> "#term_code"
-            Clean.normalize("#Term Code", Clean.LOWER_ALPHANUM) # -> "termcode"
-            Clean.normalize("#Term Code", Clean.STANDARDIZE)    # -> "term"
-            Clean.normalize("#Term Code")                       # -> "#term_code" (default to Clean.LOWER_NOSPACE)
-        """
-        # Use Clean.DEFAULT if clean_level is None
-        if clean_level is None:
-            clean_level = Clean.LOWER_NOSPACE
-        # Convert clean_level to integer if it's a Clean constant
-        clean_level = clean_level if isinstance(clean_level, int) else clean_level.value
-        # Validate clean_level
-        if clean_level not in {Clean.NOOP, Clean.LOWER, Clean.LOWER_NOSPACE, Clean.LOWER_ALPHANUM, Clean.STANDARDIZE}:
-            raise ValueError(f"Invalid clean_level: {clean_level}. Must be 0-4 or a Clean constant.")
-
-        if val in (None, '') or clean_level == Clean.NOOP:
-            return str(val) if val is not None else ''
-        val = str(val).lower().strip()
-        if clean_level == Clean.LOWER:
-            return val
-        elif clean_level == Clean.LOWER_NOSPACE:
-            return val.replace(' ', '_')
-        elif clean_level == Clean.LOWER_ALPHANUM:
-            return re.sub(r'[^a-z0-9]', '', val)
-        elif clean_level == Clean.STANDARDIZE:
-            return re.sub(r'[^a-z0-9]+|code$', '', val)
-        else:
-            return val
-
-
 class _Progress:
     __slots__ = ('tell', 'byte_total', 'row_total')
 
@@ -215,7 +146,6 @@ class Reader(ABC):
     XLSXReader : Read Excel .xlsx files
     XMLReader : Read XML files
     FixedReader : Read fixed-width text files
-    Clean : Header cleaning options
     Record : Flexible row objects with multiple access patterns
 
     Notes

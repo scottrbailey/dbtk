@@ -6,7 +6,7 @@ import logging
 import os
 from pathlib import Path
 from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
-from .base import Reader, Clean
+from .base import Reader
 
 try:
     from lxml import etree

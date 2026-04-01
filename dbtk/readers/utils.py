@@ -252,7 +252,6 @@ def get_reader(filename: Union[str, Path],
             for record in reader:
                 print(record)
 
-        # Fixed width file (uses Clean.NOOP by default)
         config = [
             FixedColumn('name', 1, 20),
             FixedColumn('age', 21, 23, 'int')
