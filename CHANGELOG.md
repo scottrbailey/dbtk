@@ -9,22 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+---
 
-### Fixed
-
-- **`normalize_field_name` leading underscore handling** — a leading underscore is now
-  preserved only if the original field name explicitly started with one. Previously,
-  leading characters like `$` or `#` were replaced with `_` by the regex, causing
-  `'$Secret_Code'` to normalize to `'_secret_code'` instead of `'secret_code'`. Also
-  fixes a long-standing doctest discrepancy where `'#Term Code'` was documented as
-  `'term_code'` but actually produced `'_term_code'`.
-
-- **`Record.reverse()`, `Record.sort()`, `Record.insert()` blocked** — these inherited
-  `list` methods would silently reorder or shift the underlying value array, breaking
-  all field-index mappings. They now raise `TypeError` with a descriptive message.
+## [0.8.3] - 2026-04-01
 
 ### Added
+
+- **`cursor.prepare_query(query)`** — prepares an inline SQL string for repeated
+  execution, mirroring `cursor.prepare_file()` for query strings. Parameter conversion
+  is performed once; the returned `PreparedStatement` can be executed many times
+  efficiently.
+
+- **`PreparedStatement` top-level export** — now importable directly as `dbtk.PreparedStatement`
+  in addition to `dbtk.cursors.PreparedStatement`.
 
 - **Compression support for file writers** — `to_csv()`, `to_json()`, `to_ndjson()`,
   `CSVWriter`, `JSONWriter`, and `NDJSONWriter` now accept a `compression` parameter.
@@ -45,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the cursor's paramstyle, defaults missing parameters to `None`, and ignores extra
   parameters. Equivalent to what `execute_file()` and `PreparedStatement` do
   automatically.
+
+### Fixed
+
+- **`normalize_field_name` leading underscore handling** — a leading underscore is now
+  preserved only if the original field name explicitly started with one. Previously,
+  leading characters like `$` or `#` were replaced with `_` by the regex, causing
+  `'$Secret_Code'` to normalize to `'_secret_code'` instead of `'secret_code'`. Also
+  fixes a long-standing doctest discrepancy where `'#Term Code'` was documented as
+  `'term_code'` but actually produced `'_term_code'`.
+
+- **`Record.reverse()`, `Record.sort()`, `Record.insert()` blocked** — these inherited
+  `list` methods would silently reorder or shift the underlying value array, breaking
+  all field-index mappings. They now raise `TypeError` with a descriptive message.
 
 ---
 

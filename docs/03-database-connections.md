@@ -202,21 +202,27 @@ cursor.execute_file('queries/create_schema.sql', {'status': 'active'})
 For queries executed repeatedly with different parameters, PreparedStatement transforms the SQL to match the database's `paramstyle` and caches the parameter mapping.
 
 ```python
-from dbtk.cursors import PreparedStatement
+import dbtk
 
-# Create a PreparedStatement from a query file
+# From a query string — mirrors cursor.prepare_file() for inline SQL
+orders_stmt = cursor.prepare_query("SELECT * FROM orders WHERE customer_id = :id")
+
+# From a query file
 movies_stmt = cursor.prepare_file('queries/list_movies.sql')
-users_stmt = PreparedStatement(cursor, filename='queries/get_user.sql')
 
-# Create PreparedStatement from query string
-orders_stmt = PreparedStatement(cursor, query="SELECT * FROM orders WHERE customer_id = :id")
-
-users_stmt.execute({'location': 'CA'})
 # Execute many times efficiently
-for user in user_stmt.fetchall():
+for user in users:
     orders_stmt.execute({'id': user.id})
     order = orders_stmt.fetchone()
     process(user, order)
+```
+
+`PreparedStatement` is also available directly from `dbtk` or `dbtk.cursors` if you need to construct one explicitly:
+
+```python
+import dbtk
+stmt = dbtk.PreparedStatement(cursor, query="SELECT * FROM orders WHERE customer_id = :id")
+stmt = dbtk.PreparedStatement(cursor, filename='queries/get_user.sql')
 ```
 ### Parameter Conversion
 
