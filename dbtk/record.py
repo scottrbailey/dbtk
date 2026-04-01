@@ -8,6 +8,8 @@ from .utils import to_string, normalize_field_name, FixedColumn
 
 logger = logging.getLogger(__name__)
 
+_MISSING = object()  # sentinel for pop() default argument
+
 class Record(list):
     """
     Flexible/lightweight that strikes a balance between the memory efficiency of list
@@ -382,7 +384,7 @@ class Record(list):
         except KeyError:
             return default
 
-    def pop(self, key: str, default: object = object()) -> Any:
+    def pop(self, key: str, default: object = _MISSING) -> Any:
         if not isinstance(key, str):
             raise TypeError("pop() key must be str")
         if not self.__class__.mutable_schema:
@@ -413,7 +415,7 @@ class Record(list):
             return value
 
         # 4. Not found
-        if default is not object():
+        if default is not _MISSING:
             return default
         raise KeyError(key)
 
@@ -520,21 +522,14 @@ class Record(list):
         # Create a new instance of the same class (preserves subclass attrs)
         new = self.__class__.__new__(self.__class__)
 
+        # Initialize slots via object.__setattr__ before any attribute access —
+        # Record.__setattr__ routes everything through __setitem__, which would
+        # recurse infinitely on an uninitialized instance.
+        object.__setattr__(new, '_deleted_fields', self._deleted_fields.copy())
+        object.__setattr__(new, '_added', self._added.copy() if self._added is not None else None)
+
         # Shallow copy of the underlying list (values)
         super(Record, new).__init__(super().__iter__())
-
-        # Copy field metadata (shallow copy of lists)
-        new._fields = self._fields[:]
-        new._fields_normalized = self._fields_normalized[:]
-
-        # Copy deleted fields set (shallow copy)
-        new._deleted_fields = self._deleted_fields.copy()
-
-        # Copy runtime-added fields dict (shallow copy)
-        if self._added is not None:
-            new._added = self._added.copy()
-        else:
-            new._added = None
 
         return new
 
