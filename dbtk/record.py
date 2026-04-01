@@ -300,6 +300,29 @@ class Record(list):
             >>> rec._fields_normalized
             ['start_year', 'end_date']
         """
+        # Deduplicate original field names before normalization.
+        # When a name appears more than once, rename later occurrences by
+        # appending _2, _3, … — skipping any candidate already taken by an
+        # earlier renamed field OR that already exists in the original list.
+        deduped = []
+        seen_originals = set()
+        for name in fields:
+            if name not in seen_originals:
+                seen_originals.add(name)
+                deduped.append(name)
+            else:
+                counter = 1
+                candidate = name
+                while candidate in seen_originals or candidate in fields:
+                    counter += 1
+                    candidate = f"{name}_{counter}"
+                logger.warning(
+                    f"Duplicate field '{name}' renamed to '{candidate}' in _fields."
+                )
+                seen_originals.add(candidate)
+                deduped.append(candidate)
+        fields = deduped
+
         cls._fields = fields
         cls._field_len = len(fields)
         # Normalize and handle collisions

@@ -47,6 +47,23 @@ class TestSetFields:
         R = make_record_class('Status', 'STATUS', 'status!')
         assert R._fields_normalized == ['status', 'status_2', 'status_3']
 
+    def test_duplicate_original_names_renamed(self):
+        # Simple case: two identical originals → second gets _2
+        R = make_record_class('id', 'id', 'name')
+        assert R._fields == ['id', 'id_2', 'name']
+
+    def test_duplicate_original_skips_existing(self):
+        # Edge case from user: ['id', 'id', 'id_2'] → ['id', 'id_3', 'id_2']
+        # 'id_2' is already taken by the third column, so second 'id' must become 'id_3'
+        R = make_record_class('id', 'id', 'id_2')
+        assert R._fields == ['id', 'id_3', 'id_2']
+
+    def test_duplicate_original_warns(self, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING, logger='dbtk.record'):
+            make_record_class('x', 'x')
+        assert any('x' in msg and 'renamed' in msg for msg in caplog.messages)
+
     def test_reserved_name_collision_gets_suffix(self):
         R = make_record_class('id', 'values', 'name')
         # 'values' collides with Record.values() — should be renamed
