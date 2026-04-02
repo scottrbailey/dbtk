@@ -4,7 +4,7 @@ Tests for the Record and FixedWidthRecord classes.
 """
 
 import pytest
-from dbtk.record import Record, FixedWidthRecord, fixed_record
+from dbtk.record import Record, FixedWidthRecord, fixed_record_factory
 from dbtk.utils import normalize_field_name, FixedColumn
 
 
@@ -541,71 +541,71 @@ class TestNormalizeFieldName:
 
 
 # ---------------------------------------------------------------------------
-# fixed_record class factory
+# fixed_record_factory class factory
 # ---------------------------------------------------------------------------
 
 class TestFixedRecord:
 
     def test_returns_fixed_width_record_subclass(self):
-        Rec = fixed_record([('code', 2), ('amount', 10)])
+        Rec = fixed_record_factory([('code', 2), ('amount', 10)])
         assert issubclass(Rec, FixedWidthRecord)
 
     def test_default_class_name(self):
-        Rec = fixed_record([('code', 2)])
+        Rec = fixed_record_factory([('code', 2)])
         assert Rec.__name__ == 'FixedRecord'
 
     def test_custom_class_name(self):
-        Rec = fixed_record([('code', 2)], name='AchDetail')
+        Rec = fixed_record_factory([('code', 2)], name='AchDetail')
         assert Rec.__name__ == 'AchDetail'
 
     def test_tuple_positions_sequential(self):
-        Rec = fixed_record([('a', 3), ('b', 5), ('c', 2)])
+        Rec = fixed_record_factory([('a', 3), ('b', 5), ('c', 2)])
         cols = Rec._columns
         assert cols[0].start_pos == 1 and cols[0].end_pos == 3
         assert cols[1].start_pos == 4 and cols[1].end_pos == 8
         assert cols[2].start_pos == 9 and cols[2].end_pos == 10
 
     def test_line_len_computed(self):
-        Rec = fixed_record([('a', 3), ('b', 5)])
+        Rec = fixed_record_factory([('a', 3), ('b', 5)])
         assert Rec._line_len == 8
 
     def test_fields_set(self):
-        Rec = fixed_record([('record_type', 1), ('amount', 10)])
+        Rec = fixed_record_factory([('record_type', 1), ('amount', 10)])
         assert Rec._fields == ['record_type', 'amount']
 
     def test_fixed_column_passthrough(self):
         col = FixedColumn('routing', 1, 9, column_type='int')
-        Rec = fixed_record([col])
+        Rec = fixed_record_factory([col])
         assert Rec._columns[0] is col
         assert Rec._line_len == 9
 
     def test_mixed_tuple_and_fixed_column(self):
         # FixedColumn at explicit pos; tuple picks up after it
         col = FixedColumn('record_type', 1, 1)
-        Rec = fixed_record([col, ('priority', 2), ('routing', 9)])
+        Rec = fixed_record_factory([col, ('priority', 2), ('routing', 9)])
         cols = Rec._columns
         assert cols[0].start_pos == 1 and cols[0].end_pos == 1
         assert cols[1].start_pos == 2 and cols[1].end_pos == 3
         assert cols[2].start_pos == 4 and cols[2].end_pos == 12
 
     def test_to_line_text_left_aligned(self):
-        Rec = fixed_record([('name', 10)])
+        Rec = fixed_record_factory([('name', 10)])
         r = Rec('Alice')
         assert r.to_line() == 'Alice     '
 
     def test_to_line_int_right_aligned_zero_padded(self):
-        Rec = fixed_record([FixedColumn('amount', 1, 10, column_type='int')])
+        Rec = fixed_record_factory([FixedColumn('amount', 1, 10, column_type='int')])
         r = Rec(42)
         assert r.to_line() == '0000000042'
 
     def test_mutable_schema_false(self):
-        Rec = fixed_record([('code', 2)])
+        Rec = fixed_record_factory([('code', 2)])
         r = Rec('AB')
         with pytest.raises(TypeError):
             r['new_field'] = 'x'
 
     def test_to_line_full_line(self):
-        Rec = fixed_record([
+        Rec = fixed_record_factory([
             ('record_type', 1),
             ('priority',    2),
             ('routing',     9),

@@ -775,7 +775,7 @@ class FixedWidthRecord(Record):
         return f'{ruler_10s}\n{ruler_1s}\n{"".join(boundary_line)}\n{self.to_line()}'
 
 
-def fixed_record(columns, name='FixedRecord'):
+def fixed_record_factory(columns, name='FixedRecord'):
     """
     Class factory: build a :class:`FixedWidthRecord` subclass from a compact column spec.
 
@@ -802,7 +802,7 @@ def fixed_record(columns, name='FixedRecord'):
     ::
 
         # Tuple-only: positions calculated automatically
-        AchDetail = fixed_record([
+        AchDetail = fixed_record_factory([
             ('record_type',    1),
             ('priority_code',  2),
             ('routing_number', 9),
@@ -814,7 +814,7 @@ def fixed_record(columns, name='FixedRecord'):
         print(line.to_line())
 
         # Mixed: use FixedColumn where you need explicit control
-        AchHeader = fixed_record([
+        AchHeader = fixed_record_factory([
             FixedColumn('record_type', 1, 1),
             ('priority_code', 2),
             FixedColumn('routing_number', 4, 12, column_type='int', align='right'),
