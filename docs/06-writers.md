@@ -290,6 +290,42 @@ Input records can be `FixedWidthRecord` instances (written directly via `to_line
 
 By default `truncate_overflow=True` silently truncates values that exceed their column width. Pass `truncate_overflow=False` to raise `ValueError` instead.
 
+### Building a typed record class with `fixed_record_factory`
+
+When you're *generating* fixed-width output rather than transforming existing records, `fixed_record_factory` lets you define a named record type from a compact column spec — similar to `collections.namedtuple`. Pass a list of `(name, width)` tuples (positions are assigned automatically) or `FixedColumn` objects (used as-is), or mix both.
+
+```python
+from dbtk import fixed_record_factory
+
+AchDetail = fixed_record_factory([
+    ('record_type',    1),
+    ('priority_code',  2),
+    ('routing_number', 9),
+    ('account_number', 17),
+    ('amount',         10),
+], name='AchDetail')
+
+record = AchDetail('6', '22', '123456789', '00012345678', 100)
+print(record.to_line())
+# '622123456789000123456780000000100'
+```
+
+For columns that need explicit alignment, padding, or type coercion, drop in a `FixedColumn` — positions auto-advance past it:
+
+```python
+from dbtk import fixed_record_factory
+from dbtk.utils import FixedColumn
+
+AchHeader = fixed_record_factory([
+    FixedColumn('record_type', 1, 1),
+    ('priority_code', 2),
+    FixedColumn('routing_number', 4, 12, column_type='int', align='right'),
+    ('filler', 39),
+])
+```
+
+The returned class is a full `FixedWidthRecord` subclass — you can pass its instances directly to `FixedWidthWriter` or call `.to_line()` yourself.
+
 ## EDI (Electronic Data Interchange) Fixed-Width with EDIWriter
 
 `EDIWriter` is the write-side counterpart to `EDIReader`. It handles Electronic Data Interchange files where different record types have different layouts — NACHA ACH, COBOL bank extracts, X12 835 remittances, and similar formats.
