@@ -113,7 +113,7 @@ class Record(list):
     _fields: List[str] = []  # Original field names (e.g., 'Start Year')
     _fields_normalized: List[str] = []  # Normalized for access (e.g., 'start_year')
     _field_len: int = 0 # cached for fast hot path
-    mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
+    _mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
     # list of method and attribute names that normalized field names must not collide with
     _RESERVED: frozenset = frozenset({
                            # methods defined on Record
@@ -124,7 +124,7 @@ class Record(list):
                            # inherited list methods not overridden
                            'count', 'index', 'insert', 'reverse', 'sort',
                            # attributes / slots
-                           'mutable_schema', '_fields', '_fields_normalized', '_field_len', '_added',
+                           '_mutable_schema', '_fields', '_fields_normalized', '_field_len', '_added',
                            '_deleted_fields',
                            # _RESERVED itself normalizes to _reserved
                            '_reserved',
@@ -222,9 +222,9 @@ class Record(list):
             return
 
         # 4. New field — add to runtime dict
-        if not self.__class__.mutable_schema:
+        if not self.__class__._mutable_schema:
             raise TypeError(
-                f"Cannot add field '{key}': schema is fixed (mutable_schema=False)"
+                f"Cannot add field '{key}': schema is fixed (_mutable_schema=False)"
             )
         if self._added is None:
             object.__setattr__(self, "_added", {})
@@ -410,9 +410,9 @@ class Record(list):
     def pop(self, key: str, default: object = _MISSING) -> Any:
         if not isinstance(key, str):
             raise TypeError("pop() key must be str")
-        if not self.__class__.mutable_schema:
+        if not self.__class__._mutable_schema:
             raise TypeError(
-                f"Cannot delete field '{key}': schema is fixed (mutable_schema=False)"
+                f"Cannot delete field '{key}': schema is fixed (_mutable_schema=False)"
             )
 
         # 1. Runtime-added field?
@@ -634,7 +634,7 @@ class FixedWidthRecord(Record):
     """
     _columns: List[FixedColumn] = []
     _line_len: int = 0
-    mutable_schema: bool = False
+    _mutable_schema: bool = False
     _RESERVED: frozenset = frozenset({'_columns', '_line_len', 'to_line', 'visualize'})
 
     @classmethod
