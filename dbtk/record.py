@@ -773,3 +773,65 @@ class FixedWidthRecord(Record):
             if boundary_line[col.end_pos - 1] == '─':
                 boundary_line[col.end_pos - 1] = '┤'
         return f'{ruler_10s}\n{ruler_1s}\n{"".join(boundary_line)}\n{self.to_line()}'
+
+
+def fixed_record(columns, name='FixedRecord'):
+    """
+    Class factory: build a :class:`FixedWidthRecord` subclass from a compact column spec.
+
+    Follows the same convention as :func:`collections.namedtuple` — returns a *class*,
+    not an instance.
+
+    Parameters
+    ----------
+    columns : list of FixedColumn or (name, width) tuple
+        May be mixed.  Tuples specify ``(name, width)`` and are assigned sequential
+        positions starting at 1 (or immediately after the previous column).
+        :class:`FixedColumn` objects are used as-is and advance the auto-position
+        cursor to ``col.end_pos + 1``.
+    name : str, optional
+        Class name of the returned type.  Defaults to ``'FixedRecord'``.
+
+    Returns
+    -------
+    type
+        A :class:`FixedWidthRecord` subclass with ``set_fields()`` already called.
+
+    Examples
+    --------
+    ::
+
+        # Tuple-only: positions calculated automatically
+        AchDetail = fixed_record([
+            ('record_type',    1),
+            ('priority_code',  2),
+            ('routing_number', 9),
+            ('account_number', 17),
+            ('amount',         10),
+        ], name='AchDetail')
+
+        line = AchDetail('6', '22', '123456789', '00012345678', 100)
+        print(line.to_line())
+
+        # Mixed: use FixedColumn where you need explicit control
+        AchHeader = fixed_record([
+            FixedColumn('record_type', 1, 1),
+            ('priority_code', 2),
+            FixedColumn('routing_number', 4, 12, column_type='int', align='right'),
+            ('filler', 39),
+        ])
+    """
+    pos = 1
+    fixed_cols = []
+    for col in columns:
+        if isinstance(col, FixedColumn):
+            fixed_cols.append(col)
+            pos = col.end_pos + 1
+        else:
+            col_name, width = col[0], col[1]
+            fixed_cols.append(FixedColumn(col_name, pos, width=width))
+            pos += width
+
+    cls = type(name, (FixedWidthRecord,), {})
+    cls.set_fields(fixed_cols)
+    return cls

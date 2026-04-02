@@ -36,6 +36,8 @@ from .database import Database
 from .config import connect, set_config_file
 from .cursors import Cursor, PreparedStatement
 from .logging_utils import setup_logging, cleanup_old_logs, errors_logged
+from .record import fixed_record, FixedWidthRecord
+from .utils import FixedColumn
 from . import readers
 from . import writers
 from . import etl
@@ -46,6 +48,9 @@ __all__ = [
     'Database',
     'Cursor',
     'PreparedStatement',
+    'FixedColumn',
+    'FixedWidthRecord',
+    'fixed_record',
     'etl',
     'readers',
     'writers',
