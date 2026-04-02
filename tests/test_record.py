@@ -409,25 +409,25 @@ class TestMutableSchema:
 
     def test_mutable_schema_default_true(self):
         R = make_record_class('a', 'b')
-        assert R.mutable_schema is True
+        assert R._mutable_schema is True
 
     def test_fixed_schema_blocks_add(self):
         R = make_record_class('a', 'b')
-        R.mutable_schema = False
+        R._mutable_schema = False
         r = R(1, 2)
-        with pytest.raises(TypeError, match="mutable_schema"):
+        with pytest.raises(TypeError, match="_mutable_schema"):
             r['new_field'] = 'x'
 
     def test_fixed_schema_blocks_delete(self):
         R = make_record_class('a', 'b')
-        R.mutable_schema = False
+        R._mutable_schema = False
         r = R(1, 2)
-        with pytest.raises(TypeError, match="mutable_schema"):
+        with pytest.raises(TypeError, match="_mutable_schema"):
             del r['a']
 
     def test_fixed_schema_allows_update_existing(self):
         R = make_record_class('a', 'b')
-        R.mutable_schema = False
+        R._mutable_schema = False
         r = R(1, 2)
         r['a'] = 99   # updating existing field is always allowed
         assert r['a'] == 99
