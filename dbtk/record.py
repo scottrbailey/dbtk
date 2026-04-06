@@ -78,7 +78,7 @@ class Record(list):
     -------
     ::
 
-        cursor = db.cursor('record')  # or db.cursor() - record is default
+        cursor = db.cursor()
         cursor.execute("SELECT id, name, email, created FROM users WHERE id = :id",
                       {'id': 42})
         user = cursor.fetchone()

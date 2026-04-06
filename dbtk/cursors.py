@@ -110,11 +110,12 @@ class PreparedStatement:
 
 class Cursor:
     """
-    Basic cursor that returns query results as lists.
+    Cursor that returns query results as Records.
 
-    This is the base class for all DBTK cursor types. It wraps database-specific cursor
-    objects and provides a consistent interface plus additional functionality like SQL
-    file execution, parameter conversion, and prepared statements.
+    It wraps database-specific cursor objects and provides a consistent interface plus additional
+    functionality like SQL file execution, parameter conversion, and prepared statements.
+    It also maintains a clean reference hierarchy to the connection (cursor.connection) and
+    to the driver (cursor.connection.driver)
 
     Cursor returns Record objects, which provide flexible access via dictionary keys,
     attributes, or integer indices.
@@ -139,8 +140,8 @@ class Cursor:
     -------
     ::
 
-        # Usually created via Database.cursor()
-        cursor = db.cursor('list')
+        db = dbtk.connect('prod_ods')
+        cursor = db.cursor()
         cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
                       {'status': 'active'})
 

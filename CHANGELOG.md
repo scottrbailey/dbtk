@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.8.3] - 2026-04-01
+## [0.8.3] - 2026-04-06
 
 ### Added
 
@@ -31,11 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extension. Compression is implemented once in `BaseWriter._open_file_handle()` so
   all writers inherit it automatically, including batch writers.
 
-- **`Record._RESERVED` completeness** — `_RESERVED` now covers all non-dunder names
-  on `Record` and `FixedWidthRecord`, including inherited list methods (`count`, `index`,
-  `insert`, `reverse`, `sort`) and classmethods (`set_fields`, `_get_reserved`). A
-  regression test in `test_record.py` asserts `dir(Record)` ⊆ `_RESERVED` so future
-  additions are caught automatically.
+- **`Record._RESERVED` completeness** — `_RESERVED` is used to ensure normalized field 
+  names do not conflict with Record methods and attributes.  It now covers all non-dunder 
+  names on `Record` and `FixedWidthRecord`, including  inherited list methods 
+  (`count`, `index`, `insert`, `reverse`, `sort`) and classmethods 
+  (`set_fields`, `_get_reserved`). A regression test in `test_record.py` asserts 
+  `dir(Record)` ⊆ `_RESERVED` so future additions are caught automatically.
 
 - **`cursor.execute(convert_params=True)`** — opt-in query rewriting and paramstyle
   conversion for one-off queries. Accepts a named-parameter dict, rewrites the query
