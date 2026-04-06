@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dbtk"
-version = "0.8.2"
+version = "0.8.3"
 description = "Data Benders Toolkit - A lightweight toolkit for data integration, ELT and ETL"
 readme = "README.md"
 requires-python = ">=3.6"
@@ -47,7 +47,7 @@ recommended = [
     "usaddress==0.5.10;python_version<'3.7'",
     "usaddress>=0.5.11;python_version>='3.7'"
 ]
-postgresql = ["psycopg2-binary>=2.9", "psycopg[binary]>=3.1"]
+postgresql = ["psycopg2-binary>=2.9"]
 oracle = ["oracledb>=1.0;python_version>='3.7'",  # For modern systems
     "cx_Oracle>=8.0;python_version<'3.7'",  # Fallback for 3.6
 ]
@@ -60,8 +60,13 @@ all = [
     "xlrd>=1.2.0",
     "phonenumbers>=8.12.0",
     "python-dateutil>=2.8.0",
+    "usaddress>=0.5.11;python_version>='3.7'",
     "usaddress==0.5.10;python_version<'3.7'",
-    "usaddress>=0.5.11;python_version>='3.7'"
+    "oracledb>=1.0;python_version>='3.7'",  # For modern systems
+    "cx_Oracle>=8.0;python_version<'3.7'",  # Fallback for 3.6
+    "oracledb>=1.0;python_version>='3.7'",  # For modern systems
+    "psycopg2-binary>=2.9",
+    "pymysql>=1.0"
 ]
 dev = ["pytest>=6.0", "pytest-cov>=2.10"]
 docs = [

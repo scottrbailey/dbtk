@@ -6,7 +6,7 @@ import datetime as dt
 import logging
 from pathlib import Path
 from typing import List, Any, Iterator, Optional, Union
-from .base import Reader, Clean
+from .base import Reader
 
 logger = logging.getLogger(__name__)
 

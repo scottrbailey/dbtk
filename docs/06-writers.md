@@ -68,6 +68,41 @@ writers.to_csv(cursor, 'soldiers.csv')
 ```
 
 
+## Compressed Output
+
+All file writers support transparent compression. By default `compression='infer'` detects the format from the file extension — no extra code required:
+
+```python
+writers.to_csv(cursor, 'archive.csv.gz')       # gzip
+writers.to_csv(cursor, 'archive.csv.bz2')      # bz2
+writers.to_csv(cursor, 'archive.csv.xz')       # lzma
+writers.to_ndjson(cursor, 'events.ndjson.gz')  # gzip
+writers.to_json(cursor, 'data.json.gz')        # gzip
+```
+
+Pass an explicit value to override extension inference, or `None` to disable it:
+
+```python
+# Force gzip even though the extension doesn't say so
+writers.to_csv(cursor, 'output.csv', compression='gzip')
+
+# Write plain text despite the .gz extension
+writers.to_csv(cursor, 'output.csv.gz', compression=None)
+```
+
+Supported values: `'infer'` (default), `'gzip'`, `'bz2'`, `'lzma'`, `None`.
+
+Compression also works with batch writers — the file is opened compressed once on entry and closed on exit:
+
+```python
+from dbtk.writers import CSVWriter
+
+with CSVWriter(file='large_archive.csv.gz') as writer:
+    while batch := cursor.fetchmany(10_000):
+        writer.write_batch(batch)
+```
+
+
 ## Writing in Batches
 
 The `to_*` helper functions are single-shot: they create a writer, write all data, then close and discard the writer. 
@@ -254,6 +289,42 @@ with FixedWidthWriter(file='output.txt', columns=COLS) as w:
 Input records can be `FixedWidthRecord` instances (written directly via `to_line()`), dicts, lists, tuples, or namedtuples — all are cast positionally into the column schema.
 
 By default `truncate_overflow=True` silently truncates values that exceed their column width. Pass `truncate_overflow=False` to raise `ValueError` instead.
+
+### Building a typed record class with `fixed_record_factory`
+
+When you're *generating* fixed-width output rather than transforming existing records, `fixed_record_factory` lets you define a named record type from a compact column spec — similar to `collections.namedtuple`. Pass a list of `(name, width)` tuples (positions are assigned automatically) or `FixedColumn` objects (used as-is), or mix both.
+
+```python
+from dbtk import fixed_record_factory
+
+AchDetail = fixed_record_factory([
+    ('record_type',    1),
+    ('priority_code',  2),
+    ('routing_number', 9),
+    ('account_number', 17),
+    ('amount',         10),
+], name='AchDetail')
+
+record = AchDetail('6', '22', '123456789', '00012345678', 100)
+print(record.to_line())
+# '622123456789000123456780000000100'
+```
+
+For columns that need explicit alignment, padding, or type coercion, drop in a `FixedColumn` — positions auto-advance past it:
+
+```python
+from dbtk import fixed_record_factory
+from dbtk.utils import FixedColumn
+
+AchHeader = fixed_record_factory([
+    FixedColumn('record_type', 1, 1),
+    ('priority_code', 2),
+    FixedColumn('routing_number', 4, 12, column_type='int', align='right'),
+    ('filler', 39),
+])
+```
+
+The returned class is a full `FixedWidthRecord` subclass — you can pass its instances directly to `FixedWidthWriter` or call `.to_line()` yourself.
 
 ## EDI (Electronic Data Interchange) Fixed-Width with EDIWriter
 

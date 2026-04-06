@@ -5,7 +5,6 @@ settings = {
     'default_batch_size': 1000,
     'default_country': 'US',
     'default_db_type': 'postgres',
-    'default_header_clean': 2,  # Clean.LOWER_NOSPACE as int
     'data_dump_dir': '/tmp', # default directory for data dumps
     'compressed_file_buffer_size': 1024 * 1024,  # 1MB buffer for .gz/.bz2/.xz files
     'null_string': '',       # how null is represented in text outputs

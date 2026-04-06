@@ -39,12 +39,16 @@ that you stay in control. When something breaks, you know exactly where to look.
 The architecture is intentionally layered — use what you need, skip what you don't:
 
 ```
+Configuration   → encrypted YAML, env vars, named connections, driver overrides, smart logging
+Connection      → consistent connection and parameter handling, clean reference hierarchy
 Record          → ergonomic row handling, memory-efficient at scale
 Table           → field mapping, transforms, validation, upserts
 DataSurge       → batched inserts with progress tracking and stats
 BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throughput
-readers/writers → consistent API across every file format and compression type
+Readers/Writers → consistent API across every file format and compression type
 ```
+
+<img src="https://raw.githubusercontent.com/scottrbailey/dbtk/main/docs/assets/dbtk_flowchart.jpg" width="800" align="center" />
 
 When developers convert existing jobs to DBTK, the result can be **half to a quarter the
 original code**. That reduction comes from specific things DBTK just handles:

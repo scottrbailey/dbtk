@@ -2,10 +2,13 @@
 """
 Record classes for database result sets.
 """
-
+import logging
 from typing import List, Any, Iterator, Tuple, Union
 from .utils import to_string, normalize_field_name, FixedColumn
 
+logger = logging.getLogger(__name__)
+
+_MISSING = object()  # sentinel for pop() default argument
 
 class Record(list):
     """
@@ -75,7 +78,7 @@ class Record(list):
     -------
     ::
 
-        cursor = db.cursor('record')  # or db.cursor() - record is default
+        cursor = db.cursor()
         cursor.execute("SELECT id, name, email, created FROM users WHERE id = :id",
                       {'id': 42})
         user = cursor.fetchone()
@@ -110,7 +113,22 @@ class Record(list):
     _fields: List[str] = []  # Original field names (e.g., 'Start Year')
     _fields_normalized: List[str] = []  # Normalized for access (e.g., 'start_year')
     _field_len: int = 0 # cached for fast hot path
-    mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
+    _mutable_schema: bool = True  # Set to False in subclasses to forbid field add/delete
+    # list of method and attribute names that normalized field names must not collide with
+    _RESERVED: frozenset = frozenset({
+                           # methods defined on Record
+                           'append', 'clear', 'coalesce', 'copy', 'extend', 'get', 'items', 'keys',
+                           'pop', 'pprint', 'remove', 'to_dict', 'update', 'values',
+                           # classmethods
+                           'set_fields', '_get_reserved',
+                           # inherited list methods not overridden
+                           'count', 'index', 'insert', 'reverse', 'sort',
+                           # attributes / slots
+                           '_mutable_schema', '_fields', '_fields_normalized', '_field_len', '_added',
+                           '_deleted_fields',
+                           # _RESERVED itself normalizes to _reserved
+                           '_reserved',
+                           })
 
     def __init__(self, *args, **kwargs):
         # Lazy attributes
@@ -204,9 +222,9 @@ class Record(list):
             return
 
         # 4. New field — add to runtime dict
-        if not self.__class__.mutable_schema:
+        if not self.__class__._mutable_schema:
             raise TypeError(
-                f"Cannot add field '{key}': schema is fixed (mutable_schema=False)"
+                f"Cannot add field '{key}': schema is fixed (_mutable_schema=False)"
             )
         if self._added is None:
             object.__setattr__(self, "_added", {})
@@ -253,6 +271,18 @@ class Record(list):
         return self._added and key in self._added
 
     @classmethod
+    def _get_reserved(cls) -> frozenset:
+        """Return all reserved names, including those from parent classes."""
+        reserved = cls._RESERVED
+
+        # Walk the MRO and collect reserved names from all base classes
+        for base in cls.__mro__:
+            if hasattr(base, '_RESERVED'):
+                reserved = reserved | base._RESERVED
+
+        return reserved
+
+    @classmethod
     def set_fields(cls, fields: List[str]) -> None:
         """
         Set the field names for this Record class.
@@ -270,21 +300,53 @@ class Record(list):
             >>> rec._fields_normalized
             ['start_year', 'end_date']
         """
+        # Deduplicate original field names before normalization.
+        # When a name appears more than once, rename later occurrences by
+        # appending _2, _3, … — skipping any candidate already taken by an
+        # earlier renamed field OR that already exists in the original list.
+        deduped = []
+        seen_originals = set()
+        for name in fields:
+            if name not in seen_originals:
+                seen_originals.add(name)
+                deduped.append(name)
+            else:
+                counter = 1
+                candidate = name
+                while candidate in seen_originals or candidate in fields:
+                    counter += 1
+                    candidate = f"{name}_{counter}"
+                logger.warning(
+                    f"Duplicate field '{name}' renamed to '{candidate}' in _fields."
+                )
+                seen_originals.add(candidate)
+                deduped.append(candidate)
+        fields = deduped
+
         cls._fields = fields
         cls._field_len = len(fields)
         # Normalize and handle collisions
         normalized = []
         seen = {}
-        for field in fields:
-            norm = normalize_field_name(field)
-            if norm in seen:
-                # Collision: append _2, _3, etc.
-                count = seen[norm] + 1
-                seen[norm] = count
-                norm = f"{norm}_{count}"
-            else:
-                seen[norm] = 1
+        reserved = cls._get_reserved()
+
+        for original in fields:
+            norm = normalize_field_name(original) # normalize name for attribute access
+            original_norm = norm
+            counter = 1
+
+            while norm in seen or norm in reserved:
+                counter += 1
+                norm = f"{original_norm}_{counter}"
+            if norm != original_norm:
+                logger.warning(
+                    f"Attribute access for '{original}' was renamed to '{norm}' due to collision "
+                    "with existing Record method/attribute."
+                )
+
+            seen[norm] = True
             normalized.append(norm)
+
         cls._fields_normalized = normalized
 
 
@@ -345,12 +407,12 @@ class Record(list):
         except KeyError:
             return default
 
-    def pop(self, key: str, default: object = object()) -> Any:
+    def pop(self, key: str, default: object = _MISSING) -> Any:
         if not isinstance(key, str):
             raise TypeError("pop() key must be str")
-        if not self.__class__.mutable_schema:
+        if not self.__class__._mutable_schema:
             raise TypeError(
-                f"Cannot delete field '{key}': schema is fixed (mutable_schema=False)"
+                f"Cannot delete field '{key}': schema is fixed (_mutable_schema=False)"
             )
 
         # 1. Runtime-added field?
@@ -376,7 +438,7 @@ class Record(list):
             return value
 
         # 4. Not found
-        if default is not object():
+        if default is not _MISSING:
             return default
         raise KeyError(key)
 
@@ -483,21 +545,14 @@ class Record(list):
         # Create a new instance of the same class (preserves subclass attrs)
         new = self.__class__.__new__(self.__class__)
 
+        # Initialize slots via object.__setattr__ before any attribute access —
+        # Record.__setattr__ routes everything through __setitem__, which would
+        # recurse infinitely on an uninitialized instance.
+        object.__setattr__(new, '_deleted_fields', self._deleted_fields.copy())
+        object.__setattr__(new, '_added', self._added.copy() if self._added is not None else None)
+
         # Shallow copy of the underlying list (values)
         super(Record, new).__init__(super().__iter__())
-
-        # Copy field metadata (shallow copy of lists)
-        new._fields = self._fields[:]
-        new._fields_normalized = self._fields_normalized[:]
-
-        # Copy deleted fields set (shallow copy)
-        new._deleted_fields = self._deleted_fields.copy()
-
-        # Copy runtime-added fields dict (shallow copy)
-        if self._added is not None:
-            new._added = self._added.copy()
-        else:
-            new._added = None
 
         return new
 
@@ -521,6 +576,15 @@ class Record(list):
 
     def __dir__(self) -> List[str]:
         return sorted(set(super().__dir__()) | set(self.keys()))
+
+    def reverse(self) -> None:
+        raise TypeError("Record.reverse() is not supported — it would break field-index mappings")
+
+    def sort(self, *args, **kwargs) -> None:
+        raise TypeError("Record.sort() is not supported — it would break field-index mappings")
+
+    def insert(self, index: int, value: object) -> None:
+        raise TypeError("Record.insert() is not supported — it would break field-index mappings")
 
     def pprint(self, normalized: bool = False) -> None:
         """
@@ -570,7 +634,8 @@ class FixedWidthRecord(Record):
     """
     _columns: List[FixedColumn] = []
     _line_len: int = 0
-    mutable_schema: bool = False
+    _mutable_schema: bool = False
+    _RESERVED: frozenset = frozenset({'_columns', '_line_len', 'to_line', 'visualize'})
 
     @classmethod
     def set_fields(cls, fields: List[FixedColumn]):
@@ -708,3 +773,65 @@ class FixedWidthRecord(Record):
             if boundary_line[col.end_pos - 1] == '─':
                 boundary_line[col.end_pos - 1] = '┤'
         return f'{ruler_10s}\n{ruler_1s}\n{"".join(boundary_line)}\n{self.to_line()}'
+
+
+def fixed_record_factory(columns, name='FixedRecord'):
+    """
+    Class factory: build a :class:`FixedWidthRecord` subclass from a compact column spec.
+
+    Follows the same convention as :func:`collections.namedtuple` — returns a *class*,
+    not an instance.
+
+    Parameters
+    ----------
+    columns : list of FixedColumn or (name, width) tuple
+        May be mixed.  Tuples specify ``(name, width)`` and are assigned sequential
+        positions starting at 1 (or immediately after the previous column).
+        :class:`FixedColumn` objects are used as-is and advance the auto-position
+        cursor to ``col.end_pos + 1``.
+    name : str, optional
+        Class name of the returned type.  Defaults to ``'FixedRecord'``.
+
+    Returns
+    -------
+    type
+        A :class:`FixedWidthRecord` subclass with ``set_fields()`` already called.
+
+    Examples
+    --------
+    ::
+
+        # Tuple-only: positions calculated automatically
+        AchDetail = fixed_record_factory([
+            ('record_type',    1),
+            ('priority_code',  2),
+            ('routing_number', 9),
+            ('account_number', 17),
+            ('amount',         10),
+        ], name='AchDetail')
+
+        line = AchDetail('6', '22', '123456789', '00012345678', 100)
+        print(line.to_line())
+
+        # Mixed: use FixedColumn where you need explicit control
+        AchHeader = fixed_record_factory([
+            FixedColumn('record_type', 1, 1),
+            ('priority_code', 2),
+            FixedColumn('routing_number', 4, 12, column_type='int', align='right'),
+            ('filler', 39),
+        ])
+    """
+    pos = 1
+    fixed_cols = []
+    for col in columns:
+        if isinstance(col, FixedColumn):
+            fixed_cols.append(col)
+            pos = col.end_pos + 1
+        else:
+            col_name, width = col[0], col[1]
+            fixed_cols.append(FixedColumn(col_name, pos, width=width))
+            pos += width
+
+    cls = type(name, (FixedWidthRecord,), {})
+    cls.set_fields(fixed_cols)
+    return cls

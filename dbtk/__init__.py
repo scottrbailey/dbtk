@@ -29,13 +29,15 @@ Direct connections:
     cursor = db.cursor()  # Returns Record objects
 """
 
-__version__ = '0.8.0'
+__version__ = '0.8.3'
 __author__ = 'Scott Bailey <scottrbailey@gmail.com>'
 
 from .database import Database
 from .config import connect, set_config_file
-from .cursors import Cursor
+from .cursors import Cursor, PreparedStatement
 from .logging_utils import setup_logging, cleanup_old_logs, errors_logged
+from .record import fixed_record_factory, FixedWidthRecord
+from .utils import FixedColumn
 from . import readers
 from . import writers
 from . import etl
@@ -45,6 +47,10 @@ __all__ = [
     'connect',
     'Database',
     'Cursor',
+    'PreparedStatement',
+    'FixedColumn',
+    'FixedWidthRecord',
+    'fixed_record_factory',
     'etl',
     'readers',
     'writers',

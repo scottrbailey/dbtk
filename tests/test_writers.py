@@ -1057,3 +1057,118 @@ class TestDatabaseWriter:
             # Should create writer without errors
             assert writer.paramstyle == paramstyle
             assert writer.insert_sql is not None
+
+COMPRESSION_RECORDS = [
+    {'id': 1, 'name': 'Alice', 'city': 'Springfield'},
+    {'id': 2, 'name': 'Bob', 'city': 'Shelbyville'},
+    {'id': 3, 'name': 'Carol', 'city': 'Capital City'},
+]
+
+
+class TestCompression:
+    """Tests for compression support in file writers."""
+
+    def test_csv_gz_extension_infers_gzip(self, tmp_path):
+        """Extension .csv.gz triggers gzip compression automatically."""
+        output_file = tmp_path / "output.csv.gz"
+        to_csv(COMPRESSION_RECORDS, output_file)
+
+        assert output_file.exists()
+        import gzip
+        with gzip.open(output_file, 'rt', encoding='utf-8') as f:
+            first_line = f.readline()
+        assert 'id' in first_line
+
+    def test_csv_gz_roundtrip(self, tmp_path):
+        """Write and read back a gzip-compressed CSV."""
+        output_file = tmp_path / "output.csv.gz"
+        to_csv(COMPRESSION_RECORDS, output_file)
+
+        import gzip
+        with gzip.open(output_file, 'rt', encoding='utf-8') as f:
+            lines = f.readlines()
+        # 1 header + 3 data rows
+        assert len(lines) == 4
+
+    def test_csv_explicit_gzip_no_extension(self, tmp_path):
+        """Explicit compression='gzip' overrides extension inference."""
+        output_file = tmp_path / "output.csv"
+        to_csv(COMPRESSION_RECORDS, output_file, compression='gzip')
+
+        import gzip
+        with gzip.open(output_file, 'rt', encoding='utf-8') as f:
+            first_line = f.readline()
+        assert 'id' in first_line
+
+    def test_csv_bz2_extension(self, tmp_path):
+        """Extension .csv.bz2 triggers bz2 compression."""
+        output_file = tmp_path / "output.csv.bz2"
+        to_csv(COMPRESSION_RECORDS, output_file)
+
+        import bz2
+        with bz2.open(output_file, 'rt', encoding='utf-8') as f:
+            first_line = f.readline()
+        assert 'id' in first_line
+
+    def test_csv_xz_extension(self, tmp_path):
+        """Extension .csv.xz triggers lzma compression."""
+        output_file = tmp_path / "output.csv.xz"
+        to_csv(COMPRESSION_RECORDS, output_file)
+
+        import lzma
+        with lzma.open(output_file, 'rt', encoding='utf-8') as f:
+            first_line = f.readline()
+        assert 'id' in first_line
+
+    def test_csv_no_compression_plain_extension(self, tmp_path):
+        """Plain .csv extension writes uncompressed."""
+        output_file = tmp_path / "output.csv"
+        to_csv(COMPRESSION_RECORDS, output_file)
+
+        with open(output_file, encoding='utf-8') as f:
+            first_line = f.readline()
+        assert 'id' in first_line
+
+    def test_csv_compression_none_disables_inference(self, tmp_path):
+        """compression=None writes plain text even with .gz extension."""
+        output_file = tmp_path / "output.csv.gz"
+        to_csv(COMPRESSION_RECORDS, output_file, compression=None)
+
+        with open(output_file, encoding='utf-8') as f:
+            first_line = f.readline()
+        assert 'id' in first_line
+
+    def test_json_gz_extension(self, tmp_path):
+        """Extension .json.gz triggers gzip compression."""
+        output_file = tmp_path / "output.json.gz"
+        to_json(COMPRESSION_RECORDS, output_file)
+
+        import gzip, json
+        with gzip.open(output_file, 'rt', encoding='utf-8') as f:
+            data = json.load(f)
+        assert len(data) == 3
+        assert data[0]['id'] == 1
+
+    def test_ndjson_gz_extension(self, tmp_path):
+        """Extension .ndjson.gz triggers gzip compression."""
+        output_file = tmp_path / "output.ndjson.gz"
+        to_ndjson(COMPRESSION_RECORDS, output_file)
+
+        import gzip, json
+        with gzip.open(output_file, 'rt', encoding='utf-8') as f:
+            lines = f.readlines()
+        assert len(lines) == 3
+        assert json.loads(lines[0])['id'] == 1
+
+    def test_csv_batch_writer_gz(self, tmp_path):
+        """CSVWriter.write_batch() works with gzip compression."""
+        output_file = tmp_path / "output.csv.gz"
+
+        with CSVWriter(data=None, file=output_file) as writer:
+            writer.write_batch(COMPRESSION_RECORDS[:2])
+            writer.write_batch(COMPRESSION_RECORDS[2:])
+
+        import gzip
+        with gzip.open(output_file, 'rt', encoding='utf-8') as f:
+            lines = f.readlines()
+        assert len(lines) == 4  # 1 header + 3 data

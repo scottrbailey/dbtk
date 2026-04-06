@@ -4,7 +4,6 @@
 settings:
   default_batch_size: 1000
   default_country: US
-  default_header_clean: 2  # Clean.LOWER_NOSPACE
   default_timezone: UTC
 
   # Logging configuration for integration scripts

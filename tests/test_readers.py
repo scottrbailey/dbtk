@@ -10,7 +10,7 @@ from datetime import date, datetime
 
 from dbtk.readers import (
     CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
-    XMLReader, FixedReader, FixedColumn, Clean, get_reader
+    XMLReader, FixedReader, FixedColumn, get_reader
 )
 from dbtk.readers.fixed_width import EDIReader
 from dbtk.formats.edi import ACH_COLUMNS, FORMATS

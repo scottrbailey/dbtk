@@ -22,6 +22,7 @@ class JSONWriter(BaseWriter):
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  indent: Optional[int] = 2,
+                 compression: str = 'infer',
                  **json_kwargs):
         """
         Initialize JSON writer.
@@ -32,10 +33,12 @@ class JSONWriter(BaseWriter):
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
+            compression: Compression type. 'infer' detects from file extension (.gz, .bz2, .xz).
+                        Pass 'gzip', 'bz2', or 'lzma' to override, or None to disable.
             **json_kwargs: Additional arguments passed to json.dump
         """
         # Preserve data types for JSON output
-        super().__init__(data, file, columns, encoding, indent=indent, **json_kwargs)
+        super().__init__(data, file, columns, encoding, compression=compression, indent=indent, **json_kwargs)
 
     def to_string(self, obj: Any) -> Any:
         """Convert object to string. For JSON just convert dates and times. """
@@ -62,6 +65,7 @@ class NDJSONWriter(BatchWriter):
                  file: Optional[Union[str, Path]] = None,
                  columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
+                 compression: str = 'infer',
                  **json_kwargs):
         """
         Initialize NDJSON writer.
@@ -71,10 +75,13 @@ class NDJSONWriter(BatchWriter):
             file: Output file. If None, writes to stdout
             columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
+            compression: Compression type. 'infer' detects from file extension (.gz, .bz2, .xz).
+                        Pass 'gzip', 'bz2', or 'lzma' to override, or None to disable.
             **json_kwargs: Additional arguments passed to json.dumps
         """
         # NDJSON doesn't use indentation
-        super().__init__(data, file, columns=columns, encoding=encoding, indent=None, **json_kwargs)
+        super().__init__(data, file, columns=columns, encoding=encoding, compression=compression,
+                         indent=None, **json_kwargs)
 
     def to_string(self, obj: Any) -> Any:
         """Convert object to string. For JSON just convert dates and times. """
@@ -96,6 +103,7 @@ def to_json(data,
             file: Optional[Union[str, Path]] = None,
             encoding: str = 'utf-8',
             indent: Optional[int] = 2,
+            compression: str = 'infer',
             **json_kwargs) -> None:
     """
     Export cursor or result set to JSON file as an array of dictionaries.
@@ -122,6 +130,7 @@ def to_json(data,
         file=file,
         encoding=encoding,
         indent=indent,
+        compression=compression,
         **json_kwargs
     ) as writer:
         writer.write()
@@ -130,6 +139,7 @@ def to_json(data,
 def to_ndjson(data,
               file: Optional[Union[str, Path]] = None,
               encoding: str = 'utf-8',
+              compression: str = 'infer',
               **json_kwargs) -> None:
     """
     Export cursor or result set to NDJSON (newline-delimited JSON) file.
@@ -151,6 +161,7 @@ def to_ndjson(data,
         data=data,
         file=file,
         encoding=encoding,
+        compression=compression,
         **json_kwargs
     ) as writer:
         writer.write()

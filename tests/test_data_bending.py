@@ -310,6 +310,94 @@ class TestSQLFileExecution:
         assert 'MA' in northeast_states
         assert 'NY' in northeast_states
 
+    def test_execute_file_caller_dir_fallback(self, states_db):
+        """A path not found relative to CWD is resolved relative to the caller's directory."""
+        cursor = states_db.cursor()
+        # 'sql/get_state_info.sql' does not exist relative to CWD (/home/user/dbtk),
+        # but does exist relative to this test file's directory (tests/).
+        cursor.execute_file('sql/get_state_info.sql', {'code': 'TX'})
+        texas = cursor.fetchone()
+        assert texas['state'] == 'Texas'
+
+    def test_prepare_file_caller_dir_fallback(self, states_db):
+        """prepare_file also falls back to the caller's directory."""
+        cursor = states_db.cursor()
+        stmt = cursor.prepare_file('sql/get_state_info.sql')
+        stmt.execute({'code': 'CA'})
+        assert stmt.fetchone()['state'] == 'California'
+
+
+class TestExecuteConvertParams:
+    """Test cursor.execute with convert_params=True."""
+
+    def test_basic(self, states_db):
+        """Named params dict is correctly converted and query returns results."""
+        cursor = states_db.cursor()
+        cursor.execute(
+            "SELECT state, code FROM states WHERE region = :region ORDER BY state",
+            {'region': 'West'},
+            convert_params=True,
+        )
+        states = cursor.fetchall()
+        assert len(states) > 0
+        assert all(s['code'] for s in states)
+
+    def test_correct_results(self, states_db):
+        """Results match the expected row for the given parameter."""
+        cursor = states_db.cursor()
+        cursor.execute(
+            "SELECT state, capital, population FROM states WHERE code = :code",
+            {'code': 'TX'},
+            convert_params=True,
+        )
+        texas = cursor.fetchone()
+        assert texas['state'] == 'Texas'
+        assert texas['capital'] == 'Austin'
+        assert texas['population'] == 29145505
+
+    def test_missing_params_default_to_none(self, states_db):
+        """Parameters absent from bind_vars default to None, not an error."""
+        cursor = states_db.cursor()
+        # Pass only 'region'; 'min_pop' is missing — should default to None
+        # COALESCE lets the query run cleanly even when :min_pop is NULL
+        cursor.execute(
+            """SELECT COUNT(*) as cnt FROM states
+               WHERE region = :region
+               AND population > COALESCE(:min_pop, 0)""",
+            {'region': 'West'},
+            convert_params=True,
+        )
+        row = cursor.fetchone()
+        assert row['cnt'] > 0
+
+    def test_extra_params_ignored(self, states_db):
+        """Extra keys in bind_vars are silently ignored."""
+        cursor = states_db.cursor()
+        cursor.execute(
+            "SELECT state FROM states WHERE code = :code",
+            {'code': 'CA', 'unused_key': 'ignored', 'another': 123},
+            convert_params=True,
+        )
+        row = cursor.fetchone()
+        assert row['state'] == 'California'
+
+    def test_invalid_bind_vars_raises(self, states_db):
+        """Passing a positional tuple with convert_params=True raises ValueError."""
+        cursor = states_db.cursor()
+        with pytest.raises(ValueError):
+            cursor.execute(
+                "SELECT state FROM states WHERE code = :code",
+                ('CA',),
+                convert_params=True,
+            )
+
+    def test_no_params_query_rewrite_only(self, states_db):
+        """convert_params=True with no bind vars rewrites the query without error."""
+        cursor = states_db.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM states", convert_params=True)
+        row = cursor.fetchone()
+        assert row['cnt'] == 50
+
 
 class TestDatabaseQueries:
     """Test various database queries and aggregations."""

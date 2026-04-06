@@ -4,6 +4,7 @@ Cursor classes that wrap database cursors and provide different return types.
 All cursors delegate to the underlying database cursor stored in _cursor.
 """
 
+import inspect
 import logging
 from pathlib import Path
 from typing import List, Any, Optional, Iterator, Callable, Union
@@ -14,6 +15,21 @@ from .defaults import settings
 
 logger = logging.getLogger(__name__)
 __all__ = ['Cursor', 'PreparedStatement']
+
+
+def _resolve_sql_path(filename: Union[str, Path], caller_file: str) -> Path:
+    """Resolve a SQL filename to an existing path.
+
+    Checks the path as given first (absolute or relative to CWD), then falls
+    back to the directory containing *caller_file* so that scripts can refer to
+    sibling SQL files by bare name.
+    """
+    path = Path(filename)
+    if not path.is_absolute() and not path.exists():
+        candidate = Path(caller_file).parent / path
+        if candidate.exists():
+            return candidate
+    return path
 
 
 class PreparedStatement:
@@ -94,11 +110,12 @@ class PreparedStatement:
 
 class Cursor:
     """
-    Basic cursor that returns query results as lists.
+    Cursor that returns query results as Records.
 
-    This is the base class for all DBTK cursor types. It wraps database-specific cursor
-    objects and provides a consistent interface plus additional functionality like SQL
-    file execution, parameter conversion, and prepared statements.
+    It wraps database-specific cursor objects and provides a consistent interface plus additional
+    functionality like SQL file execution, parameter conversion, and prepared statements.
+    It also maintains a clean reference hierarchy to the connection (cursor.connection) and
+    to the driver (cursor.connection.driver)
 
     Cursor returns Record objects, which provide flexible access via dictionary keys,
     attributes, or integer indices.
@@ -123,8 +140,8 @@ class Cursor:
     -------
     ::
 
-        # Usually created via Database.cursor()
-        cursor = db.cursor('list')
+        db = dbtk.connect('prod_ods')
+        cursor = db.cursor()
         cursor.execute("SELECT id, name, email FROM users WHERE status = :status",
                       {'status': 'active'})
 
@@ -404,9 +421,40 @@ class Cursor:
                 self._create_record_factory()
         return True
 
-    def execute(self, query: str, bind_vars: tuple = ()) -> None:
-        """Execute a database query."""
+    def execute(self, query: str,
+                bind_vars: Union[tuple, dict] = (),
+                convert_params: bool = False) -> None:
+        """
+        Execute a database query.
+
+        Pass convert_params=True to have the query rewritten to the cursor's paramstyle
+        and parameters handled automatically (same as PreparedStatement and execute_file).
+
+        Parameters
+        ----------
+        bind_vars : tuple or dict, default ()
+            Bind parameters to pass to the database.
+
+            When convert_params is False (the default), passed directly to the
+            underlying cursor and must already be in the format required by the
+            cursor's paramstyle.
+
+            When convert_params is True, must be a dict (or Record).
+
+        convert_params : bool, default False
+            If True, parameter order will be extracted from the query and the query
+            will be rewritten to match the cursor's paramstyle. Missing parameters
+            will be defaulted to None and extra parameters will be ignored.
+        """
+
         self._row_factory_invalid = True
+        if convert_params:
+            if not hasattr(bind_vars, 'items'):
+                if bind_vars:
+                    raise ValueError(f'bind_vars must be a dict when convert_params=True')
+                bind_vars = {}
+            query, param_names = process_sql_parameters(query, self.paramstyle)
+            bind_vars = self.prepare_params(param_names, bind_vars)
 
         if self.debug:
             logger.debug(f'Query:\n{query}')
@@ -433,7 +481,8 @@ class Cursor:
         executed multiple times, use prepare_file() instead for better performance.
 
         Args:
-            filename: Path to SQL file (relative to CWD)
+            filename: Path to SQL file. Resolved relative to CWD first; if not
+                found there, falls back to the directory of the calling script.
             bind_vars: Dictionary of named parameters
             **kwargs:
                 encoding: File encoding (default: utf-8-sig)
@@ -445,10 +494,11 @@ class Cursor:
             cursor.execute_file('queries/get_user.sql', {'user_id': 123})
         """
         encoding = kwargs.get('encoding', 'utf-8-sig')
+        path = _resolve_sql_path(filename, inspect.stack()[1].filename)
 
         try:
             # Read SQL from file
-            with open(filename, encoding=encoding) as f:
+            with open(path, encoding=encoding) as f:
                 sql = f.read()
 
             # Transform SQL for this cursor's paramstyle
@@ -466,7 +516,7 @@ class Cursor:
         except Exception as e:
             statement = locals().get('transformed_sql', 'N/A')
             logger.error(
-                f"Error executing SQL file: {filename}\n"
+                f"Error executing SQL file: {path}\n"
                 f"Transformed SQL: {statement}\n"
                 f"Parameters: {bind_vars}"
             )
@@ -480,7 +530,8 @@ class Cursor:
         The returned PreparedStatement can be executed multiple times efficiently.
 
         Args:
-            filename: Path to SQL file (relative to CWD)
+            filename: Path to SQL file. Resolved relative to CWD first; if not
+                found there, falls back to the directory of the calling script.
             encoding: File encoding (default: utf-8-sig)
 
         Returns:
@@ -494,7 +545,32 @@ class Cursor:
             for user in users:
                 stmt.execute({'user_id': user.id, 'name': user.name})
         """
-        return PreparedStatement(self, filename=filename, encoding=encoding)
+        path = _resolve_sql_path(filename, inspect.stack()[1].filename)
+        return PreparedStatement(self, filename=path, encoding=encoding)
+
+    def prepare_query(self, query: str) -> PreparedStatement:
+        """
+        Prepare a SQL statement from a query string for repeated execution.
+
+        The parameter conversion is performed once.
+        The returned PreparedStatement can be executed multiple times efficiently.
+
+        Args:
+            query:
+
+        Returns:
+            PreparedStatement object
+
+        Example
+        -------
+        ::
+
+            stmt = cursor.prepare_query('SELECT * FROM users WHERE user_id = :user_id')
+            for user in users:
+                stmt.execute({'user_id': user.id})
+        """
+        return PreparedStatement(self, query=query)
+
 
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:
         """Execute a query against multiple parameter sets."""
