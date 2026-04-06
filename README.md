@@ -48,7 +48,7 @@ BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throug
 Readers/Writers → consistent API across every file format and compression type
 ```
 
-<img src="https://raw.githubusercontent.com/scottrbailey/dbtk/main/docs/assets/dbtk_flowchart.jpg" width="800" align="center" />
+<img src="https://raw.githubusercontent.com/scottrbailey/dbtk/main/docs/assets/dbtk_flowchart.png" width="800" align="center" />
 
 When developers convert existing jobs to DBTK, the result can be **half to a quarter the
 original code**. That reduction comes from specific things DBTK just handles:
@@ -70,7 +70,7 @@ finish the job and think *"that was satisfyingly elegant"* — not because corne
 because the tool was collaborating with you instead of making you fight it.
 
 **Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
-But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will
+But DBTK's throughput and memory usage are very good. BulkSurge streaming from polars and doing direct loads to PostgreSQL will
 process 1M rows in 3-4 seconds. But even with a standard Python csv reader and numerous column transforms, DataSurge is able to
 write 1M rows to every supported database in 5-10 seconds.
 
