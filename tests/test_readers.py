@@ -133,6 +133,7 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
     elif reader_type == 'xml':
         return XMLReader(open(xml_file, 'rb'), record_xpath='//record', **kwargs)
     elif reader_type == 'fixed':
+        kwargs.setdefault('add_row_num', True)
         return FixedReader(open(fixed_file, encoding='utf-8'), fixed_columns, **kwargs)
     else:
         raise ValueError(f"Unknown reader type: {reader_type}")
@@ -681,7 +682,7 @@ class TestEDIReader:
         assert rec.record_type_code == '6'
         assert rec.transaction_code == '22'
         assert rec.individual_name == 'JOHN DOE'
-        assert rec.amount == '0000100000'
+        assert rec.amount == 100000
         assert rec.addenda_indicator == '1'
 
     def test_addenda_fields(self, reader):
@@ -696,7 +697,7 @@ class TestEDIReader:
         rec = records[4]
         assert rec.record_type_code == '6'
         assert rec.individual_name == 'JANE SMITH'
-        assert rec.amount == '0000050000'
+        assert rec.amount == 50000
         assert rec.addenda_indicator == '0'
 
     # ------------------------------------------------------------------
