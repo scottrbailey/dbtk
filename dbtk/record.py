@@ -765,7 +765,8 @@ class FixedWidthRecord(Record):
         """
         cls = self.__class__
         line_len = cls._line_len
-        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(line_len))
+        ruler_10s = ''.join(str(i // 10 % 10) if i % 10 == 0 else ' ' for i in range(1, line_len + 1))
+        ruler_10s = '0' + ruler_10s[1:]
         ruler_1s  = ''.join(str(i % 10)                               for i in range(1, line_len + 1))
         boundary_line = ['─'] * line_len
         for col in cls._columns:
