@@ -4,12 +4,11 @@
 
 import logging
 import os
-from typing import TextIO, List, Dict, Any, Optional, Iterator, Type
+from typing import TextIO, List, Dict, Optional, Iterator, Type
 
 from .base import Reader
 from ..record import Record, FixedWidthRecord
 from ..utils import FixedColumn
-from ..etl.transforms.datetime import parse_date, parse_datetime, parse_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ class FixedReader(Reader):
                  fp: TextIO,
                  columns: List[FixedColumn],
                  auto_trim: bool = True,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -72,33 +71,21 @@ class FixedReader(Reader):
         """Return column names from FixedColumn definitions."""
         return [col.name for col in self.columns]
 
-    def _generate_rows(self) -> Iterator[List[Any]]:
+    def _generate_rows(self) -> Iterator[FixedWidthRecord]:
         while True:
             line = self.fp.readline()
             if not line:
                 break
-            row_data = []
-            for col in self.columns:
-                val = line[col.start_idx:col.end_pos]
-                try:
-                    if col.column_type == 'text' and self.auto_trim:
-                        val = str(val).strip()
-                    elif col.column_type == 'date':
-                        val = parse_date(val)
-                    elif col.column_type == 'datetime':
-                        val = parse_datetime(val)
-                    elif col.column_type == 'timestamp':
-                        val = parse_timestamp(val)
-                    elif col.column_type == 'int':
-                        val = int(val.strip()) if val.strip() else None
-                    elif col.column_type == 'float':
-                        val = float(val.strip()) if val.strip() else None
-                    else:
-                        val = str(val)
-                except (ValueError, TypeError):
-                    val = str(val).strip() if self.auto_trim else str(val)
-                row_data.append(val)
-            yield row_data
+            yield self._record_class.from_line(line.rstrip('\n'), auto_trim=self.auto_trim)
+
+    def _create_record(self, record: FixedWidthRecord) -> FixedWidthRecord:
+        if self._null_values:
+            for i in range(len(self._record_class._columns)):
+                if record[i] in self._null_values:
+                    record[i] = None
+        if self.add_row_num:
+            record['_row_num'] = self.skip_rows + self._row_num
+        return record
 
     def _cleanup(self):
         """Close the file pointer."""
@@ -131,8 +118,7 @@ class FixedReader(Reader):
                 raw = line.rstrip('\n')
                 if not raw:
                     continue
-                row_values = [raw[col.start_idx:col.end_pos] for col in self.columns]
-                pairs.append((raw, temp_cls(*row_values)))
+                pairs.append((raw, temp_cls.from_line(raw)))
                 if len(pairs) >= sample_lines:
                     break
         finally:
@@ -309,8 +295,7 @@ class EDIReader(FixedReader):
                 if cols is None:
                     continue
                 factory = self._get_factory(type_code)
-                row_values = [raw[col.start_idx:col.end_pos] for col in cols]
-                seen[type_code] = (raw, factory(*row_values), cols)
+                seen[type_code] = (raw, factory.from_line(raw), cols)
         finally:
             self.fp.seek(pos)
 
@@ -348,12 +333,5 @@ class EDIReader(FixedReader):
                     logger.debug(f"Skipping unknown record type '{type_code}'")
                     continue
 
-            row_values = []
-            for col in cols:
-                val = line[col.start_idx:col.end_pos]
-                if self.auto_trim:
-                    val = val.strip()
-                row_values.append(val)
-
-            record = self._get_factory(type_code)(*row_values)
+            record = self._get_factory(type_code).from_line(line, auto_trim=self.auto_trim)
             yield record
