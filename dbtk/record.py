@@ -631,11 +631,14 @@ class FixedWidthRecord(Record):
         RecordClass.set_fields(columns)  # columns is List[FixedColumn]
         record = RecordClass(*row_values)
         original_line = record.to_line()  # reconstructs formatted string
+
+        # Parse a raw fixed-width string directly
+        record = RecordClass.from_line(raw_line)  # corollary to to_line()
     """
     _columns: List[FixedColumn] = []
     _line_len: int = 0
     _mutable_schema: bool = False
-    _RESERVED: frozenset = frozenset({'_columns', '_line_len', 'to_line', 'visualize'})
+    _RESERVED: frozenset = frozenset({'_columns', '_line_len', 'from_line', 'to_line', 'visualize'})
 
     @classmethod
     def set_fields(cls, fields: List[FixedColumn]):
@@ -655,6 +658,68 @@ class FixedWidthRecord(Record):
         super().set_fields(names)
         cls._columns = list(fields)
         cls._line_len = max(col.end_pos for col in fields) if fields else 0
+
+    @classmethod
+    def from_line(cls, line: str, auto_trim: bool = True) -> 'FixedWidthRecord':
+        """
+        Parse a fixed-width string and return a new instance of this record type.
+
+        The corollary to ``to_line()``: slice each field from its declared position,
+        apply type conversion based on ``column_type``, and construct the record.
+        Mirrors the parsing logic in :class:`FixedReader` so that records created
+        here behave identically to those produced by the reader.
+
+        Args:
+            line:      A fixed-width string. Should be at least ``_line_len``
+                       characters; shorter strings are handled gracefully (missing
+                       positions return an empty string).
+            auto_trim: If True (default), strip leading/trailing whitespace from
+                       ``text`` fields before storing. Set to False to preserve the
+                       raw padded value exactly as it appears in the source line.
+
+        Returns:
+            A new instance of this :class:`FixedWidthRecord` subclass with values
+            populated from the parsed string.
+
+        Raises:
+            TypeError: If ``line`` is not a string.
+
+        Example::
+
+            MyRecord = fixed_record_factory([
+                ('record_type', 1),
+                FixedColumn('amount', 2, 11, 'int'),
+            ])
+            record = MyRecord.from_line('6        42')
+            assert record.record_type == '6'
+            assert record.amount == 42
+
+            # Round-trip
+            assert record.to_line() == MyRecord.from_line(record.to_line()).to_line()
+        """
+        from .etl.transforms.datetime import parse_date, parse_datetime, parse_timestamp
+        row_data = []
+        for col in cls._columns:
+            val = line[col.start_idx:col.end_pos]
+            try:
+                if col.column_type == 'text' and auto_trim:
+                    val = str(val).strip()
+                elif col.column_type == 'date':
+                    val = parse_date(val)
+                elif col.column_type == 'datetime':
+                    val = parse_datetime(val)
+                elif col.column_type == 'timestamp':
+                    val = parse_timestamp(val)
+                elif col.column_type == 'int':
+                    val = int(val.strip()) if val.strip() else None
+                elif col.column_type == 'float':
+                    val = float(val.strip()) if val.strip() else None
+                else:
+                    val = str(val)
+            except (ValueError, TypeError):
+                val = str(val).strip() if auto_trim else str(val)
+            row_data.append(val)
+        return cls(*row_data)
 
     def to_line(self, truncate_overflow: bool = False):
         """
