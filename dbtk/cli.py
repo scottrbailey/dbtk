@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import sys
 from .database import _get_all_drivers
+from .record import fixed_record_factory
 from . import config
 
 try:
@@ -51,18 +52,23 @@ def checkup():
             deps.append(dep.split('>=')[0].split('==')[0].split('<')[0].strip())
 
     installed = {_name_cleanup(d.name): d.version for d in distributions()}
-
-    print(f"{'Package':<22} {'Status':<8} {'Version'}")
-    print("-" * 40)
+    package_rec = fixed_record_factory([('Package', 22), ('Status', 8), ('Version', 15)])
+    driver_rec = fixed_record_factory([('DB Driver', 22), ('Priority*', 10),
+                                      ('Status', 9), ('Version', 8), ('Notes', 41)])
+    row = package_rec(*package_rec._fields)
+    print(row.to_line(True))
+    print("-" * row._line_len)
 
     for dep in deps:
         clean = dep.replace('-', '_')
         status = "✓" if _is_installed(clean) else "✗"
         version = installed.get(clean.lower(), '-')
-        print(f"{dep:<22} {status:<8} {version}")
-
-    print("\nDB Drivers           Priority* Status   Version")
-    print("-" * 58)
+        row = package_rec(dep, status, version)
+        print(row.to_line(True))
+    print("")
+    row = driver_rec(*driver_rec._fields)
+    print(row.to_line(True))
+    print("-" * 80)
     all_drivers = _get_all_drivers()
     by_type = {}
 
@@ -80,9 +86,6 @@ def checkup():
         drivers = sorted(by_type[db_type], key=lambda x: x[0])
         print(f"{db_type}")  # ← bold header
         for pri, name, info in drivers:
-            # ── 2-space indent for hierarchy
-            display_name = f"  {name}"  # ← indented
-
             try:
                 # see if driver has 'module' attribute to use instead of name
                 module_name = info.get('module', name)
@@ -90,7 +93,7 @@ def checkup():
                 version = installed.get(_name_cleanup(module_name), '--    ')
                 status = "✓" if spec else "✗"
             except ModuleNotFoundError:
-                version = '--   '
+                version = '--'
                 status = "✗"
             odbc_driver_name = info.get("odbc_driver_name")
             if odbc_driver_name:
@@ -101,8 +104,8 @@ def checkup():
                     note = f'({info.get("note")})'
                 else:
                     note = ''
-
-            print(f"{display_name:<22} {pri:<9} {status:<8} {version} {note}")
+            row = driver_rec(f'  {name}', pri, status, version, note)
+            print(row.to_line(True))
 
     print("\n* Lower priority = preferred")
 
