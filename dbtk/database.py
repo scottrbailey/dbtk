@@ -137,12 +137,23 @@ DRIVERS = {
         'required_params': [{'host', 'database', 'user'}, {'dsn'}],
         'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
+        'odbc_driver_name': 'ODBC Driver 18 for SQL Server',
+        'default_port': 1433
+    },
+    'pyodbc_sqlserver_17': {
+        'database_type': 'sqlserver',
+        'module': 'pyodbc',
+        'priority': 12,
+        'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
+        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
+        'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
+        'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 17 for SQL Server',
         'default_port': 1433
     },
     'pymssql': {
         'database_type': 'sqlserver',
-        'priority': 12,
+        'priority': 13,
         'param_map': {},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'password', 'port', 'timeout', 'login_timeout', 'charset', 'as_dict', 'appname'},

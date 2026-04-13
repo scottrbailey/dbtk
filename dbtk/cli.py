@@ -52,17 +52,17 @@ def checkup():
 
     installed = {_name_cleanup(d.name): d.version for d in distributions()}
 
-    print(f"{'Package':<20} {'Status':<8} {'Version'}")
+    print(f"{'Package':<22} {'Status':<8} {'Version'}")
     print("-" * 40)
 
     for dep in deps:
         clean = dep.replace('-', '_')
         status = "✓" if _is_installed(clean) else "✗"
         version = installed.get(clean.lower(), '-')
-        print(f"{dep:<20} {status:<8} {version}")
+        print(f"{dep:<22} {status:<8} {version}")
 
     print("\nDB Drivers           Priority* Status   Version")
-    print("-" * 56)
+    print("-" * 58)
     all_drivers = _get_all_drivers()
     by_type = {}
 
@@ -102,7 +102,7 @@ def checkup():
                 else:
                     note = ''
 
-            print(f"{display_name:<20} {pri:<9} {status:<8} {version} {note}")
+            print(f"{display_name:<22} {pri:<9} {status:<8} {version} {note}")
 
     print("\n* Lower priority = preferred")
 
