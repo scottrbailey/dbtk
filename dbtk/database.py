@@ -212,6 +212,9 @@ DRIVERS = {
 def register_user_drivers(drivers_config: dict) -> None:
     """Register drivers from config file."""
     global _user_drivers
+    for info in drivers_config.values():
+        if 'optional_params' in info:
+            info['optional_params'] = {p.lower() for p in info['optional_params']}
     _user_drivers.update(drivers_config)
 
 
@@ -316,6 +319,10 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     driver_info = DRIVERS[driver_name]
     database_type = driver_info['database_type']
 
+    # Normalize param keys to lowercase so callers can pass TrustServerCertificate,
+    # Port, etc. without being silently ignored.
+    params = {k.lower(): v for k, v in params.items()}
+
     # Initialize with config-only parameters if needed
     validated_params = {}
     if config_only and 'encrypted_password' in params:
@@ -359,6 +366,8 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
         if key in all_valid_params or (config_only and key == 'encrypted_password'):
             mapped_key = param_map.get(key, key)
             validated_params[mapped_key] = value
+        else:
+            logger.warning(f"Unknown parameter '{key}' for driver '{driver_name}' — ignoring")
 
     return validated_params
 
