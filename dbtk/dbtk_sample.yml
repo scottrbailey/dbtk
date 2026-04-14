@@ -80,10 +80,15 @@ passwords:
 drivers:
   firbird:
     database_type: firebird
-    module: firebird.driver # only required if name (firbird) does not mactch module (import) name
+    # only required if name (firbird) does not match module (import) name
+    module: firebird.driver
+    # lowest number with installed library will be used first
     priority: 1
-    param_map: { }  # if driver does not use standard names (user, password, host, port, database) map them here
+    # if driver does not use standard names (user, password, host, port, database) map them here
+    param_map: { }  # {'database': 'db', 'password': 'passwd'}
+    # must have either: host, database and user OR dsn
     required_params: [ { 'host', 'database', 'user' }, { 'dsn' } ]
     optional_params: { 'port', 'password' }
+    # kwargs (most common), odbc_string (all odbc), connection_string (psycopg*), dsn (oracle)
     connection_method: kwargs
     default_port: 3050
