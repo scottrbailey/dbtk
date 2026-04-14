@@ -135,7 +135,7 @@ DRIVERS = {
         'priority': 11,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
         'required_params': [{'host', 'database', 'user'}, {'host', 'database', 'trusted_connection'}, {'dsn'}],
-        'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
+        'optional_params': {'password', 'port', 'driver', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 18 for SQL Server',
         'default_port': 1433
@@ -146,7 +146,7 @@ DRIVERS = {
         'priority': 12,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
         'required_params': [{'host', 'database', 'user'}, {'host', 'database', 'trusted_connection'}, {'dsn'}],
-        'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
+        'optional_params': {'password', 'port', 'driver', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 17 for SQL Server',
         'default_port': 1433
