@@ -9,6 +9,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`FixedWidthRecord.from_line(line, auto_trim=True)`** — classmethod that parses a
+  raw fixed-width string into a record instance; the corollary to `to_line()`. Slices
+  each field by its declared position and applies the same type conversion (`int`,
+  `float`, `date`, `datetime`, `timestamp`, `text`) used by `FixedReader`. Unparseable
+  values fall back to a trimmed string. `from_line` added to `_RESERVED`.
+
+- **`FixedReader.add_row_num` default changed to `False`** — fixed-width files have
+  explicit column specs, making row numbers less useful than in CSV/Excel. Pass
+  `add_row_num=True` to restore the previous behaviour.
+
+- **SQL Server ODBC Driver 18 support** — `pyodbc_sqlserver` (priority 11) now targets
+  `ODBC Driver 18 for SQL Server`. A new `pyodbc_sqlserver_17` entry (priority 12)
+  provides fallback support for systems with only Driver 17 installed. `pymssql`
+  priority bumped to 13.
+
+- **Windows authentication for SQL Server** — `trusted_connection` added as a valid
+  alternative required-parameter set (`{host, database, trusted_connection}`) for both
+  `pyodbc_sqlserver` and `pyodbc_sqlserver_17`, so `user`/`password` are not required
+  when using Windows auth.
+
+### Changed
+
+- **`FixedReader._generate_rows()` / `EDIReader._generate_rows()`** — both now delegate
+  to `FixedWidthRecord.from_line()`, eliminating duplicated type-conversion logic.
+  `EDIReader` previously only stripped whitespace regardless of `column_type`; it now
+  correctly converts `int`, `float`, `date`, and `datetime` columns.
+
+- **`FixedReader.visualize()` / `EDIReader.visualize()`** — simplified to use
+  `from_line()` instead of manual positional slicing.
+
+- **`dbtk checkup` output** — package and driver tables now use `fixed_record_factory`
+  and `to_line()` for column alignment instead of hand-rolled format strings.
+
+- **ODBC `param_map` values lowercased** — all built-in ODBC drivers now map
+  `{'host': 'server', 'user': 'uid', 'password': 'pwd'}`. `_get_odbc_string` uppercases
+  keys when building the connection string, so wire behaviour is unchanged.
+  `register_user_drivers` now also lowercases `param_map` values from user-defined
+  drivers for consistency.
+
+- **Boolean values in ODBC connection strings** — Python `True`/`False` values (e.g.
+  from YAML `yes`/`no` without quotes) are now converted to `'yes'`/`'no'` in
+  `_get_odbc_string` rather than appearing as `True`/`False`.
+
+### Fixed
+
+- **Connection parameter key casing** — `_validate_connection_params` now lowercases
+  all incoming parameter keys before validation. Mixed-case kwargs such as
+  `TrustServerCertificate='yes'` or `Port=1433` were previously silently ignored.
+  `register_user_drivers` similarly lowercases `optional_params` keys from user-defined
+  drivers.
+
+- **Unknown connection parameters now logged** — parameters that are not recognised
+  for the selected driver now emit a `WARNING` instead of being silently discarded.
+
+- **DSN connections with password** — `_get_odbc_string` correctly reads the `pwd` key
+  (lowercase, post-normalisation) when appending the password to a DSN connection string.
+
 ---
 
 ## [0.8.3] - 2026-04-06
