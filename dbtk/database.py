@@ -145,7 +145,7 @@ DRIVERS = {
         'module': 'pyodbc',
         'priority': 12,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
-        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
+        'required_params': [{'host', 'database', 'user'}, {'host', 'database', 'trusted_connection'}, {'dsn'}],
         'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 17 for SQL Server',
@@ -396,7 +396,7 @@ def _get_odbc_string(**kwargs) -> str:
         params = {key.upper(): ('yes' if value is True else 'no' if value is False else value)
                   for key, value in kwargs.items()}
         conn_str = ";".join([f"{key}={value}" for key, value in params.items()])
-        printable_conn_str = ";".join([f"{key.upper()}={value}" for key, value in _hide_password(params).items()])
+        printable_conn_str = ";".join([f"{key}={value}" for key, value in _hide_password(params).items()])
         if odbc_driver_name:
             conn_str = f"DRIVER={{{odbc_driver_name}}};" + conn_str
             printable_conn_str = f"DRIVER={{{odbc_driver_name}}};" + printable_conn_str
