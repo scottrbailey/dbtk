@@ -610,7 +610,8 @@ class LinkSource:
             except KeyError as e:
                 logger.warning(f"Missing key {e} in url_template for {self.name}")
 
-        self._records[key_str] = record
+        if key_str not in self._records:
+            self._records[key_str] = record
 
     def generate_link_from_row(
         self,
