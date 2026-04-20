@@ -494,6 +494,57 @@ class _DeferredTransform:
         return self._bound_fn(value)
 
 
+class QueryLookup:
+    """
+    Deferred PreparedStatement lookup for use as a Table column transform.
+
+    Accepts a SQL query string or file path. Cursor binding is deferred until
+    the Table is initialized with a cursor. Use with ``field='*'`` to pass the
+    full source row as bind variables — PreparedStatement ignores extra keys.
+
+    Parameters
+    ----------
+    query : str, optional
+        Inline SQL string.
+    filename : str or Path, optional
+        Path to a SQL file.
+    return_col : str, optional
+        Column name to extract from the result row. If omitted and the query
+        returns a single column, the scalar is returned. If omitted and multiple
+        columns are returned, the entire row is returned (appropriate when
+        further pipeline steps consume it).
+    missing : any, optional
+        Value to return when the query returns no rows. Default ``None``.
+    """
+
+    def __init__(self, query=None, filename=None, return_col=None, missing=None):
+        if query is None and filename is None:
+            raise ValueError("QueryLookup requires either 'query' or 'filename'")
+        self.query = query
+        self.filename = filename
+        self.return_col = return_col
+        self.missing = missing
+
+    def bind(self, cursor):
+        stmt = PreparedStatement(cursor, query=self.query, filename=self.filename)
+        return_col = self.return_col
+        missing = self.missing
+
+        def fn(value):
+            bind_vars = value if isinstance(value, dict) else {}
+            stmt.execute(bind_vars)
+            row = stmt.fetchone()
+            if row is None:
+                return missing
+            if return_col is not None:
+                return row[return_col]
+            if len(row) == 1:
+                return row[0]
+            return row
+
+        return fn
+
+
 def _make_bind_vars(key_cols_spec: Union[str, List[str]], value: Any) -> dict:
     if isinstance(key_cols_spec, str):
         return {key_cols_spec: value}
