@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`QueryLookup(query=..., filename=..., return_col=..., missing=...)`** — new deferred
+  transform for `Table` column pipelines, wrapping `PreparedStatement` for lookups that
+  require joins, subqueries, or multi-column keys beyond what the `'lookup:...'` shorthand
+  can express. Use with `field='*'` to pass the full source row as bind variables;
+  `PreparedStatement` uses only the parameters its SQL declares, ignoring the rest.
+  `return_col='*'` returns the full row for downstream pipeline steps; omitting
+  `return_col` returns `row[0]`. Exported from `dbtk.etl`. Documented in
+  `docs/07-table.md` alongside `TableLookup`/`Lookup`/`Validate`.
+
 - **`FixedWidthRecord.from_line(line, auto_trim=True)`** — classmethod that parses a
   raw fixed-width string into a record instance; the corollary to `to_line()`. Slices
   each field by its declared position and applies the same type conversion (`int`,
@@ -67,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **DSN connections with password** — `_get_odbc_string` correctly reads the `pwd` key
   (lowercase, post-normalisation) when appending the password to a DSN connection string.
+
+- **`Table` pipeline deferred-binding bug** — `'lookup:...'` / `'validate:...'` strings
+  inside a list `fn` pipeline had their `bind()` return value discarded; the unbound
+  `_DeferredTransform` was appended instead, causing a `RuntimeError` at call time.
+  Fixed by switching from `isinstance(_DeferredTransform)` to duck-typing on `bind`,
+  which also enables any user-defined deferred transform with a `bind(cursor)` method
+  to work in pipelines.
+
+- **`LinkedExcelWriter` duplicate key links** — `LinkSource.cache_record()` now
+  preserves the first occurrence of a key rather than overwriting it on each
+  subsequent row, so internal hyperlinks point to the first matching row.
 
 ---
 
