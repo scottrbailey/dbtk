@@ -552,8 +552,6 @@ class QueryLookup:
             if return_col is not None:
                 if return_col == '*':
                     return row
-                else:
-                    return row[return_col]
                 return row[return_col]
             return row[0]
         return fn
