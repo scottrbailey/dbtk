@@ -719,6 +719,66 @@ orders_etl = dbtk.etl.Table('orders', {
 # ValueError: TableLookup for 'states' missing required keys: ['code']. Provided keys: ['state']
 ```
 
+### Complex Lookups with QueryLookup
+
+When a lookup requires a join, subquery, or any SQL the `'lookup:...'` shorthand can't express,
+use `QueryLookup` — a deferred wrapper around `PreparedStatement` that plugs directly into the
+`fn` pipeline. Like `TableLookup`, cursor binding is deferred until the `Table` is initialized.
+
+```python
+from dbtk.etl import QueryLookup
+
+# Multi-table join — impossible with the string shorthand
+person_sql = """
+    SELECT p.person_id
+    FROM people p
+    LEFT JOIN employees e ON e.person_id = p.person_id
+    WHERE p.email  = :email
+       OR e.tax_id = :tax_id
+"""
+
+etl_table = dbtk.etl.Table('payroll', {
+    # field='*' passes the entire source row as bind vars;
+    # PreparedStatement uses only the params its SQL declares.
+    'person_id': {
+        'field': '*',
+        'fn': QueryLookup(query=person_sql, return_col='person_id')
+    },
+    ...
+}, cursor=cur)
+```
+
+**Parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `query` | Inline SQL string |
+| `filename` | Path to a SQL file |
+| `return_col` | Column to extract from the result row. Omit to return the first column. Use `'*'` to pass the whole row to the next pipeline step. |
+| `missing` | Value returned when the query finds no row (default `None`) |
+
+**Return value rules:**
+
+- `return_col` omitted — returns `row[0]` (first column, the common single-column case)
+- `return_col='col_name'` — returns `row['col_name']` by name
+- `return_col='*'` — returns the full row object (when a subsequent pipeline step will extract fields)
+
+**Using a SQL file:**
+
+```python
+{'field': '*', 'fn': QueryLookup(filename='sql/region_lookup.sql', return_col='region_code')}
+```
+
+**Chaining with other transforms:**
+
+```python
+# QueryLookup returns a code; 'upper' normalizes it
+'fn': [QueryLookup(filename='sql/region_lookup.sql', return_col='region_code'), 'upper']
+```
+
+> **Note:** `QueryLookup` does not cache results. For simple single-table lookups, `TableLookup` /
+> `Lookup()` / `'lookup:...'` offer lazy and preload caching.
+
 **Custom transformations:**
 
 Create your own transformation functions for domain-specific logic:
