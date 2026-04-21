@@ -101,12 +101,6 @@ class TableLookup:
         ValueError
             If key_cols is empty or cache value is invalid
 
-        Note
-        ----
-        Case sensitivity is determined by the database. If your database is
-        case-sensitive (e.g., PostgreSQL), lookups must match the exact case
-        in the database. If case-insensitive (e.g., SQLite by default), the
-        database will handle case matching.
         """
         # Validate cache strategy
         if cache not in (self.CACHE_NONE, self.CACHE_LAZY, self.CACHE_PRELOAD):
@@ -384,7 +378,9 @@ class _DeferredTransform:
             - 1 or 'lazy'      → CACHE_LAZY (default)
             - 2 or 'pre_cache' → CACHE_PRELOAD
 
-        Examples:
+        Example
+        -------
+        ::
             'lookup:states:code:state'
             'lookup:states:code:state:2'
             'lookup:states:code:state:preload'
@@ -509,12 +505,29 @@ class QueryLookup:
     filename : str or Path, optional
         Path to a SQL file.
     return_col : str, optional
-        Column name to extract from the result row. If omitted and the query
-        returns a single column, the scalar is returned. If omitted and multiple
-        columns are returned, the entire row is returned (appropriate when
-        further pipeline steps consume it).
+        Column name to extract from the result row.
+        By default, the first column will be returned. Set to '*' if you want to return
+        multiple values to the next stage of the pipeline.
     missing : any, optional
         Value to return when the query returns no rows. Default ``None``.
+
+    Example
+    -------
+    ::
+
+        id_lookup_query = '''
+            SELECT p.id, p.last_name, p.first_name
+            FROM people p
+            LEFT JOIN employees e ON e.id = p.id
+            WHERE (p.email = :email
+              OR e.tax_id = :tax_id)
+        '''
+
+        emp_cols = {
+          'id': {'field': '*', 'primary_key': True, 'fn': dbtk.etl.QueryLookup(query=id_lookup_query)},
+          'first_name': {'field': 'first_name', 'required': True},'
+          ...
+        }
     """
 
     def __init__(self, query=None, filename=None, return_col=None, missing=None):
@@ -531,17 +544,18 @@ class QueryLookup:
         missing = self.missing
 
         def fn(value):
-            bind_vars = value if isinstance(value, dict) else {}
+            bind_vars = _make_bind_vars(stmt.param_names, value)
             stmt.execute(bind_vars)
             row = stmt.fetchone()
             if row is None:
                 return missing
             if return_col is not None:
+                if return_col == '*':
+                    return row
+                else:
+                    return row[return_col]
                 return row[return_col]
-            if len(row) == 1:
-                return row[0]
-            return row
-
+            return row[0]
         return fn
 
 
@@ -549,7 +563,7 @@ def _make_bind_vars(key_cols_spec: Union[str, List[str]], value: Any) -> dict:
     if isinstance(key_cols_spec, str):
         return {key_cols_spec: value}
     # key_cols_spec is list/tuple
-    if isinstance(value, dict):
+    if hasattr(value, 'items'):
         return value
     if hasattr(value, '__iter__') and not isinstance(value, str):
         return dict(zip(key_cols_spec, value))
