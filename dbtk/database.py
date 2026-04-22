@@ -484,7 +484,7 @@ class Database:
     # Attributes stored locally, others delegated to _connection
     _local_attrs = [
         '_connection', 'database_type', 'database_name', 'driver',
-        'connection_name', 'placeholder', '_cursor_settings'
+        'connection_name', 'placeholder', '_cursor_settings', '_dialect'
     ]
 
     def __init__(self, connection, driver,
@@ -546,12 +546,20 @@ class Database:
         else:
             self.database_type = 'unknown'
 
+        from .dialects import get_dialect
+        self._dialect = get_dialect(self.database_type)
+
         logger.debug(f"Cursor Database.__init__ cursor_settings: {cursor_settings}")
         if cursor_settings:
             self._cursor_settings = {key: val for key, val in cursor_settings.items()
                                      if key in Cursor.WRAPPER_SETTINGS}
         else:
             self._cursor_settings = dict()
+
+    @property
+    def dialect(self):
+        """Database dialect instance providing SQL generation and schema introspection."""
+        return self._dialect
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying connection."""

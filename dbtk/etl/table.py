@@ -8,7 +8,6 @@ parameterized SQL statements for common operations.
 """
 
 import logging
-from textwrap import dedent
 from typing import Union, Tuple, Optional, Set, Dict, Any
 
 from ..cursors import Cursor
@@ -570,19 +569,12 @@ class Table:
 
     def _should_use_upsert(self) -> bool:
         """Determine whether to use upsert syntax vs MERGE statement."""
-        db_type = self._cursor.connection.database_type
-
-        if db_type in ('mysql', 'postgres', 'sqlite'):
-            return True
-        else:
-            return False
+        return self._cursor.connection.dialect.use_upsert
 
     def _create_upsert(self) -> str:
         """Create INSERT ... ON DUPLICATE KEY/CONFLICT statement with named parameters."""
-        db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
 
-        # Build INSERT portion
         cols = []
         placeholders = []
         key_cols = []
@@ -609,65 +601,17 @@ class Table:
             cols_str = wrap_at_comma(cols_str)
             placeholders_str = wrap_at_comma(placeholders_str)
 
-        if db_type == 'mysql':
-            # MySQL/MariaDB: INSERT ... ON DUPLICATE KEY UPDATE
-            # Use VALUES(col) syntax for compatibility with both MySQL and MariaDB
-            update_assignments = []
-            for col, ident, bind_name, db_expr in update_cols:
-                if db_expr and '#' in db_expr:
-                    assignment = f"{ident} = {db_expr.replace('#', f'VALUES({ident})')}"
-                elif db_expr:
-                    assignment = f"{ident} = {db_expr}"
-                else:
-                    assignment = f"{ident} = VALUES({ident})"
-                update_assignments.append(assignment)
-
-            update_clause = ', '.join(update_assignments)
-            if len(update_assignments) > 4:
-                update_clause = wrap_at_comma(update_clause)
-
-            sql = dedent(f"""\
-            INSERT INTO {table_name} ({cols_str})
-            VALUES ({placeholders_str})
-            ON DUPLICATE KEY UPDATE {update_clause}""")
-
-        elif db_type in ('postgres', 'sqlite'):
-            # PostgreSQL/SQLite: INSERT ... ON CONFLICT DO UPDATE
-            conflict_cols = ', '.join(key_cols)
-
-            update_assignments = []
-            for col, ident, bind_name, db_expr in update_cols:
-                if db_expr and '#' in db_expr:
-                    assignment = f"{ident} = {db_expr.replace('#', f'EXCLUDED.{ident}')}"
-                elif db_expr:
-                    assignment = f"{ident} = {db_expr}"
-                else:
-                    assignment = f"{ident} = EXCLUDED.{ident}"
-                update_assignments.append(assignment)
-
-            update_clause = ', '.join(update_assignments)
-            if len(update_assignments) > 4:
-                update_clause = wrap_at_comma(update_clause)
-
-            sql = dedent(f"""\
-            INSERT INTO {table_name} ({cols_str})
-            VALUES ({placeholders_str})
-            ON CONFLICT ({conflict_cols}) DO UPDATE SET {update_clause}""")
-
-        else:
-            raise NotImplementedError(f"Upsert not supported for database: {db_type}")
-
+        sql = self._cursor.connection.dialect.upsert_sql(
+            table_name, cols_str, placeholders_str, key_cols, update_cols
+        )
         logger.debug(f"Generated upsert SQL for {self._name}:\n{sql}")
         return sql
 
     def _create_merge_statement(self) -> str:
         """Create traditional MERGE statement with named parameters."""
-        db_type = self._cursor.connection.database_type
         table_name = quote_identifier(self._name)
 
-        # Build column lists and placeholders
         all_cols = []
-        placeholders = []
         key_conditions = []
         update_cols = []
 
@@ -678,77 +622,15 @@ class Table:
             placeholder = self._wrap_db_expr(bind_name, db_expr)
 
             all_cols.append((col, ident, placeholder))
-            placeholders.append(placeholder)
 
             if bind_name in self._key_cols:
                 key_conditions.append(f"t.{ident} = s.{ident}")
             elif bind_name not in self._update_excludes:
                 update_cols.append((col, ident))
 
-        # Database-specific MERGE templates
-        if db_type == 'oracle':
-            # Oracle MERGE with dual table
-            source_items = []
-            for col, ident, placeholder in all_cols:
-                source_items.append(f"{placeholder} AS {ident}")
-
-            source_cols = ', '.join(source_items)
-            if len(all_cols) > 4:
-                source_cols = wrap_at_comma(source_cols)
-
-            source_clause = f"SELECT {source_cols} FROM dual"
-            table_alias = "s"
-
-            update_assignments = []
-            for col, ident in update_cols:
-                update_assignments.append(f"t.{ident} = s.{ident}")
-
-            insert_cols = ', '.join(ident for _, ident, _ in all_cols)
-            insert_values = ', '.join(f"s.{ident}" for _, ident, _ in all_cols)
-
-        elif db_type == 'sqlserver':
-            # SQL Server MERGE
-            source_items = []
-            for col, ident, placeholder in all_cols:
-                source_items.append(f"{placeholder} AS {ident}")
-
-            source_cols = ', '.join(source_items)
-            if len(all_cols) > 4:
-                source_cols = wrap_at_comma(source_cols)
-
-            source_clause = f"SELECT {source_cols}"
-            table_alias = "s"
-
-            update_assignments = []
-            for col, ident in update_cols:
-                update_assignments.append(f"t.{ident} = s.{ident}")
-
-            insert_cols = ', '.join(ident for _, ident, _ in all_cols)
-            insert_values = ', '.join(f"s.{ident}" for _, ident, _ in all_cols)
-
-        else:
-            raise NotImplementedError(f"MERGE not supported for database: {db_type}")
-
-        # Build final clauses
-        update_set = ', '.join(update_assignments)
-        if len(update_assignments) > 4:
-            update_set = wrap_at_comma(update_set)
-
-        if len(all_cols) > 4:
-            insert_cols = wrap_at_comma(insert_cols)
-            insert_values = wrap_at_comma(insert_values)
-
-        # Assemble final SQL
-        sql = dedent(f"""\
-        MERGE INTO {table_name} t
-        USING ({source_clause}) {table_alias}
-        ON ({' AND '.join(key_conditions)})
-        WHEN MATCHED THEN
-            UPDATE SET {update_set}
-        WHEN NOT MATCHED THEN
-            INSERT ({insert_cols})
-            VALUES ({insert_values})""")
-
+        sql = self._cursor.connection.dialect.merge_sql(
+            table_name, all_cols, key_conditions, update_cols
+        )
         logger.debug(f"Generated merge SQL for {self._name}:\n{sql}")
         return sql
 
@@ -936,8 +818,7 @@ class Table:
             for desc in self._cursor.description
         }
 
-        # Get database type for type mapping
-        db_type = self._cursor.connection.database_type
+        dialect = self._cursor.connection.dialect
 
         # Validate and collect type info for Table-defined columns
         result = []
@@ -953,90 +834,12 @@ class Table:
                 )
             db_col_name, type_obj, internal_size, precision, scale = db_columns[col_name_upper]
 
-            # Generate SQL type definition string based on database type
-            sql_type_def = self._generate_sql_type(db_type, type_obj, internal_size, precision, scale)
+            sql_type_def = dialect.sql_type(type_obj, internal_size, precision, scale)
 
             # Return with database's actual column name for accurate SQL generation
             result.append((db_col_name, type_obj, internal_size, precision, scale, sql_type_def))
 
         return result
-
-    def _generate_sql_type(self, db_type: str, type_obj, internal_size, precision, scale) -> str:
-        """Generate SQL type definition string based on database type."""
-        if db_type == 'oracle':
-            return self._generate_oracle_type(type_obj, internal_size, precision, scale)
-        elif db_type == 'sqlserver':
-            return self._generate_sqlserver_type(type_obj, internal_size, precision, scale)
-        else:
-            # Generic fallback
-            return "VARCHAR(255)"
-
-    def _generate_oracle_type(self, type_obj, internal_size, precision, scale) -> str:
-        """Generate Oracle SQL type definition."""
-        if hasattr(type_obj, 'name'):
-            db_type_name = type_obj.name
-
-            if 'VARCHAR' in db_type_name:
-                return f"VARCHAR2({internal_size})" if internal_size else "VARCHAR2(4000)"
-            elif 'CHAR' in db_type_name and 'VARCHAR' not in db_type_name:
-                return f"CHAR({internal_size})" if internal_size else "CHAR(1)"
-            elif 'NUMBER' in db_type_name:
-                if precision and scale:
-                    return f"NUMBER({precision},{scale})"
-                elif precision:
-                    return f"NUMBER({precision})"
-                else:
-                    return "NUMBER"
-            elif 'DATE' in db_type_name:
-                return "DATE"
-            elif 'TIMESTAMP' in db_type_name:
-                return "TIMESTAMP"
-            elif 'CLOB' in db_type_name:
-                return "CLOB"
-            elif 'BLOB' in db_type_name:
-                return "BLOB"
-
-        # Fallback
-        return "VARCHAR2(4000)"
-
-    def _generate_sqlserver_type(self, type_obj, internal_size, precision, scale) -> str:
-        """Generate SQL Server SQL type definition."""
-        type_str = str(type_obj).upper() if type_obj else 'VARCHAR'
-
-        if 'STRING' in type_str or 'VARCHAR' in type_str or 'CHAR' in type_str:
-            if internal_size and internal_size > 0:
-                return f"VARCHAR({internal_size})"
-            else:
-                return "VARCHAR(MAX)"
-        elif 'INT' in type_str or 'LONG' in type_str:
-            if precision and precision > 9:
-                return "BIGINT"
-            else:
-                return "INT"
-        elif 'DECIMAL' in type_str or 'NUMERIC' in type_str or 'NUMBER' in type_str:
-            if precision and scale is not None:
-                return f"DECIMAL({precision},{scale})"
-            elif precision:
-                return f"DECIMAL({precision})"
-            else:
-                return "DECIMAL(18,0)"
-        elif 'FLOAT' in type_str or 'REAL' in type_str or 'DOUBLE' in type_str:
-            return "FLOAT"
-        elif 'DATE' in type_str or 'TIME' in type_str:
-            if 'DATETIME' in type_str:
-                return "DATETIME"
-            else:
-                return "DATE"
-        elif 'BINARY' in type_str or 'BLOB' in type_str:
-            if internal_size and internal_size > 0:
-                return f"VARBINARY({internal_size})"
-            else:
-                return "VARBINARY(MAX)"
-        elif 'TEXT' in type_str or 'CLOB' in type_str:
-            return "VARCHAR(MAX)"
-
-        # Fallback
-        return "VARCHAR(MAX)"
 
     def bind_name_column(self, bind_name):
         return self._bind_name_map.get(bind_name)
