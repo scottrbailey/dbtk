@@ -334,16 +334,15 @@ class Table:
 
             # Bind any deferred transforms (lookup/validate) to cursor
             new_fn = col_def['fn']
-            if isinstance(new_fn, _DeferredTransform):
+            if callable(getattr(new_fn, 'bind', None)):
                 col_def['fn'] = new_fn.bind(self._cursor)
             elif isinstance(new_fn, (list, tuple)):
                 pipeline = []
                 for f in new_fn:
                     if isinstance(f, str) and f.startswith(('lookup:', 'validate:')):
                         xt = _DeferredTransform.from_string(f)
-                        xt.bind(self._cursor)
-                        pipeline.append(xt)
-                    elif isinstance(f, _DeferredTransform):
+                        pipeline.append(xt.bind(self._cursor))
+                    elif callable(getattr(f, 'bind', None)):
                         pipeline.append(f.bind(self._cursor))
                     else:
                         pipeline.append(f)

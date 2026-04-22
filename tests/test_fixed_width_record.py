@@ -409,6 +409,151 @@ class TestPprint:
         assert len(set(positions)) == 1
 
 
+# ---------------------------------------------------------------------------
+# from_line — parsing a fixed-width string into a record
+# ---------------------------------------------------------------------------
+
+class TestFromLine:
+    """FixedWidthRecord.from_line() — the corollary to to_line()."""
+
+    @pytest.fixture
+    def contiguous_class(self, contiguous_cols):
+        return make_class(contiguous_cols)
+
+    # -- basic parsing -------------------------------------------------------
+
+    def test_returns_instance_of_class(self, contiguous_class):
+        r = contiguous_class.from_line('A' + 'Hi        ' + '0000000042')
+        assert isinstance(r, contiguous_class)
+
+    def test_text_field_parsed(self, contiguous_class):
+        r = contiguous_class.from_line('A' + 'Hi        ' + '0000000042')
+        assert r.code == 'A'
+        assert r.name == 'Hi'        # auto_trim strips trailing spaces
+
+    def test_int_field_parsed(self, contiguous_class):
+        r = contiguous_class.from_line('A' + 'Hi        ' + '0000000042')
+        assert r.amount == 42
+
+    def test_zero_padded_int(self, contiguous_class):
+        r = contiguous_class.from_line('X' + 'ABCDEFGHIJ' + '0000012345')
+        assert r.amount == 12345
+
+    def test_empty_int_becomes_none(self, contiguous_class):
+        r = contiguous_class.from_line('X' + 'Name      ' + '          ')
+        assert r.amount is None
+
+    # -- auto_trim -----------------------------------------------------------
+
+    def test_auto_trim_true_strips_text(self, contiguous_class):
+        r = contiguous_class.from_line('A' + 'Hi        ' + '0000000042', auto_trim=True)
+        assert r.name == 'Hi'
+
+    def test_auto_trim_false_preserves_padding(self, contiguous_class):
+        r = contiguous_class.from_line('A' + 'Hi        ' + '0000000042', auto_trim=False)
+        assert r.name == 'Hi        '
+
+    # -- type columns --------------------------------------------------------
+
+    def test_float_field_parsed(self):
+        cols = [FixedColumn('ratio', 1, 10, 'float')]
+        cls = make_class(cols)
+        r = cls.from_line('  3.14159 ')
+        assert abs(r.ratio - 3.14159) < 1e-6
+
+    def test_empty_float_becomes_none(self):
+        cols = [FixedColumn('ratio', 1, 10, 'float')]
+        cls = make_class(cols)
+        r = cls.from_line('          ')
+        assert r.ratio is None
+
+    def test_date_field_parsed(self):
+        import datetime
+        cols = [FixedColumn('dob', 1, 10, 'date')]
+        cls = make_class(cols)
+        r = cls.from_line('2024-01-15')
+        assert r.dob == datetime.date(2024, 1, 15)
+
+    def test_unparseable_value_falls_back_to_string(self):
+        cols = [FixedColumn('amount', 1, 5, 'int')]
+        cls = make_class(cols)
+        r = cls.from_line('ABC  ')   # not a valid int
+        assert r.amount == 'ABC'     # auto_trim applied to fallback
+
+    # -- gaps and positional accuracy ----------------------------------------
+
+    def test_gap_columns_sliced_correctly(self):
+        cols = [
+            FixedColumn('type', 1, 2),
+            FixedColumn('data', 7, 10),
+        ]
+        cls = make_class(cols)
+        r = cls.from_line('AB    XY  ')
+        assert r.type == 'AB'
+        assert r.data == 'XY'
+
+    def test_first_col_not_at_position_one(self):
+        cols = [FixedColumn('id', 5, 8)]
+        cls = make_class(cols)
+        r = cls.from_line('    AB  ')
+        assert r.id == 'AB'
+
+    # -- round-trip ----------------------------------------------------------
+
+    def test_round_trip_text(self, contiguous_class):
+        original = 'Z' + 'Round Trip' + '0000056789'
+        r = contiguous_class.from_line(original)
+        assert r.to_line() == original
+
+    def test_round_trip_via_to_line(self, contiguous_class):
+        r1 = contiguous_class('B', 'TestValue', 999)
+        line = r1.to_line()
+        r2 = contiguous_class.from_line(line)
+        assert r2.to_line() == line
+
+    def test_round_trip_from_fixed_reader(self):
+        """Records parsed with from_line() must round-trip the same as reader records."""
+        from pathlib import Path
+        from dbtk.readers import FixedReader
+
+        fixed_file = Path(__file__).parent / 'fixtures' / 'readers' / 'sample_data.txt'
+        cols = [
+            FixedColumn('trainee_id',       1,   5, 'int',   align='left', pad_char=' '),
+            FixedColumn('monk_name',         6,  35, 'text'),
+            FixedColumn('home_temple',      36,  65, 'text'),
+            FixedColumn('mastery_rank',     66,  70, 'int',   align='left', pad_char=' '),
+            FixedColumn('bison_companion',  71,  82, 'text'),
+            FixedColumn('daily_meditation', 83,  90, 'float', align='left', pad_char=' '),
+            FixedColumn('birth_date',       91, 102, 'date'),
+            FixedColumn('last_training',   103, 122, 'datetime'),
+        ]
+        RecordClass = type('FW', (FixedWidthRecord,), {})
+        RecordClass.set_fields(cols)
+
+        raw_lines = fixed_file.read_text(encoding='utf-8').splitlines()
+        for raw in raw_lines:
+            r = RecordClass.from_line(raw)
+            assert r.to_line() == raw, (
+                f'Round-trip mismatch:\n'
+                f'  original: {repr(raw)}\n'
+                f'  result:   {repr(r.to_line())}'
+            )
+
+    # -- out-of-order column definitions ------------------------------------
+
+    def test_out_of_order_columns_sliced_by_position(self):
+        """from_line() must use positional slicing, not definition order."""
+        cols = [
+            FixedColumn('last',  6, 10),
+            FixedColumn('first', 1,  5),
+        ]
+        cls = make_class(cols)
+        r = cls.from_line('AliceSmith')
+        # Values are stored in definition order: last first, first second
+        assert r.last  == 'Smith'
+        assert r.first == 'Alice'
+
+
 class TestVisualize:
     """Tests for FixedWidthRecord.visualize()."""
 

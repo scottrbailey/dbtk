@@ -22,7 +22,7 @@ def _hide_password(kwargs):
     """Replace password with '********' to be printable"""
     parms = kwargs.copy()
     for key, val in parms.items():
-        if key in ('password', 'PWD', 'passwd'):
+        if key in ('password', 'pwd', 'PWD', 'passwd'):
             parms[key] = '********'
     return parms
 
@@ -133,16 +133,27 @@ DRIVERS = {
         'database_type': 'sqlserver',
         'module': 'pyodbc',
         'priority': 11,
-        'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
-        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
-        'optional_params': {'password', 'port', 'driver', 'trusted_connection', 'encrypt', 'trustservercertificate'},
+        'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
+        'required_params': [{'host', 'database', 'user'}, {'host', 'database', 'trusted_connection'}, {'dsn'}],
+        'optional_params': {'password', 'port', 'driver', 'encrypt', 'trustservercertificate'},
+        'connection_method': 'odbc_string',
+        'odbc_driver_name': 'ODBC Driver 18 for SQL Server',
+        'default_port': 1433
+    },
+    'pyodbc_sqlserver_17': {
+        'database_type': 'sqlserver',
+        'module': 'pyodbc',
+        'priority': 12,
+        'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
+        'required_params': [{'host', 'database', 'user'}, {'host', 'database', 'trusted_connection'}, {'dsn'}],
+        'optional_params': {'password', 'port', 'driver', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 17 for SQL Server',
         'default_port': 1433
     },
     'pymssql': {
         'database_type': 'sqlserver',
-        'priority': 12,
+        'priority': 13,
         'param_map': {},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'password', 'port', 'timeout', 'login_timeout', 'charset', 'as_dict', 'appname'},
@@ -155,7 +166,7 @@ DRIVERS = {
         'database_type': 'postgres',
         'module': 'pyodbc',
         'priority': 14,
-        'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
+        'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
         'required_params': [{'host', 'database', 'user'}, {'dsn'}],
         'optional_params': {'password', 'port'},
         'connection_method': 'odbc_string',
@@ -166,7 +177,7 @@ DRIVERS = {
         'database_type': 'mysql',
         'module': 'pyodbc',
         'priority': 16,
-        'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
+        'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'password', 'port'},
         'connection_method': 'odbc_string',
@@ -177,7 +188,7 @@ DRIVERS = {
         'database_type': 'oracle',
         'module': 'pyodbc',
         'priority': 13,
-        'param_map': {'host': 'SERVER', 'database': 'DATABASE', 'user': 'UID', 'password': 'PWD'},
+        'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
         'required_params': [{'host', 'database', 'user'}],
         'optional_params': {'password', 'port'},
         'connection_method': 'odbc_string',
@@ -201,6 +212,12 @@ DRIVERS = {
 def register_user_drivers(drivers_config: dict) -> None:
     """Register drivers from config file."""
     global _user_drivers
+    for info in drivers_config.values():
+        # lowercase keys for optional_params and param_map
+        if 'optional_params' in info:
+            info['optional_params'] = {p.lower() for p in info['optional_params']}
+        if 'param_map' in info:
+            info['param_map'] = {k.lower(): v.lower()  for k,v in info['param_map'].items()}
     _user_drivers.update(drivers_config)
 
 
@@ -305,6 +322,10 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     driver_info = DRIVERS[driver_name]
     database_type = driver_info['database_type']
 
+    # Normalize param keys to lowercase so callers can pass TrustServerCertificate,
+    # Port, etc. without being silently ignored.
+    params = {k.lower(): v for k, v in params.items()}
+
     # Initialize with config-only parameters if needed
     validated_params = {}
     if config_only and 'encrypted_password' in params:
@@ -348,6 +369,8 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
         if key in all_valid_params or (config_only and key == 'encrypted_password'):
             mapped_key = param_map.get(key, key)
             validated_params[mapped_key] = value
+        else:
+            logger.warning(f"Unknown parameter '{key}' for driver '{driver_name}' — ignoring")
 
     return validated_params
 
@@ -358,30 +381,20 @@ def _get_connection_string(**kwargs) -> str:
 
 
 def _get_odbc_string(**kwargs) -> str:
-    """Build ODBC connection string"""
-    port = kwargs.pop('port', None)
-    if port and 'SERVER' in kwargs and '\\' not in kwargs['SERVER']:
-        kwargs['SERVER'] += f',{port}'
-    printable = ';'.join([f"{key.upper()}={value}" for key, value in _hide_password(kwargs).items()])
-    logger.debug(f'ODBC connection string: {printable}')
-    return ';'.join([f"{key.upper()}={value}" for key, value in kwargs.items()])
-
-
-def _get_odbc_connection_string(**kwargs) -> str:
     """ Get connection string for ODBC from keyword arguments."""
-    # logger.debug(f'Generating ODBC connection string from: {_hide_password(kwargs)}')
     if 'dsn' in kwargs and kwargs['dsn']:
         # DSN only send DSN and password if present
         conn_str = f"DSN={kwargs['dsn']}"
         printable_conn_str = conn_str
-        if 'PWD' in kwargs:
-            conn_str += f";PWD={kwargs['PWD']}"
-            printable_conn_str += f";PWD=******"
+        if 'pwd' in kwargs:
+            conn_str += f";PWD={kwargs['pwd']}"
+            printable_conn_str += ";PWD=******"
     else:
         odbc_driver_name = kwargs.pop('odbc_driver_name', None)
         if 'port' in kwargs:
-            kwargs['SERVER'] += f',{kwargs.pop("port")}'
-        params = {key.upper(): value for key, value in kwargs.items()}
+            kwargs['server'] += f',{kwargs.pop("port")}'
+        params = {key.upper(): ('yes' if value is True else 'no' if value is False else value)
+                  for key, value in kwargs.items()}
         conn_str = ";".join([f"{key}={value}" for key, value in params.items()])
         printable_conn_str = ";".join([f"{key}={value}" for key, value in _hide_password(params).items()])
         if odbc_driver_name:
@@ -516,11 +529,11 @@ class Database:
         self.connection_name = connection_name
 
         if database_name is None:
-            database_name = (connection.get('database') or
-                            connection.get('service_name') or
-                            connection.get('dbname') or
-                            connection.get('db'))
-
+            if hasattr(connection, 'database'):
+                database_name = connection.database
+            elif hasattr(driver, 'SQL_DATABASE_NAME'):
+                # pyodbc probably from DSN
+                database_name = connection.getinfo(driver.SQL_DATABASE_NAME)
         self.database_name = database_name
 
         # Set parameter placeholder based on adapter style
@@ -765,7 +778,7 @@ class Database:
                 params['dsn'] = db_driver.makedsn(host, port, service_name=service_name)
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'odbc_string':
-            cx_string = _get_odbc_string(DRIVER=driver_conf.get('odbc_driver_name', None), **params)
+            cx_string = _get_odbc_string(odbc_driver_name=driver_conf.get('odbc_driver_name', None), **params)
             connection = db_driver.connect(cx_string)
         else:
             raise ValueError(f"Unknown connection method ({driver_conf['connection_method']}) for driver '{driver_name}'")
