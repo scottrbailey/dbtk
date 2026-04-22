@@ -72,6 +72,12 @@ class PostgresDialect(DatabaseDialect):
                 col_config['fn'] = 'timestamp'
             elif data_type in ('time', 'time without time zone', 'time with time zone'):
                 col_config['fn'] = 'time'
+            elif data_type in ('smallint', 'integer', 'bigint'):
+                col_config['fn'] = 'int'
+            elif data_type in ('real', 'double precision', 'numeric', 'decimal'):
+                col_config['fn'] = 'float'
+            elif data_type == 'boolean':
+                col_config['fn'] = 'bool'
 
             if is_key == 'Y':
                 col_config['primary_key'] = True

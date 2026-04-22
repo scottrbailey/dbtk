@@ -111,6 +111,12 @@ class SQLServerDialect(DatabaseDialect):
                 col_config['fn'] = 'timestamp'
             elif data_type == 'time':
                 col_config['fn'] = 'time'
+            elif data_type in ('int', 'bigint', 'smallint', 'tinyint'):
+                col_config['fn'] = 'int'
+            elif data_type in ('decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'):
+                col_config['fn'] = 'float'
+            elif data_type == 'bit':
+                col_config['fn'] = 'bool'
 
             if is_key == 'Y':
                 col_config['primary_key'] = True

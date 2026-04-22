@@ -99,6 +99,8 @@ class OracleDialect(DatabaseDialect):
                 col_config['fn'] = 'datetime'  # Oracle DATE includes time
             elif data_type in ('TIMESTAMP', 'TIMESTAMP WITH TIME ZONE', 'TIMESTAMP WITH LOCAL TIME ZONE'):
                 col_config['fn'] = 'timestamp'
+            elif data_type in ('NUMBER', 'FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE'):
+                col_config['fn'] = 'float'
 
             if is_key == 'Y':
                 col_config['primary_key'] = True

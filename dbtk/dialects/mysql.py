@@ -77,6 +77,10 @@ class MySQLDialect(DatabaseDialect):
                 col_config['fn'] = 'datetime'
             elif data_type == 'time':
                 col_config['fn'] = 'time'
+            elif data_type in ('tinyint', 'smallint', 'mediumint', 'int', 'bigint'):
+                col_config['fn'] = 'int'
+            elif data_type in ('decimal', 'numeric', 'float', 'double'):
+                col_config['fn'] = 'float'
 
             if is_key == 'Y':
                 col_config['primary_key'] = True
