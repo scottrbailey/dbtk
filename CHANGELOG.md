@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`DatabaseDialect` class hierarchy** — dialect-specific SQL generation and schema
+  introspection (upsert syntax, MERGE templates, temp table DDL, type mapping,
+  `column_defs_from_db`) is now centralised in `dbtk/dialects/`. Adding support for a
+  new database engine requires writing one `DatabaseDialect` subclass. `BulkSurge` bulk
+  load mechanisms remain database-specific and are unaffected.
+
+- **`'type.method'` cast-and-call shorthand for `fn`** — `fn_resolver` now supports
+  `'int.to_bytes'`, `'str.encode'`, `'float.hex'`, `'bytes.hex'`, and any other
+  no-argument method on `int`, `float`, `str`, or `bytes`. The value is cast to the
+  named type and the method is called with no arguments. Documented in `docs/07-table.md`.
+
 - **`QueryLookup(query=..., filename=..., return_col=..., missing=...)`** — new deferred
   transform for `Table` column pipelines, wrapping `PreparedStatement` for lookups that
   require joins, subqueries, or multi-column keys beyond what the `'lookup:...'` shorthand

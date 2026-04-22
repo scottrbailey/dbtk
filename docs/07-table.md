@@ -589,6 +589,10 @@ table = dbtk.etl.Table('movies', {
 | `'nth:2:\t'`                      | Get 3rd tab-delimited  | `'a\tb\tc'` → `'c'`                               |
 | `'lookup:...'`                    | Database lookup        | See below ↓                                       |
 | `'validate:...'`                  | Database validation    | See below ↓                                       |
+| `'int.to_bytes'`                  | Cast then call method  | `'4'` → `b'\x04'` (Python 3.11+)                 |
+| `'str.encode'`                    | Cast then call method  | `'hello'` → `b'hello'`                            |
+
+The `'type.method'` pattern is a general shorthand: cast the value to `type` (`int`, `float`, `str`, or `bytes`) then call `.method()` with no additional arguments. Any no-argument method on those types works — `'float.hex'`, `'bytes.hex'`, etc.
 
 **Chaining transformations:**
 
