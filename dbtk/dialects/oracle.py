@@ -96,9 +96,9 @@ class OracleDialect(DatabaseDialect):
 
             col_config = {'field': col_name}
             if data_type == 'DATE':
-                col_config['fn'] = 'parse_datetime'  # Oracle DATE includes time
+                col_config['fn'] = 'datetime'  # Oracle DATE includes time
             elif data_type in ('TIMESTAMP', 'TIMESTAMP WITH TIME ZONE', 'TIMESTAMP WITH LOCAL TIME ZONE'):
-                col_config['fn'] = 'parse_timestamp'
+                col_config['fn'] = 'timestamp'
 
             if is_key == 'Y':
                 col_config['primary_key'] = True

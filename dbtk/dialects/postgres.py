@@ -65,13 +65,13 @@ class PostgresDialect(DatabaseDialect):
 
             col_config = {'field': col_name}
             if data_type == 'date':
-                col_config['fn'] = 'parse_date'
+                col_config['fn'] = 'date'
             elif data_type in ('timestamp', 'timestamp without time zone'):
-                col_config['fn'] = 'parse_datetime'
+                col_config['fn'] = 'datetime'
             elif data_type in ('timestamptz', 'timestamp with time zone'):
-                col_config['fn'] = 'parse_timestamp'
+                col_config['fn'] = 'timestamp'
             elif data_type in ('time', 'time without time zone', 'time with time zone'):
-                col_config['fn'] = 'parse_time'
+                col_config['fn'] = 'time'
 
             if is_key == 'Y':
                 col_config['primary_key'] = True

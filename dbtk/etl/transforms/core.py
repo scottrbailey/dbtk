@@ -444,6 +444,18 @@ def fn_resolver(shorthand: str):
         'indicator:Y/N'  → True → 'Y', False → 'N'
         'indicator:1/0'  → True → '1', False → '0'
 
+    Cast and call
+        'type.method' casts the value to ``type`` then calls ``.method()`` with no
+        additional arguments. Supported types: ``int``, ``float``, ``str``, ``bytes``.
+
+        'int.to_bytes'   → int(val).to_bytes()        (no-arg form requires Python 3.11+)
+        'str.encode'     → str(val).encode()           → bytes, UTF-8
+        'float.hex'      → float(val).hex()            → e.g. '0x1.8p+1'
+        'bytes.hex'      → bytes(val).hex()            → lowercase hex string
+
+        Note: ``str.lower``, ``str.upper``, and ``str.strip`` resolve via the direct
+        mapping above and never reach this path.
+
     Database lookups and validation
         'lookup:states:code:state'              → lookup state from code
         'lookup:states:code:state:2'            → lookup with preload cache
@@ -590,5 +602,14 @@ def fn_resolver(shorthand: str):
             raise ValueError(f"Fill character must be exactly 1 character: {shorthand}")
         return lambda x, w=width, c=fillchar: str(x or '').ljust(w, c)
 
+    # Cast and call: 'type.method' → type(val).method()
+    # e.g. 'int.to_bytes', 'str.encode', 'float.hex', 'bytes.hex'
+    _cast_types = {'int': int, 'float': float, 'str': str, 'bytes': bytes}
+    if '.' in shorthand:
+        type_name, _, method_name = shorthand.partition('.')
+        if type_name in _cast_types and method_name:
+            t = _cast_types[type_name]
+            return lambda x, _t=t, _m=method_name: getattr(_t(x), _m)()
+
     raise ValueError(f"Unrecognized fn shorthand: '{shorthand}'. "
-                     f"See dbtk.etl.transforms.core.fn() docstring for valid options.")
+                     f"See dbtk.etl.transforms.core.fn_resolver() docstring for valid options.")

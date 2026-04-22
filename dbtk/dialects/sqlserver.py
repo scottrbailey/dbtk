@@ -104,13 +104,13 @@ class SQLServerDialect(DatabaseDialect):
 
             col_config = {'field': col_name}
             if data_type == 'date':
-                col_config['fn'] = 'parse_date'
+                col_config['fn'] = 'date'
             elif data_type in ('datetime', 'datetime2', 'smalldatetime'):
-                col_config['fn'] = 'parse_datetime'
+                col_config['fn'] = 'datetime'
             elif data_type == 'datetimeoffset':
-                col_config['fn'] = 'parse_timestamp'
+                col_config['fn'] = 'timestamp'
             elif data_type == 'time':
-                col_config['fn'] = 'parse_time'
+                col_config['fn'] = 'time'
 
             if is_key == 'Y':
                 col_config['primary_key'] = True
