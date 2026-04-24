@@ -135,9 +135,9 @@ with ExcelWriter(file='combined.xlsx') as writer:
         cursor.execute("SELECT * FROM sales WHERE region = :r", {'r': region})
         writer.write_batch(cursor, sheet_name=region)
 ```
-## Multiple Sheets with ExcelWriter
+## Multiple Sheets and Excel Formatting
 
-`ExcelWriter` keeps the workbook open across `write_batch()` calls and saves on context exit, making it the right tool for multi-sheet reports. Each `write_batch()` call takes an optional `sheet_name` argument.
+`ExcelWriter` keeps the workbook open across `write_batch()` calls and saves on context exit, making it the right tool for multi-sheet reports. For column styles, auto-rotating headers, hyperlinked reports, and the full `formatting` dict reference, see **[Excel Reports](06b-excel.md)**.
 
 ```python
 from dbtk.writers import ExcelWriter
@@ -148,88 +148,10 @@ with ExcelWriter(file='monthly_report.xlsx') as wb:
 
     cursor.execute("SELECT * FROM expenses WHERE month = 'January'")
     wb.write_batch(cursor, sheet_name='Expenses')
-
-    summary = [
-        {'category': 'Revenue', 'amount': 100_000},
-        {'category': 'Expenses', 'amount': 75_000},
-        {'category': 'Profit', 'amount': 25_000},
-    ]
-    wb.write_batch(summary, sheet_name='Summary')
 # Workbook saved and closed automatically
 ```
-If you are writing to different worksheets, you can call `to_excel` on the same file multiple times.
-`ExcelWriter.write_batch` will overwrite an existing sheet (with same name) the first time writing to that sheet name, 
-but will append data on subsequent writes to that sheet_name.
 
-## Hyperlinked Reports with LinkedExcelWriter
-
-`LinkedExcelWriter` extends `ExcelWriter` with internal and external hyperlinks. It is for creating navigable reports.
-
-The workflow: define one or more `LinkSource` objects describing linkable entities, register them with the writer, write 
-the source sheets first, then write detail sheets specifying which columns should become hyperlinks.
-Links can be either internal (to sheet, row and column where record was written on `source_sheet`) or external (https:// or mailto:)
-
-Because the link text is constructed and cached on the source sheet (master), the queries for subsequent sheets (detail)
-often only need to return the key which can simplify queries. See linked_spreadsheet.py in the examples directory.
-Rows in the Cast and Crew tabs contain internal links for up to four movies and displays title and release year for each. 
-When the Movies tab (source sheet) was written, text_template ('{primary_title} ({start_year})}') was formatted and cached.
-The queries for the Cast and Crew simply return the keys (tconst) instead of needing complex subqueries to look them up.
-
-
-```python
-from dbtk.writers import LinkedExcelWriter, LinkSource
-
-# Define the linkable entity
-customer_link = LinkSource(
-    name="customer",            # link_source_name 
-    source_sheet="Customers",   # Sheet where internal links will point to. Sheet must be written before internal link used
-    key_column="customer_id",   # Column that uniquely identifies each row
-    url_template="https://crm.company.com/customers/{customer_id}", # external link
-    text_template="{company_name} ({customer_id})" # Link text 
-)
-
-with LinkedExcelWriter(file='sales_report.xlsx') as writer:
-    writer.register_link_source(customer_link)
-
-    # Write source sheet first — location and link_text are cached as they're written
-    writer.write_batch(customers_data, sheet_name='Customers')
-
-    # Write detail sheet — 'customer' column becomes a hyperlink
-    writer.write_batch(
-        orders_data,
-        sheet_name='Orders',
-        links={'customer': 'customer:external'}   # column_name: link_source_name
-    )
-```
-
-**Link types:**
-
-| Suffix                | Result                                                    |
-|-----------------------|-----------------------------------------------------------|
-| `"customer"`          | External URL (from `url_template`), or internal if no URL |
-| `"customer:internal"` | Always links to the row in the source sheet               |
-| `"customer:external"` | Always links to the external URL                          |
-
-**External-only links** (`external_only=True`) generate URLs directly from the current row without caching row location for internal links.
-
-```python
-imdb_link = LinkSource(
-    name="imdb",
-    url_template="https://imdb.com/title/{tconst}",
-    text_template="{primary_title} ({start_year})",
-    external_only=True   # No source_sheet needed
-)
-
-with LinkedExcelWriter(file='movies.xlsx') as writer:
-    writer.register_link_source(imdb_link)
-    writer.write_batch(movies, sheet_name='All Movies',
-                       links={'primary_title': 'imdb'})
-    writer.write_batch(top_rated, sheet_name='Top Rated',
-                       links={'primary_title': 'imdb'})
-```
-
-> **Example:** [`examples/linked_spreadsheet.py`](../examples/linked_spreadsheet.py) builds a
-> full multi-sheet IMDB report with both internal and external hyperlinks.
+For hyperlinked reports with internal navigation or external URLs, see [`LinkedExcelWriter`](06b-excel.md#hyperlinked-reports-with-linkedexcelwriter).
 
 ## Streaming XML with XMLStreamer
 
