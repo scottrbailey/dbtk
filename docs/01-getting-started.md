@@ -57,15 +57,24 @@ with dbtk.readers.get_reader('data.csv.gz') as reader:
 ### Export Data
 
 ```python
-# Query database
-cursor = db.cursor()
 cursor.execute("SELECT * FROM users WHERE is_active = true")
-data = cursor.fetchall()
 
-# Export to multiple formats
-dbtk.writers.to_csv(data, 'active_users.csv')
-dbtk.writers.to_excel(data, 'active_users.xlsx', sheet='Active Users')
-dbtk.writers.to_json(data, 'active_users.json')
+# Excel — ready to open, no extra work required
+dbtk.writers.to_excel(cursor, 'active_users.xlsx', sheet='Active Users')
+```
+
+**What DBTK handles automatically:**
+- Columns are sampled and auto-sized to fit the data
+- Header row is bold and frozen so it stays visible while scrolling
+- Date and datetime values are formatted correctly
+- `None` values become blank cells
+
+Need other formats? Same cursor, one line each:
+
+```python
+cursor.execute("SELECT * FROM users WHERE is_active = true")
+dbtk.writers.to_csv(cursor,  'active_users.csv')
+dbtk.writers.to_json(cursor, 'active_users.json')
 ```
 
 ## Complete Example: CSV to Database
