@@ -121,8 +121,8 @@ class ExcelWriter(BatchWriter):
             * ``'rows'`` — row index → properties dict. Index 0 = header row. Positive
               integers are 1-based data row indices. ``'style'`` key accepts a callable
               ``lambda rec: style_name_or_None`` applied to every data row. ``'odd'``
-              and ``'even'`` keys accept a style name applied automatically to odd
-              (1st, 3rd, …) and even (2nd, 4th, …) data rows respectively.
+              and ``'even'`` keys accept ``{'format': style_name}`` dicts applied
+              automatically to odd (1st, 3rd, …) and even (2nd, 4th, …) data rows.
             * ``'min_column_width'`` — minimum column width in Excel units applied to
               all auto-sized columns (default ``6``). Lower this for narrow indicator
               columns (``'Y'``/``'N'``, flags) where ``3``–``4`` is sufficient.
@@ -418,8 +418,8 @@ class ExcelWriter(BatchWriter):
         col_fmt = self._build_col_fmt_map(self.columns)
         rows_fmt = self.formatting.get('rows', {})
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
-        odd_style = rows_fmt.get('odd') if isinstance(rows_fmt, dict) else None
-        even_style = rows_fmt.get('even') if isinstance(rows_fmt, dict) else None
+        odd_style = rows_fmt.get('odd', {}).get('format') if isinstance(rows_fmt, dict) else None
+        even_style = rows_fmt.get('even', {}).get('format') if isinstance(rows_fmt, dict) else None
 
         row_count = 0
         header_widths = [len(col) for col in self.columns]
@@ -547,8 +547,8 @@ class ExcelWriter(BatchWriter):
         col_fmt = self._build_col_fmt_map(self.columns)
         rows_fmt = self.formatting.get('rows', {})
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
-        odd_style = rows_fmt.get('odd') if isinstance(rows_fmt, dict) else None
-        even_style = rows_fmt.get('even') if isinstance(rows_fmt, dict) else None
+        odd_style = rows_fmt.get('odd', {}).get('format') if isinstance(rows_fmt, dict) else None
+        even_style = rows_fmt.get('even', {}).get('format') if isinstance(rows_fmt, dict) else None
 
         target_sheet = self.active_sheet or 'Data'
         worksheet = self._get_or_create_worksheet(target_sheet)
@@ -1242,8 +1242,8 @@ class LinkedExcelWriter(ExcelWriter):
         col_fmt = self._build_col_fmt_map(self.columns)
         rows_fmt = self.formatting.get('rows', {})
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
-        odd_style = rows_fmt.get('odd') if isinstance(rows_fmt, dict) else None
-        even_style = rows_fmt.get('even') if isinstance(rows_fmt, dict) else None
+        odd_style = rows_fmt.get('odd', {}).get('format') if isinstance(rows_fmt, dict) else None
+        even_style = rows_fmt.get('even', {}).get('format') if isinstance(rows_fmt, dict) else None
 
         row_count = 0
         header_widths = [len(col) for col in self.columns]

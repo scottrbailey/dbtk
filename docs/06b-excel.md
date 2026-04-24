@@ -157,15 +157,15 @@ The following styles are registered on every workbook and can be used directly b
 
 ```python
 'rows': {
-    'odd':  'fmt_stripe',   # rows 1, 3, 5, …
-    'even': 'fmt_alt',      # rows 2, 4, 6, …
+    'odd':  {'format': 'fmt_stripe'},   # rows 1, 3, 5, …
+    'even': {'format': 'fmt_alt'},      # rows 2, 4, 6, …
 }
 ```
 
 You can define only one if you only want every-other-row coloring:
 
 ```python
-'rows': {'odd': 'fmt_stripe'}   # only odd rows get a background
+'rows': {'odd': {'format': 'fmt_stripe'}}   # only odd rows get a background
 ```
 
 **The `'style'` key** accepts a callable that receives each data record and returns a style name (or `None`). This enables conditional highlighting and status indicators:
