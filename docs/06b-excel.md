@@ -153,15 +153,30 @@ The following styles are registered on every workbook and can be used directly b
 }
 ```
 
-**The `'style'` key** accepts a callable that receives each data record and returns a style name (or `None`). This enables data-driven row coloring — alternating rows, conditional highlighting, status indicators:
+**Alternating row colors** use the `'odd'` and `'even'` keys — no callable needed:
 
 ```python
 'rows': {
-    'style': lambda rec: 'fmt_odd' if rec['row_num'] % 2 else None,
+    'odd':  'fmt_stripe',   # rows 1, 3, 5, …
+    'even': 'fmt_alt',      # rows 2, 4, 6, …
 }
 ```
 
-**Style cascade:** column `format` is applied first; `'style'` row format overrides it; `hyperlink_style` (from `LinkedExcelWriter`) overrides both.
+You can define only one if you only want every-other-row coloring:
+
+```python
+'rows': {'odd': 'fmt_stripe'}   # only odd rows get a background
+```
+
+**The `'style'` key** accepts a callable that receives each data record and returns a style name (or `None`). This enables conditional highlighting and status indicators:
+
+```python
+'rows': {
+    'style': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+}
+```
+
+**Style cascade:** column `format` is applied first; `'odd'`/`'even'` or `'style'` row format overrides it; `hyperlink_style` (from `LinkedExcelWriter`) overrides both.
 
 ---
 
@@ -374,7 +389,7 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 |---|---|---|---|
 | `styles` | `dict[name, props]` | `{}` | Named style definitions |
 | `columns` | `dict[pattern, props]` | `{}` | Wildcard column rules |
-| `rows` | `dict` | `{}` | Row height/style; `0` = header; `'style'` = callable |
+| `rows` | `dict` | `{}` | Row height/style; `0` = header; `'odd'`/`'even'` = alternating styles; `'style'` = callable |
 | `freeze` | `str \| None` | `'A2'` | Freeze panes cell reference |
 | `header_auto_rotate` | `float \| dict` | off | Auto-rotate long headers; see [above](#auto-rotating-headers) |
 | `min_column_width` | `float` | `6` | Floor for auto-sized column widths |
