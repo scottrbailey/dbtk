@@ -129,6 +129,11 @@ class ExcelWriter(BatchWriter):
               all auto-sized columns (default ``6``). Lower this for narrow indicator
               columns (``'Y'``/``'N'``, flags) where ``3``–``4`` is sufficient.
               Explicit ``width`` values in column rules are not affected.
+            * ``'max_column_width'`` — maximum column width in Excel units applied to
+              all auto-sized columns (default ``60``). Explicit ``width`` values in
+              column rules are not affected.
+            * ``'auto_filter'`` — if truthy, enables Excel's dropdown auto-filter on
+              the header row.
             * ``'freeze'`` — cell reference string for freeze panes, e.g. ``'D2'``.
               Defaults to ``'A2'``. Pass ``None`` to disable freezing.
             * ``'header_auto_rotate'`` — automatically apply ``header_vert_style`` to
@@ -344,9 +349,10 @@ class ExcelWriter(BatchWriter):
 
         # Column widths: auto-rotated columns use data width only; others use max of both
         min_col_width = self.formatting.get('min_column_width', 6)
+        max_col_width = self.formatting.get('max_column_width', 60)
         for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
             raw = dw if col_idx in auto_rotated else max(hw, dw)
-            adjusted = min(max(raw + 2, min_col_width), 60)
+            adjusted = min(max(raw + 2, min_col_width), max_col_width)
             worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted
 
         # User column-rule overrides (width, hidden, comment)
@@ -375,6 +381,11 @@ class ExcelWriter(BatchWriter):
         freeze = self.formatting.get('freeze', 'A2')
         if freeze:
             worksheet.freeze_panes = freeze
+
+        # Auto-filter on header row
+        if self.formatting.get('auto_filter'):
+            last_col = get_column_letter(len(self.columns))
+            worksheet.auto_filter.ref = f"A1:{last_col}1"
 
     def _get_or_create_worksheet(self, sheet_name: str) -> 'Worksheet':
         """Get existing worksheet or create new one."""

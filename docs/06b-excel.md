@@ -53,6 +53,8 @@ fmt = {
     'freeze':            'D2',    # freeze panes cell reference
     'header_auto_rotate': 1.5,   # auto-rotate long headers
     'min_column_width':  4,       # minimum auto-sized column width
+    'max_column_width':  40,      # maximum auto-sized column width
+    'auto_filter':       True,    # enable dropdown filter on header row
 }
 
 with ExcelWriter(file='report.xlsx', formatting=fmt) as writer:
@@ -241,6 +243,28 @@ Explicit `width` values in column rules are not affected.
 
 ---
 
+### Maximum Column Width
+
+`max_column_width` sets the ceiling for auto-sized columns (default `60`). Useful when a few long text columns would otherwise dominate the sheet:
+
+```python
+'max_column_width': 40   # no column wider than 40 units
+```
+
+Explicit `width` values in column rules are not affected.
+
+---
+
+### Auto-filter
+
+`auto_filter: True` enables Excel's dropdown filter on the header row, letting users sort and filter without any manual setup:
+
+```python
+'auto_filter': True
+```
+
+---
+
 ### Complete Example
 
 ```python
@@ -394,6 +418,8 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `freeze` | `str \| None` | `'A2'` | Freeze panes cell reference |
 | `header_auto_rotate` | `float \| dict` | off | Auto-rotate long headers; see [above](#auto-rotating-headers) |
 | `min_column_width` | `float` | `6` | Floor for auto-sized column widths |
+| `max_column_width` | `float` | `60` | Ceiling for auto-sized column widths |
+| `auto_filter` | `bool` | `False` | Enable dropdown filter on header row |
 
 **Column rule keys:**
 
