@@ -100,6 +100,8 @@ The following styles are registered on every workbook and can be used directly b
 
 > **Note:** Using a built-in name in `formatting['styles']` logs a `WARNING` and the definition is ignored. Choose a different name for your custom style.
 
+> **Note:** Named styles are embedded in the workbook file. If you rerun a script that writes to an existing `.xlsx` file, styles from the previous run are already baked in — changed style definitions won't take effect. Delete the file before rerunning to pick up style changes.
+
 ---
 
 ### Column Rules
