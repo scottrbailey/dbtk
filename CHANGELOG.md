@@ -11,6 +11,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ExcelWriter` / `LinkedExcelWriter` `formatting` parameter** — a single dict
+  controls all worksheet presentation without touching openpyxl directly. Keys:
+
+  - `styles` — named style definitions (`bg_color`, `font`, `number_format`,
+    `alignment`). Eight built-in styles are pre-registered on every workbook:
+    `date_style`, `datetime_style`, `hyperlink_style`, `bold_style`,
+    `header_vert_style` (bold + 90° centred), `currency_style`, `percent_style`,
+    `comma_style`. Declaring a reserved name logs a `WARNING`.
+  - `columns` — wildcard pattern → properties (`format`, `header_format`, `width`,
+    `hidden`). Patterns are matched case-insensitively via `fnmatch`; later rules
+    override earlier ones per property, so `resv_*_desc: {hidden: 0}` can
+    selectively un-hide columns matched by a broader `resv_*: {hidden: 1}` rule.
+    `header_format` styles only the header cell and is excluded from auto-rotation.
+  - `rows` — row index → properties (`height`); `0` targets the header row.
+    A `'style'` key accepts a callable `lambda rec: style_name | None` for
+    data-driven row colouring (alternating rows, conditional highlighting, etc.).
+    Row style overrides column `format`; `hyperlink_style` overrides both.
+  - `freeze` — cell reference string (e.g. `'D2'`); defaults to `'A2'`, pass
+    `None` to disable.
+  - `header_auto_rotate` — float ratio or `{'ratio', 'min_length', 'height_factor'}`
+    dict. Applies `header_vert_style` to columns where `header_len >= min_length`
+    (default 8) **and** `header_len > data_width × ratio` (default 1.5), avoiding
+    spurious rotation of short headers like `'OPEN'` over `'Y'`/`'N'` data.
+    Auto header-row height is computed from the longest rotated name at 6.5
+    pt/character (overridden by explicit `rows[0]['height']`). Auto-rotated columns
+    use sampled data width for column sizing; non-rotated columns use
+    `max(header_len, data_width)` as before.
+  - `min_column_width` — floor for auto-sized columns (default `6`); lower for
+    narrow indicator columns.
+
+  Inline format dicts for `format` / `header_format` are deduplicated via
+  content-based MD5 `NamedStyle` names. Header and data widths are tracked
+  separately; `_finalize_headers()` consolidates all post-write worksheet setup
+  across all three write paths (`write()`, `write_batch()`,
+  `LinkedExcelWriter.write_batch()`). Documented in `docs/06b-excel.md`.
+
 - **`DatabaseDialect` class hierarchy** — dialect-specific SQL generation and schema
   introspection (upsert syntax, MERGE templates, temp table DDL, type mapping,
   `column_defs_from_db`) is now centralised in `dbtk/dialects/`. Adding support for a
