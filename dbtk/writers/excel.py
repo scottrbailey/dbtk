@@ -130,10 +130,10 @@ class ExcelWriter(BatchWriter):
             * ``'header_auto_rotate'`` — automatically apply ``header_vert_style`` to
               columns whose header text is significantly longer than their sampled data.
               Pass a float ratio (e.g. ``1.5``) or a dict
-              ``{'ratio': 1.5, 'min_length': 8}``. Both conditions must hold: header
+              ``{'ratio': 1.5, 'min_length': 8, 'height_factor': 6.5}``. Both conditions must hold: header
               length ≥ ``min_length`` (default 8) **and** header length > data width ×
               ``ratio`` (default 1.5). Header row height is computed automatically from
-              the longest rotated header (≈ 7.5 pt/char) unless ``rows[0]['height']``
+              the longest rotated header (≈ 6.5 pt/char) unless ``rows[0]['height']``
               is set explicitly. Columns with an explicit ``header_format`` are excluded
               from auto-rotation.
 
@@ -318,14 +318,17 @@ class ExcelWriter(BatchWriter):
 
         # Auto-rotate: detect columns whose header is significantly longer than their data
         auto_rotated: set = set()
+        har_height_factor = 6.5
         har = self.formatting.get('header_auto_rotate')
         if har:
             if isinstance(har, dict):
                 har_min = har.get('min_length', 8)
                 har_ratio = har.get('ratio', 1.5)
+                har_height_factor = har.get('height_factor', 6.5)
             else:
                 har_min = 8
                 har_ratio = float(har)
+                har_height_factor = 6.5
 
             for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
                 col_props = col_fmt[col_idx - 1] if col_fmt else {}
@@ -360,7 +363,7 @@ class ExcelWriter(BatchWriter):
             worksheet.row_dimensions[1].height = explicit_h
         elif auto_rotated:
             max_rotated_len = max(header_widths[i - 1] for i in auto_rotated)
-            worksheet.row_dimensions[1].height = max_rotated_len * 7.5
+            worksheet.row_dimensions[1].height = max_rotated_len * har_height_factor
 
         # Freeze panes
         freeze = self.formatting.get('freeze', 'A2')
