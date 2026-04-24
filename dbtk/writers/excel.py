@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 try:
     from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Font, NamedStyle
+    from openpyxl.comments import Comment
     from openpyxl.utils.exceptions import InvalidFileException
     from openpyxl.utils import get_column_letter
     HAS_OPENPYXL = True
@@ -114,7 +115,8 @@ class ExcelWriter(BatchWriter):
               Properties: ``format`` (style name or inline dict applied to data cells),
               ``header_format`` (style name or inline dict applied to the header cell only;
               owns the cell entirely so include ``font: {bold: True}`` if needed),
-              ``width`` (float), ``hidden`` (0/1).
+              ``width`` (float), ``hidden`` (0/1), ``comment`` (string — adds an Excel
+              comment/note to the header cell).
               Built-in style names available without defining in ``styles``:
               ``bold_style``, ``header_vert_style``, ``date_style``, ``datetime_style``,
               ``hyperlink_style``, ``currency_style``, ``percent_style``, ``comma_style``.
@@ -347,7 +349,7 @@ class ExcelWriter(BatchWriter):
             adjusted = min(max(raw + 2, min_col_width), 60)
             worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted
 
-        # User column-rule overrides (width, hidden)
+        # User column-rule overrides (width, hidden, comment)
         for col_idx, col_props in enumerate(col_fmt, 1):
             if col_props:
                 col_letter = get_column_letter(col_idx)
@@ -355,6 +357,8 @@ class ExcelWriter(BatchWriter):
                     worksheet.column_dimensions[col_letter].width = col_props['width']
                 if 'hidden' in col_props:
                     worksheet.column_dimensions[col_letter].hidden = bool(col_props['hidden'])
+                if 'comment' in col_props:
+                    worksheet.cell(1, col_idx).comment = Comment(col_props['comment'], '')
 
         # Header row height: explicit rows[0] wins; otherwise auto from rotated header lengths
         explicit_h = None

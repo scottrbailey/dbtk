@@ -108,7 +108,7 @@ The following styles are registered on every workbook and can be used directly b
 'columns': {
     '*_fee*':      {'format': 'fmt_fees', 'header_format': 'header_vert_style'},
     'resv_*':      {'hidden': 1},
-    'resv_*_desc': {'hidden': 0},    # un-hides columns matched by resv_* above
+    'resv_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
     'notes':       {'width': 40},
 }
 ```
@@ -121,13 +121,14 @@ The following styles are registered on every workbook and can be used directly b
 | `header_format` | style name or inline dict | Applied to the **header** cell only; owns the cell entirely (include `font: {bold: True}` if needed) |
 | `width` | float | Column width in Excel character units; overrides auto-sizing |
 | `hidden` | 0 or 1 | Hide (`1`) or explicitly un-hide (`0`) the column |
+| `comment` | string | Adds an Excel comment/note to the header cell |
 
 **Precedence:** Rules are applied in definition order. Later patterns override earlier ones *per property*, so you can use a broad pattern to set a default and a narrower pattern to override it:
 
 ```python
 'columns': {
-    'resv_*':      {'hidden': 1},     # hide all reservation columns
-    'resv_*_desc': {'hidden': 0},     # except the description columns
+    'resv_*':      {'hidden': 1},
+    'resv_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
 }
 ```
 
@@ -402,6 +403,7 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `header_format` | style name or dict | Style applied to the header cell only |
 | `width` | float | Override auto-sized width |
 | `hidden` | 0 or 1 | Hide or explicitly un-hide the column |
+| `comment` | string | Excel comment/note on the header cell |
 
 **`header_auto_rotate` dict keys:**
 
