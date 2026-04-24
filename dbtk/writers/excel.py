@@ -112,7 +112,9 @@ class ExcelWriter(BatchWriter):
             * ``'columns'`` — wildcard pattern → properties, e.g.
               ``{'fees*': {'format': 'fmt_fees', 'width': 20}, 'resv_*': {'hidden': 1}}``
               Later patterns override earlier ones per property. Matching is case-insensitive.
-              Properties: ``format`` (style name or inline dict applied to data cells),
+              Properties: ``format`` (style name or inline dict applied to all data cells
+              in the column), ``style`` (callable ``lambda rec: style_name_or_None`` —
+              applied per-cell, overrides ``format`` and row styles when non-None),
               ``header_format`` (style name or inline dict applied to the header cell only;
               owns the cell entirely so include ``font: {bold: True}`` if needed),
               ``width`` (float), ``hidden`` (0/1), ``comment`` (string — adds an Excel
@@ -440,6 +442,7 @@ class ExcelWriter(BatchWriter):
             raise ValueError("Could not determine columns from data")
 
         col_fmt = self._build_col_fmt_map(self.columns)
+        col_style_fns = [p.get('style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
         odd_style = rows_fmt.get('odd', {}).get('format') if isinstance(rows_fmt, dict) else None
@@ -503,6 +506,13 @@ class ExcelWriter(BatchWriter):
 
                 if row_style and not is_date_val:
                     cell.style = row_style
+
+                if not is_date_val and col_style_fns:
+                    fn = col_style_fns[col_idx - 1]
+                    if fn:
+                        cell_style = fn(record)
+                        if cell_style:
+                            cell.style = cell_style
 
             row_count += 1
 
@@ -569,6 +579,7 @@ class ExcelWriter(BatchWriter):
             raise RuntimeError("Workbook not initialized")
 
         col_fmt = self._build_col_fmt_map(self.columns)
+        col_style_fns = [p.get('style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
         odd_style = rows_fmt.get('odd', {}).get('format') if isinstance(rows_fmt, dict) else None
@@ -636,6 +647,13 @@ class ExcelWriter(BatchWriter):
 
                 if row_style and not is_date_val:
                     cell.style = row_style
+
+                if not is_date_val and col_style_fns:
+                    fn = col_style_fns[col_idx - 1]
+                    if fn:
+                        cell_style = fn(record)
+                        if cell_style:
+                            cell.style = cell_style
 
             row_count += 1
 
@@ -1264,6 +1282,7 @@ class LinkedExcelWriter(ExcelWriter):
             raise ValueError("Could not determine columns from data")
 
         col_fmt = self._build_col_fmt_map(self.columns)
+        col_style_fns = [p.get('style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
         odd_style = rows_fmt.get('odd', {}).get('format') if isinstance(rows_fmt, dict) else None
@@ -1332,6 +1351,13 @@ class LinkedExcelWriter(ExcelWriter):
 
                 if row_style and not is_date_val:
                     cell.style = row_style
+
+                if not is_date_val and col_style_fns:
+                    fn = col_style_fns[col_idx - 1]
+                    if fn:
+                        cell_style = fn(record)
+                        if cell_style:
+                            cell.style = cell_style
 
                 # Link spec overrides everything (hyperlink_style takes precedence)
                 link_spec = link_mapping.get(col_name)

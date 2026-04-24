@@ -122,6 +122,7 @@ The following styles are registered on every workbook and can be used directly b
 | Key | Type | Effect |
 |---|---|---|
 | `format` | style name or inline dict | Applied to every **data** cell in this column |
+| `style` | callable | `lambda rec: style_name_or_None` — per-cell conditional style; overrides `format` and row styles when non-None |
 | `header_format` | style name or inline dict | Applied to the **header** cell only; owns the cell entirely (include `font: {bold: True}` if needed) |
 | `width` | float | Column width in Excel character units; overrides auto-sizing |
 | `hidden` | 0 or 1 | Hide (`1`) or explicitly un-hide (`0`) the column |
@@ -134,6 +135,14 @@ The following styles are registered on every workbook and can be used directly b
 'columns': {
     'resv_*':      {'hidden': 1},
     'resv_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
+}
+```
+
+**Per-cell conditional styles** use a `style` callable in the column rule. The lambda receives the full record and returns a style name (or `None`). This overrides both the column's static `format` and any row-level style when non-None:
+
+```python
+'columns': {
+    'wait_capacity': {'style': lambda rec: 'fmt_warn' if rec.wait_capacity < 10 else None},
 }
 ```
 
