@@ -282,17 +282,54 @@ class ExcelWriter(BatchWriter):
 
         Returns a list (indexed by 0-based column position) of property dicts.
         Patterns are applied in definition order; later rules win per property.
-        Matching is case-insensitive fnmatch glob.
+        Three pattern forms are supported (all case-insensitive):
+          - fnmatch glob: ``'*_fee*'``, ``'resv_*'``
+          - range: ``'start:end'``, ``':end'`` (from first), ``'start:'`` (to last)
+            A pattern is only treated as a range if it contains ``:`` with no wildcard
+            characters and does not itself match a column name literally.
+          - literal: any exact column name (handled by fnmatch as a degenerate glob)
         """
         col_rules = self.formatting.get('columns', {})
         if not col_rules:
             return []
         result: List[dict] = [{} for _ in columns]
+        cols_lower = [c.lower() for c in columns]
+
         for pattern, props in col_rules.items():
             pattern_lower = pattern.lower()
-            for col_idx, col_name in enumerate(columns):
-                if fnmatch.fnmatch(col_name.lower(), pattern_lower):
-                    result[col_idx].update(props)
+
+            if ':' in pattern and not any(c in pattern for c in '*?[') and pattern_lower not in cols_lower:
+                # Range syntax: 'start:end', ':end', 'start:'
+                start_str, end_str = pattern.split(':', 1)
+                start_str, end_str = start_str.strip(), end_str.strip()
+
+                if start_str:
+                    if start_str.lower() not in cols_lower:
+                        raise ValueError(f"Range start column '{start_str}' not found in result set")
+                    start_idx = cols_lower.index(start_str.lower())
+                else:
+                    start_idx = 0
+
+                if end_str:
+                    if end_str.lower() not in cols_lower:
+                        raise ValueError(f"Range end column '{end_str}' not found in result set")
+                    end_idx = cols_lower.index(end_str.lower())
+                else:
+                    end_idx = len(columns) - 1
+
+                if start_idx > end_idx:
+                    raise ValueError(
+                        f"Range '{pattern}': '{start_str}' (col {start_idx + 1}) "
+                        f"comes after '{end_str}' (col {end_idx + 1})"
+                    )
+
+                for i in range(start_idx, end_idx + 1):
+                    result[i].update(props)
+            else:
+                # fnmatch glob (also handles literal column names)
+                for col_idx, col_name_lower in enumerate(cols_lower):
+                    if fnmatch.fnmatch(col_name_lower, pattern_lower):
+                        result[col_idx].update(props)
         for col_props in result:
             fmt = col_props.get('format')
             if isinstance(fmt, dict):

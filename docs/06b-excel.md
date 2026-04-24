@@ -106,14 +106,20 @@ The following styles are registered on every workbook and can be used directly b
 
 ### Column Rules
 
-`formatting['columns']` maps wildcard patterns to per-column properties. Patterns are matched **case-insensitively** using [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) glob syntax (`*`, `?`, `[seq]`).
+`formatting['columns']` maps patterns to per-column properties. Three pattern forms are supported, all matched **case-insensitively**:
+
+- **Glob** — [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) wildcards (`*`, `?`, `[seq]`): `'*_fee*'`, `'resv_*'`
+- **Literal** — exact column name: `'notes'`
+- **Range** — `'start:end'` applies to all columns from `start` through `end` inclusive, based on their position in the result set. Open-ended forms: `':end'` (from first column) and `'start:'` (to last column). Raises `ValueError` if either endpoint isn't found. A pattern containing `:` is only treated as a range if it has no wildcard characters and doesn't itself match a column name.
 
 ```python
 'columns': {
-    '*_fee*':      {'format': 'fmt_fees', 'header_format': 'header_vert_style'},
-    'resv_*':      {'hidden': 1},
-    'resv_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
-    'notes':       {'width': 40},
+    '*_fee*':           {'format': 'fmt_fees', 'header_format': 'header_vert_style'},
+    'resv_*':           {'hidden': 1},
+    'resv_*_desc':      {'hidden': 0, 'comment': 'Additional columns are hidden'},
+    'notes':            {'width': 40},
+    'credit_hrs:enrl':  {'format': 'fmt_numeric'},   # range
+    ':subj_code':       {'hidden': 1},               # hide everything up to subj_code
 }
 ```
 
