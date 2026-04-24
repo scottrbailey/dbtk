@@ -116,7 +116,8 @@ class ExcelWriter(BatchWriter):
               ``header_format`` (style name or inline dict applied to the header cell only;
               owns the cell entirely so include ``font: {bold: True}`` if needed),
               ``width`` (float), ``hidden`` (0/1), ``comment`` (string — adds an Excel
-              comment/note to the header cell).
+              comment/note to the header cell), ``filter`` (0/1 — show filter dropdown
+              on this column only; hides dropdowns on all other columns).
               Built-in style names available without defining in ``styles``:
               ``bold_style``, ``header_vert_style``, ``date_style``, ``datetime_style``,
               ``hyperlink_style``, ``currency_style``, ``percent_style``, ``comma_style``.
@@ -383,9 +384,17 @@ class ExcelWriter(BatchWriter):
             worksheet.freeze_panes = freeze
 
         # Auto-filter on header row
-        if self.formatting.get('auto_filter'):
+        filter_cols = {col_idx for col_idx, col_props in enumerate(col_fmt, 1) if col_props.get('filter')}
+        if filter_cols or self.formatting.get('auto_filter'):
             last_col = get_column_letter(len(self.columns))
             worksheet.auto_filter.ref = f"A1:{last_col}1"
+            if filter_cols:
+                from openpyxl.worksheet.filters import FilterColumn
+                for col_idx in range(1, len(self.columns) + 1):
+                    if col_idx not in filter_cols:
+                        worksheet.auto_filter.filterColumn.append(
+                            FilterColumn(colId=col_idx - 1, hiddenButton=True)
+                        )
 
     def _get_or_create_worksheet(self, sheet_name: str) -> 'Worksheet':
         """Get existing worksheet or create new one."""

@@ -124,6 +124,7 @@ The following styles are registered on every workbook and can be used directly b
 | `width` | float | Column width in Excel character units; overrides auto-sizing |
 | `hidden` | 0 or 1 | Hide (`1`) or explicitly un-hide (`0`) the column |
 | `comment` | string | Adds an Excel comment/note to the header cell |
+| `filter` | 0 or 1 | Show a filter dropdown on this column's header; hides dropdowns on all other columns |
 
 **Precedence:** Rules are applied in definition order. Later patterns override earlier ones *per property*, so you can use a broad pattern to set a default and a narrower pattern to override it:
 
@@ -257,11 +258,22 @@ Explicit `width` values in column rules are not affected.
 
 ### Auto-filter
 
-`auto_filter: True` enables Excel's dropdown filter on the header row, letting users sort and filter without any manual setup:
+`auto_filter: True` enables Excel's dropdown filter on the header row across all columns:
 
 ```python
 'auto_filter': True
 ```
+
+To show filter dropdowns on **specific columns only**, use the `filter` column rule instead. This implies auto-filter but hides the dropdown on all unmarked columns:
+
+```python
+'columns': {
+    'subj_code': {'filter': 1},
+    'term_code': {'filter': 1},
+}
+```
+
+If both `auto_filter: True` and column-level `filter: 1` are set, the column-level rules win — only the marked columns show dropdowns.
 
 ---
 
@@ -430,6 +442,7 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `width` | float | Override auto-sized width |
 | `hidden` | 0 or 1 | Hide or explicitly un-hide the column |
 | `comment` | string | Excel comment/note on the header cell |
+| `filter` | 0 or 1 | Show filter dropdown on this column; hides dropdowns on all others |
 
 **`header_auto_rotate` dict keys:**
 
