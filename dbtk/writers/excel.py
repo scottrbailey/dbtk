@@ -123,6 +123,15 @@ class ExcelWriter(BatchWriter):
               ``lambda rec: style_name_or_None`` applied to every data row.
             * ``'freeze'`` — cell reference string for freeze panes, e.g. ``'D2'``.
               Defaults to ``'A2'``. Pass ``None`` to disable freezing.
+            * ``'header_auto_rotate'`` — automatically apply ``header_vert_style`` to
+              columns whose header text is significantly longer than their sampled data.
+              Pass a float ratio (e.g. ``1.5``) or a dict
+              ``{'ratio': 1.5, 'min_length': 8}``. Both conditions must hold: header
+              length ≥ ``min_length`` (default 8) **and** header length > data width ×
+              ``ratio`` (default 1.5). Header row height is computed automatically from
+              the longest rotated header (≈ 7.5 pt/char) unless ``rows[0]['height']``
+              is set explicitly. Columns with an explicit ``header_format`` are excluded
+              from auto-rotation.
 
             Style property dicts support: ``bg_color`` (hex string), ``font`` (dict of
             Font kwargs), ``number_format`` (string), ``alignment`` (dict of Alignment
@@ -277,6 +286,82 @@ class ExcelWriter(BatchWriter):
                 col_props['header_format'] = self._ensure_style(hfmt)
         return result
 
+    def _finalize_headers(
+        self,
+        worksheet: 'Worksheet',
+        header_widths: list,
+        data_widths: list,
+        col_fmt: list,
+        rows_fmt: dict,
+        link_mapping: Optional[dict] = None,
+    ) -> None:
+        """Apply column widths, auto-rotate, header height, and freeze panes.
+
+        Called once after data has been sampled, so auto-rotate decisions have
+        accurate data-width information. ``link_mapping`` is LinkedExcelWriter's
+        column → (LinkSource, mode) map; LinkSource display widths substitute for
+        sampled data widths on linked columns.
+        """
+        link_mapping = link_mapping or {}
+
+        # Substitute LinkSource display widths for linked columns
+        effective_data_widths = list(data_widths)
+        for col_idx, col_name in enumerate(self.columns, 1):
+            if col_name in link_mapping:
+                source, _ = link_mapping[col_name]
+                if source.max_display_width > 0:
+                    effective_data_widths[col_idx - 1] = source.max_display_width
+
+        # Auto-rotate: detect columns whose header is significantly longer than their data
+        auto_rotated: set = set()
+        har = self.formatting.get('header_auto_rotate')
+        if har:
+            if isinstance(har, dict):
+                har_min = har.get('min_length', 8)
+                har_ratio = har.get('ratio', 1.5)
+            else:
+                har_min = 8
+                har_ratio = float(har)
+
+            for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
+                col_props = col_fmt[col_idx - 1] if col_fmt else {}
+                if col_props.get('header_format'):
+                    continue  # explicit header_format takes precedence
+                if hw >= har_min and hw > dw * har_ratio:
+                    auto_rotated.add(col_idx)
+                    worksheet.cell(1, col_idx).style = 'header_vert_style'
+
+        # Column widths: auto-rotated columns use data width only; others use max of both
+        for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
+            raw = dw if col_idx in auto_rotated else max(hw, dw)
+            adjusted = min(max(raw + 2, 6), 60)
+            worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted
+
+        # User column-rule overrides (width, hidden)
+        for col_idx, col_props in enumerate(col_fmt, 1):
+            if col_props:
+                col_letter = get_column_letter(col_idx)
+                if 'width' in col_props:
+                    worksheet.column_dimensions[col_letter].width = col_props['width']
+                if 'hidden' in col_props:
+                    worksheet.column_dimensions[col_letter].hidden = bool(col_props['hidden'])
+
+        # Header row height: explicit rows[0] wins; otherwise auto from rotated header lengths
+        explicit_h = None
+        if isinstance(rows_fmt, dict) and 0 in rows_fmt:
+            rp = rows_fmt[0]
+            explicit_h = rp.get('height') if isinstance(rp, dict) else None
+        if explicit_h is not None:
+            worksheet.row_dimensions[1].height = explicit_h
+        elif auto_rotated:
+            max_rotated_len = max(header_widths[i - 1] for i in auto_rotated)
+            worksheet.row_dimensions[1].height = max_rotated_len * 7.5
+
+        # Freeze panes
+        freeze = self.formatting.get('freeze', 'A2')
+        if freeze:
+            worksheet.freeze_panes = freeze
+
     def _get_or_create_worksheet(self, sheet_name: str) -> 'Worksheet':
         """Get existing worksheet or create new one."""
         from openpyxl.worksheet.worksheet import Worksheet
@@ -325,7 +410,8 @@ class ExcelWriter(BatchWriter):
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
 
         row_count = 0
-        column_widths = [len(col) for col in self.columns]
+        header_widths = [len(col) for col in self.columns]
+        data_widths = [0] * len(self.columns)
         width_sample_size = 15
         header_font = Font(bold=True)
 
@@ -360,19 +446,18 @@ class ExcelWriter(BatchWriter):
                     cell.value = value
                     cell.style = 'datetime_style'
                     if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 19)
                 elif isinstance(value, (date, datetime)):
                     cell.value = value
                     cell.style = 'date_style'
                     if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 10)
                 elif value is None:
                     cell.value = ''
                 else:
                     cell.value = value
                     if row_count < width_sample_size:
-                        value_length = len(str(value))
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], len(str(value)))
 
                 if not is_date_val and col_fmt:
                     col_style = col_fmt[col_idx - 1].get('format')
@@ -385,27 +470,7 @@ class ExcelWriter(BatchWriter):
             row_count += 1
 
         if should_write_headers:
-            for col_idx, width in enumerate(column_widths, 1):
-                adjusted_width = min(max(width + 2, 6), 60)
-                column_letter = get_column_letter(col_idx)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
-
-            for col_idx, col_props in enumerate(col_fmt, 1):
-                if col_props:
-                    col_letter = get_column_letter(col_idx)
-                    if 'width' in col_props:
-                        worksheet.column_dimensions[col_letter].width = col_props['width']
-                    if 'hidden' in col_props:
-                        worksheet.column_dimensions[col_letter].hidden = bool(col_props['hidden'])
-
-            if isinstance(rows_fmt, dict) and 0 in rows_fmt:
-                h = rows_fmt[0].get('height') if isinstance(rows_fmt[0], dict) else None
-                if h is not None:
-                    worksheet.row_dimensions[1].height = h
-
-            freeze = self.formatting.get('freeze', 'A2')
-            if freeze:
-                worksheet.freeze_panes = freeze
+            self._finalize_headers(worksheet, header_widths, data_widths, col_fmt, rows_fmt)
 
         return row_count
 
@@ -488,7 +553,8 @@ class ExcelWriter(BatchWriter):
             self._headers_written = True
 
         row_count = 0
-        column_widths = [len(col) for col in self.columns]
+        header_widths = [len(col) for col in self.columns]
+        data_widths = [0] * len(self.columns)
         width_sample_size = 15
 
         # Write data rows
@@ -510,19 +576,18 @@ class ExcelWriter(BatchWriter):
                     cell.value = value
                     cell.style = 'datetime_style'
                     if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 19)
                 elif isinstance(value, (date, datetime)):
                     cell.value = value
                     cell.style = 'date_style'
                     if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 10)
                 elif value is None:
                     cell.value = ''
                 else:
                     cell.value = value
                     if row_count < width_sample_size:
-                        value_length = len(str(value))
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], len(str(value)))
 
                 if not is_date_val and col_fmt:
                     col_style = col_fmt[col_idx - 1].get('format')
@@ -535,27 +600,7 @@ class ExcelWriter(BatchWriter):
             row_count += 1
 
         if should_write_headers:
-            for col_idx, width in enumerate(column_widths, 1):
-                adjusted_width = min(max(width + 2, 6), 60)
-                column_letter = get_column_letter(col_idx)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
-
-            for col_idx, col_props in enumerate(col_fmt, 1):
-                if col_props:
-                    col_letter = get_column_letter(col_idx)
-                    if 'width' in col_props:
-                        worksheet.column_dimensions[col_letter].width = col_props['width']
-                    if 'hidden' in col_props:
-                        worksheet.column_dimensions[col_letter].hidden = bool(col_props['hidden'])
-
-            if isinstance(rows_fmt, dict) and 0 in rows_fmt:
-                h = rows_fmt[0].get('height') if isinstance(rows_fmt[0], dict) else None
-                if h is not None:
-                    worksheet.row_dimensions[1].height = h
-
-            freeze = self.formatting.get('freeze', 'A2')
-            if freeze:
-                worksheet.freeze_panes = freeze
+            self._finalize_headers(worksheet, header_widths, data_widths, col_fmt, rows_fmt)
 
         self._row_num += row_count
         logger.info(f"Wrote {row_count} rows to sheet '{target_sheet}' (total: {self._row_num})")
@@ -1183,7 +1228,8 @@ class LinkedExcelWriter(ExcelWriter):
         row_style_fn = rows_fmt.get('style') if isinstance(rows_fmt, dict) else None
 
         row_count = 0
-        column_widths = [len(col) for col in self.columns]
+        header_widths = [len(col) for col in self.columns]
+        data_widths = [0] * len(self.columns)
         width_sample_size = 15
         header_font = Font(bold=True)
 
@@ -1222,19 +1268,18 @@ class LinkedExcelWriter(ExcelWriter):
                     cell.value = value
                     cell.style = 'datetime_style'
                     if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 19)
                 elif isinstance(value, (date, datetime)):
                     cell.value = value
                     cell.style = 'date_style'
                     if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 10)
                 elif value is None:
                     cell.value = ''
                 else:
                     cell.value = value
                     if row_count < width_sample_size:
-                        value_length = len(str(value))
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], len(str(value)))
 
                 # Apply column / row formatting (skipped for date cells)
                 if not is_date_val and col_fmt:
@@ -1278,35 +1323,8 @@ class LinkedExcelWriter(ExcelWriter):
             row_count += 1
 
         if should_write_headers:
-            for col_idx, width in enumerate(column_widths, 1):
-                col_name = self.columns[col_idx - 1]
-
-                # Use LinkSource display width for linked columns
-                if col_name in link_mapping:
-                    source, _ = link_mapping[col_name]
-                    if source.max_display_width > 0:
-                        width = source.max_display_width
-
-                adjusted_width = min(max(width + 2, 6), 60)
-                column_letter = get_column_letter(col_idx)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
-
-            for col_idx, col_props in enumerate(col_fmt, 1):
-                if col_props:
-                    col_letter = get_column_letter(col_idx)
-                    if 'width' in col_props:
-                        worksheet.column_dimensions[col_letter].width = col_props['width']
-                    if 'hidden' in col_props:
-                        worksheet.column_dimensions[col_letter].hidden = bool(col_props['hidden'])
-
-            if isinstance(rows_fmt, dict) and 0 in rows_fmt:
-                h = rows_fmt[0].get('height') if isinstance(rows_fmt[0], dict) else None
-                if h is not None:
-                    worksheet.row_dimensions[1].height = h
-
-            freeze = self.formatting.get('freeze', 'A2')
-            if freeze:
-                worksheet.freeze_panes = freeze
+            self._finalize_headers(worksheet, header_widths, data_widths, col_fmt, rows_fmt,
+                                   link_mapping=link_mapping)
 
         return row_count
 
