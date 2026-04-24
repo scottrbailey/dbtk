@@ -121,8 +121,8 @@ class ExcelWriter(BatchWriter):
             * ``'rows'`` — row index → properties dict. Index 0 = header row. Positive
               integers are 1-based data row indices. ``'style'`` key accepts a callable
               ``lambda rec: style_name_or_None`` applied to every data row.
-            * ``'min_width'`` — minimum column width in Excel units applied to all
-              auto-sized columns (default ``6``). Lower this for narrow indicator
+            * ``'min_column_width'`` — minimum column width in Excel units applied to
+              all auto-sized columns (default ``6``). Lower this for narrow indicator
               columns (``'Y'``/``'N'``, flags) where ``3``–``4`` is sufficient.
               Explicit ``width`` values in column rules are not affected.
             * ``'freeze'`` — cell reference string for freeze panes, e.g. ``'D2'``.
@@ -336,7 +336,7 @@ class ExcelWriter(BatchWriter):
                     worksheet.cell(1, col_idx).style = 'header_vert_style'
 
         # Column widths: auto-rotated columns use data width only; others use max of both
-        min_col_width = self.formatting.get('min_width', 6)
+        min_col_width = self.formatting.get('min_column_width', 6)
         for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
             raw = dw if col_idx in auto_rotated else max(hw, dw)
             adjusted = min(max(raw + 2, min_col_width), 60)
