@@ -31,12 +31,18 @@ The first `write_batch()` to a sheet writes the header row; subsequent calls to 
 
 ### Custom Headers
 
-If your Record field names are normalised (lowercased, underscored) but you want the original database column names in the header row, pass them explicitly:
+Pass `headers` explicitly when the column names in the query aren't what you want in the report — for example, Oracle's 30-character column name limit forces aliases that make poor headers, or you simply want friendlier labels:
 
 ```python
-cursor.execute("SELECT First_Name, Last_Name, DOB FROM students")
-ExcelWriter(cursor, 'students.xlsx',
-            headers=['First Name', 'Last Name', 'Date of Birth']).write()
+# Oracle alias → readable header
+cursor.execute("SELECT acad_plan_owner_org_id AS owner_org, ...")
+ExcelWriter(cursor, 'report.xlsx',
+            headers=['Owner Org', ...]).write()
+
+# Any column names → display labels
+cursor.execute("SELECT crse_numb, subj_code, cred_hrs FROM courses")
+ExcelWriter(cursor, 'courses.xlsx',
+            headers=['Course Number', 'Subject', 'Credits']).write()
 ```
 
 ---
