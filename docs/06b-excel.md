@@ -41,6 +41,20 @@ ExcelWriter(cursor, 'students.xlsx',
 
 ---
 
+## Automatic Behaviors
+
+Out of the box, without any `formatting` configuration, `ExcelWriter` does the following automatically:
+
+- **Bold header row** — column names are written in the first row with bold font
+- **Auto-sized columns** — the first 15 data rows are sampled to estimate content width; columns are sized to fit, between 6 and 60 characters wide by default
+- **Frozen header row** — the top row is frozen so it stays visible while scrolling (`freeze_panes = 'A2'`)
+- **Date and datetime formatting** — `date` values get `YYYY-MM-DD` format; `datetime` values with a non-midnight time get `YYYY-MM-DD HH:MM:SS` format, automatically
+- **None → empty cell** — `None` values are written as blank cells rather than the string `"None"`
+
+These defaults are all overridable via the `formatting` parameter. Auto-sizing limits are controlled by `min_column_width` (default `6`) and `max_column_width` (default `60`); freezing is controlled by `freeze` (pass `None` to disable).
+
+---
+
 ## Worksheet Formatting
 
 Pass a `formatting` dict to `ExcelWriter` (or `LinkedExcelWriter`) to control styles, column widths, hidden columns, freeze panes, and header rotation. All keys are optional.

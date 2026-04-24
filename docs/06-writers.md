@@ -137,7 +137,7 @@ with ExcelWriter(file='combined.xlsx') as writer:
 ```
 ## Multiple Sheets and Excel Formatting
 
-`ExcelWriter` keeps the workbook open across `write_batch()` calls and saves on context exit, making it the right tool for multi-sheet reports. For column styles, auto-rotating headers, hyperlinked reports, and the full `formatting` dict reference, see **[Excel Reports](06b-excel.md)**.
+`ExcelWriter` keeps the workbook open across `write_batch()` calls and saves on context exit, making it the right tool for multi-sheet reports. By default it auto-sizes columns by sampling the first 15 rows, bolds and freezes the header row, and applies date formatting automatically — no configuration needed. For column styles, auto-rotating headers, hyperlinked reports, and the full `formatting` dict reference, see **[Excel Reports](06b-excel.md)**.
 
 ```python
 from dbtk.writers import ExcelWriter
