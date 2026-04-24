@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 try:
     from openpyxl import Workbook, load_workbook
-    from openpyxl.styles import Font, NamedStyle
+    from openpyxl.styles import Font, NamedStyle, Alignment
     from openpyxl.comments import Comment
     from openpyxl.utils.exceptions import InvalidFileException
     from openpyxl.utils import get_column_letter
@@ -297,8 +297,16 @@ class ExcelWriter(BatchWriter):
 
         for pattern, props in col_rules.items():
             pattern_lower = pattern.lower()
+            is_range = ':' in pattern and not any(c in pattern for c in '*?[') and pattern_lower not in cols_lower
 
-            if ':' in pattern and not any(c in pattern for c in '*?[') and pattern_lower not in cols_lower:
+            if 'group_header' in props and not is_range:
+                logger.warning(
+                    f"'group_header' is only supported on range patterns (e.g. 'col_a:col_b'); "
+                    f"ignoring for pattern '{pattern}'"
+                )
+                props = {k: v for k, v in props.items() if k != 'group_header'}
+
+            if is_range:
                 # Range syntax: 'start:end', ':end', 'start:'
                 start_str, end_str = pattern.split(':', 1)
                 start_str, end_str = start_str.strip(), end_str.strip()
@@ -357,6 +365,10 @@ class ExcelWriter(BatchWriter):
         """
         link_mapping = link_mapping or {}
 
+        # Determine whether group headers are present
+        has_groups = bool(col_fmt and any(p.get('group_header') for p in col_fmt))
+        header_row = 2 if has_groups else 1
+
         # Substitute LinkSource display widths for linked columns
         effective_data_widths = list(data_widths)
         for col_idx, col_name in enumerate(self.columns, 1):
@@ -385,7 +397,7 @@ class ExcelWriter(BatchWriter):
                     continue  # explicit header_format takes precedence
                 if hw >= har_min and hw > dw * har_ratio:
                     auto_rotated.add(col_idx)
-                    worksheet.cell(1, col_idx).style = 'header_vert_style'
+                    worksheet.cell(header_row, col_idx).style = 'header_vert_style'
 
         # Column widths: auto-rotated columns use data width only; others use max of both
         min_col_width = self.formatting.get('min_column_width', 6)
@@ -404,7 +416,7 @@ class ExcelWriter(BatchWriter):
                 if 'hidden' in col_props:
                     worksheet.column_dimensions[col_letter].hidden = bool(col_props['hidden'])
                 if 'comment' in col_props:
-                    worksheet.cell(1, col_idx).comment = Comment(col_props['comment'], '')
+                    worksheet.cell(header_row, col_idx).comment = Comment(col_props['comment'], '')
 
         # Header row height: explicit rows[0] wins; otherwise auto from rotated header lengths
         explicit_h = None
@@ -412,13 +424,38 @@ class ExcelWriter(BatchWriter):
             rp = rows_fmt[0]
             explicit_h = rp.get('height') if isinstance(rp, dict) else None
         if explicit_h is not None:
-            worksheet.row_dimensions[1].height = explicit_h
+            worksheet.row_dimensions[header_row].height = explicit_h
         elif auto_rotated:
             max_rotated_len = max(header_widths[i - 1] for i in auto_rotated)
-            worksheet.row_dimensions[1].height = max_rotated_len * har_height_factor
+            worksheet.row_dimensions[header_row].height = max_rotated_len * har_height_factor
+
+        # Group header row (row 1): merged cells spanning each labelled column range
+        if has_groups:
+            group_font = Font(bold=True)
+            group_align = Alignment(horizontal='center', vertical='center')
+            i = 0
+            while i < len(col_fmt):
+                group = col_fmt[i].get('group_header')
+                if group:
+                    j = i
+                    while j < len(col_fmt) and col_fmt[j].get('group_header') == group:
+                        j += 1
+                    start_col, end_col = i + 1, j  # 1-based, inclusive
+                    if start_col < end_col:
+                        worksheet.merge_cells(
+                            start_row=1, start_column=start_col,
+                            end_row=1, end_column=end_col
+                        )
+                    cell = worksheet.cell(1, start_col)
+                    cell.value = group
+                    cell.font = group_font
+                    cell.alignment = group_align
+                    i = j
+                else:
+                    i += 1
 
         # Freeze panes
-        freeze = self.formatting.get('freeze', 'A2')
+        freeze = self.formatting.get('freeze', 'A3' if has_groups else 'A2')
         if freeze:
             worksheet.freeze_panes = freeze
 
@@ -426,7 +463,8 @@ class ExcelWriter(BatchWriter):
         filter_cols = {col_idx for col_idx, col_props in enumerate(col_fmt, 1) if col_props.get('filter')}
         if filter_cols or self.formatting.get('auto_filter'):
             last_col = get_column_letter(len(self.columns))
-            worksheet.auto_filter.ref = f"A1:{last_col}1"
+            filter_row = header_row
+            worksheet.auto_filter.ref = f"A{filter_row}:{last_col}{filter_row}"
             if filter_cols:
                 from openpyxl.worksheet.filters import FilterColumn
                 for col_idx in range(1, len(self.columns) + 1):
@@ -491,12 +529,14 @@ class ExcelWriter(BatchWriter):
         width_sample_size = 15
         header_font = Font(bold=True)
 
-        should_write_headers = write_headers and worksheet.cell(1, 1).value is None
-        data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+        has_groups = bool(col_fmt and any(p.get('group_header') for p in col_fmt))
+        header_row = 2 if has_groups else 1
+        should_write_headers = write_headers and worksheet.cell(header_row, 1).value is None
+        data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
             for col_idx, column_name in enumerate(self._get_headers(data), 1):
-                cell = worksheet.cell(row=1, column=col_idx, value=column_name)
+                cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
                 hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
                 if hfmt:
                     cell.style = hfmt
@@ -625,13 +665,15 @@ class ExcelWriter(BatchWriter):
         target_sheet = self.active_sheet or 'Data'
         worksheet = self._get_or_create_worksheet(target_sheet)
 
-        should_write_headers = self.write_headers and not self._headers_written and worksheet.cell(1, 1).value is None
-        data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+        has_groups = bool(col_fmt and any(p.get('group_header') for p in col_fmt))
+        header_row = 2 if has_groups else 1
+        should_write_headers = self.write_headers and not self._headers_written and worksheet.cell(header_row, 1).value is None
+        data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
             header_font = Font(bold=True)
             for col_idx, column_name in enumerate(self._get_headers(), 1):
-                cell = worksheet.cell(row=1, column=col_idx, value=column_name)
+                cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
                 hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
                 if hfmt:
                     cell.style = hfmt
@@ -1331,12 +1373,14 @@ class LinkedExcelWriter(ExcelWriter):
         width_sample_size = 15
         header_font = Font(bold=True)
 
-        should_write_headers = write_headers and (worksheet.cell(1, 1).value is None)
-        data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+        has_groups = bool(col_fmt and any(p.get('group_header') for p in col_fmt))
+        header_row = 2 if has_groups else 1
+        should_write_headers = write_headers and (worksheet.cell(header_row, 1).value is None)
+        data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
             for col_idx, column_name in enumerate(self.columns, 1):
-                cell = worksheet.cell(row=1, column=col_idx, value=column_name)
+                cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
                 hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
                 if hfmt:
                     cell.style = hfmt

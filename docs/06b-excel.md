@@ -134,6 +134,7 @@ The following styles are registered on every workbook and can be used directly b
 | `hidden` | 0 or 1 | Hide (`1`) or explicitly un-hide (`0`) the column |
 | `comment` | string | Adds an Excel comment/note to the header cell |
 | `filter` | 0 or 1 | Show a filter dropdown on this column's header; hides dropdowns on all other columns |
+| `group_header` | string | Merged super-header label above this column range (range patterns only) |
 
 **Precedence:** Rules are applied in definition order. Later patterns override earlier ones *per property*, so you can use a broad pattern to set a default and a narrower pattern to override it:
 
@@ -151,6 +152,19 @@ The following styles are registered on every workbook and can be used directly b
     'wait_capacity': {'style': lambda rec: 'fmt_warn' if rec.wait_capacity < 10 else None},
 }
 ```
+
+**Group headers** use `group_header` on a range pattern to add a merged super-header row above the column names. Only range patterns are supported — using `group_header` on a wildcard logs a warning and is ignored. Columns not covered by any group are left blank in the group header row.
+
+```python
+'columns': {
+    'credit_hrs:tuition_waiver_ind': {'format': 'fmt_billing',    'group_header': 'Billing'},
+    'enrl:wait_avail':               {'format': 'fmt_enrollment', 'group_header': 'Enrollment'},
+    'resv_1_desc:resv_5_desc':       {'hidden': 1,                'group_header': 'Reservations'},
+    'crse_fee_amount:sec_fees':      {'group_header': 'Fees'},
+}
+```
+
+Group headers are written bold and centered in row 1; column headers shift to row 2; data starts at row 3. The freeze pane default shifts from `'A2'` to `'A3'` automatically.
 
 **Inline style dicts** work anywhere a style name is accepted. Equivalent inline dicts are deduplicated automatically:
 
@@ -460,6 +474,7 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `hidden` | 0 or 1 | Hide or explicitly un-hide the column |
 | `comment` | string | Excel comment/note on the header cell |
 | `filter` | 0 or 1 | Show filter dropdown on this column; hides dropdowns on all others |
+| `group_header` | string | Merged super-header label (range patterns only) |
 
 **`header_auto_rotate` dict keys:**
 
