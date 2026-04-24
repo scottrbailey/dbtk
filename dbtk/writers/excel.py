@@ -105,8 +105,13 @@ class ExcelWriter(BatchWriter):
             * ``'columns'`` — wildcard pattern → properties, e.g.
               ``{'fees*': {'format': 'fmt_fees', 'width': 20}, 'resv_*': {'hidden': 1}}``
               Later patterns override earlier ones per property. Matching is case-insensitive.
-              Properties: ``format`` (style name or inline dict), ``width`` (float),
-              ``hidden`` (0/1).
+              Properties: ``format`` (style name or inline dict applied to data cells),
+              ``header_format`` (style name or inline dict applied to the header cell only;
+              owns the cell entirely so include ``font: {bold: True}`` if needed),
+              ``width`` (float), ``hidden`` (0/1).
+              Built-in style names available without defining in ``styles``:
+              ``bold_style``, ``header_vert_style``, ``date_style``, ``datetime_style``,
+              ``hyperlink_style``, ``currency_style``, ``percent_style``, ``comma_style``.
             * ``'rows'`` — row index → properties dict. Index 0 = header row. Positive
               integers are 1-based data row indices. ``'style'`` key accepts a callable
               ``lambda rec: style_name_or_None`` applied to every data row.
@@ -161,10 +166,33 @@ class ExcelWriter(BatchWriter):
         self._register_styles()
 
     def _register_styles(self) -> None:
-        """Register common styles (date, datetime, hyperlink)."""
+        """Register built-in styles available to all sheets by name.
+
+        Built-in styles
+        ---------------
+        date_style
+            Date number format: ``YYYY-MM-DD``.
+        datetime_style
+            Datetime number format: ``YYYY-MM-DD HH:MM:SS``.
+        hyperlink_style
+            Blue underlined font (used automatically by LinkedExcelWriter).
+        bold_style
+            Bold font. Useful as a ``header_format`` when you only want emphasis.
+        header_vert_style
+            Bold font + 90° text rotation. Pair with ``rows: {0: {'height': 120}}``
+            for narrow rotated column headers.
+        currency_style
+            Number format: ``#,##0.00``.
+        percent_style
+            Number format: ``0.00%``.
+        comma_style
+            Number format: ``#,##0``.
+        """
         if self.workbook is None:
             return
 
+        from openpyxl.styles import Alignment as _Alignment
+        _bold_font = Font(bold=True)
         styles = [
             NamedStyle(name='date_style', number_format='YYYY-MM-DD'),
             NamedStyle(name='datetime_style', number_format='YYYY-MM-DD HH:MM:SS'),
@@ -172,6 +200,12 @@ class ExcelWriter(BatchWriter):
                 name='hyperlink_style',
                 font=Font(color="0000FF", underline="single")
             ),
+            NamedStyle(name='bold_style', font=_bold_font),
+            NamedStyle(name='header_vert_style', font=_bold_font,
+                       alignment=_Alignment(text_rotation=90)),
+            NamedStyle(name='currency_style', number_format='#,##0.00'),
+            NamedStyle(name='percent_style', number_format='0.00%'),
+            NamedStyle(name='comma_style', number_format='#,##0'),
         ]
 
         for style in styles:
@@ -226,6 +260,9 @@ class ExcelWriter(BatchWriter):
             fmt = col_props.get('format')
             if isinstance(fmt, dict):
                 col_props['format'] = self._ensure_style(fmt)
+            hfmt = col_props.get('header_format')
+            if isinstance(hfmt, dict):
+                col_props['header_format'] = self._ensure_style(hfmt)
         return result
 
     def _get_or_create_worksheet(self, sheet_name: str) -> 'Worksheet':
@@ -286,7 +323,11 @@ class ExcelWriter(BatchWriter):
         if should_write_headers:
             for col_idx, column_name in enumerate(self._get_headers(data), 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
-                cell.font = header_font
+                hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
+                if hfmt:
+                    cell.style = hfmt
+                else:
+                    cell.font = header_font
 
         # Write data rows
         for row_idx, record in enumerate(self.data_iterator, data_start_row):
@@ -427,7 +468,11 @@ class ExcelWriter(BatchWriter):
             header_font = Font(bold=True)
             for col_idx, column_name in enumerate(self._get_headers(), 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
-                cell.font = header_font
+                hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
+                if hfmt:
+                    cell.style = hfmt
+                else:
+                    cell.font = header_font
             self._headers_written = True
 
         row_count = 0
@@ -1136,7 +1181,11 @@ class LinkedExcelWriter(ExcelWriter):
         if should_write_headers:
             for col_idx, column_name in enumerate(self.columns, 1):
                 cell = worksheet.cell(row=1, column=col_idx, value=column_name)
-                cell.font = header_font
+                hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
+                if hfmt:
+                    cell.style = hfmt
+                else:
+                    cell.font = header_font
 
         col_index_map = {name: idx + 1 for idx, name in enumerate(self.columns)}
 
