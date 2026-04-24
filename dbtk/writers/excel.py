@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 MIDNIGHT = time(0, 0)
 
+_BUILTIN_STYLE_NAMES = frozenset({
+    'date_style', 'datetime_style', 'hyperlink_style',
+    'bold_style', 'header_vert_style',
+    'currency_style', 'percent_style', 'comma_style',
+})
+
 
 class ExcelWriter(BatchWriter):
     """
@@ -213,6 +219,12 @@ class ExcelWriter(BatchWriter):
                 self.workbook.add_named_style(style)
 
         for style_name, props in self.formatting.get('styles', {}).items():
+            if style_name in _BUILTIN_STYLE_NAMES:
+                logger.warning(
+                    f"Style name '{style_name}' is reserved by ExcelWriter and cannot be "
+                    "overridden; rename your style to apply it."
+                )
+                continue
             if style_name not in self.workbook.named_styles:
                 self.workbook.add_named_style(self._build_named_style(style_name, props))
 
