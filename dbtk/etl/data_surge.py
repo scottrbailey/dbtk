@@ -202,32 +202,15 @@ class DataSurge(BaseSurge):
         if not records_list:
             return 0
 
-        db_type = self.cursor.connection.database_type
-        # Postgres and MySQL will
-        if db_type == 'oracle':
-            temp_name = re.sub(r'[^A-Z0-9]+', '_', f"GTT_{self.table.name.upper()}")
+        dialect = self.cursor.connection.dialect
+        col_info = self.table.get_column_definitions(all_cols=dialect.temp_table_all_cols)
+        temp_name, create_sql = dialect.create_temp_table_ddl(self.table.name, col_info)
 
-            # Get column definitions from table
-            col_info = self.table.get_column_definitions(all_cols=True)
-            col_defs = [f"{col_name} {sql_type}" for col_name, _, _, _, _, sql_type in col_info]
-            col_defs_str = ', '.join(col_defs)
-            create_sql = f"CREATE GLOBAL TEMPORARY TABLE {temp_name} ({col_defs_str}) ON COMMIT PRESERVE ROWS"
-
-        if db_type == 'sqlserver':
-            temp_name = f"#{re.sub(r'[^A-Z0-9]+', '_', self.table.name.upper())}"
-
-            # Get column definitions from table
-            col_info = self.table.get_column_definitions()
-            col_defs = [f"[{col_name}] {sql_type} NULL" for col_name, _, _, _, _, sql_type in col_info]
-            col_defs_str = ', '.join(col_defs)
-            create_sql = f"CREATE TABLE {temp_name} ({col_defs_str})"
-
-        # Drop temp table if it exists from previous run, then create fresh
+        # Reuse existing temp table if present, otherwise create fresh
         try:
             self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
             table_exists = True
         except self.cursor.connection.driver.DatabaseError:
-            # Table doesn't exist yet, which is fine
             table_exists = False
 
         if not table_exists:
@@ -246,11 +229,9 @@ class DataSurge(BaseSurge):
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
         if errors:
-            if db_type == 'oracle':
-                self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
+            self.cursor.execute(dialect.cleanup_temp_table_sql(temp_name))
+            if dialect.temp_table_cleanup_commit:
                 self.cursor.connection.commit()
-            else:
-                self.cursor.execute(f"DROP TABLE {temp_name}")
             return errors
 
         # Transfer record fields from temp table to main table for proper merge column exclusion
@@ -284,10 +265,7 @@ class DataSurge(BaseSurge):
             errors += len(records_list) - errors
         finally:
             try:
-                if db_type == 'oracle':
-                    self.cursor.execute(f"TRUNCATE TABLE {temp_name}")
-                else:
-                    self.cursor.execute(f"DROP TABLE {temp_name}")
+                self.cursor.execute(dialect.cleanup_temp_table_sql(temp_name))
             except Exception as e:
                 logger.warning(f"Failed to clear temp table {temp_name}: {e}")
 
