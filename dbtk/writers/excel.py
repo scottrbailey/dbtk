@@ -168,6 +168,10 @@ class ExcelWriter(BatchWriter):
 
         self._link_mapping: dict = {}
         self._style_cache: dict = {}
+        self._col_rules: list = [
+            (k.lower(), k, v)
+            for k, v in (formatting or {}).get('columns', {}).items()
+        ]
 
         self._load_or_create_workbook()
 
@@ -292,15 +296,13 @@ class ExcelWriter(BatchWriter):
             characters and does not itself match a column name literally.
           - literal: any exact column name (handled by fnmatch as a degenerate glob)
         """
-        col_rules = self.formatting.get('columns', {})
-        if not col_rules:
+        if not self._col_rules:
             return []
         result: List[dict] = [{} for _ in columns]
         cols_lower = [c.lower() for c in columns]
 
-        for pattern, props in col_rules.items():
-            pattern_lower = pattern.lower()
-            is_range = ':' in pattern and not any(c in pattern for c in '*?[') and pattern_lower not in cols_lower
+        for pattern_lower, pattern, props in self._col_rules:
+            is_range = ':' in pattern_lower and not any(c in pattern_lower for c in '*?[') and pattern_lower not in cols_lower
 
             if 'group_header' in props and not is_range:
                 logger.warning(
@@ -311,20 +313,20 @@ class ExcelWriter(BatchWriter):
 
             if is_range:
                 # Range syntax: 'start:end', ':end', 'start:'
-                start_str, end_str = pattern.split(':', 1)
+                start_str, end_str = pattern_lower.split(':', 1)
                 start_str, end_str = start_str.strip(), end_str.strip()
 
                 if start_str:
-                    if start_str.lower() not in cols_lower:
+                    if start_str not in cols_lower:
                         raise ValueError(f"Range start column '{start_str}' not found in result set")
-                    start_idx = cols_lower.index(start_str.lower())
+                    start_idx = cols_lower.index(start_str)
                 else:
                     start_idx = 0
 
                 if end_str:
-                    if end_str.lower() not in cols_lower:
+                    if end_str not in cols_lower:
                         raise ValueError(f"Range end column '{end_str}' not found in result set")
-                    end_idx = cols_lower.index(end_str.lower())
+                    end_idx = cols_lower.index(end_str)
                 else:
                     end_idx = len(columns) - 1
 
