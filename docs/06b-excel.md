@@ -220,12 +220,10 @@ Group headers are written bold and centered in row 1; column headers shift to ro
 **Inline style dicts** work anywhere a style name is accepted. Equivalent inline dicts are deduplicated automatically:
 
 ```python
-from dbtk.writers.excel import ColumnRule
-
-'columns': {    
+'columns': {
     'gpa': {'format': {'number_format': '0.00', 'alignment': {'horizontal': 'center'}}},
-    'title': ColumnRule(format={'bg_color': '#60CCFF'}, width=40, 
-                   comment='This comment will appear in the header row', filter=1),
+    'title': ColumnRule(format={'bg_color': '#60CCFF'}, width=40,
+                        comment='This comment will appear in the header row', filter=1),
 }
 ```
 
@@ -447,7 +445,7 @@ ExcelWriter(fees_data,   'report.xlsx', sheet_name='Fees',   formatting=fees_fmt
 ExcelWriter(roster_data, 'report.xlsx', sheet_name='Roster', formatting=roster_fmt).write()
 ```
 
-Openpyxl stores named styles on the workbook, not on the worksheet, and properties of named style can not be changed.  The second call can use the named style `fmt_fees` from the first call, but it can not alter it.
+Each writer opens the file, adds its sheet with its own formatting, saves, and closes. Note that openpyxl stores named styles on the workbook, not the worksheet — the second writer can reference `fmt_fees` by name, but cannot redefine it.
 
 ---
 
