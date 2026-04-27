@@ -168,6 +168,7 @@ class ExcelWriter(BatchWriter):
 
         self._link_mapping: dict = {}
         self._style_cache: dict = {}
+        self._named_style_objects: dict = {}  # name -> NamedStyle for _decompose_style
         self._col_rules: list = [
             (k.lower(), k, v)
             for k, v in (formatting or {}).get('columns', {}).items()
@@ -202,6 +203,11 @@ class ExcelWriter(BatchWriter):
             )
 
         self._register_styles()
+
+    def _add_named_style(self, style: 'NamedStyle') -> None:
+        """Register a NamedStyle with the workbook and cache the object."""
+        self.workbook.add_named_style(style)
+        self._named_style_objects[style.name] = style
 
     def _register_styles(self) -> None:
         """Register built-in styles available to all sheets by name.
@@ -247,8 +253,8 @@ class ExcelWriter(BatchWriter):
         ]
 
         for style in styles:
-            if style.name not in self.workbook.named_styles:
-                self.workbook.add_named_style(style)
+            if style.name not in self._named_style_objects:
+                self._add_named_style(style)
 
         for style_name, props in self.formatting.get('styles', {}).items():
             if style_name in _BUILTIN_STYLE_NAMES:
@@ -257,8 +263,8 @@ class ExcelWriter(BatchWriter):
                     "overridden; rename your style to apply it."
                 )
                 continue
-            if style_name not in self.workbook.named_styles:
-                self.workbook.add_named_style(self._build_named_style(style_name, props))
+            if style_name not in self._named_style_objects:
+                self._add_named_style(self._build_named_style(style_name, props))
 
     @staticmethod
     def _build_named_style(name: str, props: dict) -> 'NamedStyle':
@@ -280,8 +286,8 @@ class ExcelWriter(BatchWriter):
         """Register an inline format dict as a NamedStyle; return its name."""
         key = tuple(sorted((k, str(v)) for k, v in props.items()))
         name = 'fmt_' + hashlib.md5(str(key).encode()).hexdigest()[:8]
-        if name not in self.workbook.named_styles:
-            self.workbook.add_named_style(self._build_named_style(name, props))
+        if name not in self._named_style_objects:
+            self._add_named_style(self._build_named_style(name, props))
         return name
 
     def _build_col_fmt_map(self, columns: List[str]) -> list:
@@ -494,10 +500,10 @@ class ExcelWriter(BatchWriter):
             worksheet.delete_rows(1, worksheet.max_row)
 
     def _get_named_style(self, name: str) -> 'NamedStyle':
-        for style in self.workbook.named_styles:
-            if style.name == name:
-                return style
-        raise KeyError(f"Named style '{name}' not found")
+        try:
+            return self._named_style_objects[name]
+        except KeyError:
+            raise KeyError(f"Named style '{name}' not found")
 
     def _decompose_style(self, name: str) -> dict:
         """Extract non-default properties from a named style."""
@@ -547,7 +553,7 @@ class ExcelWriter(BatchWriter):
             return result
 
         new_name = '_c_' + hashlib.md5(str(valid).encode()).hexdigest()[:10]
-        if new_name not in self.workbook.named_styles:
+        if new_name not in self._named_style_objects:
             style = NamedStyle(name=new_name)
             if 'number_format' in merged:
                 style.number_format = merged['number_format']
@@ -557,7 +563,7 @@ class ExcelWriter(BatchWriter):
                 style.fill = merged['fill']
             if 'alignment' in merged:
                 style.alignment = merged['alignment']
-            self.workbook.add_named_style(style)
+            self._add_named_style(style)
 
         self._style_cache[valid] = new_name
         return new_name
