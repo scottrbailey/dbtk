@@ -33,11 +33,13 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
                  'height', 'weight', 'bats', 'throws'])
         .with_columns(
             (pl.col('nameFirst') + ' ' + pl.col('nameLast')).alias('name'),
-            pl.date(
-                pl.col('birthYear').fill_null(1900),
-                pl.col('birthMonth').fill_null(1),
-                pl.col('birthDay').fill_null(1),
-            ).alias('birthdate'),
+            pl.when(
+                pl.col('birthYear').is_not_null() &
+                pl.col('birthMonth').is_not_null() &
+                pl.col('birthDay').is_not_null()
+            ).then(
+                pl.date(pl.col('birthYear'), pl.col('birthMonth'), pl.col('birthDay'))
+            ).otherwise(None).alias('birthdate'),
             (pl.lit(YEAR) - pl.col('birthYear')).alias('age'),
         )
         .drop(['nameFirst', 'nameLast', 'birthYear', 'birthMonth', 'birthDay'])
