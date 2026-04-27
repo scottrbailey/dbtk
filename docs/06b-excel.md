@@ -19,11 +19,12 @@ from dbtk.writers import ExcelWriter
 # Single sheet — one shot
 ExcelWriter(cursor, 'report.xlsx').write()
 
+stmt = cursor.prepare_file('quarterly_sales.sql')
 # Multi-sheet — context manager
 with ExcelWriter(file='report.xlsx') as writer:
-    writer.write_batch(q1_cursor, sheet_name='Q1')
-    writer.write_batch(q2_cursor, sheet_name='Q2')
-    writer.write_batch(q3_cursor, sheet_name='Q3')
+    for qtr in (1, 2, 3, 4):
+        stmt.execute({'quarter': qtr})
+        writer.write_batch(stmt, sheet_name=f'Q{qtr}')
 # Workbook saved on exit
 ```
 
@@ -160,17 +161,17 @@ The following styles are registered on every workbook and can be used directly b
 
 `formatting['columns']` maps patterns to per-column properties. Three pattern forms are supported, all matched **case-insensitively**:
 
-- **Glob** — [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) wildcards (`*`, `?`, `[seq]`): `'*_fee*'`, `'resv_*'`
 - **Literal** — exact column name: `'notes'`
+- **Glob** — [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) wildcards (`*`, `?`, `[seq]`): `'*_fee*'`, `'resv_*'`
 - **Range** — `'start:end'` applies to all columns from `start` through `end` inclusive, based on their position in the result set. Open-ended forms: `':end'` (from first column) and `'start:'` (to last column). Raises `ValueError` if either endpoint isn't found. A pattern containing `:` is only treated as a range if it has no wildcard characters and doesn't itself match a column name.
 
 ```python
 'columns': {
     '*_fee*':           {'format': 'fmt_fees', 'header_format': 'header_vert_style'},
-    'resv_*':           {'hidden': 1},
-    'resv_*_desc':      {'hidden': 0, 'comment': 'Additional columns are hidden'},
+    'sales_*':          {'hidden': 1},
+    'sales_*_total':    {'hidden': 0, 'comment': 'Additional columns are hidden'},
     'notes':            {'width': 40},
-    'credit_hrs:enrl':  {'format': 'fmt_numeric'},   # range
+    'unit_price:revenue':  {'format': 'fmt_numeric'},   # range
     ':subj_code':       {'hidden': 1},               # hide everything up to subj_code
 }
 ```
@@ -192,8 +193,8 @@ The following styles are registered on every workbook and can be used directly b
 
 ```python
 'columns': {
-    'resv_*':      {'hidden': 1},
-    'resv_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
+    'sales_*':      {'hidden': 1},
+    'sales_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
 }
 ```
 
@@ -201,7 +202,7 @@ The following styles are registered on every workbook and can be used directly b
 
 ```python
 'columns': {
-    'wait_capacity': {'style': lambda rec: 'fmt_warn' if rec.wait_capacity < 10 else None},
+    'max_capacity': {'style': lambda rec: 'fmt_warn' if rec.max_capacity < 10 else None},
 }
 ```
 
@@ -209,10 +210,8 @@ The following styles are registered on every workbook and can be used directly b
 
 ```python
 'columns': {
-    'credit_hrs:tuition_waiver_ind': {'format': 'fmt_billing',    'group_label': 'Billing'},
-    'enrl:wait_avail':               {'format': 'fmt_enrollment', 'group_label': 'Enrollment'},
-    'resv_1_desc:resv_5_desc':       {'hidden': 1,                'group_label': 'Reservations'},
-    'crse_fee_amount:sec_fees':      {'group_label': 'Fees'},
+    'q1_sales:q4_sales':       {'format': 'fmt_sales',    'group_label': 'Quarterly Sales'},
+    'q1_revenue:q4_revenue':   {'format': 'fmt_revenue', 'group_label': 'Quarterly Revenue'},
 }
 ```
 
@@ -221,8 +220,12 @@ Group headers are written bold and centered in row 1; column headers shift to ro
 **Inline style dicts** work anywhere a style name is accepted. Equivalent inline dicts are deduplicated automatically:
 
 ```python
-'columns': {
+from dbtk.writers.excel import ColumnRule
+
+'columns': {    
     'gpa': {'format': {'number_format': '0.00', 'alignment': {'horizontal': 'center'}}},
+    'title': ColumnRule(format={'bg_color': '#60CCFF'}, width=40, 
+                   comment='This comment will appear in the header row', filter=1),
 }
 ```
 
@@ -405,33 +408,29 @@ If both `auto_filter: True` and column-level `filter: 1` are set, the column-lev
 
 ```python
 fmt = {
-    'styles': {
-        'fmt_fees':   {'bg_color': '#d5f1cc'},
-        'fmt_rest':   {'bg_color': '#e3f3fe'},
-        'fmt_coreq':  {'bg_color': '#ffeed9'},
+    'styles': {        
+        'fmt_sales':     {'bg_color': '#e3f3fe'},
+        'fmt_volume':    {'bg_color': '#ffeed9'},
+        'fmt_shrinkage': {'bg_color': '#d5f1cc', 'font': {'bold': 1}},
+        'fmt_warning':   {'bg_color': '#fec76f'},
+        'fmt_stripe':    {'bg_color': '#dde8ed'}
     },
     'columns': {
-        'CORQ_*':       {'format': 'fmt_coreq'},
-        '*_FEE*':       {'format': 'fmt_fees'},
-        'res*':         {'format': 'fmt_rest'},
-        'RESV*':        {'hidden': 1},
-        'RESV_*_DESC':  {'hidden': 0},
-        'TERM_CODE':    {'format': 'fmt_fees'},
-    },
-    'rows': {
-        'data': {
-            'style': lambda rec: 'fmt_fees' if rec['waitlisted'] else None,
-        },
+        'sales_*':      {'format': 'fmt_sales'},
+        'volume*':      {'format': 'fmt_volume'},
+        'shrink*':      {'format': 'fmt_shrinkage', 'hidden': 1},
+        'shrink_pct':   {'hidden': 0, 
+                         'style': lambda x: 'fmt_warning' if x.shrink_pct > 8.0 else None},
     },
     'freeze':               'D2',
     'header_auto_rotate':   {'min_length': 8, 'ratio': 2.5},
     'min_column_width':     3,
 }
-
+stmt = cursor.prepare_file('quarterly_sales')
 with ExcelWriter(file='crn_review.xlsx', formatting=fmt) as writer:
-    for term_code in active_terms:
-        cursor.execute_file('crn_review.sql', {'term_code': term_code})
-        writer.write_batch(cursor, sheet_name=term_code)
+    for qtr in active_quarters:
+        stmt.execute({'quarter': qtr})
+        writer.write_batch(stmt, sheet_name=f'Q{qtr}')
 ```
 
 ---
@@ -448,7 +447,7 @@ ExcelWriter(fees_data,   'report.xlsx', sheet_name='Fees',   formatting=fees_fmt
 ExcelWriter(roster_data, 'report.xlsx', sheet_name='Roster', formatting=roster_fmt).write()
 ```
 
-Each writer opens the file, adds its sheet with its own formatting, saves, and closes.
+Openpyxl stores named styles on the workbook, not on the worksheet, and properties of named style can not be changed.  The second call can use the named style `fmt_fees` from the first call, but it can not alter it.
 
 ---
 
