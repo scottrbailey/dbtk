@@ -205,8 +205,9 @@ class ExcelWriter(BatchWriter):
         self._register_styles()
 
     def _add_named_style(self, style: 'NamedStyle') -> None:
-        """Register a NamedStyle with the workbook and cache the object."""
-        self.workbook.add_named_style(style)
+        """Register a NamedStyle if not already in the workbook, and cache the object."""
+        if style.name not in self.workbook.named_styles:
+            self.workbook.add_named_style(style)
         self._named_style_objects[style.name] = style
 
     def _register_styles(self) -> None:
@@ -253,8 +254,7 @@ class ExcelWriter(BatchWriter):
         ]
 
         for style in styles:
-            if style.name not in self._named_style_objects:
-                self._add_named_style(style)
+            self._add_named_style(style)
 
         for style_name, props in self.formatting.get('styles', {}).items():
             if style_name in _BUILTIN_STYLE_NAMES:
@@ -263,8 +263,7 @@ class ExcelWriter(BatchWriter):
                     "overridden; rename your style to apply it."
                 )
                 continue
-            if style_name not in self._named_style_objects:
-                self._add_named_style(self._build_named_style(style_name, props))
+            self._add_named_style(self._build_named_style(style_name, props))
 
     @staticmethod
     def _build_named_style(name: str, props: dict) -> 'NamedStyle':
