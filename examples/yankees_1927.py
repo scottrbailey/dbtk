@@ -28,21 +28,14 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
     people = (
         pl.read_csv(lahman_dir / 'People.csv')
         .select(['playerID', 'nameFirst', 'nameLast',
-                 'birthYear', 'birthMonth', 'birthDay',
-                 'birthCity', 'birthState', 'birthCountry',
+                 'birthYear', 'birthCity', 'birthState', 'birthCountry',
                  'height', 'weight', 'bats', 'throws'])
         .with_columns(
             (pl.col('nameFirst') + ' ' + pl.col('nameLast')).alias('name'),
-            pl.when(
-                pl.col('birthYear').is_not_null() &
-                pl.col('birthMonth').is_not_null() &
-                pl.col('birthDay').is_not_null()
-            ).then(
-                pl.date(pl.col('birthYear'), pl.col('birthMonth'), pl.col('birthDay'))
-            ).otherwise(None).alias('birthdate'),
+            pl.col('birthYear').alias('birth_year'),
             (pl.lit(YEAR) - pl.col('birthYear')).alias('age'),
         )
-        .drop(['nameFirst', 'nameLast', 'birthYear', 'birthMonth', 'birthDay'])
+        .drop(['nameFirst', 'nameLast', 'birthYear'])
     )
 
     # ── Batting ───────────────────────────────────────────────────────────────
@@ -114,7 +107,7 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
         .join(fielding, on='playerID', how='left')
         .join(people,   on='playerID', how='left')
         .select([
-            'name', 'POS', 'bats', 'throws', 'age', 'birthdate',
+            'name', 'POS', 'bats', 'throws', 'age', 'birth_year',
             'birthCity', 'birthState', 'birthCountry',
             'height', 'weight',
             'G', 'AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'SO',
