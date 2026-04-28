@@ -7,6 +7,7 @@ Requires output/1927_baseball.parquet — run prep_1927_data.py first.
 from pathlib import Path
 
 import polars as pl
+import dbtk.readers
 import dbtk.writers
 
 DATA_FILE = Path(__file__).parent / 'output' / '1927_baseball.parquet'
