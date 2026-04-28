@@ -810,6 +810,7 @@ class ExcelWriter(BatchWriter):
         worksheet: 'Worksheet',
         columns: Optional[List[str]] = None,
         write_headers: bool = True,
+        headers: Optional[List[str]] = None,
     ) -> int:
         """Write data to an already-selected worksheet. Returns number of rows written."""
         self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
@@ -822,7 +823,11 @@ class ExcelWriter(BatchWriter):
         col_style_fns = [p.get('style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
-        display_headers = self._get_headers(data)
+        display_headers = headers if headers is not None else self._get_headers(data)
+        if len(display_headers) != len(self.columns):
+            raise ValueError(
+                f"headers has {len(display_headers)} name(s) but data has {len(self.columns)} column(s)"
+            )
         header_widths = [len(h) for h in display_headers]
         data_widths = [0] * len(self.columns)
         header_font = Font(bold=True)
@@ -856,6 +861,7 @@ class ExcelWriter(BatchWriter):
         self,
         data: Iterable[RecordLike],
         sheet_name: Optional[str] = None,
+        headers: Optional[List[str]] = None,
     ) -> None:
         """
         Write a batch of data to a sheet.
@@ -869,6 +875,9 @@ class ExcelWriter(BatchWriter):
             The data batch
         sheet_name : str, optional
             Target sheet. If None, uses active_sheet or defaults to 'Data'
+        headers : list of str, optional
+            Display names for the header row. Overrides the writer-level ``headers``
+            set at initialisation for this batch only. Must match the column count.
         """
         if self.workbook is None:
             raise RuntimeError("Workbook not initialized")
@@ -887,7 +896,8 @@ class ExcelWriter(BatchWriter):
         row_count = self._write_to_worksheet(
             data=data,
             worksheet=worksheet,
-            write_headers=self.write_headers
+            write_headers=self.write_headers,
+            headers=headers,
         )
 
         self._row_num += row_count
@@ -925,6 +935,10 @@ class ExcelWriter(BatchWriter):
         data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
 
         display_headers = self._get_headers()
+        if len(display_headers) != len(self.columns):
+            raise ValueError(
+                f"headers has {len(display_headers)} name(s) but data has {len(self.columns)} column(s)"
+            )
         header_widths = [len(h) for h in display_headers]
         data_widths = [0] * len(self.columns)
 
@@ -1492,6 +1506,7 @@ class LinkedExcelWriter(ExcelWriter):
         self,
         data: Iterable[RecordLike],
         sheet_name: Optional[str] = None,
+        headers: Optional[List[str]] = None,
         links: Optional[Dict[str, str]] = None,
     ) -> None:
         """
@@ -1500,6 +1515,7 @@ class LinkedExcelWriter(ExcelWriter):
         If this is the first write to this sheet in the current session, the sheet
         is cleared first. Subsequent writes to the same sheet append data.
 
+        headers: display names for this batch, overriding the writer-level default
         links: dict column_name → "source_name" or "source_name:internal"
         """
         target_sheet = sheet_name or self.active_sheet or 'Data'
@@ -1542,6 +1558,7 @@ class LinkedExcelWriter(ExcelWriter):
             data=data,
             worksheet=worksheet,
             write_headers=self.write_headers,
+            headers=headers,
             link_mapping=link_mapping,
             source_for_this_sheet=source_for_this_sheet,
             target_sheet=target_sheet
@@ -1556,6 +1573,7 @@ class LinkedExcelWriter(ExcelWriter):
         worksheet: 'Worksheet',
         columns: Optional[List[str]] = None,
         write_headers: bool = True,
+        headers: Optional[List[str]] = None,
         link_mapping: Optional[Dict[str, tuple]] = None,
         source_for_this_sheet: Optional[list] = None,
         target_sheet: Optional[str] = None,
@@ -1563,7 +1581,7 @@ class LinkedExcelWriter(ExcelWriter):
         self._link_mapping = link_mapping or {}
         self._source_for_this_sheet = source_for_this_sheet or []
         self._target_sheet = target_sheet
-        return super()._write_to_worksheet(data, worksheet, columns, write_headers)
+        return super()._write_to_worksheet(data, worksheet, columns, write_headers, headers)
 
     def _apply_cell_overrides(self, cell, record, col_name, col_idx, row_idx, style_names):
         link_spec = self._link_mapping.get(col_name)
