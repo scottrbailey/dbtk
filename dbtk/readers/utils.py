@@ -220,7 +220,7 @@ def get_reader(filename: Union[str, Path],
             - flatten: For JSON files
 
     Returns:
-        CSVReader, FixedReader, JSONReader, NDJSONReader, XLSXReader, or XMLReader instance
+        CSVReader, FixedReader, JSONReader, NDJSONReader, ExcelReader, or XMLReader instance
 
     Example
     -----------------
@@ -349,7 +349,7 @@ def get_reader(filename: Union[str, Path],
         return CSVReader(fp, **kwargs)
     elif ext in ('xls', 'xlsx'):
         # Excel files are already compressed (ZIP-based), handle normally
-        from .excel import open_workbook, get_sheet_by_index, get_sheet_by_name, XLSReader, XLSXReader
+        from .excel import open_workbook, get_sheet_by_index, get_sheet_by_name, XLSReader, ExcelReader
         wb = open_workbook(filename)
         if 'sheet_name' in kwargs:
             sheet_name = kwargs.pop('sheet_name', None)
@@ -362,9 +362,9 @@ def get_reader(filename: Union[str, Path],
 
         if ws.__class__.__name__ == 'Worksheet':
             # openpyxl
-            reader = XLSXReader(ws, **kwargs)
+            reader = ExcelReader(ws, **kwargs)
         else:
-            # xlrd
+            # legacy xlrd
             reader = XLSReader(ws, **kwargs)
         reader.source = filename
         return reader

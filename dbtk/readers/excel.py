@@ -27,7 +27,7 @@ except ImportError:
         logger.warning('xlrd not available. xls files not supported.')
 
 
-class XLSXReader(Reader):
+class ExcelReader(Reader):
     """Class to iterate over an Excel Spreadsheet using openpyxl."""
 
     def __init__(self,
@@ -37,7 +37,7 @@ class XLSXReader(Reader):
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
-        """Initialize XLSXReader for reading Excel .xlsx files.
+        """Initialize ExcelReader for reading Excel .xlsx files.
 
         Args:
             worksheet: openpyxl.Worksheet object to read from.
@@ -51,7 +51,7 @@ class XLSXReader(Reader):
             TypeError: If worksheet is not an openpyxl.Worksheet.
         """
         if worksheet.__class__.__name__ != 'Worksheet':
-            raise TypeError('worksheet must be of type openpyxl.Worksheet or use XLReader')
+            raise TypeError('worksheet must be of type openpyxl.Worksheet or use XLSReader')
         super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
@@ -121,7 +121,7 @@ class XLSReader(Reader):
             TypeError: If worksheet is not an xlrd.Sheet.
         """
         if worksheet.__class__.__name__ != 'Sheet':
-            raise TypeError('worksheet must be of type xlrd.Sheet or use XLSXReader')
+            raise TypeError('worksheet must be of type xlrd.Sheet or use ExcelReader')
         super().__init__(add_row_num=add_row_num,
                          skip_rows=skip_rows, n_rows=n_rows,
                          headers=headers, null_values=null_values)

@@ -409,7 +409,7 @@ If both `auto_filter: True` and column-level `filter: 1` are set, the column-lev
 
 ---
 
-### Complete Example
+### Formatted Excel Example
 
 ```python
 fmt = {
@@ -427,17 +427,18 @@ fmt = {
         'shrink_pct':   {'hidden': 0, 
                          'style': lambda x: 'fmt_warning' if x.shrink_pct > 8.0 else None},
     },
-    'freeze':               'D2',
-    'header_auto_rotate':   {'min_length': 8, 'ratio': 2.5},
-    'min_column_width':     3,
+    'freeze':             'D3',
+    'header_auto_rotate': {'min_length': 8, 'ratio': 2.5},
+    'min_column_width':   3,
 }
 stmt = cursor.prepare_file('quarterly_sales')
-with ExcelWriter(file='crn_review.xlsx', formatting=fmt) as writer:
-    for qtr in active_quarters:
+with ExcelWriter(file='quarterly_sales.xlsx', formatting=fmt) as writer:
+    for qtr in fy_quarters:
         stmt.execute({'quarter': qtr})
         writer.write_batch(stmt, sheet_name=f'Q{qtr}')
 ```
 
+See: [examples/formatted_spreadsheet](../examples/README.md#formatted_spreadsheetpy) for a complete, runnable example
 ---
 
 ## Per-sheet Formatting
@@ -583,3 +584,6 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `ratio` | `1.5` | `header_len > data_width × ratio` to trigger rotation |
 | `min_length` | `8` | Minimum header character count to be considered for rotation |
 | `height_factor` | `6.5` | Points per character for auto header row height calculation |
+
+
+See: [examples/linked_spreadsheet.py](../examples/README.md#linked_spreadsheetpy) for a complete, runnable example. 
