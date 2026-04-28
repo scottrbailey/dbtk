@@ -1,5 +1,5 @@
 """
-1927 New York Yankees — example dataset for ExcelWriter demonstrations.
+Exports "report quality" Excel workbook with baseball stats for the 1927 season.
 
 Data source: Sean Lahman Baseball Database
   https://github.com/chadwickbureau/baseballdatabank/archive/refs/heads/master.zip
@@ -19,12 +19,14 @@ import dbtk.readers
 import polars as pl
 
 LAHMAN_DIR = Path(r'~\Downloads\lahman')
-
 TEAM   = 'NYA'
 YEAR   = 1927
+COLUMNS = ['Name', 'Pos', 'Bats', 'Throws', 'Age', 'Birth Year', 'Birth City', 'Birth State', 'Birth Country',
+           'Height', 'Weight', 'Games Played', 'At Bats', 'Runs', 'Hits', 'Doubles', 'Triples', 'Home Runs',
+           'Runs Batted In', 'Walks', 'Strikeouts', 'Batting Avg', 'On Base Percentage', 'Slugging Percentage',
+           'Putouts', 'Assists', 'Errors', 'Double Plays', 'Fielding Pct']
 
-
-def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
+def load_team(year: int = YEAR, team_id: str = TEAM, lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
     # ── Biographical ──────────────────────────────────────────────────────────
     people = (
         pl.read_csv(lahman_dir / 'People.csv')
@@ -34,7 +36,7 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
         .with_columns(
             (pl.col('nameFirst') + ' ' + pl.col('nameLast')).alias('name'),
             pl.col('birthYear').alias('birth_year'),
-            (pl.lit(YEAR) - pl.col('birthYear')).alias('age'),
+            (pl.lit(year) - pl.col('birthYear')).alias('age'),
         )
         .drop(['nameFirst', 'nameLast', 'birthYear'])
     )
@@ -42,7 +44,7 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
     # ── Batting ───────────────────────────────────────────────────────────────
     batting = (
         pl.read_csv(lahman_dir / 'Batting.csv')
-        .filter((pl.col('yearID') == YEAR) & (pl.col('teamID') == TEAM))
+        .filter((pl.col('yearID') == year) & (pl.col('teamID') == team_id))
         .group_by('playerID').agg(
             pl.col('G').sum(),
             pl.col('AB').sum(),
@@ -77,7 +79,7 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
     # Keep totals for the position where they played the most games.
     fielding_raw = (
         pl.read_csv(lahman_dir / 'Fielding.csv')
-        .filter((pl.col('yearID') == YEAR) & (pl.col('teamID') == TEAM))
+        .filter((pl.col('yearID') == year) & (pl.col('teamID') == team_id) )
     )
     primary_pos = (
         fielding_raw
@@ -121,9 +123,7 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
 
 
 if __name__ == '__main__':
-    df = load_yankees_1927()
-    reader = dbtk.readers.DataFrameReader(df, add_row_num=False)
-    out_fn = Path(__file__).parent / 'output' / 'Yankees-1927.xlsx'
+    out_fn = Path(__file__).parent / 'output' / f'MLB-{YEAR}.xlsx'
     fmt = {
         'styles': {
             'demo_style': {'bg_color': '#C2E6F6'},
@@ -136,8 +136,8 @@ if __name__ == '__main__':
         'columns': {
             'pos:weight': {'format': 'demo_style', 'group_label': 'Demographics'},
             'pos': {'filter': 1}, # add filter
-            'g:slg': {'format': 'hits_style', 'group_label': 'Batting', 'header_format': 'header_vert_style'},
-            'po:fpct': {'format': 'fielding_style', 'group_label': 'Fielding', 'header_format': 'header_vert_style'},
+            'g:slg': {'format': 'hits_style', 'group_label': 'Batting', 'width': 5, 'header_format': 'header_vert_style'},
+            'po:fpct': {'format': 'fielding_style', 'group_label': 'Fielding', 'width': 5, 'header_format': 'header_vert_style'},
             'hr': {'style': lambda rec: 'alert_style' if rec.hr >= 15 else None},
             'avg:slg': {'format': {'number_format': '0.000'}, 'width': 7},
             'fpct': {'format': {'number_format': '0.000'}, 'width': 7},
@@ -145,11 +145,18 @@ if __name__ == '__main__':
         'rows': {
             'data': {'odd': {'format': 'stripe_style'}}
         },
-        'freeze': 'B3'
+        'freeze': 'B3',
+        'min_column_width': 4,
+        'header_auto_rotate': {'min_length': 4}
     }
-    columns = ['Name', 'Pos', 'Bats', 'Throws', 'Age', 'Birth Year', 'Birth City', 'Birth State', 'Birth Country',
-               'Height', 'Weight', 'Games Played', 'At Bats', 'Runs', 'Hits', 'Doubles', 'Triples', 'Home Runs',
-               'Runs Batted In', 'Walks', 'Strikeouts', 'Batting Avg', 'On Base Percentage', 'Slugging Percentage',
-               'Putouts', 'Assists', 'Errors', 'Double Plays', 'Fielding Pct']
-    with dbtk.writers.ExcelWriter(reader, out_fn, sheet_name='Yankees', headers=columns, formatting=fmt) as writer:
-        writer.write()
+
+    writer = dbtk.writers.ExcelWriter(None, out_fn, formatting=fmt, headers=COLUMNS)
+    # Get top 4 teams from both American League and National League for YEAR
+    teams_df = df = pl.read_csv(LAHMAN_DIR / 'Teams.csv').filter(
+        (pl.col('yearID') == YEAR) & (pl.col('lgID').is_in(['AL', 'NL'])) & (pl.col('Rank') <= 4)
+    ).select(['teamID', 'name'])
+    for team in teams_df.iter_rows(named=True):
+        df = load_team(year=YEAR, team_id=team['teamID'])
+        reader = dbtk.readers.DataFrameReader(df, add_row_num=False)
+        writer.write_batch(reader, sheet_name=team['name'])
+    writer.close()
