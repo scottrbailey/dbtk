@@ -494,15 +494,15 @@ with LinkedExcelWriter(file='enrollment_report.xlsx') as writer:
 
 ### LinkSource Parameters
 
-| Parameter | Required | Description |
-|---|---|---|
-| `name` | Yes | Identifier used in `links=` dict |
-| `source_sheet` | Yes* | Sheet whose rows are the link targets |
-| `key_column` | Yes* | Column that uniquely identifies each row |
-| `text_template` | No | Python format string for link display text (uses `str.format_map`) |
-| `url_template` | No | Python format string for external URL |
-| `missing_text` | No | Fallback text when a key can't be resolved |
-| `external_only` | No | If `True`, generate URLs from current row without caching; reusable across sheets |
+| Parameter       | Required | Description                                                                       |
+|-----------------|----------|-----------------------------------------------------------------------------------|
+| `name`          | Yes      | Identifier used in `links=` dict                                                  |
+| `source_sheet`  | Yes*     | Sheet whose rows are the link targets                                             |
+| `key_column`    | Yes*     | Column that uniquely identifies each row                                          |
+| `text_template` | No       | Python format string for link display text (uses `str.format_map`)                |
+| `url_template`  | No       | Python format string for external URL                                             |
+| `missing_text`  | No       | Fallback text when a key can't be resolved                                        |
+| `external_only` | No       | If `True`, generate URLs from current row without caching; reusable across sheets |
 
 *Not required when `external_only=True`.
 

@@ -8,6 +8,8 @@ self-contained and includes setup instructions in its module docstring.
 ## [`linked_spreadsheet.py`](linked_spreadsheet.py)
 
 Creates a navigable multi-sheet Excel workbook using `LinkedExcelWriter`.
+![Example Spreadsheet with internale and external links](../docs/assets/IMDB_Linked_workbook.png)
+
 
 **Demonstrates:**
 - Multiple sheets (Movies, Cast, Crew)
@@ -19,6 +21,20 @@ Creates a navigable multi-sheet Excel workbook using `LinkedExcelWriter`.
 
 **Requires:** `openpyxl`, a database connection with the IMDB subset loaded
 (see `data_load_imdb_subset.py`)
+
+---
+
+## [`formatted_spreadsheet.py`](formatted_spreadsheet.py)
+![Example Spreadsheet formatted headers, columns and rows](../docs/assets/MLB_1927_workbook.png)
+Creates a multi-sheet Excel workbook with custom formatting
+
+**Demonstrates:**
+- Multiple sheets (top 8 teams from  1927 season)
+- Defining named styles, column ranges, conditional formatting, group labels
+- Auto rotating long headers over narrow data (header_auto_rotate)
+- Row striping 
+
+**Requires:** `openpyxl`, `polars`, CSV data files from the [Lahman Baseball Database](https://github.com/chadwickbureau/baseballdatabank/archive/refs/heads/master.zip)
 
 ---
 
