@@ -15,9 +15,10 @@ Produces a Polars DataFrame with one row per player, combining:
 
 from pathlib import Path
 
+import dbtk.readers
 import polars as pl
 
-LAHMAN_DIR = Path('/path/to/baseballdatabank-master/core')
+LAHMAN_DIR = Path(r'~\Downloads\lahman')
 
 TEAM   = 'NYA'
 YEAR   = 1927
@@ -121,4 +122,34 @@ def load_yankees_1927(lahman_dir: Path = LAHMAN_DIR) -> pl.DataFrame:
 
 if __name__ == '__main__':
     df = load_yankees_1927()
-    print(df)
+    reader = dbtk.readers.DataFrameReader(df, add_row_num=False)
+    out_fn = Path(__file__).parent / 'output' / 'Yankees-1927.xlsx'
+    fmt = {
+        'styles': {
+            'demo_style': {'bg_color': '#C2E6F6'},
+            'hits_style': {'bg_color': '#D3F5C1'},
+            'fielding_style': {'bg_color': '#F5ECC1'},
+            'pct_style': {'number_format': '0.000'},
+            'alert_style': {'bg_color': '#E9B47A'},
+            'stripe_style': {'bg_color': '#DDDDDD'},
+        },
+        'columns': {
+            'pos:weight': {'format': 'demo_style', 'group_label': 'Demographics'},
+            'pos': {'filter': 1}, # add filter
+            'g:slg': {'format': 'hits_style', 'group_label': 'Batting', 'header_format': 'header_vert_style'},
+            'po:fpct': {'format': 'fielding_style', 'group_label': 'Fielding', 'header_format': 'header_vert_style'},
+            'hr': {'style': lambda rec: 'alert_style' if rec.hr >= 15 else None},
+            'avg:slg': {'format': {'number_format': '0.000'}, 'width': 7},
+            'fpct': {'format': {'number_format': '0.000'}, 'width': 7},
+        },
+        'rows': {
+            'data': {'odd': {'format': 'stripe_style'}}
+        },
+        'freeze': 'B3'
+    }
+    columns = ['Name', 'Pos', 'Bats', 'Throws', 'Age', 'Birth Year', 'Birth City', 'Birth State', 'Birth Country',
+               'Height', 'Weight', 'Games Played', 'At Bats', 'Runs', 'Hits', 'Doubles', 'Triples', 'Home Runs',
+               'Runs Batted In', 'Walks', 'Strikeouts', 'Batting Avg', 'On Base Percentage', 'Slugging Percentage',
+               'Putouts', 'Assists', 'Errors', 'Double Plays', 'Fielding Pct']
+    with dbtk.writers.ExcelWriter(reader, out_fn, sheet_name='Yankees', headers=columns, formatting=fmt) as writer:
+        writer.write()
