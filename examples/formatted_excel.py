@@ -14,15 +14,6 @@ import dbtk.writers
 DATA_FILE = Path(__file__).parent / 'output' / '1927_baseball.parquet'
 OUT_FILE  = Path(__file__).parent / 'output' / 'MLB-1927.xlsx'
 
-HEADERS = [
-    'Name', 'Pos', 'Bats', 'Throws', 'Age', 'Birth_Year',
-    'Birth_City', 'Birth_State', 'Birth_Country', 'Height', 'Weight',
-    'Games_Played', 'At_Bats', 'Runs', 'Hits', 'Doubles', 'Triples', 'Home_Runs',
-    'Runs_Batted_In', 'Walks', 'Strikeouts',
-    'Batting_Avg', 'On_Base_Pct', 'Slugging_Pct',
-    'Putouts', 'Assists', 'Errors', 'Double_Plays', 'Fielding_Pct',
-]
-
 fmt = {
     'styles': {
         'demo_style':     {'bg_color': '#C2E6F6'},
@@ -57,7 +48,7 @@ if __name__ == '__main__':
         for team_name in all_data['team_name'].unique(maintain_order=True):
             team_df = all_data.filter(pl.col('team_name') == team_name).drop('team_name')
             reader  = dbtk.readers.DataFrameReader(team_df, add_row_num=False)
-            writer.write_batch(reader, sheet_name=team_name, headers=HEADERS)
+            writer.write_batch(reader, sheet_name=team_name)
             print(f"  {team_name}")
 
     print(f"\nSaved → {OUT_FILE}")

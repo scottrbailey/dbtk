@@ -105,7 +105,19 @@ def load_team(team_id: str) -> pl.DataFrame:
             'AVG', 'OBP', 'SLG',
             'PO', 'A', 'E', 'DP', 'FPCT',
         ])
-        .sort('name')
+        .rename({
+            'name': 'Name',       'POS': 'Pos',          'bats': 'Bats',
+            'throws': 'Throws',   'age': 'Age',          'birth_year': 'Birth_Year',
+            'birthCity': 'Birth_City', 'birthState': 'Birth_State', 'birthCountry': 'Birth_Country',
+            'height': 'Height',   'weight': 'Weight',
+            'G': 'Games_Played',  'AB': 'At_Bats',       'R': 'Runs',
+            'H': 'Hits',          '2B': 'Doubles',       '3B': 'Triples',
+            'HR': 'Home_Runs',    'RBI': 'Runs_Batted_In', 'BB': 'Walks',
+            'SO': 'Strikeouts',   'AVG': 'Batting_Avg',  'OBP': 'On_Base_Pct',
+            'SLG': 'Slugging_Pct', 'PO': 'Putouts',      'A': 'Assists',
+            'E': 'Errors',        'DP': 'Double_Plays',  'FPCT': 'Fielding_Pct',
+        })
+        .sort('Name')
     )
 
 
