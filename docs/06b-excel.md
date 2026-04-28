@@ -438,7 +438,7 @@ with ExcelWriter(file='quarterly_sales.xlsx', formatting=fmt) as writer:
         writer.write_batch(stmt, sheet_name=f'Q{qtr}')
 ```
 
-See: [examples/formatted_spreadsheet](../examples/README.md#formatted_spreadsheetpy) for a complete, runnable example
+See `examples/formatted_spreadsheet.py` for a complete, runnable example.
 ---
 
 ## Per-sheet Formatting
@@ -586,4 +586,4 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `height_factor` | `6.5` | Points per character for auto header row height calculation |
 
 
-See: [examples/linked_spreadsheet.py](../examples/README.md#linked_spreadsheetpy) for a complete, runnable example. 
+See `examples/linked_spreadsheet.py` for a complete, runnable example.
