@@ -47,6 +47,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   across all three write paths (`write()`, `write_batch()`,
   `LinkedExcelWriter.write_batch()`). Documented in `docs/06b-excel.md`.
 
+- **`ExcelWriter.write_batch(headers=None)`** / **`LinkedExcelWriter.write_batch(headers=None)`** —
+  optional per-call header override for workbooks where each sheet uses different display
+  labels over the same underlying columns. Raises `ValueError` if the supplied list length
+  does not match the column count. When omitted, the writer-level `headers=` (or raw field
+  names) are used as before.
+
+- **`ExcelWriter` pre-1900 date fallback** — date and datetime values whose year is before
+  1900 are written as formatted strings rather than raising an openpyxl error. Excel cannot
+  represent dates before 1900-01-01.
+
+- **`examples/formatted_spreadsheet.py`** — runnable multi-sheet workbook using 1927 Lahman
+  Baseball data (top 4 finishers in each league). Demonstrates named styles, `group_label`
+  merged headers, `header_auto_rotate`, conditional per-cell `style` callable, overlapping
+  column rules that compose, column comments, hidden columns, row striping, and the
+  underscore-field-name / space-display-label pattern. `output/1927_baseball.parquet` is
+  committed to the repo so the example runs without any additional setup.
+  `examples/prep_1927_data.py` is provided to rebuild the parquet from the raw Lahman CSVs.
+
 - **`DatabaseDialect` class hierarchy** — dialect-specific SQL generation and schema
   introspection (upsert syntax, MERGE templates, temp table DDL, type mapping,
   `column_defs_from_db`) is now centralised in `dbtk/dialects/`. Adding support for a
@@ -89,6 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`XLSXReader` renamed to `ExcelReader`** — matches the naming convention of `ExcelWriter`.
+  `XLSReader` (legacy `.xls` format) is unchanged.
+
 - **`FixedReader._generate_rows()` / `EDIReader._generate_rows()`** — both now delegate
   to `FixedWidthRecord.from_line()`, eliminating duplicated type-conversion logic.
   `EDIReader` previously only stripped whitespace regardless of `column_type`; it now
@@ -111,6 +132,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_get_odbc_string` rather than appearing as `True`/`False`.
 
 ### Fixed
+
+- **`ExcelWriter` multi-session sheet truncation** — re-running a script against an existing
+  workbook no longer clears sheets that were already written in the current session.
+  `_sheets_written_this_session` now guards both `write_batch()` and `_write_data()`.
+
+- **`ExcelWriter` header width calculation** — column auto-sizing now uses the display names
+  supplied via `headers=` rather than raw field names, so columns are not over-widened when
+  field names (e.g. `home_runs`) differ from their display labels (e.g. `Home Runs`).
+
+- **`ExcelWriter` overlapping column format rules now compose** — when multiple column-range
+  patterns match the same column, `format` values are accumulated and merged via
+  `_compose_styles()` rather than the later rule replacing the earlier one. A broad range can
+  set `bg_color` while a sub-range adds `number_format` without losing the background color.
 
 - **Connection parameter key casing** — `_validate_connection_params` now lowercases
   all incoming parameter keys before validation. Mixed-case kwargs such as

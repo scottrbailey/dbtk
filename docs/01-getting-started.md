@@ -36,10 +36,17 @@ import dbtk
 
 # Option 1: From configuration file (recommended for production)
 db = dbtk.connect('my_database')
+cur = db.cursor()
 
 # Option 2: Direct connection (quick for dev/testing)
 from dbtk.database import postgres
 db = postgres(user='admin', password='secret', database='mydb')
+cur = db.cursor()
+
+# Option 3: Cursor maintains reference to connection (cursor.connection) 
+# and driver (cursor.connection.driver)
+cur = dbtk.connect('my_database').cursor()
+cur.connection.close()
 ```
 
 ### Step 2: Read Data from a File
@@ -57,15 +64,30 @@ with dbtk.readers.get_reader('data.csv.gz') as reader:
 ### Export Data
 
 ```python
-# Query database
-cursor = db.cursor()
 cursor.execute("SELECT * FROM users WHERE is_active = true")
-data = cursor.fetchall()
 
-# Export to multiple formats
+# Excel — ready to open, no extra work required
+dbtk.writers.to_excel(cursor, 'active_users.xlsx', sheet='Active Users')
+```
+
+**What DBTK handles automatically:**
+- Columns are sampled and auto-sized to fit the data
+- Header row is bold and frozen so it stays visible while scrolling
+- Date and datetime values are formatted correctly
+- `None` values become blank cells
+
+Need other formats? Same data, one line each:
+
+```python
+import dbtk.writers
+
+cursor.execute("SELECT * FROM users WHERE is_active = true")
+data = cursor.fetchall()  # must materialize when outputting to multiple sources
+
 dbtk.writers.to_csv(data, 'active_users.csv')
-dbtk.writers.to_excel(data, 'active_users.xlsx', sheet='Active Users')
 dbtk.writers.to_json(data, 'active_users.json')
+dbtk.writers.to_ndjson(data, 'active_users.ndjson')
+dbtk.writers.to_xml(data, 'active_users.xml', root_element='users', record_element='user')
 ```
 
 ## Complete Example: CSV to Database
@@ -73,7 +95,7 @@ dbtk.writers.to_json(data, 'active_users.json')
 ```python
 import dbtk
 
-# Setup logging (creates timestamped log file)
+# Setup logging (creates log file with defaults from user's configuration)
 dbtk.setup_logging()
 
 # Connect to database
@@ -106,7 +128,7 @@ if dbtk.errors_logged():
 
 ### 1. Record Objects
 
-Every cursor and file reader returns **Record** objects - that strike a balance between the memory efficiency and speed lists
+Every cursor and file reader returns **Record** objects - that strike a balance between the memory efficiency and speed of lists
 and the functionality of dicts.
 
 ```python
@@ -122,11 +144,13 @@ See [Record Objects](04-record.md) for details.
 
 ### 2. Portable SQL
 
-Write SQL once with named parameters - parameter style is mapped to your database
+Write SQL once with named parameters - parameter style is determined by your database connection
 
 ```python
 # Write SQL with :named or %(pyformat)s parameters
-from dbtk.cursors import PreparedStatement
+import dbtk 
+
+cursor = dbtk.connect('warehouse_prod').cursor()
 
 # Create PreparedStatement from file
 statement = cursor.prepare_file('users.sql')
@@ -134,11 +158,14 @@ statement.execute({'status': 'active', 'age': 18})
 
 # Create PreparedStatement from query
 sql = "SELECT * FROM users WHERE status = :status AND age > :age",
-statement = PreparedStatement(cursor, query=sql)
+statement = cursor.prepare_query(sql)
 statement.execute({'status': 'active', 'age': 18})
 
 # One time query from file
 cursor.execute_file('users.sql', {'status': 'active', 'age': 18})
+
+# on the fly parameter conversion
+cursor.execute(sql, {'status': 'active', 'age': 18}, convert_params=True)
 
 # DBTK converts to your database's native format automatically
 # Oracle: :status, :age
@@ -160,6 +187,9 @@ table = dbtk.etl.Table('employees', {
     'hire_date': {'field': 'start_date', 'fn': 'date'},
     'department': {'field': 'dept_code', 'fn': 'lookup:departments:code:name'}
 }, cursor=cursor)
+
+# generate initial column configuration template from database schema
+emp_cols = dbtk.etl.column_defs_from_db(cursor=cursor, table_name='employees')
 ```
 
 See [ETL: Table & Transforms](07-table.md) for details.
@@ -169,15 +199,17 @@ See [ETL: Table & Transforms](07-table.md) for details.
 Process millions of records efficiently:
 
 ```python
-from dbtk.etl import DataSurge, BulkSurge
+from dbtk.etl import Table, DataSurge, BulkSurge
+contacts = Table('contacts', columns=contact_cols, cursor=cursor)
+reader = dbtk.readers.get_reader('contacts.csv.gz')
 
 # DataSurge: Fast batching with executemany 
-surge = DataSurge(table)
-surge.insert(records)     # Supports MERGE, UPDATE, DELETE too
+surge = DataSurge(contacts)
+surge.insert(reader)     # Supports MERGE, UPDATE, DELETE too
 
 # BulkSurge: Maximum speed with native loading
-surge = BulkSurge(table)
-surge.load(records)       # Uses COPY/direct-path/bcp depending on database
+surge = BulkSurge(contacts)
+surge.load(reader)       # Uses COPY/direct-path/bcp depending on database
 ```
 
 See [ETL: DataSurge & BulkSurge](08-datasurge.md) for details.
@@ -234,8 +266,8 @@ for record in reader:
             logger.warning(f"{operation} failed: {table.last_error.message}")
         elif operation == 'insert':
             id = cursor.lastrowid
+# note: DataSurge supports merge/upsert for high-performance, bulk operations
 ```
-
 
 ### Filtering Records
 

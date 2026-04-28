@@ -333,9 +333,9 @@ All readers support:
 CSVReader(file, delimiter=',', skip_rows=0, n_rows=None, **csv_args)
 ```
 
-**XLSXReader**
+**ExcelReader**
 ```python
-XLSXReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
+ExcelReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
 ```
 
 **JSONReader**

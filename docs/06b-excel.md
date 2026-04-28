@@ -19,11 +19,12 @@ from dbtk.writers import ExcelWriter
 # Single sheet — one shot
 ExcelWriter(cursor, 'report.xlsx').write()
 
+stmt = cursor.prepare_file('quarterly_sales.sql')
 # Multi-sheet — context manager
 with ExcelWriter(file='report.xlsx') as writer:
-    writer.write_batch(q1_cursor, sheet_name='Q1')
-    writer.write_batch(q2_cursor, sheet_name='Q2')
-    writer.write_batch(q3_cursor, sheet_name='Q3')
+    for qtr in (1, 2, 3, 4):
+        stmt.execute({'quarter': qtr})
+        writer.write_batch(stmt, sheet_name=f'Q{qtr}')
 # Workbook saved on exit
 ```
 
@@ -31,25 +32,45 @@ The first `write_batch()` to a sheet writes the header row; subsequent calls to 
 
 ### Custom Headers
 
-If your Record field names are normalised (lowercased, underscored) but you want the original database column names in the header row, pass them explicitly:
+Pass `headers` explicitly when the column names in the query aren't what you want in the report — for example, Oracle's 30-character column name limit forces aliases that make poor headers, or you simply want friendlier labels:
 
 ```python
-cursor.execute("SELECT First_Name, Last_Name, DOB FROM students")
-ExcelWriter(cursor, 'students.xlsx',
-            headers=['First Name', 'Last Name', 'Date of Birth']).write()
+# Oracle alias → readable header
+cursor.execute("SELECT acad_plan_owner_org_id AS owner_org, ...")
+ExcelWriter(cursor, 'report.xlsx',
+            headers=['Owner Org', ...]).write()
+
+# Any column names → display labels
+cursor.execute("SELECT crse_numb, subj_code, cred_hrs FROM courses")
+ExcelWriter(cursor, 'courses.xlsx',
+            headers=['Course Number', 'Subject', 'Credits']).write()
 ```
+
+---
+
+## Automatic Behaviors
+
+Out of the box, without any `formatting` configuration, `ExcelWriter` does the following automatically:
+
+- **Bold header row** — column names are written in the first row with bold font
+- **Auto-sized columns** — the first 15 data rows are sampled to estimate content width; columns are sized to fit, between 6 and 60 characters wide by default
+- **Frozen header row** — the top row is frozen so it stays visible while scrolling (`freeze_panes = 'A2'`)
+- **Date and datetime formatting** — `date` values get `YYYY-MM-DD` format; `datetime` values with a non-midnight time get `YYYY-MM-DD HH:MM:SS` format, automatically
+- **None → empty cell** — `None` values are written as blank cells rather than the string `"None"`
+
+These defaults are all overridable via the `formatting` parameter. Auto-sizing limits are controlled by `min_column_width` (default `6`) and `max_column_width` (default `60`); freezing is controlled by `freeze` (pass `None` to disable).
 
 ---
 
 ## Worksheet Formatting
 
-Pass a `formatting` dict to `ExcelWriter` (or `LinkedExcelWriter`) to control styles, column widths, hidden columns, freeze panes, and header rotation. All keys are optional.
+Pass a `formatting` dict (or an `ExcelFormat` object) to `ExcelWriter` (or `LinkedExcelWriter`) to control styles, column widths, hidden columns, freeze panes, and header rotation. All keys are optional.
 
 ```python
 fmt = {
     'styles':            {...},   # named style definitions
-    'columns':           {...},   # wildcard pattern → column properties
-    'rows':              {...},   # row index → row properties
+    'columns':           {...},   # pattern → column properties
+    'rows':              {...},   # row key → row properties
     'freeze':            'D2',    # freeze panes cell reference
     'header_auto_rotate': 1.5,   # auto-rotate long headers
     'min_column_width':  4,       # minimum auto-sized column width
@@ -60,6 +81,38 @@ fmt = {
 with ExcelWriter(file='report.xlsx', formatting=fmt) as writer:
     writer.write_batch(cursor, sheet_name='Data')
 ```
+
+### ExcelFormat and ColumnRule Dataclasses
+
+For discoverable, IDE-friendly formatting configuration, `ExcelFormat` and `ColumnRule` are available as typed dataclasses:
+
+```python
+from dbtk.writers import ExcelWriter, ExcelFormat, ColumnRule
+
+fmt = ExcelFormat(
+    styles={
+        'fmt_fees': {'bg_color': '#d5f1cc'},
+        'fmt_warn': {'bg_color': '#ffcccc', 'font': {'bold': True}},
+    },
+    columns={
+        '*_fee*': ColumnRule(format='fmt_fees'),
+        'notes':  ColumnRule(width=40, comment='Free-text field'),
+        'gpa':    ColumnRule(format={'number_format': '0.00'}),
+    },
+    rows={
+        '*':    {'height': 15},
+        'data': {'odd': {'format': 'fmt_stripe'}},
+    },
+    freeze='D2',
+    min_column_width=4,
+    auto_filter=True,
+)
+
+with ExcelWriter(file='report.xlsx', formatting=fmt) as writer:
+    writer.write_batch(cursor, sheet_name='Data')
+```
+
+`ExcelFormat` and `ColumnRule` are fully interchangeable with dicts — pass either form. `ColumnRule` fields mirror the column rule dict keys exactly.
 
 ### Named Styles
 
@@ -98,7 +151,7 @@ The following styles are registered on every workbook and can be used directly b
 | `percent_style` | Number format `0.00%` |
 | `comma_style` | Number format `#,##0` |
 
-> **Note:** Using a built-in name in `formatting['styles']` logs a `WARNING` and the definition is ignored. Choose a different name for your custom style.
+> **Overriding built-ins:** To replace a built-in style, define it in `formatting['styles']` using the same name. User-defined styles are registered before built-ins, so a `comma_style` entry in `styles` replaces the default. Any property not specified in your definition falls back to the openpyxl default (no font, no fill, etc.), so include all properties you want.
 
 > **Note:** Named styles are embedded in the workbook file. If you rerun a script that writes to an existing `.xlsx` file, styles from the previous run are already baked in — changed style definitions won't take effect. Delete the file before rerunning to pick up style changes.
 
@@ -106,14 +159,20 @@ The following styles are registered on every workbook and can be used directly b
 
 ### Column Rules
 
-`formatting['columns']` maps wildcard patterns to per-column properties. Patterns are matched **case-insensitively** using [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) glob syntax (`*`, `?`, `[seq]`).
+`formatting['columns']` maps patterns to per-column properties. Three pattern forms are supported, all matched **case-insensitively**:
+
+- **Literal** — exact column name: `'notes'`
+- **Glob** — [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) wildcards (`*`, `?`, `[seq]`): `'*_fee*'`, `'resv_*'`
+- **Range** — `'start:end'` applies to all columns from `start` through `end` inclusive, based on their position in the result set. Open-ended forms: `':end'` (from first column) and `'start:'` (to last column). Raises `ValueError` if either endpoint isn't found. A pattern containing `:` is only treated as a range if it has no wildcard characters and doesn't itself match a column name.
 
 ```python
 'columns': {
-    '*_fee*':      {'format': 'fmt_fees', 'header_format': 'header_vert_style'},
-    'resv_*':      {'hidden': 1},
-    'resv_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
-    'notes':       {'width': 40},
+    '*_fee*':           {'format': 'fmt_fees', 'header_format': 'header_vert_style'},
+    'sales_*':          {'hidden': 1},
+    'sales_*_total':    {'hidden': 0, 'comment': 'Additional columns are hidden'},
+    'notes':            {'width': 40},
+    'unit_price:revenue':  {'format': 'fmt_numeric'},   # range
+    ':subj_code':       {'hidden': 1},               # hide everything up to subj_code
 }
 ```
 
@@ -122,26 +181,56 @@ The following styles are registered on every workbook and can be used directly b
 | Key | Type | Effect |
 |---|---|---|
 | `format` | style name or inline dict | Applied to every **data** cell in this column |
+| `style` | callable or list of callables | `lambda rec: style_name_or_None` — per-cell conditional style(s); composed on top of all other styles when non-None |
 | `header_format` | style name or inline dict | Applied to the **header** cell only; owns the cell entirely (include `font: {bold: True}` if needed) |
 | `width` | float | Column width in Excel character units; overrides auto-sizing |
 | `hidden` | 0 or 1 | Hide (`1`) or explicitly un-hide (`0`) the column |
 | `comment` | string | Adds an Excel comment/note to the header cell |
 | `filter` | 0 or 1 | Show a filter dropdown on this column's header; hides dropdowns on all other columns |
+| `group_label` | string | Merged super-header label above this column range (range patterns only) |
 
-**Precedence:** Rules are applied in definition order. Later patterns override earlier ones *per property*, so you can use a broad pattern to set a default and a narrower pattern to override it:
+**Precedence:** Rules are applied in definition order. For most properties (width, hidden, filter, etc.), later patterns override earlier ones. The `format` property is the exception — when multiple patterns match the same column and both provide `format`, the styles are **composed**: properties from the later rule take precedence per property (fill, font, number format), but non-conflicting properties from the earlier rule are preserved.
+
+```python
+# wide rule sets background; narrower rule adds number format without losing the background
+'columns': {
+    'g:slg':   {'format': 'hits_style'},               # green background for all batting cols
+    'avg:slg': {'format': {'number_format': '0.000'}}, # composed on top — keeps green bg
+}
+
+# scalar properties (width, hidden) always override
+'columns': {
+    'sales_*':      {'hidden': 1},
+    'sales_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
+}
+```
+
+**Per-cell conditional styles** use a `style` callable in the column rule. The lambda receives the full record and returns a style name (or `None`). This overrides both the column's static `format` and any row-level style when non-None:
 
 ```python
 'columns': {
-    'resv_*':      {'hidden': 1},
-    'resv_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
+    'max_capacity': {'style': lambda rec: 'fmt_warn' if rec.max_capacity < 10 else None},
 }
 ```
+
+**Group headers** use `group_label` on a range pattern to add a merged super-header row above the column names. Only range patterns are supported — using `group_label` on a wildcard logs a warning and is ignored. Columns not covered by any group are left blank in the group header row.
+
+```python
+'columns': {
+    'q1_sales:q4_sales':       {'format': 'fmt_sales',    'group_label': 'Quarterly Sales'},
+    'q1_revenue:q4_revenue':   {'format': 'fmt_revenue', 'group_label': 'Quarterly Revenue'},
+}
+```
+
+Group headers are written bold and centered in row 1; column headers shift to row 2; data starts at row 3. The freeze pane default shifts from `'A2'` to `'A3'` automatically.
 
 **Inline style dicts** work anywhere a style name is accepted. Equivalent inline dicts are deduplicated automatically:
 
 ```python
 'columns': {
     'gpa': {'format': {'number_format': '0.00', 'alignment': {'horizontal': 'center'}}},
+    'title': ColumnRule(format={'bg_color': '#60CCFF'}, width=40,
+                        comment='This comment will appear in the header row', filter=1),
 }
 ```
 
@@ -149,40 +238,81 @@ The following styles are registered on every workbook and can be used directly b
 
 ### Row Formatting
 
-`formatting['rows']` is a dict keyed by row index. Index `0` is the **header** row; positive integers are 1-based **data** row indices.
+`formatting['rows']` is a dict with four named keys. All are optional:
+
+| Key | Applies to |
+|---|---|
+| `'*'` | Every row (header, group header, and all data rows) |
+| `'header'` | The column-name header row only |
+| `'group_header'` | The group label row only (only relevant when `group_label` columns are used) |
+| `'data'` | Data rows only |
+
+Each key maps to a dict that may contain `height` and/or `format`. The `'data'` key additionally supports `odd`, `even`, and `style`:
 
 ```python
 'rows': {
-    0: {'height': 120},          # header row: set height
-    1: {'height': 30},           # first data row: set height
-    'style': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+    '*':           {'height': 15},                    # all rows: default height
+    'header':      {'height': 30},                    # override header height
+    'group_header': {'height': 20},                   # override group label row height
+    'data': {
+        'height': 15,                                 # data row height
+        'odd':    {'format': 'fmt_stripe'},           # rows 1, 3, 5, …
+        'even':   {'format': 'fmt_alt'},              # rows 2, 4, 6, …
+        'style':  lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+    },
 }
 ```
 
-**Alternating row colors** use the `'odd'` and `'even'` keys — no callable needed:
+**Height cascade:** `'*'` sets the default; `'header'`, `'group_header'`, and `'data'` override it for their respective rows. Setting only `'*'` is equivalent to setting the same height everywhere.
+
+**Alternating row colors** use `odd` and `even` nested under `'data'`:
 
 ```python
 'rows': {
-    'odd':  {'format': 'fmt_stripe'},   # rows 1, 3, 5, …
-    'even': {'format': 'fmt_alt'},      # rows 2, 4, 6, …
+    'data': {
+        'odd':  {'format': 'fmt_stripe'},   # rows 1, 3, 5, …
+        'even': {'format': 'fmt_alt'},      # rows 2, 4, 6, …
+    },
 }
 ```
 
-You can define only one if you only want every-other-row coloring:
+You can define only one side if you only want every-other-row coloring:
 
 ```python
-'rows': {'odd': {'format': 'fmt_stripe'}}   # only odd rows get a background
+'rows': {'data': {'odd': {'format': 'fmt_stripe'}}}   # only odd rows get a background
 ```
 
-**The `'style'` key** accepts a callable that receives each data record and returns a style name (or `None`). This enables conditional highlighting and status indicators:
+**Conditional row styles** use `style` under `'data'`. It accepts a callable or a list of callables; each receives the full record and returns a style name or `None`. Multiple callables are composed in order, later ones taking precedence:
 
 ```python
 'rows': {
-    'style': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+    'data': {
+        'style': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+    },
+}
+
+# Multiple callables — both applied, last non-None wins per property
+'rows': {
+    'data': {
+        'style': [
+            lambda rec: 'fmt_stripe' if rec['row_num'] % 2 else None,
+            lambda rec: 'fmt_alerts' if rec['overdue'] else None,
+        ],
+    },
 }
 ```
 
-**Style cascade:** column `format` is applied first; `'odd'`/`'even'` or `'style'` row format overrides it; `hyperlink_style` (from `LinkedExcelWriter`) overrides both.
+**Style cascade (lowest → highest priority):**
+
+1. Date/datetime base format (applied automatically by type)
+2. Column `format`
+3. `'*'` row format (all rows)
+4. `'odd'` / `'even'` alternating format
+5. `'style'` callable results (composed in list order)
+6. Column `style` callable result
+7. `hyperlink_style` (applied by `LinkedExcelWriter` to linked cells)
+
+Styles at higher priority levels are composed on top — they override individual properties (fill, font, number format) rather than replacing the whole style.
 
 ---
 
@@ -226,7 +356,7 @@ Two conditions must **both** hold for a column to be rotated:
 | `REG_AUTH_ACTIVE_CDE` | 19 | `Y` / `N` | Yes |
 | `student_name` | 12 | `Smith, Jane` (11) | No — header not wider than data |
 
-**Header row height** is computed automatically from the longest rotated header name using `height_factor` (default 6.5 pt/character) unless `rows[0]['height']` is set explicitly. `REG_AUTH_ACTIVE_CDE` (19 chars) produces a height of ~123 pt.
+**Header row height** is computed automatically from the longest rotated header name using `height_factor` (default 6.5 pt/character) unless `rows['header']['height']` is set explicitly. `REG_AUTH_ACTIVE_CDE` (19 chars) produces a height of ~123 pt.
 
 **Columns with an explicit `header_format`** are excluded from auto-rotation — your explicit choice takes precedence.
 
@@ -279,37 +409,36 @@ If both `auto_filter: True` and column-level `filter: 1` are set, the column-lev
 
 ---
 
-### Complete Example
+### Formatted Excel Example
 
 ```python
 fmt = {
-    'styles': {
-        'fmt_fees':   {'bg_color': '#d5f1cc'},
-        'fmt_rest':   {'bg_color': '#e3f3fe'},
-        'fmt_coreq':  {'bg_color': '#ffeed9'},
+    'styles': {        
+        'fmt_sales':     {'bg_color': '#e3f3fe'},
+        'fmt_volume':    {'bg_color': '#ffeed9'},
+        'fmt_shrinkage': {'bg_color': '#d5f1cc', 'font': {'bold': 1}},
+        'fmt_warning':   {'bg_color': '#fec76f'},
+        'fmt_stripe':    {'bg_color': '#dde8ed'}
     },
     'columns': {
-        'CORQ_*':       {'format': 'fmt_coreq'},
-        '*_FEE*':       {'format': 'fmt_fees'},
-        'res*':         {'format': 'fmt_rest'},
-        'RESV*':        {'hidden': 1},
-        'RESV_*_DESC':  {'hidden': 0},
-        'TERM_CODE':    {'format': 'fmt_fees'},
+        'sales_*':      {'format': 'fmt_sales'},
+        'volume*':      {'format': 'fmt_volume'},
+        'shrink*':      {'format': 'fmt_shrinkage', 'hidden': 1},
+        'shrink_pct':   {'hidden': 0, 
+                         'style': lambda x: 'fmt_warning' if x.shrink_pct > 8.0 else None},
     },
-    'rows': {
-        'style': lambda rec: 'fmt_fees' if rec['waitlisted'] else None,
-    },
-    'freeze':               'D2',
-    'header_auto_rotate':   {'min_length': 8, 'ratio': 2.5},
-    'min_column_width':     3,
+    'freeze':             'D3',
+    'header_auto_rotate': {'min_length': 8, 'ratio': 2.5},
+    'min_column_width':   3,
 }
-
-with ExcelWriter(file='crn_review.xlsx', formatting=fmt) as writer:
-    for term_code in active_terms:
-        cursor.execute_file('crn_review.sql', {'term_code': term_code})
-        writer.write_batch(cursor, sheet_name=term_code)
+stmt = cursor.prepare_file('quarterly_sales')
+with ExcelWriter(file='quarterly_sales.xlsx', formatting=fmt) as writer:
+    for qtr in fy_quarters:
+        stmt.execute({'quarter': qtr})
+        writer.write_batch(stmt, sheet_name=f'Q{qtr}')
 ```
 
+See [examples/formatted_spreadsheet.py](../examples/README.md#formatted_spreadsheetpy) for a complete, runnable example.
 ---
 
 ## Per-sheet Formatting
@@ -324,7 +453,7 @@ ExcelWriter(fees_data,   'report.xlsx', sheet_name='Fees',   formatting=fees_fmt
 ExcelWriter(roster_data, 'report.xlsx', sheet_name='Roster', formatting=roster_fmt).write()
 ```
 
-Each writer opens the file, adds its sheet with its own formatting, saves, and closes.
+Each writer opens the file, adds its sheet with its own formatting, saves, and closes. Note that openpyxl stores named styles on the workbook, not the worksheet — the second writer can reference `fmt_fees` by name, but cannot redefine it.
 
 ---
 
@@ -366,15 +495,15 @@ with LinkedExcelWriter(file='enrollment_report.xlsx') as writer:
 
 ### LinkSource Parameters
 
-| Parameter | Required | Description |
-|---|---|---|
-| `name` | Yes | Identifier used in `links=` dict |
-| `source_sheet` | Yes* | Sheet whose rows are the link targets |
-| `key_column` | Yes* | Column that uniquely identifies each row |
-| `text_template` | No | Python format string for link display text (uses `str.format_map`) |
-| `url_template` | No | Python format string for external URL |
-| `missing_text` | No | Fallback text when a key can't be resolved |
-| `external_only` | No | If `True`, generate URLs from current row without caching; reusable across sheets |
+| Parameter       | Required | Description                                                                       |
+|-----------------|----------|-----------------------------------------------------------------------------------|
+| `name`          | Yes      | Identifier used in `links=` dict                                                  |
+| `source_sheet`  | Yes*     | Sheet whose rows are the link targets                                             |
+| `key_column`    | Yes*     | Column that uniquely identifies each row                                          |
+| `text_template` | No       | Python format string for link display text (uses `str.format_map`)                |
+| `url_template`  | No       | Python format string for external URL                                             |
+| `missing_text`  | No       | Fallback text when a key can't be resolved                                        |
+| `external_only` | No       | If `True`, generate URLs from current row without caching; reusable across sheets |
 
 *Not required when `external_only=True`.
 
@@ -428,7 +557,7 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 |---|---|---|---|
 | `styles` | `dict[name, props]` | `{}` | Named style definitions |
 | `columns` | `dict[pattern, props]` | `{}` | Wildcard column rules |
-| `rows` | `dict` | `{}` | Row height/style; `0` = header; `'odd'`/`'even'` = alternating styles; `'style'` = callable |
+| `rows` | `dict` | `{}` | Row height/style; keys: `'*'` (all rows), `'header'`, `'group_header'`, `'data'`; `data` supports nested `odd`, `even`, `style`, `height` |
 | `freeze` | `str \| None` | `'A2'` | Freeze panes cell reference |
 | `header_auto_rotate` | `float \| dict` | off | Auto-rotate long headers; see [above](#auto-rotating-headers) |
 | `min_column_width` | `float` | `6` | Floor for auto-sized column widths |
@@ -440,11 +569,13 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | Key | Type | Description |
 |---|---|---|
 | `format` | style name or dict | Style applied to data cells |
+| `style` | callable or list | Per-cell conditional style(s); composed on top of all other styles |
 | `header_format` | style name or dict | Style applied to the header cell only |
 | `width` | float | Override auto-sized width |
 | `hidden` | 0 or 1 | Hide or explicitly un-hide the column |
 | `comment` | string | Excel comment/note on the header cell |
 | `filter` | 0 or 1 | Show filter dropdown on this column; hides dropdowns on all others |
+| `group_label` | string | Merged super-header label (range patterns only) |
 
 **`header_auto_rotate` dict keys:**
 
@@ -453,3 +584,6 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `ratio` | `1.5` | `header_len > data_width × ratio` to trigger rotation |
 | `min_length` | `8` | Minimum header character count to be considered for rotation |
 | `height_factor` | `6.5` | Points per character for auto header row height calculation |
+
+
+See [examples/linked_spreadsheet.py](../examples/README.md#linked_spreadsheetpy) for a complete, runnable example.

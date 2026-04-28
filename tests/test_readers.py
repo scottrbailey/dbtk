@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import date, datetime
 
 from dbtk.readers import (
-    CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
+    CSVReader, XLSReader, ExcelReader, JSONReader, NDJSONReader,
     XMLReader, FixedReader, FixedColumn, get_reader
 )
 from dbtk.readers.fixed_width import EDIReader
@@ -123,7 +123,7 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
         wb = open_workbook(str(excel_file))
         ws = get_sheet_by_index(wb, 0)
         if ws.__class__.__name__ == 'Worksheet':
-            return XLSXReader(ws, **kwargs)
+            return ExcelReader(ws, **kwargs)
         else:
             return XLSReader(ws, **kwargs)
     elif reader_type == 'json':
@@ -418,7 +418,7 @@ class TestGetReader:
     def test_get_reader_excel(self, excel_file):
         """Test get_reader with Excel file."""
         with get_reader(str(excel_file)) as reader:
-            assert isinstance(reader, (XLSReader, XLSXReader))
+            assert isinstance(reader, (XLSReader, ExcelReader))
             records = list(reader)
             assert len(records) == 100
 
