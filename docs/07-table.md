@@ -624,7 +624,7 @@ titles_table = dbtk.etl.Table('imdb_titles', {
 
 # Process file
 with open('title.basics.tsv') as f:
-    reader = dbtk.readers.CSVReader(f, delimiter='\t', header_clean=2)
+    reader = dbtk.readers.CSVReader(f, delimiter='\t')
     for record in reader:
         titles_table.set_values(record)
         titles_table.execute('insert')
