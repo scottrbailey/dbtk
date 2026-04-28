@@ -2,7 +2,8 @@
 Exports a formatted multi-sheet Excel workbook with 1927 baseball stats —
 one sheet per team for the top 4 finishers in each league.
 
-Run prep_1927_data.py first to build output/1927_baseball.parquet.
+output/1927_baseball.parquet is included in the repo — run directly.
+prep_1927_data.py is provided if you need to rebuild it from the Lahman CSV files.
 
 Key techniques shown:
   - Named styles applied to column ranges and alternating row stripes

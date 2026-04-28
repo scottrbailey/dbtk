@@ -42,11 +42,10 @@ one sheet per team for the top 4 finishers from each league in the 1927 season.
 - Hidden column (`team_name` carried in data for filtering but not shown in the sheet)
 - `headers=` mapping underscore field names to space-separated display labels
 
-**Setup:** Run `prep_1927_data.py` first to build `output/1927_baseball.parquet`
-from the Lahman Baseball Database CSV files.
-
-**Requires:** `openpyxl`, `polars`, CSV data files from the
-[Lahman Baseball Database](https://github.com/chadwickbureau/baseballdatabank/archive/refs/heads/master.zip)
+**Requires:** `openpyxl`, `polars` — `output/1927_baseball.parquet` is included in
+the repo so you can run this directly. `prep_1927_data.py` is provided if you want
+to rebuild it from the
+[Lahman Baseball Database](https://github.com/chadwickbureau/baseballdatabank/archive/refs/heads/master.zip).
 
 ---
 
