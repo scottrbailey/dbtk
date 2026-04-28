@@ -29,7 +29,8 @@ fmt = {
                         'width': 5, 'header_format': 'header_vert_style'},
         'home_runs':   {'style': lambda rec: 'alert_style' if rec.home_runs >= 15 else None},
         'batting_avg:slugging_pct':     {'format': {'number_format': '0.000'}, 'width': 7},
-        'fielding_pct': {'format': {'number_format': '0.000'}, 'width': 7},
+        'fielding_pct': {'format': {'number_format': '0.000'}, 'width': 7,
+                         'comment': 'Putouts + Assists / total chances'},
         'team_name': {'hidden': 1}             # Hide team_name (sheet name is team_name, column not needed)
     },
     'rows': {
