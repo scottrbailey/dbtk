@@ -8,8 +8,8 @@ self-contained and includes setup instructions in its module docstring.
 ## [`linked_spreadsheet.py`](linked_spreadsheet.py)
 
 Creates a navigable multi-sheet Excel workbook using `LinkedExcelWriter`.
-![Example Spreadsheet with internale and external links](../docs/assets/IMDB_Linked_workbook.png)
 
+![Example spreadsheet with internal and external links](../docs/assets/IMDB_Linked_workbook.png)
 
 **Demonstrates:**
 - Multiple sheets (Movies, Cast, Crew)
@@ -25,16 +25,28 @@ Creates a navigable multi-sheet Excel workbook using `LinkedExcelWriter`.
 ---
 
 ## [`formatted_spreadsheet.py`](formatted_spreadsheet.py)
-![Example Spreadsheet formatted headers, columns and rows](../docs/assets/MLB_1927_workbook.png)
-Creates a multi-sheet Excel workbook with custom formatting
+
+Creates a multi-sheet Excel workbook with rich formatting using `ExcelWriter` —
+one sheet per team for the top 4 finishers from each league in the 1927 season.
+
+![1927 MLB formatted workbook](../docs/assets/MLB_1927_workbook.png)
 
 **Demonstrates:**
-- Multiple sheets (top 8 teams from  1927 season)
-- Defining named styles, column ranges, conditional formatting, group labels
-- Auto rotating long headers over narrow data (header_auto_rotate)
-- Row striping 
+- Multi-sheet workbook from a single `ExcelWriter` instance
+- Named styles applied to column ranges (`group_label`) and alternating row stripes
+- Merged group-header row labelling the Demographics, Batting, and Fielding sections
+- Auto-rotating long headers over narrow stat columns (`header_auto_rotate`)
+- Conditional per-cell styling via a `style` callable (Home Runs ≥ 15 highlighted)
+- Overlapping column rules that compose rather than override (range background + number format)
+- Column comment on the header cell
+- Hidden column (`team_name` carried in data for filtering but not shown in the sheet)
+- `headers=` mapping underscore field names to space-separated display labels
 
-**Requires:** `openpyxl`, `polars`, CSV data files from the [Lahman Baseball Database](https://github.com/chadwickbureau/baseballdatabank/archive/refs/heads/master.zip)
+**Setup:** Run `prep_1927_data.py` first to build `output/1927_baseball.parquet`
+from the Lahman Baseball Database CSV files.
+
+**Requires:** `openpyxl`, `polars`, CSV data files from the
+[Lahman Baseball Database](https://github.com/chadwickbureau/baseballdatabank/archive/refs/heads/master.zip)
 
 ---
 

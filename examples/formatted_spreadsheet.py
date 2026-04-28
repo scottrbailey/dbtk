@@ -1,7 +1,20 @@
 """
-Exports a formatted Excel workbook with 1927 baseball stats.
+Exports a formatted multi-sheet Excel workbook with 1927 baseball stats —
+one sheet per team for the top 4 finishers in each league.
 
-Requires output/1927_baseball.parquet — run prep_1927_data.py first.
+Run prep_1927_data.py first to build output/1927_baseball.parquet.
+
+Key techniques shown:
+  - Named styles applied to column ranges and alternating row stripes
+  - Merged group-header row (group_label) labelling Demographics / Batting / Fielding
+  - Auto-rotating headers for narrow stat columns (header_auto_rotate)
+  - Conditional per-cell style via a callable (home_runs >= 15 → alert_style)
+  - Overlapping column rules that compose: range sets background, sub-range adds
+    number format without losing the background color
+  - Column comment on the Fielding Pct header cell
+  - Hidden column (team_name used for filtering, not shown in the sheet)
+  - Writer-level headers= replacing underscores with spaces for display labels
+    while keeping underscore field names for column rule pattern matching
 """
 import dbtk
 import polars as pl
