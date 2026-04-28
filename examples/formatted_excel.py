@@ -15,12 +15,12 @@ DATA_FILE = Path(__file__).parent / 'output' / '1927_baseball.parquet'
 OUT_FILE  = Path(__file__).parent / 'output' / 'MLB-1927.xlsx'
 
 HEADERS = [
-    'Name', 'Pos', 'Bats', 'Throws', 'Age', 'Birth Year',
-    'Birth City', 'Birth State', 'Birth Country', 'Height', 'Weight',
-    'Games Played', 'At Bats', 'Runs', 'Hits', 'Doubles', 'Triples', 'Home Runs',
-    'Runs Batted In', 'Walks', 'Strikeouts',
-    'Batting Avg', 'On Base Pct', 'Slugging Pct',
-    'Putouts', 'Assists', 'Errors', 'Double Plays', 'Fielding Pct',
+    'Name', 'Pos', 'Bats', 'Throws', 'Age', 'Birth_Year',
+    'Birth_City', 'Birth_State', 'Birth_Country', 'Height', 'Weight',
+    'Games_Played', 'At_Bats', 'Runs', 'Hits', 'Doubles', 'Triples', 'Home_Runs',
+    'Runs_Batted_In', 'Walks', 'Strikeouts',
+    'Batting_Avg', 'On_Base_Pct', 'Slugging_Pct',
+    'Putouts', 'Assists', 'Errors', 'Double_Plays', 'Fielding_Pct',
 ]
 
 fmt = {
