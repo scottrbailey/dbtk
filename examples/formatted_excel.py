@@ -3,11 +3,9 @@ Exports a formatted Excel workbook with 1927 baseball stats.
 
 Requires output/1927_baseball.parquet — run prep_1927_data.py first.
 """
-
-from pathlib import Path
-
+import dbtk
 import polars as pl
-import dbtk.writers
+from pathlib import Path
 
 DATA_FILE = Path(__file__).parent / 'output' / '1927_baseball.parquet'
 OUT_FILE  = Path(__file__).parent / 'output' / 'MLB-1927.xlsx'
