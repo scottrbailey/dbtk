@@ -25,20 +25,20 @@ db = sqlite('path/to/database.db')
 
 DBTK supports multiple database drivers with automatic detection and fallback:
 
-| Database | Driver | Install Command | Notes                                                     |
-|----------|--------|-----------------|-----------------------------------------------------------|
-| PostgreSQL | psycopg2 | `pip install psycopg2-binary` | Recommended, most mature                                  |
-| PostgreSQL | psycopg (3) | `pip install psycopg-binary` | Newest version, async support                             |
-| PostgreSQL | pgdb | `pip install pgdb` | DB-API compliant                                          |
-| Oracle | oracledb | `pip install oracledb` | Thin mode - no Oracle client required                     |
-| Oracle | cx_Oracle | `pip install cx_Oracle` | Requires Oracle client installation                       |
-| MySQL | mysqlclient | `pip install mysqlclient` | Fastest option, C extension, module name MySQLdb          |
-| MySQL | mariadb | `pip install mariadb` | Official MariaDB connector, C extension, MySQL compatible |
-| MySQL | mysql.connector | `pip install mysql-connector-python` | Official MySQL connector                                  |
-| MySQL | pymysql | `pip install pymysql` | Pure Python, lightweight                                  |
-| SQL Server | pyodbc | `pip install pyodbc` | ODBC driver required on system                            |
-| SQL Server | pymssql | `pip install pymssql` | Lightweight, no ODBC needed                               |
-| SQLite | sqlite3 | Built-in | No installation needed                                    |
+| Database   | Driver          | Install Command                      | Notes                                                     |
+|------------|-----------------|--------------------------------------|-----------------------------------------------------------|
+| PostgreSQL | psycopg2        | `pip install psycopg2-binary`        | Recommended, most mature                                  |
+| PostgreSQL | psycopg (3)     | `pip install psycopg-binary`         | Newest version, async support                             |
+| PostgreSQL | pgdb            | `pip install pgdb`                   | DB-API compliant                                          |
+| Oracle     | oracledb        | `pip install oracledb`               | Thin mode - no Oracle client required                     |
+| Oracle     | cx_Oracle       | `pip install cx_Oracle`              | Requires Oracle client installation                       |
+| MySQL      | mysqlclient     | `pip install mysqlclient`            | Fastest option, C extension, module name MySQLdb          |
+| MySQL      | mariadb         | `pip install mariadb`                | Official MariaDB connector, C extension, MySQL compatible |
+| MySQL      | mysql.connector | `pip install mysql-connector-python` | Official MySQL connector                                  |
+| MySQL      | pymysql         | `pip install pymysql`                | Pure Python, lightweight                                  |
+| SQL Server | pyodbc          | `pip install pyodbc`                 | ODBC driver required on system                            |
+| SQL Server | pymssql         | `pip install pymssql`                | Lightweight, no ODBC needed                               |
+| SQLite     | sqlite3         | Built-in                             | No installation needed                                    |
 
 **Driver priority:** DBTK automatically selects the best available driver based on priority. Override with `driver='driver_name'` in your connection config or function call.
 
@@ -90,22 +90,23 @@ with db.transaction():
 DBTK maintains a clean reference hierarchy for accessing the underlying driver:
 
 ```python
-db = dbtk.connect('imdb')
-# The Database maintains a reference to the driver
-print(db.driver.__name__)       # 'psycopg2', 'oracledb', etc.
+cursor = dbtk.connect('imdb').cursor()
 
-cursor = db.cursor()
 # The Cursor maintains a reference to the Database connection
 print(cursor.connection.connection_name) # imdb
 
+# The Database maintains a reference to the driver
+print(cursor.connection.driver.__name__)       # 'psycopg2', 'oracledb', etc.
+
 # Access the wrapped connection or cursor
-db._connection
+cursor.connection._connection
 cursor._cursor
 
 # Use driver exceptions
 try:
     cursor.execute(sql)
 except cursor.connection.driver.DatabaseError as e:
+    cursor.connection.rollback()
     logger.error(f"Database error: {e}")
 ```
 
@@ -127,7 +128,7 @@ for user in cursor:
     id, name, email = user  # Tuple unpacking
 ```
 
-Records also normalize column names for attribute access, so `row.employee_id` works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
+Records store both the original column names, and also normalize column names for attribute access, so `row.employee_id` (and `row['employee_id']`) works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
 
 See [Record Objects](04-record.md) for full documentation on access patterns, normalization, mutation, and performance characteristics.
 
@@ -294,9 +295,9 @@ desc = cursor.description
 try:
     cursor.execute("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
     cursor.execute("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
-    db.commit()
+    cursor.connection.commit()
 except Exception:
-    db.rollback()
+    cursor.connection.rollback()
     raise
 ```
 

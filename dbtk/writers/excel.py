@@ -765,8 +765,11 @@ class ExcelWriter(BatchWriter):
             for col_idx, value in enumerate(values, 1):
                 col_name = self.columns[col_idx - 1]
                 cell = worksheet.cell(row=row_idx, column=col_idx)
-
-                if isinstance(value, datetime) and value.time() != MIDNIGHT:
+                if isinstance(value, (datetime, date)) and value.year < 1900:
+                    # Excel doesn't handle dates < 1900-01-01, convert to string
+                    cell.value = self.to_string(value)
+                    base_style = None
+                elif isinstance(value, datetime) and value.time() != MIDNIGHT:
                     cell.value = value
                     if row_count < width_sample_size:
                         data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 19)

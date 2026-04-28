@@ -63,7 +63,7 @@ Each database column is configured with a dictionary specifying how to source an
         # DATA SOURCE
         'field': 'source_field_name',       # Map from input record field
         'default': 'static_value',          # Use a static or callable default for all records
-        'fn': transform_function,           # Python function to transform field value, no parens!
+        'fn': transform_function,           # Python function (no parens!) to transform field value or supported string shorthand
         'db_expr': 'DATABASE_FUNCTION(#)',  # Call database function (e.g., CURRENT_TIMESTAMP, UPPER(#))
 
         # VALIDATION - optional:
@@ -74,7 +74,7 @@ Each database column is configured with a dictionary specifying how to source an
         'key': True,                        # Alias for primary_key
 
         # UPDATE CONTROL - optional:
-        'no_update': True,                  # Exclude from UPDATE operations (default: False)
+        'no_update': True,                  # Exclude from UPDATE operations (or UPDATE branch of merge) (default: False)
     }
 }
 ```
@@ -179,6 +179,7 @@ Apply **fn** if defined. Functions can:
 - Transform existing values
 - Generate new values from scratch
 - If `fn` is a list, execute in order (pipeline).
+- See [Provided Data Transformations](#data-transformations) and [String Shorthand](#string-shorthand-for-transformations) sections below.
 
 ### 5. Database Expression
 If **db_expr** is defined:
