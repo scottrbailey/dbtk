@@ -410,6 +410,16 @@ class ExcelWriter(BatchWriter):
         result: List[dict] = [{} for _ in columns]
         cols_lower = [c.lower() for c in columns]
 
+        def _apply(dest: dict, props: dict) -> None:
+            """Merge props into dest, composing overlapping 'format' values."""
+            for k, v in props.items():
+                if k == 'format' and 'format' in dest:
+                    existing = dest[k]
+                    dest[k] = existing if isinstance(existing, list) else [existing]
+                    dest[k].append(v)
+                else:
+                    dest[k] = v
+
         for pattern_lower, pattern, props in self._col_rules:
             is_range = ':' in pattern_lower and not any(c in pattern_lower for c in '*?[') and pattern_lower not in cols_lower
 
@@ -446,15 +456,19 @@ class ExcelWriter(BatchWriter):
                     )
 
                 for i in range(start_idx, end_idx + 1):
-                    result[i].update(props)
+                    _apply(result[i], props)
             else:
                 # fnmatch glob (also handles literal column names)
                 for col_idx, col_name_lower in enumerate(cols_lower):
                     if fnmatch.fnmatch(col_name_lower, pattern_lower):
-                        result[col_idx].update(props)
+                        _apply(result[col_idx], props)
+
         for col_props in result:
             fmt = col_props.get('format')
-            if isinstance(fmt, dict):
+            if isinstance(fmt, list):
+                resolved = [self._ensure_style(f) if isinstance(f, dict) else f for f in fmt]
+                col_props['format'] = self._compose_styles(*resolved)
+            elif isinstance(fmt, dict):
                 col_props['format'] = self._ensure_style(fmt)
             hfmt = col_props.get('header_format')
             if isinstance(hfmt, dict):
@@ -808,7 +822,8 @@ class ExcelWriter(BatchWriter):
         col_style_fns = [p.get('style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
-        header_widths = [len(col) for col in self.columns]
+        display_headers = self._get_headers(data)
+        header_widths = [len(h) for h in display_headers]
         data_widths = [0] * len(self.columns)
         header_font = Font(bold=True)
 
@@ -818,7 +833,7 @@ class ExcelWriter(BatchWriter):
         data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
-            for col_idx, column_name in enumerate(self._get_headers(data), 1):
+            for col_idx, column_name in enumerate(display_headers, 1):
                 cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
                 hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
                 if hfmt:
@@ -897,6 +912,10 @@ class ExcelWriter(BatchWriter):
         target_sheet = self.active_sheet or 'Data'
         worksheet = self._get_or_create_worksheet(target_sheet)
 
+        if target_sheet not in self._sheets_written_this_session:
+            self._clear_worksheet(worksheet)
+            self._sheets_written_this_session.add(target_sheet)
+
         has_groups = bool(col_fmt and any(p.get('group_label') for p in col_fmt))
         header_row = 2 if has_groups else 1
         should_write_headers = (
@@ -905,12 +924,13 @@ class ExcelWriter(BatchWriter):
         )
         data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
 
-        header_widths = [len(col) for col in self.columns]
+        display_headers = self._get_headers()
+        header_widths = [len(h) for h in display_headers]
         data_widths = [0] * len(self.columns)
 
         if should_write_headers:
             header_font = Font(bold=True)
-            for col_idx, column_name in enumerate(self._get_headers(), 1):
+            for col_idx, column_name in enumerate(display_headers, 1):
                 cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
                 hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
                 if hfmt:

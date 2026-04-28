@@ -189,9 +189,16 @@ The following styles are registered on every workbook and can be used directly b
 | `filter` | 0 or 1 | Show a filter dropdown on this column's header; hides dropdowns on all other columns |
 | `group_label` | string | Merged super-header label above this column range (range patterns only) |
 
-**Precedence:** Rules are applied in definition order. Later patterns override earlier ones *per property*, so you can use a broad pattern to set a default and a narrower pattern to override it:
+**Precedence:** Rules are applied in definition order. For most properties (width, hidden, filter, etc.), later patterns override earlier ones. The `format` property is the exception — when multiple patterns match the same column and both provide `format`, the styles are **composed**: properties from the later rule take precedence per property (fill, font, number format), but non-conflicting properties from the earlier rule are preserved.
 
 ```python
+# wide rule sets background; narrower rule adds number format without losing the background
+'columns': {
+    'g:slg':   {'format': 'hits_style'},               # green background for all batting cols
+    'avg:slg': {'format': {'number_format': '0.000'}}, # composed on top — keeps green bg
+}
+
+# scalar properties (width, hidden) always override
 'columns': {
     'sales_*':      {'hidden': 1},
     'sales_*_desc': {'hidden': 0, 'comment': 'Additional columns are hidden'},
