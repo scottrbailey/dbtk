@@ -99,7 +99,7 @@ class SQLServerDialect(DatabaseDialect):
                 column_comments[col_name] = comment
 
             if col_name in ('CreatedDate', 'ModifiedDate') and data_type in ('datetime', 'datetime2'):
-                columns[col_name] = {'value': 'GETDATE()', 'db_fn': 'GETDATE()'}
+                columns[col_name] = {'default': 'GETDATE()', 'db_fn': 'GETDATE()'}
                 continue
 
             col_config = {'field': col_name}
