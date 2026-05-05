@@ -294,8 +294,11 @@ class ExcelWriter(BatchWriter):
                 self.workbook = load_workbook(self.output_path)
                 logger.info(f"Loaded existing workbook: {self.output_path}")
             else:
+                # make sure path is writable
                 with open(self.output_path, mode='wb'):
                     pass
+                # clean up empty file that was just created so an exception doesn't leave us with an invalid Excel file
+                self.output_path.unlink()
                 self.workbook = Workbook()
                 if 'Sheet' in self.workbook.sheetnames:
                     self.workbook.remove(self.workbook['Sheet'])
