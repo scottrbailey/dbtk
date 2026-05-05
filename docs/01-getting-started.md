@@ -188,8 +188,11 @@ table = dbtk.etl.Table('employees', {
     'department': {'field': 'dept_code', 'fn': 'lookup:departments:code:name'}
 }, cursor=cursor)
 
+from dbtk.etl import column_defs_from_db
 # generate initial column configuration template from database schema
-emp_cols = dbtk.etl.column_defs_from_db(cursor=cursor, table_name='employees')
+emp_cols = column_defs_from_db(cursor=cursor, table_name='hr.employees', add_comments=False)
+# this returns a string representation to paste into your code and modify, not to use directly
+print(emp_cols)
 ```
 
 See [ETL: Table & Transforms](07-table.md) for details.

@@ -674,8 +674,8 @@ errors_logged()  # Returns error log path or None
 ```python
 from dbtk.etl import column_defs_from_db
 
-column_defs_from_db(cursor, table_name, schema=None)
-# Returns: dict of column configurations
+column_defs_from_db(cursor, table_name, add_comments=False)
+# Returns: string containing a Python dict literal of column configurations
 ```
 
 ### SQL Parameter Processing
