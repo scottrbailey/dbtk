@@ -298,7 +298,7 @@ class ExcelWriter(BatchWriter):
                 with open(self.output_path, mode='wb'):
                     pass
                 # clean up empty file that was just created so an exception doesn't leave us with an invalid Excel file
-                self.output_path.unlink()
+                # self.output_path.unlink()
                 self.workbook = Workbook()
                 if 'Sheet' in self.workbook.sheetnames:
                     self.workbook.remove(self.workbook['Sheet'])
@@ -989,7 +989,12 @@ class ExcelWriter(BatchWriter):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Save workbook on context exit."""
-        self.close()
+        try:
+            self.close()
+        finally:
+            if self.output_path.exists() and self.output_path.stat().st_size == 0:
+                # remove invalid empty Excel file
+                self.output_path.unlink()
         return False
 
 
