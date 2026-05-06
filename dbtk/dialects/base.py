@@ -11,6 +11,21 @@ class DatabaseDialect:
 
     Subclass and override to support a different database. Adding support for a new
     engine means writing one class — no grep-and-branch across the ETL layer.
+
+    For unregistered databases (custom drivers without a matching dialect subclass),
+    dbtk falls back to this base class. The following features work without a dialect:
+
+    - All reads and writes (CSV, Excel, JSON, etc.)
+    - Plain ``SELECT``, ``INSERT``, ``UPDATE``, and ``DELETE`` via ``DataSurge``
+    - ``BulkSurge`` is database-specific and will not work
+
+    Features that require a dialect subclass:
+
+    - ``Table.upsert`` / ``DataSurge.upsert`` — base class generates
+      ``INSERT … ON CONFLICT`` (PostgreSQL/SQLite syntax); will fail on other engines
+    - ``Table.merge`` / ``DataSurge.merge`` — base class generates a SQL Server-style
+      ``MERGE``; will fail on engines that don't support that syntax
+    - ``column_defs_from_db`` — raises ``NotImplementedError``
     """
 
     use_upsert = True           # False for MERGE-based dialects (Oracle, SQL Server)
