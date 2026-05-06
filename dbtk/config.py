@@ -337,6 +337,14 @@ class ConfigManager:
             if not isinstance(config, dict):
                 raise ValueError(f"Invalid config file {self.config_file}.")
 
+            # Strip sample placeholder entries (present in the template/sample file)
+            if 'connections' in config:
+                config['connections'] = {k: v for k, v in config['connections'].items()
+                                         if not k.startswith('sample_')}
+            if 'passwords' in config:
+                config['passwords'] = {k: v for k, v in config['passwords'].items()
+                                       if not k.startswith('sample_')}
+
             # Validate connections section if it exists
             if 'connections' in config:
                 for name, conn in config.get('connections', {}).items():
@@ -1164,16 +1172,6 @@ def setup_config() -> None:
         add_connection = input("\nAdd another connection? [y/N]: ").strip().lower()
 
     if edits:
-        # Strip sample placeholder entries now that the user has added real connections
-        config_data['connections'] = {
-            k: v for k, v in config_data['connections'].items()
-            if not k.startswith('sample')
-        }
-        if 'passwords' in config_data:
-            config_data['passwords'] = {
-                k: v for k, v in config_data['passwords'].items()
-                if not k.startswith('sample')
-            }
         with open(config_path, 'w') as f:
             yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
 
