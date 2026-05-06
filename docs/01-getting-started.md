@@ -27,6 +27,17 @@ pip install mysqlclient          # MySQL
 pip install pyodbc               # SQL Server
 ```
 
+## Configuration Setup
+
+To store connections and encrypt/decrypt passwords you will need a config file (~/.config/dbkt.yml) and an encryption key. The easiest method is to simply run the `dbtk config-setup` wizard from Powershell/shell. 
+
+```bash
+# launch configuration wizard
+dbtk config-setup
+```
+See the [Configuration & Security](02-configuration.md) for detailed instructions
+See the [Troubleshooting Guide](12-troubleshooting.md#dbtk-command-not-found-windows) if the `dbtk` command is not found.
+
 ## Your First ETL Pipeline (5 Minutes)
 
 ### Step 1: Connect to a Database

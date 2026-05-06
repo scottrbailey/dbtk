@@ -8,7 +8,7 @@ Common issues and solutions when using DBTK.
 
 **Problem:** After `pip install dbtk`, running `dbtk checkup` gives *'dbtk' is not recognized* or a similar error.
 
-**Cause:** pip installs console scripts to a `Scripts` folder that is not on your `PATH` by default.
+**Cause:** pip installs console scripts to a `Scripts` folder that is not on your `PATH`.
 
 **Solution:** Find the Scripts folder and add it to your PATH.
 
