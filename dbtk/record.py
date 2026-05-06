@@ -626,7 +626,8 @@ class FixedWidthRecord(Record):
         _line_len : int
             Total line width in characters (max end_pos across all columns).
 
-    Example usage:
+    Example usage::
+
         # In reader factory
         RecordClass.set_fields(columns)  # columns is List[FixedColumn]
         record = RecordClass(*row_values)

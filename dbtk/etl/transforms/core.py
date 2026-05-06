@@ -431,8 +431,8 @@ def fn_resolver(shorthand: str):
 
     List / delimited strings
         'split:,'        → split on comma (default)
-        'split:\t'       → split on tab
-        'split:|'        → split on pipe
+        'split:\\t'      → split on tab
+        'split:\|'       → split on pipe
         'nth:0'          → first item
         'nth:1'          → second item
         'nth:-1'         → last item
