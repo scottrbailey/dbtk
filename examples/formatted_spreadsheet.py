@@ -33,20 +33,20 @@ fmt = {
         'stripe_style':   {'bg_color': '#DDDDDD'},  # light gray background for row striping
     },
     'columns': {
-        'pos:weight':  {'format': 'demo_style',     'group_label': 'Demographics'},
+        'pos:weight':  {'column_style': 'demo_style',     'group_label': 'Demographics'},
         'pos':         {'filter': 1},
-        'games_played:slugging_pct': {'format': 'batting_style', 'group_label': 'Batting',
-                        'width': 5, 'header_format': 'header_vert_style'},
-        'putouts:fielding_pct': {'format': 'fielding_style', 'group_label': 'Fielding',
-                        'width': 5, 'header_format': 'header_vert_style'},
-        'home_runs':   {'style': lambda rec: 'alert_style' if rec.home_runs >= 15 else None},
-        'batting_avg:slugging_pct':     {'format': {'number_format': '0.000'}, 'width': 7},
-        'fielding_pct': {'format': {'number_format': '0.000'}, 'width': 7,
+        'games_played:slugging_pct': {'column_style': 'batting_style', 'group_label': 'Batting',
+                        'width': 5, 'header_style': 'header_vert_style'},
+        'putouts:fielding_pct': {'column_style': 'fielding_style', 'group_label': 'Fielding',
+                        'width': 5, 'header_style': 'header_vert_style'},
+        'home_runs':   {'cell_style': lambda rec: 'alert_style' if rec.home_runs >= 15 else None},
+        'batting_avg:slugging_pct':     {'column_style': {'number_format': '0.000'}, 'width': 7},
+        'fielding_pct': {'column_style': {'number_format': '0.000'}, 'width': 7,
                          'comment': 'Putouts + Assists / total chances'},
         'team_name': {'hidden': 1}             # Hide team_name (sheet name is team_name, column not needed)
     },
     'rows': {
-        'data': {'odd': {'format': 'stripe_style'}},
+        'data': {'odd': {'row_style': 'stripe_style'}},
     },
     'freeze':              'B3',                # Freeze so player name and headers are always visible
     'min_column_width':    4,                   # Decrease min column width from 6 to 4

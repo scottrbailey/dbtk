@@ -342,7 +342,7 @@ class ExcelWriter(BatchWriter):
         hyperlink_style
             Blue underlined font (used automatically by LinkedExcelWriter).
         bold_style
-            Bold font. Useful as a ``header_format`` when you only want emphasis.
+            Bold font. Useful as a ``header_style`` when you only want emphasis.
         header_vert_style
             Bold font + 90° text rotation. Pair with
             ``rows={'header': {'height': 120}}`` for narrow rotated headers.
