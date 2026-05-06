@@ -48,10 +48,12 @@ class ColumnRule:
 
     Parameters
     ----------
-    format : str, optional
-        Style name applied to every data cell in the column.
-    header_format : str, optional
-        Style name applied to the header cell only (owns the cell entirely —
+    column_style : str or dict, optional
+        Static style applied to every data cell in the column. Either a
+        registered style name (str) or an inline property dict
+        (``bg_color``, ``font``, ``number_format``, ``alignment``).
+    header_style : str or dict, optional
+        Static style applied to the header cell only (owns the cell entirely —
         include ``font={'bold': True}`` if you still want bold).
     width : float, optional
         Explicit column width in Excel units; bypasses auto-sizing.
@@ -65,26 +67,27 @@ class ColumnRule:
     group_label : str, optional
         Label for a group super-header spanning this column range.
         Only valid on range patterns (``'col_a:col_z'``).
-    style : callable, optional
-        ``lambda record: style_name_or_None`` — evaluated per cell; overrides
-        ``format`` and row styles when non-``None``.
+    cell_style : callable or list[callable], optional
+        ``lambda record: style_name_or_None`` — evaluated per row; overrides
+        ``column_style`` and row styles when non-``None``. Multiple callables
+        are composed in order.
     """
 
-    format: Optional[str] = None
-    header_format: Optional[str] = None
+    column_style: Optional[Union[str, dict]] = None
+    header_style: Optional[Union[str, dict]] = None
     width: Optional[float] = None
     hidden: bool = False
     comment: Optional[str] = None
     filter: bool = False
     group_label: Optional[str] = None
-    style: Optional[Callable] = None
+    cell_style: Optional[Union[Callable, List[Callable]]] = None
 
     def to_dict(self) -> dict:
         d: dict = {}
-        if self.format is not None:
-            d['format'] = self.format
-        if self.header_format is not None:
-            d['header_format'] = self.header_format
+        if self.column_style is not None:
+            d['column_style'] = self.column_style
+        if self.header_style is not None:
+            d['header_style'] = self.header_style
         if self.width is not None:
             d['width'] = self.width
         if self.hidden:
@@ -95,8 +98,8 @@ class ColumnRule:
             d['filter'] = self.filter
         if self.group_label is not None:
             d['group_label'] = self.group_label
-        if self.style is not None:
-            d['style'] = self.style
+        if self.cell_style is not None:
+            d['cell_style'] = self.cell_style
         return d
 
 
@@ -124,13 +127,14 @@ class ExcelFormat:
         Row-type formatting. Recognised keys:
 
         * ``'*'`` — applied to **all** rows (lowest priority).
-          Supports ``height`` and ``format``.
+          Supports ``height`` and ``row_style`` (str or dict).
         * ``'group_header'`` — the group-label row (only present when column
-          ranges carry ``group_label``). Supports ``height`` and ``format``.
+          ranges carry ``group_label``). Supports ``height`` and ``row_style``
+          (str or dict).
         * ``'header'`` — the column-header row. Supports ``height``.
         * ``'data'`` — data rows. Nested keys:
 
-          - ``'odd'``  / ``'even'``: ``{'format': style_name}`` for striping.
+          - ``'odd'``  / ``'even'``: ``{'row_style': style_name}`` for striping.
           - ``'style'``: callable or list of callables
             ``lambda record: style_name_or_None``.
             Multiple callables are composed in order.
@@ -414,9 +418,9 @@ class ExcelWriter(BatchWriter):
         cols_lower = [c.lower() for c in columns]
 
         def _apply(dest: dict, props: dict) -> None:
-            """Merge props into dest, composing overlapping 'format' values."""
+            """Merge props into dest, composing overlapping 'column_style' values."""
             for k, v in props.items():
-                if k == 'format' and 'format' in dest:
+                if k == 'column_style' and 'column_style' in dest:
                     existing = dest[k]
                     dest[k] = existing if isinstance(existing, list) else [existing]
                     dest[k].append(v)
@@ -467,15 +471,15 @@ class ExcelWriter(BatchWriter):
                         _apply(result[col_idx], props)
 
         for col_props in result:
-            fmt = col_props.get('format')
+            fmt = col_props.get('column_style')
             if isinstance(fmt, list):
                 resolved = [self._ensure_style(f) if isinstance(f, dict) else f for f in fmt]
-                col_props['format'] = self._compose_styles(*resolved)
+                col_props['column_style'] = self._compose_styles(*resolved)
             elif isinstance(fmt, dict):
-                col_props['format'] = self._ensure_style(fmt)
-            hfmt = col_props.get('header_format')
+                col_props['column_style'] = self._ensure_style(fmt)
+            hfmt = col_props.get('header_style')
             if isinstance(hfmt, dict):
-                col_props['header_format'] = self._ensure_style(hfmt)
+                col_props['header_style'] = self._ensure_style(hfmt)
         return result
 
     def _finalize_headers(
@@ -524,8 +528,8 @@ class ExcelWriter(BatchWriter):
 
             for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
                 col_props = col_fmt[col_idx - 1] if col_fmt else {}
-                if col_props.get('header_format'):
-                    continue  # explicit header_format takes precedence
+                if col_props.get('header_style'):
+                    continue  # explicit header_style takes precedence
                 if hw >= har_min and hw > dw * har_ratio:
                     auto_rotated.add(col_idx)
                     worksheet.cell(header_row, col_idx).style = 'header_vert_style'
@@ -724,9 +728,9 @@ class ExcelWriter(BatchWriter):
         """Write data rows, applying the style cascade and calling subclass hooks.
 
         Style cascade per cell (lowest → highest priority):
-          date/datetime base → column ``format`` → ``'*'`` (all-rows) →
-          ``'odd'``/``'even'`` → ``'style'`` callable(s) → column ``style``
-          callable → ``_apply_cell_overrides`` hook.
+          date/datetime base → ``column_style`` → ``'*'`` row_style →
+          ``'odd'``/``'even'`` row_style → ``'style'`` callable(s) →
+          ``cell_style`` callable(s) → ``_apply_cell_overrides`` hook.
         All active styles are composed once per unique combination via
         ``_compose_styles`` and cached for reuse.
 
@@ -739,11 +743,11 @@ class ExcelWriter(BatchWriter):
         all_props  = rows_fmt_d.get('*', {})
         data_props = rows_fmt_d.get('data', {})
 
-        all_row_style = all_props.get('format')
+        all_row_style = all_props.get('row_style')
         all_height    = all_props.get('height')
         data_height   = data_props.get('height')
-        odd_style     = data_props.get('odd', {}).get('format')
-        even_style    = data_props.get('even', {}).get('format')
+        odd_style     = data_props.get('odd', {}).get('row_style')
+        even_style    = data_props.get('even', {}).get('row_style')
 
         style_fns = data_props.get('style')
         if style_fns is not None and not isinstance(style_fns, list):
@@ -791,7 +795,7 @@ class ExcelWriter(BatchWriter):
                         data_widths[col_idx - 1] = max(data_widths[col_idx - 1], len(str(value)))
                     base_style = None
 
-                col_style = col_fmt[col_idx - 1].get('format') if col_fmt else None
+                col_style = col_fmt[col_idx - 1].get('column_style') if col_fmt else None
                 col_fn = col_style_fns[col_idx - 1] if col_style_fns else None
                 cell_style = col_fn(record) if col_fn else None
 
@@ -826,7 +830,7 @@ class ExcelWriter(BatchWriter):
             raise ValueError("Could not determine columns from data")
 
         col_fmt = self._build_col_fmt_map(self.columns)
-        col_style_fns = [p.get('style') for p in col_fmt] if col_fmt else []
+        col_style_fns = [p.get('cell_style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
         display_headers = headers if headers is not None else self._get_headers(data)
@@ -846,7 +850,7 @@ class ExcelWriter(BatchWriter):
         if should_write_headers:
             for col_idx, column_name in enumerate(display_headers, 1):
                 cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
-                hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
+                hfmt = col_fmt[col_idx - 1].get('header_style') if col_fmt else None
                 if hfmt:
                     cell.style = hfmt
                 else:
@@ -922,7 +926,7 @@ class ExcelWriter(BatchWriter):
             raise RuntimeError("Workbook not initialized")
 
         col_fmt = self._build_col_fmt_map(self.columns)
-        col_style_fns = [p.get('style') for p in col_fmt] if col_fmt else []
+        col_style_fns = [p.get('cell_style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
         target_sheet = self.active_sheet or 'Data'
@@ -952,7 +956,7 @@ class ExcelWriter(BatchWriter):
             header_font = Font(bold=True)
             for col_idx, column_name in enumerate(display_headers, 1):
                 cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
-                hfmt = col_fmt[col_idx - 1].get('header_format') if col_fmt else None
+                hfmt = col_fmt[col_idx - 1].get('header_style') if col_fmt else None
                 if hfmt:
                     cell.style = hfmt
                 else:
