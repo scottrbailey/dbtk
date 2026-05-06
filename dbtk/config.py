@@ -968,7 +968,7 @@ def setup_config() -> None:
             print("Cancelled.")
             return
 
-    # Write user config from sample, minus the placeholder connections/passwords
+    # Write user config from sample, minus the example connections/passwords
     sample_path = Path(__file__).parent / 'dbtk_sample.yml'
     if not sample_path.exists():
         print(f"⚠ Sample config not found at {sample_path}")
@@ -977,8 +977,10 @@ def setup_config() -> None:
 
     with open(sample_path) as f:
         config_data = yaml.safe_load(f) or {}
-    config_data.pop('connections', None)
-    config_data.pop('passwords', None)
+    # keep settings but clear out example connections, passwords and drivers sections
+    config_data['connections'] = {}
+    config_data['passwords'] = {}
+    config_data['drivers'] = {}
     with open(config_path, 'w') as f:
         yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
     print(f"\n✓ Created config at {config_path}")
