@@ -48,7 +48,7 @@ class ColumnRule:
 
     Parameters
     ----------
-    column_style : str or dict, optional
+    style : str or dict, optional
         Static style applied to every data cell in the column. Either a
         registered style name (str) or an inline property dict
         (``bg_color``, ``font``, ``number_format``, ``alignment``).
@@ -67,25 +67,25 @@ class ColumnRule:
     group_label : str, optional
         Label for a group super-header spanning this column range.
         Only valid on range patterns (``'col_a:col_z'``).
-    cell_style : callable or list[callable], optional
+    style_fn : callable or list[callable], optional
         ``lambda record: style_name_or_None`` — evaluated per row; overrides
-        ``column_style`` and row styles when non-``None``. Multiple callables
+        ``style`` and row styles when non-``None``. Multiple callables
         are composed in order.
     """
 
-    column_style: Optional[Union[str, dict]] = None
+    style: Optional[Union[str, dict]] = None
     header_style: Optional[Union[str, dict]] = None
     width: Optional[float] = None
     hidden: bool = False
     comment: Optional[str] = None
     filter: bool = False
     group_label: Optional[str] = None
-    cell_style: Optional[Union[Callable, List[Callable]]] = None
+    style_fn: Optional[Union[Callable, List[Callable]]] = None
 
     def to_dict(self) -> dict:
         d: dict = {}
-        if self.column_style is not None:
-            d['column_style'] = self.column_style
+        if self.style is not None:
+            d['style'] = self.style
         if self.header_style is not None:
             d['header_style'] = self.header_style
         if self.width is not None:
@@ -98,8 +98,8 @@ class ColumnRule:
             d['filter'] = self.filter
         if self.group_label is not None:
             d['group_label'] = self.group_label
-        if self.cell_style is not None:
-            d['cell_style'] = self.cell_style
+        if self.style_fn is not None:
+            d['style_fn'] = self.style_fn
         return d
 
 
@@ -127,21 +127,21 @@ class ExcelFormat:
         Row-type formatting. Recognised keys:
 
         * ``'*'`` — applied to **all** rows (lowest priority).
-          Supports ``height`` and ``row_style`` (str or dict).
+          Supports ``height`` and ``style`` (str or dict).
         * ``'group_header'`` — the group-label row (only present when column
-          ranges carry ``group_label``). Supports ``height`` and ``row_style``
+          ranges carry ``group_label``). Supports ``height`` and ``style``
           (str or dict).
         * ``'header'`` — the column-header row. Supports ``height``.
         * ``'data'`` — data rows. Nested keys:
 
-          - ``'odd'``  / ``'even'``: ``{'row_style': style_name}`` for striping.
-          - ``'style'``: callable or list of callables
+          - ``'odd'``  / ``'even'``: ``{'style': style_name}`` for striping.
+          - ``'style_fn'``: callable or list of callables
             ``lambda record: style_name_or_None``.
             Multiple callables are composed in order.
           - ``'height'``: uniform row height for data rows.
 
         Cascade (lowest → highest priority): ``'*'`` → ``'odd'``/``'even'``
-        → ``'style'`` callable(s).
+        → ``'style_fn'`` callable(s).
     min_column_width : float, default 6
         Minimum auto-sized column width.
     max_column_width : float, default 60
@@ -418,9 +418,9 @@ class ExcelWriter(BatchWriter):
         cols_lower = [c.lower() for c in columns]
 
         def _apply(dest: dict, props: dict) -> None:
-            """Merge props into dest, composing overlapping 'column_style' values."""
+            """Merge props into dest, composing overlapping 'style' values."""
             for k, v in props.items():
-                if k == 'column_style' and 'column_style' in dest:
+                if k == 'style' and 'style' in dest:
                     existing = dest[k]
                     dest[k] = existing if isinstance(existing, list) else [existing]
                     dest[k].append(v)
@@ -471,12 +471,12 @@ class ExcelWriter(BatchWriter):
                         _apply(result[col_idx], props)
 
         for col_props in result:
-            fmt = col_props.get('column_style')
+            fmt = col_props.get('style')
             if isinstance(fmt, list):
                 resolved = [self._ensure_style(f) if isinstance(f, dict) else f for f in fmt]
-                col_props['column_style'] = self._compose_styles(*resolved)
+                col_props['style'] = self._compose_styles(*resolved)
             elif isinstance(fmt, dict):
-                col_props['column_style'] = self._ensure_style(fmt)
+                col_props['style'] = self._ensure_style(fmt)
             hfmt = col_props.get('header_style')
             if isinstance(hfmt, dict):
                 col_props['header_style'] = self._ensure_style(hfmt)
@@ -728,9 +728,9 @@ class ExcelWriter(BatchWriter):
         """Write data rows, applying the style cascade and calling subclass hooks.
 
         Style cascade per cell (lowest → highest priority):
-          date/datetime base → ``column_style`` → ``'*'`` row_style →
-          ``'odd'``/``'even'`` row_style → ``'style'`` callable(s) →
-          ``cell_style`` callable(s) → ``_apply_cell_overrides`` hook.
+          date/datetime base → column ``style`` → ``'*'`` style →
+          ``'odd'``/``'even'`` style → ``style_fn`` callable(s) →
+          column ``style_fn`` callable(s) → ``_apply_cell_overrides`` hook.
         All active styles are composed once per unique combination via
         ``_compose_styles`` and cached for reuse.
 
@@ -743,13 +743,13 @@ class ExcelWriter(BatchWriter):
         all_props  = rows_fmt_d.get('*', {})
         data_props = rows_fmt_d.get('data', {})
 
-        all_row_style = all_props.get('row_style')
+        all_row_style = all_props.get('style')
         all_height    = all_props.get('height')
         data_height   = data_props.get('height')
-        odd_style     = data_props.get('odd', {}).get('row_style')
-        even_style    = data_props.get('even', {}).get('row_style')
+        odd_style     = data_props.get('odd', {}).get('style')
+        even_style    = data_props.get('even', {}).get('style')
 
-        style_fns = data_props.get('style')
+        style_fns = data_props.get('style_fn')
         if style_fns is not None and not isinstance(style_fns, list):
             style_fns = [style_fns]
 
@@ -795,7 +795,7 @@ class ExcelWriter(BatchWriter):
                         data_widths[col_idx - 1] = max(data_widths[col_idx - 1], len(str(value)))
                     base_style = None
 
-                col_style = col_fmt[col_idx - 1].get('column_style') if col_fmt else None
+                col_style = col_fmt[col_idx - 1].get('style') if col_fmt else None
                 col_fn = col_style_fns[col_idx - 1] if col_style_fns else None
                 cell_style = col_fn(record) if col_fn else None
 
@@ -830,7 +830,7 @@ class ExcelWriter(BatchWriter):
             raise ValueError("Could not determine columns from data")
 
         col_fmt = self._build_col_fmt_map(self.columns)
-        col_style_fns = [p.get('cell_style') for p in col_fmt] if col_fmt else []
+        col_style_fns = [p.get('style_fn') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
         display_headers = headers if headers is not None else self._get_headers(data)
@@ -926,7 +926,7 @@ class ExcelWriter(BatchWriter):
             raise RuntimeError("Workbook not initialized")
 
         col_fmt = self._build_col_fmt_map(self.columns)
-        col_style_fns = [p.get('cell_style') for p in col_fmt] if col_fmt else []
+        col_style_fns = [p.get('style_fn') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
         target_sheet = self.active_sheet or 'Data'

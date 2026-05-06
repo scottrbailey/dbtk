@@ -95,13 +95,13 @@ fmt = ExcelFormat(
         'fmt_warn': {'bg_color': '#ffcccc', 'font': {'bold': True}},
     },
     columns={
-        '*_fee*': ColumnRule(column_style='fmt_fees'),
+        '*_fee*': ColumnRule(style='fmt_fees'),
         'notes':  ColumnRule(width=40, comment='Free-text field'),
-        'gpa':    ColumnRule(column_style={'number_format': '0.00'}),
+        'gpa':    ColumnRule(style={'number_format': '0.00'}),
     },
     rows={
         '*':    {'height': 15},
-        'data': {'odd': {'row_style': 'fmt_stripe'}},
+        'data': {'odd': {'style': 'fmt_stripe'}},
     },
     freeze='D2',
     min_column_width=4,
@@ -167,11 +167,11 @@ The following styles are registered on every workbook and can be used directly b
 
 ```python
 'columns': {
-    '*_fee*':           {'column_style': 'fmt_fees', 'header_style': 'header_vert_style'},
+    '*_fee*':           {'style': 'fmt_fees', 'header_style': 'header_vert_style'},
     'sales_*':          {'hidden': 1},
     'sales_*_total':    {'hidden': 0, 'comment': 'Additional columns are hidden'},
     'notes':            {'width': 40},
-    'unit_price:revenue':  {'column_style': 'fmt_numeric'},   # range
+    'unit_price:revenue':  {'style': 'fmt_numeric'},   # range
     ':subj_code':       {'hidden': 1},               # hide everything up to subj_code
 }
 ```
@@ -180,8 +180,8 @@ The following styles are registered on every workbook and can be used directly b
 
 | Key | Type | Effect |
 |---|---|---|
-| `column_style` | style name or inline dict | Applied to every **data** cell in this column |
-| `cell_style` | callable or list of callables | `lambda rec: style_name_or_None` — per-row conditional style(s); composed on top of all other styles when non-None |
+| `style` | style name or inline dict | Applied to every **data** cell in this column |
+| `style_fn` | callable or list of callables | `lambda rec: style_name_or_None` — per-row conditional style(s); composed on top of all other styles when non-None |
 | `header_style` | style name or inline dict | Applied to the **header** cell only; owns the cell entirely (include `font: {bold: True}` if needed) |
 | `width` | float | Column width in Excel character units; overrides auto-sizing |
 | `hidden` | 0 or 1 | Hide (`1`) or explicitly un-hide (`0`) the column |
@@ -189,13 +189,13 @@ The following styles are registered on every workbook and can be used directly b
 | `filter` | 0 or 1 | Show a filter dropdown on this column's header; hides dropdowns on all other columns |
 | `group_label` | string | Merged super-header label above this column range (range patterns only) |
 
-**Precedence:** Rules are applied in definition order. For most properties (width, hidden, filter, etc.), later patterns override earlier ones. The `column_style` property is the exception — when multiple patterns match the same column and both provide `column_style`, the styles are **composed**: properties from the later rule take precedence per property (fill, font, number format), but non-conflicting properties from the earlier rule are preserved.
+**Precedence:** Rules are applied in definition order. For most properties (width, hidden, filter, etc.), later patterns override earlier ones. The `style` property is the exception — when multiple patterns match the same column and both provide `style`, the styles are **composed**: properties from the later rule take precedence per property (fill, font, number format), but non-conflicting properties from the earlier rule are preserved.
 
 ```python
 # wide rule sets background; narrower rule adds number format without losing the background
 'columns': {
-    'g:slg':   {'column_style': 'hits_style'},               # green background for all batting cols
-    'avg:slg': {'column_style': {'number_format': '0.000'}}, # composed on top — keeps green bg
+    'g:slg':   {'style': 'hits_style'},               # green background for all batting cols
+    'avg:slg': {'style': {'number_format': '0.000'}}, # composed on top — keeps green bg
 }
 
 # scalar properties (width, hidden) always override
@@ -205,11 +205,11 @@ The following styles are registered on every workbook and can be used directly b
 }
 ```
 
-**Per-row conditional styles** use a `cell_style` callable in the column rule. The lambda receives the full record and returns a style name (or `None`). This overrides both the column's static `column_style` and any row-level style when non-None:
+**Per-row conditional styles** use a `style_fn` callable in the column rule. The lambda receives the full record and returns a style name (or `None`). This overrides both the column's static `style` and any row-level style when non-None:
 
 ```python
 'columns': {
-    'max_capacity': {'cell_style': lambda rec: 'fmt_warn' if rec.max_capacity < 10 else None},
+    'max_capacity': {'style_fn': lambda rec: 'fmt_warn' if rec.max_capacity < 10 else None},
 }
 ```
 
@@ -217,8 +217,8 @@ The following styles are registered on every workbook and can be used directly b
 
 ```python
 'columns': {
-    'q1_sales:q4_sales':       {'column_style': 'fmt_sales',    'group_label': 'Quarterly Sales'},
-    'q1_revenue:q4_revenue':   {'column_style': 'fmt_revenue', 'group_label': 'Quarterly Revenue'},
+    'q1_sales:q4_sales':       {'style': 'fmt_sales',    'group_label': 'Quarterly Sales'},
+    'q1_revenue:q4_revenue':   {'style': 'fmt_revenue', 'group_label': 'Quarterly Revenue'},
 }
 ```
 
@@ -228,8 +228,8 @@ Group headers are written bold and centered in row 1; column headers shift to ro
 
 ```python
 'columns': {
-    'gpa': {'column_style': {'number_format': '0.00', 'alignment': {'horizontal': 'center'}}},
-    'title': ColumnRule(column_style={'bg_color': '#60CCFF'}, width=40,
+    'gpa': {'style': {'number_format': '0.00', 'alignment': {'horizontal': 'center'}}},
+    'title': ColumnRule(style={'bg_color': '#60CCFF'}, width=40,
                         comment='This comment will appear in the header row', filter=1),
 }
 ```
@@ -247,7 +247,7 @@ Group headers are written bold and centered in row 1; column headers shift to ro
 | `'group_header'` | The group label row only (only relevant when `group_label` columns are used) |
 | `'data'` | Data rows only |
 
-Each key maps to a dict that may contain `height` and/or `row_style`. The `'data'` key additionally supports `odd`, `even`, and `style`:
+Each key maps to a dict that may contain `height` and/or `style`. The `'data'` key additionally supports `odd`, `even`, and `style`:
 
 ```python
 'rows': {
@@ -256,8 +256,8 @@ Each key maps to a dict that may contain `height` and/or `row_style`. The `'data
     'group_header': {'height': 20},                       # override group label row height
     'data': {
         'height': 15,                                     # data row height
-        'odd':    {'row_style': 'fmt_stripe'},            # rows 1, 3, 5, …
-        'even':   {'row_style': 'fmt_alt'},              # rows 2, 4, 6, …
+        'odd':    {'style': 'fmt_stripe'},            # rows 1, 3, 5, …
+        'even':   {'style': 'fmt_alt'},              # rows 2, 4, 6, …
         'style':  lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
     },
 }
@@ -270,8 +270,8 @@ Each key maps to a dict that may contain `height` and/or `row_style`. The `'data
 ```python
 'rows': {
     'data': {
-        'odd':  {'row_style': 'fmt_stripe'},   # rows 1, 3, 5, …
-        'even': {'row_style': 'fmt_alt'},      # rows 2, 4, 6, …
+        'odd':  {'style': 'fmt_stripe'},   # rows 1, 3, 5, …
+        'even': {'style': 'fmt_alt'},      # rows 2, 4, 6, …
     },
 }
 ```
@@ -279,7 +279,7 @@ Each key maps to a dict that may contain `height` and/or `row_style`. The `'data
 You can define only one side if you only want every-other-row coloring:
 
 ```python
-'rows': {'data': {'odd': {'row_style': 'fmt_stripe'}}}   # only odd rows get a background
+'rows': {'data': {'odd': {'style': 'fmt_stripe'}}}   # only odd rows get a background
 ```
 
 **Conditional row styles** use `style` under `'data'`. It accepts a callable or a list of callables; each receives the full record and returns a style name or `None`. Multiple callables are composed in order, later ones taking precedence:
@@ -305,11 +305,11 @@ You can define only one side if you only want every-other-row coloring:
 **Style cascade (lowest → highest priority):**
 
 1. Date/datetime base format (applied automatically by type)
-2. Column `column_style`
-3. `'*'` `row_style` (all rows)
-4. `'odd'` / `'even'` `row_style`
+2. Column `style`
+3. `'*'` `style` (all rows)
+4. `'odd'` / `'even'` `style`
 5. `'data'` `style` callable results (composed in list order)
-6. Column `cell_style` callable result(s)
+6. Column `style_fn` callable result(s)
 7. `hyperlink_style` (applied by `LinkedExcelWriter` to linked cells)
 
 Styles at higher priority levels are composed on top — they override individual properties (fill, font, number format) rather than replacing the whole style.
@@ -568,8 +568,8 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 
 | Key | Type | Description |
 |---|---|---|
-| `column_style` | style name or dict | Style applied to data cells |
-| `cell_style` | callable or list | Per-row conditional style(s); composed on top of all other styles |
+| `style` | style name or dict | Style applied to data cells |
+| `style_fn` | callable or list | Per-row conditional style(s); composed on top of all other styles |
 | `header_style` | style name or dict | Style applied to the header cell only |
 | `width` | float | Override auto-sized width |
 | `hidden` | 0 or 1 | Hide or explicitly un-hide the column |
