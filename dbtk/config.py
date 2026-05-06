@@ -337,14 +337,6 @@ class ConfigManager:
             if not isinstance(config, dict):
                 raise ValueError(f"Invalid config file {self.config_file}.")
 
-            # Strip sample placeholder entries (present in the template/sample file)
-            if 'connections' in config:
-                config['connections'] = {k: v for k, v in config['connections'].items()
-                                         if not k.startswith('sample_')}
-            if 'passwords' in config:
-                config['passwords'] = {k: v for k, v in config['passwords'].items()
-                                       if not k.startswith('sample_')}
-
             # Validate connections section if it exists
             if 'connections' in config:
                 for name, conn in config.get('connections', {}).items():
@@ -976,15 +968,20 @@ def setup_config() -> None:
             print("Cancelled.")
             return
 
-    # Copy dbtk_sample.yml to target location
+    # Write user config from sample, minus the placeholder connections/passwords
     sample_path = Path(__file__).parent / 'dbtk_sample.yml'
     if not sample_path.exists():
         print(f"⚠ Sample config not found at {sample_path}")
         print("Cannot continue without sample file.")
         return
 
-    shutil.copy(sample_path, config_path)
-    print(f"\n✓ Created config from sample at {config_path}")
+    with open(sample_path) as f:
+        config_data = yaml.safe_load(f) or {}
+    config_data.pop('connections', None)
+    config_data.pop('passwords', None)
+    with open(config_path, 'w') as f:
+        yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
+    print(f"\n✓ Created config at {config_path}")
 
     # Also copy sample to ~/.config for reference
     user_sample_path = Path.home() / '.config' / 'dbtk_sample.yml'
@@ -1072,10 +1069,6 @@ def setup_config() -> None:
     print("\n" + "-"*60)
     print("Database Connections")
     print("-"*60)
-
-    # Load the config we just created
-    with open(config_path) as f:
-        config_data = yaml.safe_load(f)
 
     if 'connections' not in config_data:
         config_data['connections'] = {}
