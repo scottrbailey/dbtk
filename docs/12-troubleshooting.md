@@ -4,6 +4,31 @@ Common issues and solutions when using DBTK.
 
 ## Installation Issues
 
+### `dbtk` Command Not Found (Windows)
+
+**Problem:** After `pip install dbtk`, running `dbtk checkup` gives *'dbtk' is not recognized* or a similar error.
+
+**Cause:** pip installs console scripts to a `Scripts` folder that is not on your `PATH`.
+
+**Solution:** Find the Scripts folder and add it to your PATH.
+
+```powershell
+# Find the Scripts folder
+python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+```
+
+Then add that path to your Windows PATH:
+
+1. Open **Start** → search *"environment variables"* → **Edit the system environment variables**
+2. Click **Environment Variables…**
+3. Under *User variables*, select **Path** and click **Edit**
+4. Click **New** and paste the Scripts folder path
+5. Click **OK** on all dialogs, then open a new terminal
+
+`dbtk checkup` should now work from any directory.
+
+---
+
 ### Import Errors
 
 **Problem:** `ImportError: No module named 'dbtk'`

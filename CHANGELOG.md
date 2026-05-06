@@ -330,7 +330,7 @@ Initial public release of DBTK — Data Benders Toolkit.
 
 #### Documentation
 
-- Full [Sphinx](https://www.sphinx-es.io) documentation published to
+- Full [Sphinx](https://www.sphinx-doc.org) documentation published to
   [dbtk.readthedocs.io](https://dbtk.readthedocs.io)
 - Separate `readers.md` and `writers.md` reference pages
 - `BulkSurge` deep-dive with database-specific loader details
@@ -339,6 +339,8 @@ Initial public release of DBTK — Data Benders Toolkit.
 
 ---
 
+[0.8.4]: https://github.com/scottrbailey/dbtk/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/scottrbailey/dbtk/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/scottrbailey/dbtk/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/scottrbailey/dbtk/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/scottrbailey/dbtk/releases/tag/v0.8.0

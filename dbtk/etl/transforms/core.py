@@ -431,12 +431,12 @@ def fn_resolver(shorthand: str):
 
     List / delimited strings
         'split:,'        → split on comma (default)
-        'split:\t'       → split on tab
-        'split:|'        → split on pipe
+        'split:\\t'      → split on tab
+        'split:\\|'      → split on pipe
         'nth:0'          → first item
         'nth:1'          → second item
         'nth:-1'         → last item
-        'nth:2:\t'       → third tab-delimited field
+        'nth:2:\\t'      → third tab-delimited field
 
     Boolean indicators
         'indicator'      → True → 'Y', False/None → None
