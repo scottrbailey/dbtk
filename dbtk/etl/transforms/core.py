@@ -436,7 +436,7 @@ def fn_resolver(shorthand: str):
         'nth:0'          → first item
         'nth:1'          → second item
         'nth:-1'         → last item
-        'nth:2:\t'       → third tab-delimited field
+        'nth:2:\\t'      → third tab-delimited field
 
     Boolean indicators
         'indicator'      → True → 'Y', False/None → None

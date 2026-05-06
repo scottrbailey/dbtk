@@ -48,7 +48,8 @@ recommended = [
     "usaddress>=0.5.11;python_version>='3.7'"
 ]
 postgresql = ["psycopg2-binary>=2.9"]
-oracle = ["oracledb>=1.0;python_version>='3.7'",  # For modern systems
+oracle = [
+    "oracledb>=1.0;python_version>='3.7'",  # For modern systems
     "cx_Oracle>=8.0;python_version<'3.7'",  # Fallback for 3.6
 ]
 mysql = ["pymysql>=1.0"]

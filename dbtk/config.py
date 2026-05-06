@@ -208,7 +208,7 @@ class ConfigManager:
     4. ``~/.config/dbtk.yml`` (user config directory)
     5. ``~/.config/dbtk.yaml`` (user config directory)
 
-    If no config is found, creates a sample config at ``~/.config/dbtk.yml``.
+    If no config is found, creates a sample config at ``~/.config/dbtk_sample.yml``.
 
     Parameters
     ----------
@@ -252,7 +252,7 @@ class ConfigManager:
     * Connections require 'type' field (postgres, oracle, mysql, etc.)
     * Encrypted passwords require DBTK_ENCRYPTION_KEY environment variable
     * Environment variables can be used with ${VAR_NAME} syntax
-    * Sample config is created at ~/.config/dbtk.yml on first run if no config exists
+    * Sample config is created at ~/.config/dbtk_sample.yml on first run if no config exists
     """
 
     def __init__(self, config_file: Optional[Union[str, Path]] = None):
