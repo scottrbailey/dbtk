@@ -134,6 +134,7 @@ class ExcelFormat:
         * ``'header'`` — the column-header row. Supports ``height``.
         * ``'data'`` — data rows. Nested keys:
 
+          - ``'style'``: str or dict applied to all data rows.
           - ``'odd'``  / ``'even'``: ``{'style': style_name}`` for striping.
           - ``'style_fn'``: callable or list of callables
             ``lambda record: style_name_or_None``.
@@ -729,8 +730,9 @@ class ExcelWriter(BatchWriter):
 
         Style cascade per cell (lowest → highest priority):
           date/datetime base → column ``style`` → ``'*'`` style →
-          ``'odd'``/``'even'`` style → ``style_fn`` callable(s) →
-          column ``style_fn`` callable(s) → ``_apply_cell_overrides`` hook.
+          ``'data'`` style → ``'odd'``/``'even'`` style → ``style_fn``
+          callable(s) → column ``style_fn`` callable(s) →
+          ``_apply_cell_overrides`` hook.
         All active styles are composed once per unique combination via
         ``_compose_styles`` and cached for reuse.
 
@@ -743,11 +745,12 @@ class ExcelWriter(BatchWriter):
         all_props  = rows_fmt_d.get('*', {})
         data_props = rows_fmt_d.get('data', {})
 
-        all_row_style = all_props.get('style')
-        all_height    = all_props.get('height')
-        data_height   = data_props.get('height')
-        odd_style     = data_props.get('odd', {}).get('style')
-        even_style    = data_props.get('even', {}).get('style')
+        all_row_style  = all_props.get('style')
+        all_height     = all_props.get('height')
+        data_row_style = data_props.get('style')
+        data_height    = data_props.get('height')
+        odd_style      = data_props.get('odd', {}).get('style')
+        even_style     = data_props.get('even', {}).get('style')
 
         style_fns = data_props.get('style_fn')
         if style_fns is not None and not isinstance(style_fns, list):
@@ -800,7 +803,7 @@ class ExcelWriter(BatchWriter):
                 cell_style = col_fn(record) if col_fn else None
 
                 style_names = [
-                    s for s in [base_style, col_style, all_row_style, alt, *fn_results, cell_style]
+                    s for s in [base_style, col_style, all_row_style, data_row_style, alt, *fn_results, cell_style]
                     if s
                 ]
                 self._apply_cell_overrides(cell, record, col_name, col_idx, row_idx, style_names)

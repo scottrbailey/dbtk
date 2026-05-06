@@ -255,10 +255,11 @@ Each key maps to a dict that may contain `height` and/or `style`. The `'data'` k
     'header':      {'height': 30},                        # override header height
     'group_header': {'height': 20},                       # override group label row height
     'data': {
-        'height': 15,                                     # data row height
-        'odd':    {'style': 'fmt_stripe'},            # rows 1, 3, 5, …
-        'even':   {'style': 'fmt_alt'},              # rows 2, 4, 6, …
-        'style':  lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+        'height':   15,                                   # data row height
+        'style':    'fmt_data',                           # static style for all data rows
+        'odd':      {'style': 'fmt_stripe'},              # rows 1, 3, 5, … (overrides data style)
+        'even':     {'style': 'fmt_alt'},                 # rows 2, 4, 6, …
+        'style_fn': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
     },
 }
 ```
@@ -282,19 +283,19 @@ You can define only one side if you only want every-other-row coloring:
 'rows': {'data': {'odd': {'style': 'fmt_stripe'}}}   # only odd rows get a background
 ```
 
-**Conditional row styles** use `style` under `'data'`. It accepts a callable or a list of callables; each receives the full record and returns a style name or `None`. Multiple callables are composed in order, later ones taking precedence:
+**Conditional row styles** use `style_fn` under `'data'`. It accepts a callable or a list of callables; each receives the full record and returns a style name or `None`. Multiple callables are composed in order, later ones taking precedence:
 
 ```python
 'rows': {
     'data': {
-        'style': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+        'style_fn': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
     },
 }
 
 # Multiple callables — both applied, last non-None wins per property
 'rows': {
     'data': {
-        'style': [
+        'style_fn': [
             lambda rec: 'fmt_stripe' if rec['row_num'] % 2 else None,
             lambda rec: 'fmt_alerts' if rec['overdue'] else None,
         ],
@@ -306,11 +307,12 @@ You can define only one side if you only want every-other-row coloring:
 
 1. Date/datetime base format (applied automatically by type)
 2. Column `style`
-3. `'*'` `style` (all rows)
-4. `'odd'` / `'even'` `style`
-5. `'data'` `style` callable results (composed in list order)
-6. Column `style_fn` callable result(s)
-7. `hyperlink_style` (applied by `LinkedExcelWriter` to linked cells)
+3. `rows['*']['style']`
+4. `rows['data']['style']`
+5. `rows['data']['odd'|'even']['style']`
+6. `rows['data']['style_fn']` callable(s)
+7. Column `style_fn` callable(s)
+8. `hyperlink_style` (applied by `LinkedExcelWriter` to linked cells)
 
 Styles at higher priority levels are composed on top — they override individual properties (fill, font, number format) rather than replacing the whole style.
 
