@@ -1072,17 +1072,6 @@ def setup_config() -> None:
     if 'connections' not in config_data:
         config_data['connections'] = {}
 
-    # Remove placeholder sample entries from the copied template
-    config_data['connections'] = {
-        k: v for k, v in config_data['connections'].items()
-        if not k.startswith('sample')
-    }
-    if 'passwords' in config_data:
-        config_data['passwords'] = {
-            k: v for k, v in config_data['passwords'].items()
-            if not k.startswith('sample')
-        }
-
     add_connection = input("\nAdd a database connection now? [y/N]: ").strip().lower()
     edits = 0
     while add_connection in ('y', 'yes'):
@@ -1174,9 +1163,19 @@ def setup_config() -> None:
 
         add_connection = input("\nAdd another connection? [y/N]: ").strip().lower()
 
-    # Always write back — sample entries were stripped above
-    with open(config_path, 'w') as f:
-        yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
+    if edits:
+        # Strip sample placeholder entries now that the user has added real connections
+        config_data['connections'] = {
+            k: v for k, v in config_data['connections'].items()
+            if not k.startswith('sample')
+        }
+        if 'passwords' in config_data:
+            config_data['passwords'] = {
+                k: v for k, v in config_data['passwords'].items()
+                if not k.startswith('sample')
+            }
+        with open(config_path, 'w') as f:
+            yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
 
     # Show summary
     print("\n" + "="*60)
