@@ -337,6 +337,11 @@ class ConfigManager:
             if not isinstance(config, dict):
                 raise ValueError(f"Invalid config file {self.config_file}.")
 
+            # Normalize empty/null sections to empty dicts
+            for section in ('connections', 'passwords', 'drivers'):
+                if config.get(section) is None:
+                    config[section] = {}
+
             # Validate connections section if it exists
             if 'connections' in config:
                 for name, conn in config.get('connections', {}).items():
