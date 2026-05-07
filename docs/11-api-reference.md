@@ -91,9 +91,10 @@ db = sqlite(database, **kwargs)
 
 #### Execution Methods
 
-**`execute(query, params=None)`**
+**`execute(query, bind_vars=(), convert_params=False)`**
 - Executes a single SQL statement
-- Params: dict (named) or tuple/list (positional)
+- `bind_vars`: tuple/list (positional) or dict (named) — passed directly to the driver by default
+- `convert_params=True`: rewrites the query to the cursor's paramstyle and converts named `bind_vars` dict automatically (same as `execute_file` / `PreparedStatement`)
 - Returns: cursor (if return_cursor=True) or None
 
 **`executemany(query, params_list)`**
@@ -332,9 +333,9 @@ All readers support:
 CSVReader(file, delimiter=',', skip_rows=0, n_rows=None, **csv_args)
 ```
 
-**XLSXReader**
+**ExcelReader**
 ```python
-XLSXReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
+ExcelReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
 ```
 
 **JSONReader**
@@ -673,8 +674,8 @@ errors_logged()  # Returns error log path or None
 ```python
 from dbtk.etl import column_defs_from_db
 
-column_defs_from_db(cursor, table_name, schema=None)
-# Returns: dict of column configurations
+column_defs_from_db(cursor, table_name, add_comments=False)
+# Returns: string containing a Python dict literal of column configurations
 ```
 
 ### SQL Parameter Processing

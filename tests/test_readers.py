@@ -9,8 +9,8 @@ from pathlib import Path
 from datetime import date, datetime
 
 from dbtk.readers import (
-    CSVReader, XLSReader, XLSXReader, JSONReader, NDJSONReader,
-    XMLReader, FixedReader, FixedColumn, Clean, get_reader
+    CSVReader, XLSReader, ExcelReader, JSONReader, NDJSONReader,
+    XMLReader, FixedReader, FixedColumn, get_reader
 )
 from dbtk.readers.fixed_width import EDIReader
 from dbtk.formats.edi import ACH_COLUMNS, FORMATS
@@ -123,7 +123,7 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
         wb = open_workbook(str(excel_file))
         ws = get_sheet_by_index(wb, 0)
         if ws.__class__.__name__ == 'Worksheet':
-            return XLSXReader(ws, **kwargs)
+            return ExcelReader(ws, **kwargs)
         else:
             return XLSReader(ws, **kwargs)
     elif reader_type == 'json':
@@ -133,6 +133,7 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
     elif reader_type == 'xml':
         return XMLReader(open(xml_file, 'rb'), record_xpath='//record', **kwargs)
     elif reader_type == 'fixed':
+        kwargs.setdefault('add_row_num', True)
         return FixedReader(open(fixed_file, encoding='utf-8'), fixed_columns, **kwargs)
     else:
         raise ValueError(f"Unknown reader type: {reader_type}")
@@ -417,7 +418,7 @@ class TestGetReader:
     def test_get_reader_excel(self, excel_file):
         """Test get_reader with Excel file."""
         with get_reader(str(excel_file)) as reader:
-            assert isinstance(reader, (XLSReader, XLSXReader))
+            assert isinstance(reader, (XLSReader, ExcelReader))
             records = list(reader)
             assert len(records) == 100
 
@@ -681,7 +682,7 @@ class TestEDIReader:
         assert rec.record_type_code == '6'
         assert rec.transaction_code == '22'
         assert rec.individual_name == 'JOHN DOE'
-        assert rec.amount == '0000100000'
+        assert rec.amount == 100000
         assert rec.addenda_indicator == '1'
 
     def test_addenda_fields(self, reader):
@@ -696,7 +697,7 @@ class TestEDIReader:
         rec = records[4]
         assert rec.record_type_code == '6'
         assert rec.individual_name == 'JANE SMITH'
-        assert rec.amount == '0000050000'
+        assert rec.amount == 50000
         assert rec.addenda_indicator == '0'
 
     # ------------------------------------------------------------------

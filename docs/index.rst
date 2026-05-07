@@ -91,6 +91,7 @@ Quick Start
    04-record
    05-readers
    06-writers
+   06b-excel
    07-table
    08-datasurge
    09-etl-tools

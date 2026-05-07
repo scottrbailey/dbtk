@@ -5,7 +5,7 @@
 import csv
 import os
 from typing import TextIO, List, Any, Iterator, Optional
-from .base import Reader, Clean, logger
+from .base import Reader, logger
 
 
 class CSVReader(Reader):
@@ -84,7 +84,6 @@ class CSVReader(Reader):
     --------
     Reader : Base class with common reader features
     readers.get_reader : Automatic reader selection based on file extension
-    Clean : Header cleaning options
 
     Notes
     -----

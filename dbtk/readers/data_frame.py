@@ -1,7 +1,7 @@
 # dbtk/readers/data_frame.py
 import itertools
 from typing import Iterable, Optional
-from .base import Reader, Record, Clean, logger
+from .base import Reader, Record, logger
 
 
 class DataFrameReader(Reader):

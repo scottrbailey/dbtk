@@ -8,19 +8,19 @@ consistent interface and automatic format detection.
 
 """
 
-from .base import Reader, Clean
+from .base import Reader
 from .utils import get_reader, open_file
 from .csv import CSVReader
 from .data_frame import DataFrameReader
 from .json import JSONReader, NDJSONReader
-from .excel import XLSReader, XLSXReader, open_workbook, get_sheet_by_index, check_dependencies
+from .excel import XLSReader, ExcelReader, open_workbook, get_sheet_by_index, check_dependencies
 from .fixed_width import FixedReader, FixedColumn, EDIReader
 from .xml import XMLReader, XMLColumn
 
 
 # Re-export everything
 __all__ = [
-    'Reader', 'Clean', 'get_reader', 'open_file',
-    'CSVReader', 'EDIReader', 'FixedColumn', 'FixedReader', 'JSONReader', 'NDJSONReader', 'XLSReader', 'XLSXReader',
+    'Reader', 'get_reader', 'open_file',
+    'CSVReader', 'EDIReader', 'FixedColumn', 'FixedReader', 'JSONReader', 'NDJSONReader', 'XLSReader', 'ExcelReader',
     'XMLColumn', 'XMLReader', 'DataFrameReader', 'open_workbook', 'get_sheet_by_index'
 ]

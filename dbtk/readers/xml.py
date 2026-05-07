@@ -6,13 +6,31 @@ import logging
 import os
 from pathlib import Path
 from typing import List, Any, Dict, Optional, TextIO, Union, Iterator
-from .base import Reader, Clean
+from .base import Reader
 
 try:
     from lxml import etree
     HAS_LXML = True
 except ImportError:
+    from xml.etree import ElementTree as etree
     HAS_LXML = False
+
+# lxml and stdlib use different exception types
+_XMLParseError = etree.XMLSyntaxError if HAS_LXML else etree.ParseError
+_XPathError    = etree.XPathEvalError  if HAS_LXML else SyntaxError
+
+
+def _xpath(node, expr):
+    """Run an XPath expression using lxml or stdlib ElementTree."""
+    if HAS_LXML:
+        return node.xpath(expr)
+    # stdlib findall supports a limited XPath subset; // must be relative
+    if expr.startswith('//'):
+        expr = '.' + expr
+    try:
+        return node.findall(expr)
+    except SyntaxError:
+        return []
 
 logger = logging.getLogger(__name__)
 
@@ -102,13 +120,13 @@ class XMLReader(Reader):
         """Parse the XML file and prepare for reading."""
         try:
             self._tree = etree.parse(self.fp)
-        except etree.XMLSyntaxError as e:
+        except _XMLParseError as e:
             raise ValueError(f"Invalid XML: {e}")
 
         # Find all record nodes
         try:
-            self._record_nodes = self._tree.xpath(self.record_xpath)
-        except etree.XPathEvalError as e:
+            self._record_nodes = _xpath(self._tree, self.record_xpath)
+        except _XPathError as e:
             raise ValueError(f"Invalid XPath expression '{self.record_xpath}': {e}")
 
         if not self._record_nodes:
@@ -159,7 +177,7 @@ class XMLReader(Reader):
         # Check if it has custom XPath
         if xml_column.xpath:
             try:
-                result = record_node.xpath(xml_column.xpath)
+                result = _xpath(record_node, xml_column.xpath)
                 if result:
                     # Handle different XPath result types
                     if isinstance(result[0], str):
@@ -175,7 +193,7 @@ class XMLReader(Reader):
                     return value.strip() if value else None
                 else:
                     return None
-            except etree.XPathEvalError:
+            except _XPathError:
                 return None
 
         # Look for simple child element by column name
@@ -249,12 +267,9 @@ def open_xml(filename: Union[str, Path], **kwargs) -> XMLReader:
             for record in reader:
                 print(record.name)
     """
-    fp = open(filename, 'rb')  # lxml prefers binary mode
+    fp = open(filename, 'rb')
     return XMLReader(fp, **kwargs)
 
 
-def check_dependencies():
-    if not HAS_LXML:
-        logger.error('lxml is required for XML support. Install with "pip install lxml".')
-
-check_dependencies()
+if not HAS_LXML:
+    logger.debug('lxml not available; falling back to stdlib xml.etree.ElementTree (limited XPath support).')

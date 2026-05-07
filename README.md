@@ -39,12 +39,16 @@ that you stay in control. When something breaks, you know exactly where to look.
 The architecture is intentionally layered — use what you need, skip what you don't:
 
 ```
+Configuration   → encrypted YAML, env vars, named connections, driver overrides, smart logging
+Connection      → consistent connection and parameter handling, clean reference hierarchy
 Record          → ergonomic row handling, memory-efficient at scale
 Table           → field mapping, transforms, validation, upserts
 DataSurge       → batched inserts with progress tracking and stats
 BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throughput
-readers/writers → consistent API across every file format and compression type
+Readers/Writers → consistent API across every file format and compression type
 ```
+
+<img src="https://raw.githubusercontent.com/scottrbailey/dbtk/main/docs/assets/dbtk_flowchart.png" width="800" align="center" />
 
 When developers convert existing jobs to DBTK, the result can be **half to a quarter the
 original code**. That reduction comes from specific things DBTK just handles:
@@ -66,7 +70,7 @@ finish the job and think *"that was satisfyingly elegant"* — not because corne
 because the tool was collaborating with you instead of making you fight it.
 
 **Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
-But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will
+But DBTK's throughput and memory usage are very good. BulkSurge streaming from polars and doing direct loads to PostgreSQL will
 process 1M rows in 3-4 seconds. But even with a standard Python csv reader and numerous column transforms, DataSurge is able to
 write 1M rows to every supported database in 5-10 seconds.
 

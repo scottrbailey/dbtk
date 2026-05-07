@@ -25,20 +25,20 @@ db = sqlite('path/to/database.db')
 
 DBTK supports multiple database drivers with automatic detection and fallback:
 
-| Database | Driver | Install Command | Notes                                                     |
-|----------|--------|-----------------|-----------------------------------------------------------|
-| PostgreSQL | psycopg2 | `pip install psycopg2-binary` | Recommended, most mature                                  |
-| PostgreSQL | psycopg (3) | `pip install psycopg-binary` | Newest version, async support                             |
-| PostgreSQL | pgdb | `pip install pgdb` | DB-API compliant                                          |
-| Oracle | oracledb | `pip install oracledb` | Thin mode - no Oracle client required                     |
-| Oracle | cx_Oracle | `pip install cx_Oracle` | Requires Oracle client installation                       |
-| MySQL | mysqlclient | `pip install mysqlclient` | Fastest option, C extension, module name MySQLdb          |
-| MySQL | mariadb | `pip install mariadb` | Official MariaDB connector, C extension, MySQL compatible |
-| MySQL | mysql.connector | `pip install mysql-connector-python` | Official MySQL connector                                  |
-| MySQL | pymysql | `pip install pymysql` | Pure Python, lightweight                                  |
-| SQL Server | pyodbc | `pip install pyodbc` | ODBC driver required on system                            |
-| SQL Server | pymssql | `pip install pymssql` | Lightweight, no ODBC needed                               |
-| SQLite | sqlite3 | Built-in | No installation needed                                    |
+| Database   | Driver          | Install Command                      | Notes                                                     |
+|------------|-----------------|--------------------------------------|-----------------------------------------------------------|
+| PostgreSQL | psycopg2        | `pip install psycopg2-binary`        | Recommended, most mature                                  |
+| PostgreSQL | psycopg (3)     | `pip install psycopg-binary`         | Newest version, async support                             |
+| PostgreSQL | pgdb            | `pip install pgdb`                   | DB-API compliant                                          |
+| Oracle     | oracledb        | `pip install oracledb`               | Thin mode - no Oracle client required                     |
+| Oracle     | cx_Oracle       | `pip install cx_Oracle`              | Requires Oracle client installation                       |
+| MySQL      | mysqlclient     | `pip install mysqlclient`            | Fastest option, C extension, module name MySQLdb          |
+| MySQL      | mariadb         | `pip install mariadb`                | Official MariaDB connector, C extension, MySQL compatible |
+| MySQL      | mysql.connector | `pip install mysql-connector-python` | Official MySQL connector                                  |
+| MySQL      | pymysql         | `pip install pymysql`                | Pure Python, lightweight                                  |
+| SQL Server | pyodbc          | `pip install pyodbc`                 | ODBC driver required on system                            |
+| SQL Server | pymssql         | `pip install pymssql`                | Lightweight, no ODBC needed                               |
+| SQLite     | sqlite3         | Built-in                             | No installation needed                                    |
 
 **Driver priority:** DBTK automatically selects the best available driver based on priority. Override with `driver='driver_name'` in your connection config or function call.
 
@@ -90,22 +90,23 @@ with db.transaction():
 DBTK maintains a clean reference hierarchy for accessing the underlying driver:
 
 ```python
-db = dbtk.connect('imdb')
-# The Database maintains a reference to the driver
-print(db.driver.__name__)       # 'psycopg2', 'oracledb', etc.
+cursor = dbtk.connect('imdb').cursor()
 
-cursor = db.cursor()
 # The Cursor maintains a reference to the Database connection
 print(cursor.connection.connection_name) # imdb
 
+# The Database maintains a reference to the driver
+print(cursor.connection.driver.__name__)       # 'psycopg2', 'oracledb', etc.
+
 # Access the wrapped connection or cursor
-db._connection
+cursor.connection._connection
 cursor._cursor
 
 # Use driver exceptions
 try:
     cursor.execute(sql)
 except cursor.connection.driver.DatabaseError as e:
+    cursor.connection.rollback()
     logger.error(f"Database error: {e}")
 ```
 
@@ -127,7 +128,7 @@ for user in cursor:
     id, name, email = user  # Tuple unpacking
 ```
 
-Records also normalize column names for attribute access, so `row.employee_id` works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
+Records store both the original column names, and also normalize column names for attribute access, so `row.employee_id` (and `row['employee_id']`) works whether the source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`. This makes your Table field mappings resilient to source naming inconsistencies.
 
 See [Record Objects](04-record.md) for full documentation on access patterns, normalization, mutation, and performance characteristics.
 
@@ -178,8 +179,12 @@ connections:
 ### Executing Queries
 
 ```python
-# Single query
-cursor.execute("SELECT * FROM users WHERE id = :id", {'id': 42})
+# MySQL — %s (format) paramstyle
+mysql_cur.execute("SELECT * FROM users WHERE id = %s", (42,))
+# Oracle — :named paramstyle
+ora_cur.execute("SELECT * FROM users WHERE id = :id", {'id': 42})
+# MS SQL Server — ? (qmark) paramstyle, convert_params rewrites :named → ?
+mssql_cur.execute("SELECT * FROM users WHERE id = :id", {'id': 42}, convert_params=True)
 
 # Multiple rows (batch)
 cursor.executemany(
@@ -198,26 +203,33 @@ cursor.execute_file('queries/create_schema.sql', {'status': 'active'})
 For queries executed repeatedly with different parameters, PreparedStatement transforms the SQL to match the database's `paramstyle` and caches the parameter mapping.
 
 ```python
-from dbtk.cursors import PreparedStatement
+import dbtk
 
-# Create a PreparedStatement from a query file
+# From a query string — mirrors cursor.prepare_file() for inline SQL
+orders_stmt = cursor.prepare_query("SELECT * FROM orders WHERE customer_id = :id")
+
+# From a query file
 movies_stmt = cursor.prepare_file('queries/list_movies.sql')
-users_stmt = PreparedStatement(cursor, filename='queries/get_user.sql')
 
-# Create PreparedStatement from query string
-orders_stmt = PreparedStatement(cursor, query="SELECT * FROM orders WHERE customer_id = :id")
-
-users_stmt.execute({'location': 'CA'})
 # Execute many times efficiently
-for user in user_stmt.fetchall():
+for user in users:
     orders_stmt.execute({'id': user.id})
     order = orders_stmt.fetchone()
     process(user, order)
 ```
+
+`PreparedStatement` is also available directly from `dbtk` or `dbtk.cursors` if you need to construct one explicitly:
+
+```python
+import dbtk
+stmt = dbtk.PreparedStatement(cursor, query="SELECT * FROM orders WHERE customer_id = :id")
+stmt = dbtk.PreparedStatement(cursor, filename='queries/get_user.sql')
+```
 ### Parameter Conversion
 
-DBTK has tools to handle different parameter styles. You can use _named_ (`:name`) or _pyformat_ (`%(name)s`) in queries - DBTK can convert to the driver's native style. 
-`cursor.execute_file()` and `PreparedStatment` will automatically rewrite the query and format parameters to match your database's paramstyle, making your queries portable across databases.
+DBTK has tools to handle different parameter styles. You can use _named_ (`:name`) or _pyformat_ (`%(name)s`) in queries - DBTK can convert to the driver's native style.
+
+By default, `cursor.execute()` passes the query and parameters directly to the underlying driver — no rewriting is done. Use `convert_params=True` for a one-off conversion. `cursor.execute_file()` and `PreparedStatement` convert automatically.
 
 Oracle and PostgreSQL support both dictionary and positional parameters. Their default (db.driver.paramstyle) will be 
 the dictionary style. If you want force positional mode, you can override the paramstyle as in the example below.   
@@ -283,9 +295,9 @@ desc = cursor.description
 try:
     cursor.execute("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
     cursor.execute("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
-    db.commit()
+    cursor.connection.commit()
 except Exception:
-    db.rollback()
+    cursor.connection.rollback()
     raise
 ```
 

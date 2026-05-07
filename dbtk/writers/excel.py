@@ -3,10 +3,12 @@
 Excel writer for database results using openpyxl.
 """
 import logging
-from typing import Any, Union, List, Optional, Iterable, Dict, TYPE_CHECKING
+from typing import Any, Callable, Union, List, Optional, Iterable, Dict, TYPE_CHECKING
 from pathlib import Path
 from datetime import datetime, date, time
 from zipfile import BadZipFile
+import fnmatch
+import hashlib
 
 from .base import BatchWriter, RecordLike
 
@@ -15,7 +17,8 @@ if TYPE_CHECKING:
 
 try:
     from openpyxl import Workbook, load_workbook
-    from openpyxl.styles import Font, NamedStyle
+    from openpyxl.styles import Font, NamedStyle, Alignment
+    from openpyxl.comments import Comment
     from openpyxl.utils.exceptions import InvalidFileException
     from openpyxl.utils import get_column_letter
     HAS_OPENPYXL = True
@@ -26,6 +29,173 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MIDNIGHT = time(0, 0)
+
+_BUILTIN_STYLE_NAMES = frozenset({
+    'date_style', 'datetime_style', 'hyperlink_style',
+    'bold_style', 'header_vert_style',
+    'currency_style', 'percent_style', 'comma_style',
+})
+
+
+class ColumnRule:
+    """Per-column formatting rule for use with :class:`ExcelFormat`.
+
+    Interchangeable with a plain ``dict`` — ``ExcelWriter`` accepts either.
+    The order of rules in ``ExcelFormat.columns`` is significant: later rules
+    override earlier ones on a per-property basis.
+
+    Parameters
+    ----------
+    style : str or dict, optional
+        Static style applied to every data cell in the column. Either a
+        registered style name (str) or an inline property dict
+        (``bg_color``, ``font``, ``number_format``, ``alignment``).
+    header_style : str or dict, optional
+        Static style applied to the header cell only (owns the cell entirely —
+        include ``font={'bold': True}`` if you still want bold).
+    width : float, optional
+        Explicit column width in Excel units; bypasses auto-sizing.
+    hidden : bool, default False
+        Hide the column.
+    comment : str, optional
+        Comment/note added to the header cell.
+    filter : bool, default False
+        Show the auto-filter dropdown on this column only; hides dropdowns on
+        all other columns.
+    group_label : str, optional
+        Label for a group super-header spanning this column range.
+        Only valid on range patterns (``'col_a:col_z'``).
+    conditional_style : callable or list[callable], optional
+        ``lambda record: style_name_or_None`` — evaluated per row; overrides
+        ``style`` and row styles when non-``None``. Multiple callables
+        are composed in order.
+    """
+
+    def __init__(self, style=None, header_style=None, width=None, hidden=False,
+                 comment=None, filter=False, group_label=None, conditional_style=None):
+        self.style = style
+        self.header_style = header_style
+        self.width = width
+        self.hidden = hidden
+        self.comment = comment
+        self.filter = filter
+        self.group_label = group_label
+        self.conditional_style = conditional_style
+
+    def to_dict(self):
+        d: dict = {}
+        if self.style is not None:
+            d['style'] = self.style
+        if self.header_style is not None:
+            d['header_style'] = self.header_style
+        if self.width is not None:
+            d['width'] = self.width
+        if self.hidden:
+            d['hidden'] = self.hidden
+        if self.comment is not None:
+            d['comment'] = self.comment
+        if self.filter:
+            d['filter'] = self.filter
+        if self.group_label is not None:
+            d['group_label'] = self.group_label
+        if self.conditional_style is not None:
+            d['conditional_style'] = self.conditional_style
+        return d
+
+
+class ExcelFormat:
+    """Formatting configuration for :class:`ExcelWriter`.
+
+    Interchangeable with a plain ``dict`` — ``ExcelWriter`` accepts either.
+    Using ``ExcelFormat`` gives full IDE autocomplete and type checking.
+
+    The ``columns`` dict is **order-sensitive**: patterns are applied in
+    definition order and later rules override earlier ones per property.
+
+    Parameters
+    ----------
+    styles : dict, optional
+        Named style definitions. Keys are style names, values are property
+        dicts (``bg_color``, ``font``, ``number_format``, ``alignment``).
+        Styles defined here take priority over the built-in styles, so you
+        can redefine ``comma_style``, ``currency_style``, etc.
+    columns : dict, optional
+        Pattern → :class:`ColumnRule` (or plain dict). Patterns are
+        case-insensitive fnmatch globs, literals, or ``'start:end'`` ranges.
+    rows : dict, optional
+        Row-type formatting. Recognised keys:
+
+        * ``'*'`` — applied to **all** rows (lowest priority).
+          Supports ``height`` and ``style`` (str or dict).
+        * ``'group_header'`` — the group-label row (only present when column
+          ranges carry ``group_label``). Supports ``height`` and ``style``
+          (str or dict).
+        * ``'header'`` — the column-header row. Supports ``height``.
+        * ``'data'`` — data rows. Nested keys:
+
+          - ``'style'``: str or dict applied to all data rows.
+          - ``'odd'``  / ``'even'``: ``{'style': style_name}`` for striping.
+          - ``'conditional_style'``: callable or list of callables
+            ``lambda record: style_name_or_None``.
+            Multiple callables are composed in order.
+          - ``'height'``: uniform row height for data rows.
+
+        Cascade (lowest → highest priority): ``'*'`` → ``'odd'``/``'even'``
+        → ``'conditional_style'`` callable(s).
+    min_column_width : float, default 6
+        Minimum auto-sized column width.
+    max_column_width : float, default 60
+        Maximum auto-sized column width.
+    auto_filter : bool, default False
+        Enable Excel auto-filter dropdowns on the header row.
+    freeze : str or False, optional
+        Freeze-panes cell reference (e.g. ``'D2'``). ``None`` uses the
+        automatic default (``'A2'`` or ``'A3'`` when group headers are
+        present). Pass ``False`` to disable freezing entirely.
+    header_auto_rotate : float or dict, optional
+        Auto-rotate column headers that are significantly wider than their
+        data. Pass a float ratio or
+        ``{'ratio': 1.5, 'min_length': 8, 'height_factor': 6.5}``.
+    tab_color : str, optional
+        Worksheet tab color as a hex string (``'#FF0000'`` or ``'FF0000'``).
+    """
+
+    def __init__(self, styles=None, columns=None, rows=None,
+                 min_column_width=6, max_column_width=60, auto_filter=False,
+                 freeze=None, header_auto_rotate=None, tab_color=None):
+        self.styles = styles if styles is not None else {}
+        self.columns = columns if columns is not None else {}
+        self.rows = rows if rows is not None else {}
+        self.min_column_width = min_column_width
+        self.max_column_width = max_column_width
+        self.auto_filter = auto_filter
+        self.freeze = freeze
+        self.header_auto_rotate = header_auto_rotate
+        self.tab_color = tab_color
+
+    def to_dict(self):
+        d: dict = {
+            'min_column_width': self.min_column_width,
+            'max_column_width': self.max_column_width,
+        }
+        if self.styles:
+            d['styles'] = self.styles
+        if self.columns:
+            d['columns'] = {
+                k: v.to_dict() if isinstance(v, ColumnRule) else v
+                for k, v in self.columns.items()
+            }
+        if self.rows:
+            d['rows'] = self.rows
+        if self.auto_filter:
+            d['auto_filter'] = self.auto_filter
+        if self.freeze is not None:
+            d['freeze'] = self.freeze
+        if self.header_auto_rotate is not None:
+            d['header_auto_rotate'] = self.header_auto_rotate
+        if self.tab_color is not None:
+            d['tab_color'] = self.tab_color
+        return d
 
 
 class ExcelWriter(BatchWriter):
@@ -76,6 +246,7 @@ class ExcelWriter(BatchWriter):
         sheet_name: Optional[str] = None,
         headers: Optional[List[str]] = None,
         write_headers: bool = True,
+        formatting: Optional[Union[Dict, ExcelFormat]] = None,
     ):
         """
         Initialize the Excel writer.
@@ -87,25 +258,41 @@ class ExcelWriter(BatchWriter):
         file : str or Path, optional
             Output Excel file (.xlsx). Required for Excel output.
         sheet_name : str, optional
-            Default/active sheet name to use for write_batch() calls without explicit sheet_name
+            Default/active sheet name to use for write_batch() calls without
+            an explicit sheet_name.
         headers : List[str], optional
-            Header row text. If None, checks data.description for original column names,
-            then falls back to detected column names. Useful when Record field names have been
-            normalized (e.g., lowercased) but you want original database column names in Excel.
+            Header row text. If None, checks data.description for original
+            column names, then falls back to detected column names.
         write_headers : bool, default True
-            Whether to write column headers (only when sheet is empty)
+            Whether to write column headers (only when the sheet is empty).
+        formatting : ExcelFormat or dict, optional
+            Worksheet formatting rules. Prefer :class:`ExcelFormat` for
+            IDE autocomplete; a plain ``dict`` is also accepted.
+            See :class:`ExcelFormat` for the full reference.
         """
         if not HAS_OPENPYXL:
             raise ImportError("ExcelWriter requires openpyxl: pip install openpyxl")
         if file is None:
             raise ValueError("ExcelWriter requires an output file path")
 
+        if isinstance(formatting, ExcelFormat):
+            formatting = formatting.to_dict()
+
         super().__init__(data=data, file=file, headers=headers, write_headers=write_headers)
 
         self.output_path = Path(file)
         self.active_sheet: Optional[str] = sheet_name
         self.workbook: Optional[Workbook] = None
-        self._sheets_written_this_session: set = set()  # Track sheets written in this session
+        self._sheets_written_this_session: set = set()
+        self.formatting: dict = formatting or {}
+
+        self._link_mapping: dict = {}
+        self._style_cache: dict = {}
+        self._named_style_objects: dict = {}
+        self._col_rules: list = [
+            (k.lower(), k, v.to_dict() if isinstance(v, ColumnRule) else v)
+            for k, v in self.formatting.get('columns', {}).items()
+        ]
 
         self._load_or_create_workbook()
 
@@ -119,8 +306,11 @@ class ExcelWriter(BatchWriter):
                 self.workbook = load_workbook(self.output_path)
                 logger.info(f"Loaded existing workbook: {self.output_path}")
             else:
+                # make sure path is writable
                 with open(self.output_path, mode='wb'):
                     pass
+                # clean up empty file that was just created so an exception doesn't leave us with an invalid Excel file
+                # self.output_path.unlink()
                 self.workbook = Workbook()
                 if 'Sheet' in self.workbook.sheetnames:
                     self.workbook.remove(self.workbook['Sheet'])
@@ -137,24 +327,308 @@ class ExcelWriter(BatchWriter):
 
         self._register_styles()
 
+    def _add_named_style(self, style: 'NamedStyle') -> None:
+        """Register a NamedStyle if not already in the workbook, and cache the object."""
+        if style.name not in self.workbook.named_styles:
+            self.workbook.add_named_style(style)
+        self._named_style_objects[style.name] = style
+
     def _register_styles(self) -> None:
-        """Register common styles (date, datetime, hyperlink)."""
+        """Register styles for this workbook.
+
+        User-defined styles in ``formatting['styles']`` are registered first so
+        they take precedence over the built-ins.  Built-in styles that already
+        exist (e.g. because the user redefined ``comma_style``) are silently
+        skipped by :meth:`_add_named_style`.
+
+        Built-in styles
+        ---------------
+        date_style
+            Date number format: ``YYYY-MM-DD``.
+        datetime_style
+            Datetime number format: ``YYYY-MM-DD HH:MM:SS``.
+        hyperlink_style
+            Blue underlined font (used automatically by LinkedExcelWriter).
+        bold_style
+            Bold font. Useful as a ``header_style`` when you only want emphasis.
+        header_vert_style
+            Bold font + 90° text rotation. Pair with
+            ``rows={'header': {'height': 120}}`` for narrow rotated headers.
+        currency_style
+            Number format: ``#,##0.00``.
+        percent_style
+            Number format: ``0.00%``.
+        comma_style
+            Number format: ``#,##0``.
+        """
         if self.workbook is None:
             return
 
-        styles = [
+        # User styles first — allows overriding built-ins
+        for style_name, props in self.formatting.get('styles', {}).items():
+            self._add_named_style(self._build_named_style(style_name, props))
+
+        # Built-ins — skipped silently if user already registered the name
+        from openpyxl.styles import Alignment as _Alignment
+        _bold_font = Font(bold=True)
+        for style in [
             NamedStyle(name='date_style', number_format='YYYY-MM-DD'),
             NamedStyle(name='datetime_style', number_format='YYYY-MM-DD HH:MM:SS'),
-            NamedStyle(
-                name='hyperlink_style',
-                font=Font(color="0000FF", underline="single")
-            ),
-        ]
+            NamedStyle(name='hyperlink_style', font=Font(color="0000FF", underline="single")),
+            NamedStyle(name='bold_style', font=_bold_font),
+            NamedStyle(name='header_vert_style', font=_bold_font,
+                       alignment=_Alignment(text_rotation=90, horizontal='center')),
+            NamedStyle(name='currency_style', number_format='#,##0.00'),
+            NamedStyle(name='percent_style', number_format='0.00%'),
+            NamedStyle(name='comma_style', number_format='#,##0'),
+        ]:
+            self._add_named_style(style)
 
-        for style in styles:
-            if style.name not in self.workbook.named_styles:
-                self.workbook.add_named_style(style)
+    @staticmethod
+    def _build_named_style(name: str, props: dict) -> 'NamedStyle':
+        """Build a NamedStyle from a properties dict."""
+        from openpyxl.styles import PatternFill, Alignment
+        style = NamedStyle(name=name)
+        if 'bg_color' in props:
+            color = props['bg_color'].lstrip('#')
+            style.fill = PatternFill(fill_type='solid', fgColor=color)
+        if 'font' in props:
+            style.font = Font(**props['font'])
+        if 'number_format' in props:
+            style.number_format = props['number_format']
+        if 'alignment' in props:
+            style.alignment = Alignment(**props['alignment'])
+        return style
 
+    def _ensure_style(self, props: dict) -> str:
+        """Register an inline format dict as a NamedStyle; return its name."""
+        key = tuple(sorted((k, str(v)) for k, v in props.items()))
+        name = 'fmt_' + hashlib.md5(str(key).encode()).hexdigest()[:8]
+        if name not in self._named_style_objects:
+            self._add_named_style(self._build_named_style(name, props))
+        return name
+
+    def _register_call_styles(self, fmt: dict) -> None:
+        """Register any user-defined styles from a per-call formatting dict."""
+        for name, props in fmt.get('styles', {}).items():
+            self._add_named_style(self._build_named_style(name, props))
+
+    def _build_col_fmt_map(self, columns: List[str], col_rules: list = None) -> list:
+        """Build per-column formatting list from wildcard pattern rules.
+
+        Returns a list (indexed by 0-based column position) of property dicts.
+        Patterns are applied in definition order; later rules win per property.
+        Three pattern forms are supported (all case-insensitive):
+          - fnmatch glob: ``'*_fee*'``, ``'resv_*'``
+          - range: ``'start:end'``, ``':end'`` (from first), ``'start:'`` (to last)
+            A pattern is only treated as a range if it contains ``:`` with no wildcard
+            characters and does not itself match a column name literally.
+          - literal: any exact column name (handled by fnmatch as a degenerate glob)
+        """
+        if col_rules is None:
+            col_rules = self._col_rules
+        if not col_rules:
+            return []
+        result: List[dict] = [{} for _ in columns]
+        cols_lower = [c.lower() for c in columns]
+
+        def _apply(dest: dict, props: dict) -> None:
+            """Merge props into dest, composing overlapping 'style' values."""
+            for k, v in props.items():
+                if k == 'style' and 'style' in dest:
+                    existing = dest[k]
+                    dest[k] = existing if isinstance(existing, list) else [existing]
+                    dest[k].append(v)
+                else:
+                    dest[k] = v
+
+        for pattern_lower, pattern, props in col_rules:
+            is_range = ':' in pattern_lower and not any(c in pattern_lower for c in '*?[') and pattern_lower not in cols_lower
+
+            if 'group_label' in props and not is_range:
+                logger.warning(
+                    f"'group_label' is only supported on range patterns (e.g. 'col_a:col_b'); "
+                    f"ignoring for pattern '{pattern}'"
+                )
+                props = {k: v for k, v in props.items() if k != 'group_label'}
+
+            if is_range:
+                # Range syntax: 'start:end', ':end', 'start:'
+                start_str, end_str = pattern_lower.split(':', 1)
+                start_str, end_str = start_str.strip(), end_str.strip()
+
+                if start_str:
+                    if start_str not in cols_lower:
+                        raise ValueError(f"Range start column '{start_str}' not found in result set")
+                    start_idx = cols_lower.index(start_str)
+                else:
+                    start_idx = 0
+
+                if end_str:
+                    if end_str not in cols_lower:
+                        raise ValueError(f"Range end column '{end_str}' not found in result set")
+                    end_idx = cols_lower.index(end_str)
+                else:
+                    end_idx = len(columns) - 1
+
+                if start_idx > end_idx:
+                    raise ValueError(
+                        f"Range '{pattern}': '{start_str}' (col {start_idx + 1}) "
+                        f"comes after '{end_str}' (col {end_idx + 1})"
+                    )
+
+                for i in range(start_idx, end_idx + 1):
+                    _apply(result[i], props)
+            else:
+                # fnmatch glob (also handles literal column names)
+                for col_idx, col_name_lower in enumerate(cols_lower):
+                    if fnmatch.fnmatch(col_name_lower, pattern_lower):
+                        _apply(result[col_idx], props)
+
+        for col_props in result:
+            fmt = col_props.get('style')
+            if isinstance(fmt, list):
+                resolved = [self._ensure_style(f) if isinstance(f, dict) else f for f in fmt]
+                col_props['style'] = self._compose_styles(*resolved)
+            elif isinstance(fmt, dict):
+                col_props['style'] = self._ensure_style(fmt)
+            hfmt = col_props.get('header_style')
+            if isinstance(hfmt, dict):
+                col_props['header_style'] = self._ensure_style(hfmt)
+        return result
+
+    def _finalize_headers(
+        self,
+        worksheet: 'Worksheet',
+        header_widths: list,
+        data_widths: list,
+        col_fmt: list,
+        rows_fmt: dict,
+        link_mapping: Optional[dict] = None,
+        effective_fmt: Optional[dict] = None,
+    ) -> None:
+        """Apply column widths, auto-rotate, header height, and freeze panes.
+
+        Called once after data has been sampled, so auto-rotate decisions have
+        accurate data-width information. ``link_mapping`` is LinkedExcelWriter's
+        column → (LinkSource, mode) map; LinkSource display widths substitute for
+        sampled data widths on linked columns.
+        """
+        link_mapping = link_mapping or {}
+        effective_fmt = effective_fmt if effective_fmt is not None else self.formatting
+
+        # Determine whether group headers are present
+        has_groups = bool(col_fmt and any(p.get('group_label') for p in col_fmt))
+        header_row = 2 if has_groups else 1
+
+        # Substitute LinkSource display widths for linked columns
+        effective_data_widths = list(data_widths)
+        for col_idx, col_name in enumerate(self.columns, 1):
+            if col_name in link_mapping:
+                source, _ = link_mapping[col_name]
+                if source.max_display_width > 0:
+                    effective_data_widths[col_idx - 1] = source.max_display_width
+
+        # Auto-rotate: detect columns whose header is significantly longer than their data
+        auto_rotated: set = set()
+        har_height_factor = 6.5
+        har = effective_fmt.get('header_auto_rotate')
+        if har:
+            if isinstance(har, dict):
+                har_min = har.get('min_length', 8)
+                har_ratio = har.get('ratio', 1.5)
+                har_height_factor = har.get('height_factor', 6.5)
+            else:
+                har_min = 8
+                har_ratio = float(har)
+                har_height_factor = 6.5
+
+            for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
+                col_props = col_fmt[col_idx - 1] if col_fmt else {}
+                if col_props.get('header_style'):
+                    continue  # explicit header_style takes precedence
+                if hw >= har_min and hw > dw * har_ratio:
+                    auto_rotated.add(col_idx)
+                    worksheet.cell(header_row, col_idx).style = 'header_vert_style'
+
+        # Column widths: auto-rotated columns use data width only; others use max of both
+        min_col_width = effective_fmt.get('min_column_width', 6)
+        max_col_width = effective_fmt.get('max_column_width', 60)
+        for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
+            raw = dw if col_idx in auto_rotated else max(hw, dw)
+            adjusted = min(max(raw + 2, min_col_width), max_col_width)
+            worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted
+
+        # User column-rule overrides (width, hidden, comment)
+        for col_idx, col_props in enumerate(col_fmt, 1):
+            if col_props:
+                col_letter = get_column_letter(col_idx)
+                if 'width' in col_props:
+                    worksheet.column_dimensions[col_letter].width = col_props['width']
+                if 'hidden' in col_props:
+                    worksheet.column_dimensions[col_letter].hidden = bool(col_props['hidden'])
+                if 'comment' in col_props:
+                    worksheet.cell(header_row, col_idx).comment = Comment(col_props['comment'], '')
+
+        # Row heights — cascade: '*' (all rows) overridden by specific row type
+        rows_fmt_d = rows_fmt if isinstance(rows_fmt, dict) else {}
+        all_h = rows_fmt_d.get('*', {}).get('height')
+
+        # Header row height: '*' → 'header' → auto-rotate
+        header_h = rows_fmt_d.get('header', {}).get('height') or all_h
+        if header_h is not None:
+            worksheet.row_dimensions[header_row].height = header_h
+        elif auto_rotated:
+            max_rotated_len = max(header_widths[i - 1] for i in auto_rotated)
+            worksheet.row_dimensions[header_row].height = max_rotated_len * har_height_factor
+
+        # Group header row (row 1): merged cells spanning each labelled column range
+        if has_groups:
+            group_h = rows_fmt_d.get('group_header', {}).get('height') or all_h
+            if group_h is not None:
+                worksheet.row_dimensions[1].height = group_h
+
+            group_font = Font(bold=True)
+            group_align = Alignment(horizontal='center', vertical='center')
+            i = 0
+            while i < len(col_fmt):
+                group = col_fmt[i].get('group_label')
+                if group:
+                    j = i
+                    while j < len(col_fmt) and col_fmt[j].get('group_label') == group:
+                        j += 1
+                    start_col, end_col = i + 1, j  # 1-based, inclusive
+                    if start_col < end_col:
+                        worksheet.merge_cells(
+                            start_row=1, start_column=start_col,
+                            end_row=1, end_column=end_col
+                        )
+                    cell = worksheet.cell(1, start_col)
+                    cell.value = group
+                    cell.font = group_font
+                    cell.alignment = group_align
+                    i = j
+                else:
+                    i += 1
+
+        # Freeze panes
+        freeze = effective_fmt.get('freeze', 'A3' if has_groups else 'A2')
+        if freeze:
+            worksheet.freeze_panes = freeze
+
+        # Auto-filter on header row
+        filter_cols = {col_idx for col_idx, col_props in enumerate(col_fmt, 1) if col_props.get('filter')}
+        if filter_cols or effective_fmt.get('auto_filter'):
+            last_col = get_column_letter(len(self.columns))
+            filter_row = header_row
+            worksheet.auto_filter.ref = f"A{filter_row}:{last_col}{filter_row}"
+            if filter_cols:
+                from openpyxl.worksheet.filters import FilterColumn
+                for col_idx in range(1, len(self.columns) + 1):
+                    if col_idx not in filter_cols:
+                        worksheet.auto_filter.filterColumn.append(
+                            FilterColumn(colId=col_idx - 1, hiddenButton=True)
+                        )
 
     def _get_or_create_worksheet(self, sheet_name: str) -> 'Worksheet':
         """Get existing worksheet or create new one."""
@@ -172,10 +646,192 @@ class ExcelWriter(BatchWriter):
             worksheet.delete_rows(1, worksheet.max_row)
 
     def _get_named_style(self, name: str) -> 'NamedStyle':
-        for style in self.workbook.named_styles:
-            if style.name == name:
-                return style
-        raise KeyError(f"Named style '{name}' not found")
+        try:
+            return self._named_style_objects[name]
+        except KeyError:
+            raise KeyError(f"Named style '{name}' not found")
+
+    def _decompose_style(self, name: str) -> dict:
+        """Extract non-default properties from a named style."""
+        style = self._get_named_style(name)
+        props = {}
+        if style.number_format and style.number_format != 'General':
+            props['number_format'] = style.number_format
+        fill = style.fill
+        if fill is not None and getattr(fill, 'fill_type', None) not in (None, 'none'):
+            props['fill'] = fill
+        font = style.font
+        if font is not None and any([
+            font.bold, font.italic, font.underline, font.color,
+            font.size, font.name, font.strike,
+        ]):
+            props['font'] = font
+        aln = style.alignment
+        if aln is not None and any([
+            aln.horizontal, aln.vertical, aln.text_rotation,
+            aln.wrap_text, aln.shrink_to_fit, aln.indent,
+        ]):
+            props['alignment'] = aln
+        return props
+
+    def _compose_styles(self, *names) -> Optional[str]:
+        """Compose multiple named styles into one, with later names taking precedence.
+
+        Results are cached by style-name tuple so composition happens at most once
+        per unique combination per workbook. Returns None when no names are given.
+        """
+        valid = tuple(n for n in names if n)
+        if not valid:
+            return None
+        if len(valid) == 1:
+            return valid[0]
+
+        if valid in self._style_cache:
+            return self._style_cache[valid]
+
+        merged: dict = {}
+        for name in valid:
+            merged.update(self._decompose_style(name))
+
+        if not merged:
+            result = valid[-1]
+            self._style_cache[valid] = result
+            return result
+
+        new_name = '_c_' + hashlib.md5(str(valid).encode()).hexdigest()[:10]
+        if new_name not in self._named_style_objects:
+            style = NamedStyle(name=new_name)
+            if 'number_format' in merged:
+                style.number_format = merged['number_format']
+            if 'font' in merged:
+                style.font = merged['font']
+            if 'fill' in merged:
+                style.fill = merged['fill']
+            if 'alignment' in merged:
+                style.alignment = merged['alignment']
+            self._add_named_style(style)
+
+        self._style_cache[valid] = new_name
+        return new_name
+
+    def _apply_cell_overrides(
+        self,
+        cell,
+        record,
+        col_name: str,
+        col_idx: int,
+        row_idx: int,
+        style_names: list,
+    ) -> None:
+        """Hook called per cell after value and base styles are determined.
+
+        Subclasses can set cell properties (e.g. hyperlinks) and append style names
+        to ``style_names`` to include them in the composed result.
+        """
+
+    def _post_row(self, record, row_idx: int) -> None:
+        """Hook called after all cells in a row have been written."""
+
+    def _write_rows(
+        self,
+        worksheet: 'Worksheet',
+        data_start_row: int,
+        col_fmt: list,
+        col_conditional_styles: list,
+        rows_fmt,
+        header_widths: list,
+        data_widths: list,
+    ) -> int:
+        """Write data rows, applying the style cascade and calling subclass hooks.
+
+        Style cascade per cell (lowest → highest priority):
+          date/datetime base → column ``style`` → ``'*'`` style →
+          ``'data'`` style → ``'odd'``/``'even'`` style → ``conditional_style``
+          callable(s) → column ``conditional_style`` callable(s) →
+          ``_apply_cell_overrides`` hook.
+        All active styles are composed once per unique combination via
+        ``_compose_styles`` and cached for reuse.
+
+        Returns the number of rows written.
+        """
+        self._col_index_map = {name: idx + 1 for idx, name in enumerate(self.columns)}
+        rows_fmt_d = rows_fmt if isinstance(rows_fmt, dict) else {}
+
+        # Extract row-level formatting config once
+        all_props  = rows_fmt_d.get('*', {})
+        data_props = rows_fmt_d.get('data', {})
+
+        all_row_style  = all_props.get('style')
+        all_height     = all_props.get('height')
+        data_row_style = data_props.get('style')
+        data_height    = data_props.get('height')
+        odd_style      = data_props.get('odd', {}).get('style')
+        even_style     = data_props.get('even', {}).get('style')
+
+        conditional_styles = data_props.get('conditional_style')
+        if conditional_styles is not None and not isinstance(conditional_styles, list):
+            conditional_styles = [conditional_styles]
+
+        width_sample_size = 15
+        row_count = 0
+
+        for row_idx, record in enumerate(self.data_iterator, data_start_row):
+            values = self._row_to_tuple(record)
+            data_row_num = row_idx - data_start_row + 1
+
+            # Row height: data.height overrides *.height
+            row_h = data_height if data_height is not None else all_height
+            if row_h is not None:
+                worksheet.row_dimensions[row_idx].height = row_h
+
+            # Per-row styles evaluated once, reused for every cell in this row
+            alt = odd_style if data_row_num % 2 else even_style
+            fn_results = [fn(record) for fn in (conditional_styles or [])]
+
+            for col_idx, value in enumerate(values, 1):
+                col_name = self.columns[col_idx - 1]
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if isinstance(value, (datetime, date)) and value.year < 1900:
+                    # Excel doesn't handle dates < 1900-01-01, convert to string
+                    cell.value = self.to_string(value)
+                    base_style = None
+                elif isinstance(value, datetime) and value.time() != MIDNIGHT:
+                    cell.value = value
+                    if row_count < width_sample_size:
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 19)
+                    base_style = 'datetime_style'
+                elif isinstance(value, (date, datetime)):
+                    cell.value = value
+                    if row_count < width_sample_size:
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], 10)
+                    base_style = 'date_style'
+                elif value is None:
+                    cell.value = ''
+                    base_style = None
+                else:
+                    cell.value = value
+                    if row_count < width_sample_size:
+                        data_widths[col_idx - 1] = max(data_widths[col_idx - 1], len(str(value)))
+                    base_style = None
+
+                col_style = col_fmt[col_idx - 1].get('style') if col_fmt else None
+                col_fn = col_conditional_styles[col_idx - 1] if col_conditional_styles else None
+                cell_style = col_fn(record) if col_fn else None
+
+                style_names = [
+                    s for s in [base_style, col_style, all_row_style, data_row_style, alt, *fn_results, cell_style]
+                    if s
+                ]
+                self._apply_cell_overrides(cell, record, col_name, col_idx, row_idx, style_names)
+
+                composed = self._compose_styles(*style_names)
+                if composed:
+                    cell.style = composed
+
+            self._post_row(record, row_idx)
+            row_count += 1
+
+        return row_count
 
     def _write_to_worksheet(
         self,
@@ -183,71 +839,53 @@ class ExcelWriter(BatchWriter):
         worksheet: 'Worksheet',
         columns: Optional[List[str]] = None,
         write_headers: bool = True,
-
+        headers: Optional[List[str]] = None,
+        effective_fmt: Optional[dict] = None,
+        col_rules: Optional[list] = None,
     ) -> int:
-        """
-        Internal method: write data to an already-selected worksheet.
-
-        Returns number of rows written.
-        """
-        from openpyxl.worksheet.worksheet import Worksheet
-
-        # Lazy init columns
+        """Write data to an already-selected worksheet. Returns number of rows written."""
+        effective_fmt = effective_fmt if effective_fmt is not None else self.formatting
         self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
         self.columns = detected_columns
 
         if not self.columns:
             raise ValueError("Could not determine columns from data")
 
-        row_count = 0
-        column_widths = [len(col) for col in self.columns]
-        width_sample_size = 15
+        col_fmt = self._build_col_fmt_map(self.columns, col_rules=col_rules)
+        col_conditional_styles = [p.get('conditional_style') for p in col_fmt] if col_fmt else []
+        rows_fmt = effective_fmt.get('rows', {})
+
+        display_headers = headers if headers is not None else self._get_headers(data)
+        if len(display_headers) != len(self.columns):
+            raise ValueError(
+                f"headers has {len(display_headers)} name(s) but data has {len(self.columns)} column(s)"
+            )
+        header_widths = [len(h) for h in display_headers]
+        data_widths = [0] * len(self.columns)
         header_font = Font(bold=True)
 
-        # Decide if we should write headers (only if sheet is empty and requested)
-        # Write headers if the first cell in row 1 is empty
-        should_write_headers = write_headers and worksheet.cell(1, 1).value is None
-        data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+        has_groups = bool(col_fmt and any(p.get('group_label') for p in col_fmt))
+        header_row = 2 if has_groups else 1
+        should_write_headers = write_headers and worksheet.cell(header_row, 1).value is None
+        data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
 
         if should_write_headers:
-            for col_idx, column_name in enumerate(self._get_headers(data), 1):
-                cell = worksheet.cell(row=1, column=col_idx, value=column_name)
-                cell.font = header_font
-            worksheet.freeze_panes = 'A2'
-
-        # Write data rows
-        for row_idx, record in enumerate(self.data_iterator, data_start_row):
-            values = self._row_to_tuple(record)
-
-            for col_idx, value in enumerate(values, 1):
-                cell = worksheet.cell(row=row_idx, column=col_idx)
-
-                if isinstance(value, datetime) and value.time() != MIDNIGHT:
-                    cell.value = value
-                    cell.style = 'datetime_style'
-                    if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
-                elif isinstance(value, (date, datetime)):
-                    cell.value = value
-                    cell.style = 'date_style'
-                    if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
-                elif value is None:
-                    cell.value = ''
+            for col_idx, column_name in enumerate(display_headers, 1):
+                cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
+                hfmt = col_fmt[col_idx - 1].get('header_style') if col_fmt else None
+                if hfmt:
+                    cell.style = hfmt
                 else:
-                    cell.value = value
-                    if row_count < width_sample_size:
-                        value_length = len(str(value))
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
+                    cell.font = header_font
 
-            row_count += 1
+        row_count = self._write_rows(
+            worksheet, data_start_row, col_fmt, col_conditional_styles, rows_fmt,
+            header_widths, data_widths,
+        )
 
-        # Apply column widths only when writing headers (i.e., creating new sheet)
         if should_write_headers:
-            for col_idx, width in enumerate(column_widths, 1):
-                adjusted_width = min(max(width + 2, 6), 60)
-                column_letter = get_column_letter(col_idx)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
+            self._finalize_headers(worksheet, header_widths, data_widths, col_fmt, rows_fmt,
+                                   link_mapping=self._link_mapping, effective_fmt=effective_fmt)
 
         return row_count
 
@@ -255,6 +893,8 @@ class ExcelWriter(BatchWriter):
         self,
         data: Iterable[RecordLike],
         sheet_name: Optional[str] = None,
+        headers: Optional[List[str]] = None,
+        formatting: Optional[Dict] = None,
     ) -> None:
         """
         Write a batch of data to a sheet.
@@ -268,9 +908,24 @@ class ExcelWriter(BatchWriter):
             The data batch
         sheet_name : str, optional
             Target sheet. If None, uses active_sheet or defaults to 'Data'
+        headers : list of str, optional
+            Display names for the header row. Overrides the writer-level ``headers``
+            set at initialisation for this batch only. Must match the column count.
+        formatting : ExcelFormat or dict, optional
+            Per-call formatting override. ``None`` (default) uses the writer-level
+            formatting. Pass ``{}`` to write this sheet with no formatting.
         """
         if self.workbook is None:
             raise RuntimeError("Workbook not initialized")
+
+        if isinstance(formatting, ExcelFormat):
+            formatting = formatting.to_dict()
+        effective_fmt = self.formatting if formatting is None else formatting
+        call_col_rules = [
+            (k.lower(), k, v.to_dict() if isinstance(v, ColumnRule) else v)
+            for k, v in effective_fmt.get('columns', {}).items()
+        ]
+        self._register_call_styles(effective_fmt)
 
         target_sheet = sheet_name or self.active_sheet or 'Data'
         if sheet_name:
@@ -283,83 +938,80 @@ class ExcelWriter(BatchWriter):
             self._clear_worksheet(worksheet)
             self._sheets_written_this_session.add(target_sheet)
 
+        tab_color = effective_fmt.get('tab_color')
+        if tab_color:
+            worksheet.sheet_properties.tabColor = tab_color.lstrip('#')
+
         row_count = self._write_to_worksheet(
             data=data,
             worksheet=worksheet,
-            write_headers=self.write_headers
+            write_headers=self.write_headers,
+            headers=headers,
+            effective_fmt=effective_fmt,
+            col_rules=call_col_rules,
         )
 
         self._row_num += row_count
         logger.info(f"Wrote {row_count} rows to sheet '{target_sheet}' (total: {self._row_num})")
 
     def _write_data(self, file_obj: Any) -> None:
-        """
-        BatchWriter contract implementation.
+        """BatchWriter contract: write data_iterator to the active sheet.
 
-        Writes current data_iterator (set up by _lazy_init) to the active sheet or 'Data'.
-        This is called by write() when data was provided at initialization.
+        Called by write() when data was provided at initialisation.
         """
         if self.data_iterator is None:
             raise RuntimeError("No data provided")
-
         if not self.columns:
             raise RuntimeError("Columns not initialized")
-
         if self.workbook is None:
             raise RuntimeError("Workbook not initialized")
+
+        col_fmt = self._build_col_fmt_map(self.columns)
+        col_conditional_styles = [p.get('conditional_style') for p in col_fmt] if col_fmt else []
+        rows_fmt = self.formatting.get('rows', {})
 
         target_sheet = self.active_sheet or 'Data'
         worksheet = self._get_or_create_worksheet(target_sheet)
 
-        # Write headers if needed
-        should_write_headers = self.write_headers and not self._headers_written and worksheet.cell(1, 1).value is None
-        data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+        if target_sheet not in self._sheets_written_this_session:
+            self._clear_worksheet(worksheet)
+            self._sheets_written_this_session.add(target_sheet)
+
+        has_groups = bool(col_fmt and any(p.get('group_label') for p in col_fmt))
+        header_row = 2 if has_groups else 1
+        should_write_headers = (
+            self.write_headers and not self._headers_written
+            and worksheet.cell(header_row, 1).value is None
+        )
+        data_start_row = (header_row + 1) if should_write_headers else worksheet.max_row + 1
+
+        display_headers = self._get_headers()
+        if len(display_headers) != len(self.columns):
+            raise ValueError(
+                f"headers has {len(display_headers)} name(s) but data has {len(self.columns)} column(s)"
+            )
+        header_widths = [len(h) for h in display_headers]
+        data_widths = [0] * len(self.columns)
 
         if should_write_headers:
             header_font = Font(bold=True)
-            for col_idx, column_name in enumerate(self._get_headers(), 1):
-                cell = worksheet.cell(row=1, column=col_idx, value=column_name)
-                cell.font = header_font
-            worksheet.freeze_panes = 'A2'
+            for col_idx, column_name in enumerate(display_headers, 1):
+                cell = worksheet.cell(row=header_row, column=col_idx, value=column_name)
+                hfmt = col_fmt[col_idx - 1].get('header_style') if col_fmt else None
+                if hfmt:
+                    cell.style = hfmt
+                else:
+                    cell.font = header_font
             self._headers_written = True
 
-        row_count = 0
-        column_widths = [len(col) for col in self.columns]
-        width_sample_size = 15
+        row_count = self._write_rows(
+            worksheet, data_start_row, col_fmt, col_conditional_styles, rows_fmt,
+            header_widths, data_widths,
+        )
 
-        # Write data rows
-        for row_idx, record in enumerate(self.data_iterator, data_start_row):
-            values = self._row_to_tuple(record)
-
-            for col_idx, value in enumerate(values, 1):
-                cell = worksheet.cell(row=row_idx, column=col_idx)
-
-                if isinstance(value, datetime) and value.time() != MIDNIGHT:
-                    cell.value = value
-                    cell.style = 'datetime_style'
-                    if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
-                elif isinstance(value, (date, datetime)):
-                    cell.value = value
-                    cell.style = 'date_style'
-                    if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
-                elif value is None:
-                    cell.value = ''
-                else:
-                    cell.value = value
-                    if row_count < width_sample_size:
-                        value_length = len(str(value))
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
-
-            row_count += 1
-
-        # Apply column widths only when writing headers (i.e., creating new sheet)
         if should_write_headers:
-            for col_idx, width in enumerate(column_widths, 1):
-                adjusted_width = min(max(width + 2, 6), 60)
-                column_letter = get_column_letter(col_idx)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
+            self._finalize_headers(worksheet, header_widths, data_widths, col_fmt, rows_fmt,
+                                   link_mapping=self._link_mapping)
 
         self._row_num += row_count
         logger.info(f"Wrote {row_count} rows to sheet '{target_sheet}' (total: {self._row_num})")
@@ -382,7 +1034,12 @@ class ExcelWriter(BatchWriter):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Save workbook on context exit."""
-        self.close()
+        try:
+            self.close()
+        finally:
+            if self.output_path.exists() and self.output_path.stat().st_size == 0:
+                # remove invalid empty Excel file
+                self.output_path.unlink()
         return False
 
 
@@ -610,7 +1267,8 @@ class LinkSource:
             except KeyError as e:
                 logger.warning(f"Missing key {e} in url_template for {self.name}")
 
-        self._records[key_str] = record
+        if key_str not in self._records:
+            self._records[key_str] = record
 
     def generate_link_from_row(
         self,
@@ -887,8 +1545,10 @@ class LinkedExcelWriter(ExcelWriter):
         sheet_name: Optional[str] = None,
         headers: Optional[List[str]] = None,
         write_headers: bool = True,
+        formatting: Optional[Dict] = None,
     ):
-        super().__init__(data=data, file=file, sheet_name=sheet_name, headers=headers, write_headers=write_headers)
+        super().__init__(data=data, file=file, sheet_name=sheet_name, headers=headers,
+                         write_headers=write_headers, formatting=formatting)
         #: Registered LinkSource instances, keyed by name.
         self.link_sources: Dict[str, LinkSource] = {}
 
@@ -902,7 +1562,9 @@ class LinkedExcelWriter(ExcelWriter):
         self,
         data: Iterable[RecordLike],
         sheet_name: Optional[str] = None,
+        headers: Optional[List[str]] = None,
         links: Optional[Dict[str, str]] = None,
+        formatting: Optional[Dict] = None,
     ) -> None:
         """
         Write a batch with optional hyperlinking.
@@ -910,8 +1572,20 @@ class LinkedExcelWriter(ExcelWriter):
         If this is the first write to this sheet in the current session, the sheet
         is cleared first. Subsequent writes to the same sheet append data.
 
+        headers: display names for this batch, overriding the writer-level default
         links: dict column_name → "source_name" or "source_name:internal"
+        formatting: per-call formatting override; None uses writer-level formatting,
+            {} writes with no formatting
         """
+        if isinstance(formatting, ExcelFormat):
+            formatting = formatting.to_dict()
+        effective_fmt = self.formatting if formatting is None else formatting
+        call_col_rules = [
+            (k.lower(), k, v.to_dict() if isinstance(v, ColumnRule) else v)
+            for k, v in effective_fmt.get('columns', {}).items()
+        ]
+        self._register_call_styles(effective_fmt)
+
         target_sheet = sheet_name or self.active_sheet or 'Data'
         if sheet_name:
             self.active_sheet = target_sheet
@@ -922,6 +1596,10 @@ class LinkedExcelWriter(ExcelWriter):
         if target_sheet not in self._sheets_written_this_session:
             self._clear_worksheet(worksheet)
             self._sheets_written_this_session.add(target_sheet)
+
+        tab_color = effective_fmt.get('tab_color')
+        if tab_color:
+            worksheet.sheet_properties.tabColor = tab_color.lstrip('#')
 
         # Parse links dict into resolved mapping: column → (source, mode)
         link_mapping = {}
@@ -952,9 +1630,12 @@ class LinkedExcelWriter(ExcelWriter):
             data=data,
             worksheet=worksheet,
             write_headers=self.write_headers,
+            headers=headers,
             link_mapping=link_mapping,
             source_for_this_sheet=source_for_this_sheet,
-            target_sheet=target_sheet
+            target_sheet=target_sheet,
+            effective_fmt=effective_fmt,
+            col_rules=call_col_rules,
         )
 
         self._row_num += row_count
@@ -966,117 +1647,52 @@ class LinkedExcelWriter(ExcelWriter):
         worksheet: 'Worksheet',
         columns: Optional[List[str]] = None,
         write_headers: bool = True,
+        headers: Optional[List[str]] = None,
         link_mapping: Optional[Dict[str, tuple]] = None,
         source_for_this_sheet: Optional[list] = None,
-        target_sheet: Optional[str] = None
+        target_sheet: Optional[str] = None,
+        effective_fmt: Optional[dict] = None,
+        col_rules: Optional[list] = None,
     ) -> int:
-        link_mapping = link_mapping or {}
-        source_for_this_sheet = source_for_this_sheet or []
+        self._link_mapping = link_mapping or {}
+        self._source_for_this_sheet = source_for_this_sheet or []
+        self._target_sheet = target_sheet
+        return super()._write_to_worksheet(data, worksheet, columns, write_headers, headers,
+                                           effective_fmt=effective_fmt, col_rules=col_rules)
 
-        # Lazy init columns - always update columns for each batch
-        self.data_iterator, self.columns = self._get_data_iterator(data, columns)
+    def _apply_cell_overrides(self, cell, record, col_name, col_idx, row_idx, style_names):
+        link_spec = self._link_mapping.get(col_name)
+        if not link_spec:
+            return
 
-        if not self.columns:
-            raise ValueError("Could not determine columns from data")
+        source, mode = link_spec
 
-        row_count = 0
-        column_widths = [len(col) for col in self.columns]
-        width_sample_size = 15
-        header_font = Font(bold=True)
+        if source.external_only:
+            link_info = source.generate_link_from_row(
+                record, ref="", mode="external", column_value=cell.value
+            )
+        elif source.source_sheet == self._target_sheet:
+            key_col_letter = get_column_letter(self._col_index_map[source.key_column])
+            ref = f"#{self._target_sheet}!{key_col_letter}{row_idx}"
+            link_info = source.generate_link_from_row(record, ref, mode=mode)
+        else:
+            key_value = cell.value
+            link_info = source.get_link(key_value, mode=mode) if key_value is not None else None
 
-        should_write_headers = write_headers and (worksheet.cell(1, 1).value is None)
-        data_start_row = 2 if should_write_headers else worksheet.max_row + 1
+        if link_info:
+            cell.hyperlink = link_info["target"]
+            cell.value = link_info["display_text"]
+            style_names.append('hyperlink_style')
+        elif source.missing_text is not None:
+            cell.value = source.missing_text
 
-        if should_write_headers:
-            for col_idx, column_name in enumerate(self.columns, 1):
-                cell = worksheet.cell(row=1, column=col_idx, value=column_name)
-                cell.font = header_font
-            worksheet.freeze_panes = 'A2'
-
-        col_index_map = {name: idx + 1 for idx, name in enumerate(self.columns)}
-
-        for row_idx, record in enumerate(self.data_iterator, data_start_row):
-            row_dict = record #dict(zip(self.columns, self._row_to_tuple(record)))
-            values = self._row_to_tuple(record)
-
-            for col_idx, value in enumerate(values, 1):
-                col_name = self.columns[col_idx - 1]
-                cell = worksheet.cell(row=row_idx, column=col_idx)
-
-                # First, set cell value normally (handles dates, None, type preservation)
-                if isinstance(value, datetime) and value.time() != MIDNIGHT:
-                    cell.value = value
-                    cell.style = 'datetime_style'
-                    if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 19)
-                elif isinstance(value, (date, datetime)):
-                    cell.value = value
-                    cell.style = 'date_style'
-                    if row_count < width_sample_size:
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], 10)
-                elif value is None:
-                    cell.value = ''
-                else:
-                    cell.value = value
-                    if row_count < width_sample_size:
-                        value_length = len(str(value))
-                        column_widths[col_idx - 1] = max(column_widths[col_idx - 1], value_length)
-
-                # Then, check if this column has a link spec and override if present
-                link_spec = link_mapping.get(col_name)
-                if link_spec:
-                    source, mode = link_spec
-
-                    if source.external_only:
-                        # External-only: always generate from current row (no caching, reusable)
-                        link_info = source.generate_link_from_row(row_dict, ref="", mode="external", column_value=value)
-                    elif source.source_sheet == target_sheet:
-                        # Self-linking: generate link from current row data
-                        key_col_letter = get_column_letter(col_index_map[source.key_column])
-                        ref = f"#{target_sheet}!{key_col_letter}{row_idx}"
-                        link_info = source.generate_link_from_row(row_dict, ref, mode=mode)
-                    else:
-                        # Cross-sheet linking: look up from cache using current column's value
-                        # The value in this column IS the foreign key to look up
-                        key_value = value
-                        link_info = source.get_link(key_value, mode=mode) if key_value is not None else None
-
-                    if link_info:
-                        cell.hyperlink = link_info["target"]
-                        cell.value = link_info["display_text"]
-                        cell.style = 'hyperlink_style'
-                    elif source.missing_text is not None:
-                        cell.value = source.missing_text
-                    # else: keep the value we already set above
-
-            # If this sheet is a source, cache the row for future linking
-            # Support multiple LinkSources per sheet (as long as different key_columns)
-            for source in source_for_this_sheet:
-                key_col_letter = get_column_letter(col_index_map[source.key_column])
-                ref = f"#{target_sheet}!{key_col_letter}{row_idx}"
-                key_value = row_dict.get(source.key_column)
-                if key_value is not None:
-                    source.cache_record(key_value, row_dict, ref)
-
-            row_count += 1
-
-        # Apply column widths only when writing headers (i.e., creating new sheet)
-        if should_write_headers:
-            for col_idx, width in enumerate(column_widths, 1):
-                col_name = self.columns[col_idx - 1]
-
-                # Use LinkSource width for linked columns, otherwise use sampled width
-                if col_name in link_mapping:
-                    source, _ = link_mapping[col_name]
-                    # Use LinkSource's tracked display width if available
-                    if source.max_display_width > 0:
-                        width = source.max_display_width
-
-                adjusted_width = min(max(width + 2, 6), 60)
-                column_letter = get_column_letter(col_idx)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
-
-        return row_count
+    def _post_row(self, record, row_idx: int) -> None:
+        for source in self._source_for_this_sheet:
+            key_col_letter = get_column_letter(self._col_index_map[source.key_column])
+            ref = f"#{self._target_sheet}!{key_col_letter}{row_idx}"
+            key_value = record.get(source.key_column)
+            if key_value is not None:
+                source.cache_record(key_value, record, ref)
 
 
 def check_dependencies():
