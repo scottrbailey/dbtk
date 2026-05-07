@@ -107,6 +107,7 @@ fmt = ExcelFormat(
     freeze='D2',
     min_column_width=4,
     auto_filter=True,
+    tab_color='#e3f3fe'
 )
 
 with ExcelWriter(file='report.xlsx', formatting=fmt) as writer:
@@ -433,6 +434,7 @@ fmt = {
     'freeze':             'D3',
     'header_auto_rotate': {'min_length': 8, 'ratio': 2.5},
     'min_column_width':   3,
+    'tab_color': '#e3f3fe'
 }
 stmt = cursor.prepare_file('quarterly_sales')
 with ExcelWriter(file='quarterly_sales.xlsx', formatting=fmt) as writer:
