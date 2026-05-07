@@ -71,7 +71,7 @@ if __name__ == '__main__':
         for team_name in AMERICAN_LEAGUE + NATIONAL_LEAGUE:
             team_df = all_data.filter(pl.col('team_name') == team_name)
             reader  = dbtk.readers.DataFrameReader(team_df, add_row_num=False)
-            # formatting on writer init is persisted but ephemeral in write_batch
+            # Pass None to re-use the writer's default; formatting= in write_batch() never persists
             fmt = nl_fmt if team_name in NATIONAL_LEAGUE else None
             writer.write_batch(reader, sheet_name=team_name, formatting=fmt)
             print(f"  {team_name}")
