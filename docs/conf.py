@@ -37,6 +37,10 @@ myst_enable_extensions = [
 ]
 myst_heading_anchors = 3  # Auto-generate anchors for headings h1-h3
 
+# Links to files outside the Sphinx source tree (e.g. examples/) work on GitHub
+# but can't be resolved by MyST as cross-document references.
+suppress_warnings = ["myst.xref_missing"]
+
 source_suffix = {
     '.rst': 'restructuredtext',
     '.md': 'markdown',

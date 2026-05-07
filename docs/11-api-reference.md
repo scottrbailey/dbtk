@@ -333,9 +333,9 @@ All readers support:
 CSVReader(file, delimiter=',', skip_rows=0, n_rows=None, **csv_args)
 ```
 
-**XLSXReader**
+**ExcelReader**
 ```python
-XLSXReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
+ExcelReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
 ```
 
 **JSONReader**
@@ -674,8 +674,8 @@ errors_logged()  # Returns error log path or None
 ```python
 from dbtk.etl import column_defs_from_db
 
-column_defs_from_db(cursor, table_name, schema=None)
-# Returns: dict of column configurations
+column_defs_from_db(cursor, table_name, add_comments=False)
+# Returns: string containing a Python dict literal of column configurations
 ```
 
 ### SQL Parameter Processing

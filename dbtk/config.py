@@ -208,7 +208,7 @@ class ConfigManager:
     4. ``~/.config/dbtk.yml`` (user config directory)
     5. ``~/.config/dbtk.yaml`` (user config directory)
 
-    If no config is found, creates a sample config at ``~/.config/dbtk.yml``.
+    If no config is found, creates a sample config at ``~/.config/dbtk_sample.yml``.
 
     Parameters
     ----------
@@ -252,7 +252,7 @@ class ConfigManager:
     * Connections require 'type' field (postgres, oracle, mysql, etc.)
     * Encrypted passwords require DBTK_ENCRYPTION_KEY environment variable
     * Environment variables can be used with ${VAR_NAME} syntax
-    * Sample config is created at ~/.config/dbtk.yml on first run if no config exists
+    * Sample config is created at ~/.config/dbtk_sample.yml on first run if no config exists
     """
 
     def __init__(self, config_file: Optional[Union[str, Path]] = None):
@@ -336,6 +336,11 @@ class ConfigManager:
                 config = yaml.safe_load(f) or {}
             if not isinstance(config, dict):
                 raise ValueError(f"Invalid config file {self.config_file}.")
+
+            # Normalize empty/null sections to empty dicts
+            for section in ('connections', 'passwords', 'drivers'):
+                if config.get(section) is None:
+                    config[section] = {}
 
             # Validate connections section if it exists
             if 'connections' in config:
@@ -968,15 +973,22 @@ def setup_config() -> None:
             print("Cancelled.")
             return
 
-    # Copy dbtk_sample.yml to target location
+    # Write user config from sample, minus the example connections/passwords
     sample_path = Path(__file__).parent / 'dbtk_sample.yml'
     if not sample_path.exists():
         print(f"⚠ Sample config not found at {sample_path}")
         print("Cannot continue without sample file.")
         return
 
-    shutil.copy(sample_path, config_path)
-    print(f"\n✓ Created config from sample at {config_path}")
+    with open(sample_path) as f:
+        config_data = yaml.safe_load(f) or {}
+    # keep settings but clear out example connections, passwords and drivers sections
+    config_data['connections'] = {}
+    config_data['passwords'] = {}
+    config_data['drivers'] = {}
+    with open(config_path, 'w') as f:
+        yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
+    print(f"\n✓ Created config at {config_path}")
 
     # Also copy sample to ~/.config for reference
     user_sample_path = Path.home() / '.config' / 'dbtk_sample.yml'
@@ -1065,19 +1077,9 @@ def setup_config() -> None:
     print("Database Connections")
     print("-"*60)
 
-    # Load the config we just created
-    with open(config_path) as f:
-        config_data = yaml.safe_load(f)
-
     if 'connections' not in config_data:
         config_data['connections'] = {}
 
-    print(dedent("""\
-    Warning: The config file created has lots of comments that will be lost if you continue.
-    The YAML format was designed to be readable and it is recommended to just edit in the 
-    text editor of your choice. If you do continue and overwrite the comments, a fully commented
-    sample is also available at ~/.config/dbtk_sample.yml.
-    """))
     add_connection = input("\nAdd a database connection now? [y/N]: ").strip().lower()
     edits = 0
     while add_connection in ('y', 'yes'):
@@ -1170,7 +1172,6 @@ def setup_config() -> None:
         add_connection = input("\nAdd another connection? [y/N]: ").strip().lower()
 
     if edits:
-        # Write updated config file
         with open(config_path, 'w') as f:
             yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
 

@@ -350,8 +350,10 @@ passwords:
 
 ## Custom Driver Registration
 
-Register custom database drivers in the config file. By registering a driver for and DB-API 2.0 compliant, DBTK can support 
-additional databases. Some features like `Table.merge`, `DataSurge.merge`, and `BulkSurge` are database specific and will not work.
+Register custom database drivers in the config file. By registering a driver for any DB-API 2.0 compliant library, DBTK can support
+additional databases. Plain reads, writes, and `DataSurge` inserts/updates/deletes work without any additional configuration.
+The following features are database-specific and will not work without a matching `DatabaseDialect` subclass:
+`Table.upsert`, `DataSurge.upsert`, `Table.merge`, `DataSurge.merge`, `BulkSurge`, and `column_defs_from_db`.
 
 ```yaml
 drivers:

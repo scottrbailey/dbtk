@@ -143,7 +143,7 @@ class Reader(ABC):
     --------
     CSVReader : Read CSV files
     JSONReader : Read JSON files
-    XLSXReader : Read Excel .xlsx files
+    ExcelReader : Read Excel .xlsx files
     XMLReader : Read XML files
     FixedReader : Read fixed-width text files
     Record : Flexible row objects with multiple access patterns
@@ -403,7 +403,7 @@ class Reader(ABC):
         """
         Get the filename of the source file.
 
-        For the XLSXReader and XLSReader, the source must be set manually because the Workbook objects do not keep
+        For the ExcelReader and XLSReader, the source must be set manually because the Workbook objects do not keep
         a reference to the original file.
         """
         if self._source is None:

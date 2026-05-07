@@ -109,10 +109,27 @@ Writers
    :undoc-members:
    :show-inheritance:
 
+Utilities
+---------
+
+.. automodule:: dbtk.utils
+   :members: ErrorDetail, FixedColumn, ParamStyle
+   :undoc-members:
+   :show-inheritance:
+
 ETL
 -----------
 
 .. automodule:: dbtk.etl
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :exclude-members: EntityStatus, IdentityManager, ValidationCollector
+
+ETL Managers
+------------
+
+.. automodule:: dbtk.etl.managers
    :members:
    :undoc-members:
    :show-inheritance:
@@ -122,14 +139,6 @@ ETL Transforms
 
 .. automodule:: dbtk.etl.transforms
    :members:
-   :undoc-members:
-   :show-inheritance:
-
-Utilities
----------
-
-.. automodule:: dbtk.utils
-   :members: ErrorDetail, FixedColumn, ParamStyle
    :undoc-members:
    :show-inheritance:
 

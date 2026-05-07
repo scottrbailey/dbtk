@@ -21,7 +21,7 @@ settings:
 
 connections:
   # Example connection configurations
-  dev_postgres:
+  sample_postgres:
     driver: psycopg    # Optional, psycopg2 has the highest priority, this will ensure psycopg(3) is used if both are installed
     type: postgres     # type is optional IF you specify a driver
     host: localhost
@@ -35,7 +35,7 @@ connections:
     # password: prompt  # Will prompt for password
     # encrypted_password: gAAAAABh...  # Or use encrypted
 
-  prod_oracle:
+  sample_oracle:
     type: oracle
     host: oracle.company.com
     port: 1521
@@ -43,12 +43,12 @@ connections:
     user: app_user
     encrypted_password: gAAAAABh...
 
-  imdb_odbc_dsn:
+  sample_odbc_dsn:
     driver: pyodbc_postgres
     dsn: IMDB_PG  # user or system DSN
     password: '${IMDB_USER_PASS}'    # Pull from environment variable
 
-  imdb_odbc:
+  sample_odbc:
     driver: pyodbc_postgres
     host: localhost
     port: 5432
@@ -56,7 +56,7 @@ connections:
     user: imdb_user
     encrypted_password: gAAAAABh...
 
-  sqlserver_dev:
+  sample_sqlserver:
     driver: pyodbc_sqlserver
     type: sqlserver
     host: localhost\SQLEXPRESS  # Use instance name; omit port when using instance names
@@ -66,13 +66,13 @@ connections:
     cursor:
       fast_executemany: true  # Recommended for bulk operations; disable if using TEXT/NVARCHAR(MAX)/JSON columns
 
-states_db:
+  sample_sqlite:
     type: sqlite
     database: /data/test_states.db
 
 # Encrypted passwords (optional)
 passwords:
-  openai_key:
+  sample_openai_key:
     description: "OpenAI API key for data processing"
     encrypted_password: gAAAAABh...
 
@@ -80,10 +80,15 @@ passwords:
 drivers:
   firbird:
     database_type: firebird
-    module: firebird.driver # only required if name (firbird) does not mactch module (import) name
+    # only required if name (firebird) does not match module (import) name
+    module: firebird.driver
+    # lowest number with installed library will be used first
     priority: 1
-    param_map: { }  # if driver does not use standard names (user, password, host, port, database) map them here
+    # if driver does not use standard names (user, password, host, port, database) map them here
+    param_map: { }  # {'database': 'db', 'password': 'passwd'}
+    # must have either: host, database and user OR dsn
     required_params: [ { 'host', 'database', 'user' }, { 'dsn' } ]
     optional_params: { 'port', 'password' }
+    # kwargs (most common), odbc_string (all odbc), connection_string (psycopg*), dsn (oracle)
     connection_method: kwargs
     default_port: 3050
