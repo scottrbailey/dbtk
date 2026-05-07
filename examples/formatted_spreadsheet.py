@@ -14,26 +14,31 @@ Key techniques shown:
     number format without losing the background color
   - Column comment on the Fielding Pct header cell
   - Hidden column (team_name used for filtering, not shown in the sheet)
+  - Different formatting applied per sheet
   - Writer-level headers= replacing underscores with spaces for display labels
     while keeping underscore field names for column rule pattern matching
 """
+import copy
 import dbtk
 import polars as pl
 from pathlib import Path
 
 DATA_FILE = Path(__file__).parent / 'output' / '1927_baseball.parquet'
 OUT_FILE  = Path(__file__).parent / 'output' / 'MLB-1927.xlsx'
+AMERICAN_LEAGUE = ['Detroit Tigers', 'New York Yankees', 'Philadelphia Athletics', 'Washington Senators']
+NATIONAL_LEAGUE = ['Chicago Cubs', 'New York Giants', 'Pittsburgh Pirates', 'St. Louis Cardinals']
 
-fmt = {
+al_fmt = {
     'styles': {
-        'demo_style':     {'bg_color': '#C2E6F6'},  # light blue background
+        'demo_al_style':  {'bg_color': '#C2E6F6'},  # light blue background for American League
+        'demo_nl_style':  {'bg_color': '#F9E3DE'},  # light red background for National League
         'batting_style':  {'bg_color': '#D3F5C1'},  # light green background
         'fielding_style': {'bg_color': '#F5ECC1'},  # light orange background
         'alert_style':    {'bg_color': '#E9B47A'},  # orange background for alerts
         'stripe_style':   {'bg_color': '#DDDDDD'},  # light gray background for row striping
     },
     'columns': {
-        'pos:weight':  {'style': 'demo_style',     'group_label': 'Demographics'},
+        'pos:weight':  {'style': 'demo_al_style',     'group_label': 'Demographics'},
         'pos':         {'filter': 1},
         'games_played:slugging_pct': {'style': 'batting_style', 'group_label': 'Batting',
                         'width': 5, 'header_style': 'header_vert_style'},
@@ -51,17 +56,21 @@ fmt = {
     'freeze':              'B3',                # Freeze so player name and headers are always visible
     'min_column_width':    4,                   # Decrease min column width from 6 to 4
     'header_auto_rotate':  {'min_length': 4},   # Turns on header rotations if header > 4 and header / data ratio > 1.5 (default)
-}
+    'tab_color' :  '#8BB4C6'}
 
 if __name__ == '__main__':
     all_data = pl.read_parquet(DATA_FILE)
+    # swap out tab color and demographic style for the national league
+    nl_fmt = copy.deepcopy(al_fmt)
+    nl_fmt['tab_color'] = '#E0BDB5'
+    nl_fmt['columns']['pos:weight']['style'] = 'demo_nl_style'
     # replace _'s in headers for a more readable display
     columns = [col.replace('_', ' ') for col in all_data.columns]
-    with dbtk.writers.ExcelWriter(None, OUT_FILE, headers=columns, formatting=fmt) as writer:
-        for team_name in all_data['team_name'].unique(maintain_order=True):
+    with dbtk.writers.ExcelWriter(None, OUT_FILE, headers=columns) as writer:
+        for team_name in AMERICAN_LEAGUE + NATIONAL_LEAGUE:
             team_df = all_data.filter(pl.col('team_name') == team_name)
             reader  = dbtk.readers.DataFrameReader(team_df, add_row_num=False)
-            writer.write_batch(reader, sheet_name=team_name)
+            fmt = al_fmt if team_name in AMERICAN_LEAGUE else nl_fmt
+            writer.write_batch(reader, sheet_name=team_name, formatting=fmt)
             print(f"  {team_name}")
-
     print(f"\nSaved → {OUT_FILE}")
