@@ -423,11 +423,11 @@ fmt = {
         'fmt_stripe':    {'bg_color': '#dde8ed'}
     },
     'columns': {
-        'sales_*':      {'format': 'fmt_sales'},
-        'volume*':      {'format': 'fmt_volume'},
-        'shrink*':      {'format': 'fmt_shrinkage', 'hidden': 1},
-        'shrink_pct':   {'hidden': 0, 
-                         'style': lambda x: 'fmt_warning' if x.shrink_pct > 8.0 else None},
+        'sales_*':      {'style': 'fmt_sales'},
+        'volume*':      {'style': 'fmt_volume'},
+        'shrink*':      {'style': 'fmt_shrinkage', 'hidden': 1},
+        'shrink_pct':   {'hidden': 0,
+                         'conditional_style': lambda x: 'fmt_warning' if x.shrink_pct > 8.0 else None},
     },
     'freeze':             'D3',
     'header_auto_rotate': {'min_length': 8, 'ratio': 2.5},
@@ -448,8 +448,8 @@ See [examples/formatted_spreadsheet.py](../examples/README.md#formatted_spreadsh
 The `formatting` dict is set at the writer level and applies to all sheets written by that writer instance. When different sheets need different formatting, use separate writer instances — `ExcelWriter` opens existing workbooks without overwriting other sheets:
 
 ```python
-fees_fmt   = {'columns': {'*_fee*': {'format': 'fmt_fees'}}, ...}
-roster_fmt = {'columns': {'gpa': {'format': 'fmt_pct'}}, ...}
+fees_fmt   = {'columns': {'*_fee*': {'style': 'fmt_fees'}}, ...}
+roster_fmt = {'columns': {'gpa': {'style': 'fmt_pct'}}, ...}
 
 ExcelWriter(fees_data,   'report.xlsx', sheet_name='Fees',   formatting=fees_fmt).write()
 ExcelWriter(roster_data, 'report.xlsx', sheet_name='Roster', formatting=roster_fmt).write()
