@@ -157,6 +157,8 @@ class ExcelFormat:
         Auto-rotate column headers that are significantly wider than their
         data. Pass a float ratio or
         ``{'ratio': 1.5, 'min_length': 8, 'height_factor': 6.5}``.
+    tab_color : str, optional
+        Worksheet tab color as a hex string (``'#FF0000'`` or ``'FF0000'``).
     """
 
     styles: Dict[str, dict] = field(default_factory=dict)
@@ -167,6 +169,7 @@ class ExcelFormat:
     auto_filter: bool = False
     freeze: Optional[Any] = None
     header_auto_rotate: Optional[Any] = None
+    tab_color: Optional[str] = None
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -188,6 +191,8 @@ class ExcelFormat:
             d['freeze'] = self.freeze
         if self.header_auto_rotate is not None:
             d['header_auto_rotate'] = self.header_auto_rotate
+        if self.tab_color is not None:
+            d['tab_color'] = self.tab_color
         return d
 
 
@@ -931,6 +936,10 @@ class ExcelWriter(BatchWriter):
             self._clear_worksheet(worksheet)
             self._sheets_written_this_session.add(target_sheet)
 
+        tab_color = effective_fmt.get('tab_color')
+        if tab_color:
+            worksheet.sheet_properties.tabColor = tab_color.lstrip('#')
+
         row_count = self._write_to_worksheet(
             data=data,
             worksheet=worksheet,
@@ -1585,6 +1594,10 @@ class LinkedExcelWriter(ExcelWriter):
         if target_sheet not in self._sheets_written_this_session:
             self._clear_worksheet(worksheet)
             self._sheets_written_this_session.add(target_sheet)
+
+        tab_color = effective_fmt.get('tab_color')
+        if tab_color:
+            worksheet.sheet_properties.tabColor = tab_color.lstrip('#')
 
         # Parse links dict into resolved mapping: column → (source, mode)
         link_mapping = {}

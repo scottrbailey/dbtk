@@ -572,6 +572,7 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | `min_column_width` | `float` | `6` | Floor for auto-sized column widths |
 | `max_column_width` | `float` | `60` | Ceiling for auto-sized column widths |
 | `auto_filter` | `bool` | `False` | Enable dropdown filter on header row |
+| `tab_color` | `str` | — | Worksheet tab color as hex string (`'#FF0000'` or `'FF0000'`) |
 
 **Column rule keys:**
 
