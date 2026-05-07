@@ -445,17 +445,24 @@ See [examples/formatted_spreadsheet.py](../examples/README.md#formatted_spreadsh
 
 ## Per-sheet Formatting
 
-The `formatting` dict is set at the writer level and applies to all sheets written by that writer instance. When different sheets need different formatting, use separate writer instances — `ExcelWriter` opens existing workbooks without overwriting other sheets:
+The writer-level `formatting` applies to all `write_batch()` calls by default. Pass a `formatting` argument directly to `write_batch()` to override it for that sheet:
+
+- `formatting=None` (default) — use the writer-level formatting
+- `formatting={...}` — use this dict for this sheet only
+- `formatting={}` — write this sheet with no formatting (bold headers, default column widths)
 
 ```python
-fees_fmt   = {'columns': {'*_fee*': {'style': 'fmt_fees'}}, ...}
-roster_fmt = {'columns': {'gpa': {'style': 'fmt_pct'}}, ...}
+base_fmt   = {'styles': {'fmt_fees': {'bg_color': '#d5f1cc'}}, 'auto_filter': True}
+fees_fmt   = {'columns': {'*_fee*': {'style': 'fmt_fees'}}}
+roster_fmt = {'columns': {'gpa': {'style': 'fmt_pct'}}}
 
-ExcelWriter(fees_data,   'report.xlsx', sheet_name='Fees',   formatting=fees_fmt).write()
-ExcelWriter(roster_data, 'report.xlsx', sheet_name='Roster', formatting=roster_fmt).write()
+with ExcelWriter(file='report.xlsx', formatting=base_fmt) as writer:
+    writer.write_batch(fees_data,   sheet_name='Fees',   formatting=fees_fmt)
+    writer.write_batch(roster_data, sheet_name='Roster', formatting=roster_fmt)
+    writer.write_batch(raw_data,    sheet_name='Raw',    formatting={})   # no formatting
 ```
 
-Each writer opens the file, adds its sheet with its own formatting, saves, and closes. Note that openpyxl stores named styles on the workbook, not the worksheet — the second writer can reference `fmt_fees` by name, but cannot redefine it.
+Named styles are registered to the workbook (not per-worksheet), so styles defined in any call's `formatting['styles']` are available to all subsequent calls. The first registration of a given style name wins — later calls with the same name are silently ignored.
 
 ---
 

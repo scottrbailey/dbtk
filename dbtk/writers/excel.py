@@ -401,7 +401,12 @@ class ExcelWriter(BatchWriter):
             self._add_named_style(self._build_named_style(name, props))
         return name
 
-    def _build_col_fmt_map(self, columns: List[str]) -> list:
+    def _register_call_styles(self, fmt: dict) -> None:
+        """Register any user-defined styles from a per-call formatting dict."""
+        for name, props in fmt.get('styles', {}).items():
+            self._add_named_style(self._build_named_style(name, props))
+
+    def _build_col_fmt_map(self, columns: List[str], col_rules: list = None) -> list:
         """Build per-column formatting list from wildcard pattern rules.
 
         Returns a list (indexed by 0-based column position) of property dicts.
@@ -413,7 +418,9 @@ class ExcelWriter(BatchWriter):
             characters and does not itself match a column name literally.
           - literal: any exact column name (handled by fnmatch as a degenerate glob)
         """
-        if not self._col_rules:
+        if col_rules is None:
+            col_rules = self._col_rules
+        if not col_rules:
             return []
         result: List[dict] = [{} for _ in columns]
         cols_lower = [c.lower() for c in columns]
@@ -428,7 +435,7 @@ class ExcelWriter(BatchWriter):
                 else:
                     dest[k] = v
 
-        for pattern_lower, pattern, props in self._col_rules:
+        for pattern_lower, pattern, props in col_rules:
             is_range = ':' in pattern_lower and not any(c in pattern_lower for c in '*?[') and pattern_lower not in cols_lower
 
             if 'group_label' in props and not is_range:
@@ -491,6 +498,7 @@ class ExcelWriter(BatchWriter):
         col_fmt: list,
         rows_fmt: dict,
         link_mapping: Optional[dict] = None,
+        effective_fmt: Optional[dict] = None,
     ) -> None:
         """Apply column widths, auto-rotate, header height, and freeze panes.
 
@@ -500,6 +508,7 @@ class ExcelWriter(BatchWriter):
         sampled data widths on linked columns.
         """
         link_mapping = link_mapping or {}
+        effective_fmt = effective_fmt if effective_fmt is not None else self.formatting
 
         # Determine whether group headers are present
         has_groups = bool(col_fmt and any(p.get('group_label') for p in col_fmt))
@@ -516,7 +525,7 @@ class ExcelWriter(BatchWriter):
         # Auto-rotate: detect columns whose header is significantly longer than their data
         auto_rotated: set = set()
         har_height_factor = 6.5
-        har = self.formatting.get('header_auto_rotate')
+        har = effective_fmt.get('header_auto_rotate')
         if har:
             if isinstance(har, dict):
                 har_min = har.get('min_length', 8)
@@ -536,8 +545,8 @@ class ExcelWriter(BatchWriter):
                     worksheet.cell(header_row, col_idx).style = 'header_vert_style'
 
         # Column widths: auto-rotated columns use data width only; others use max of both
-        min_col_width = self.formatting.get('min_column_width', 6)
-        max_col_width = self.formatting.get('max_column_width', 60)
+        min_col_width = effective_fmt.get('min_column_width', 6)
+        max_col_width = effective_fmt.get('max_column_width', 60)
         for col_idx, (hw, dw) in enumerate(zip(header_widths, effective_data_widths), 1):
             raw = dw if col_idx in auto_rotated else max(hw, dw)
             adjusted = min(max(raw + 2, min_col_width), max_col_width)
@@ -596,13 +605,13 @@ class ExcelWriter(BatchWriter):
                     i += 1
 
         # Freeze panes
-        freeze = self.formatting.get('freeze', 'A3' if has_groups else 'A2')
+        freeze = effective_fmt.get('freeze', 'A3' if has_groups else 'A2')
         if freeze:
             worksheet.freeze_panes = freeze
 
         # Auto-filter on header row
         filter_cols = {col_idx for col_idx, col_props in enumerate(col_fmt, 1) if col_props.get('filter')}
-        if filter_cols or self.formatting.get('auto_filter'):
+        if filter_cols or effective_fmt.get('auto_filter'):
             last_col = get_column_letter(len(self.columns))
             filter_row = header_row
             worksheet.auto_filter.ref = f"A{filter_row}:{last_col}{filter_row}"
@@ -824,17 +833,20 @@ class ExcelWriter(BatchWriter):
         columns: Optional[List[str]] = None,
         write_headers: bool = True,
         headers: Optional[List[str]] = None,
+        effective_fmt: Optional[dict] = None,
+        col_rules: Optional[list] = None,
     ) -> int:
         """Write data to an already-selected worksheet. Returns number of rows written."""
+        effective_fmt = effective_fmt if effective_fmt is not None else self.formatting
         self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
         self.columns = detected_columns
 
         if not self.columns:
             raise ValueError("Could not determine columns from data")
 
-        col_fmt = self._build_col_fmt_map(self.columns)
+        col_fmt = self._build_col_fmt_map(self.columns, col_rules=col_rules)
         col_conditional_styles = [p.get('conditional_style') for p in col_fmt] if col_fmt else []
-        rows_fmt = self.formatting.get('rows', {})
+        rows_fmt = effective_fmt.get('rows', {})
 
         display_headers = headers if headers is not None else self._get_headers(data)
         if len(display_headers) != len(self.columns):
@@ -866,7 +878,7 @@ class ExcelWriter(BatchWriter):
 
         if should_write_headers:
             self._finalize_headers(worksheet, header_widths, data_widths, col_fmt, rows_fmt,
-                                   link_mapping=self._link_mapping)
+                                   link_mapping=self._link_mapping, effective_fmt=effective_fmt)
 
         return row_count
 
@@ -875,6 +887,7 @@ class ExcelWriter(BatchWriter):
         data: Iterable[RecordLike],
         sheet_name: Optional[str] = None,
         headers: Optional[List[str]] = None,
+        formatting: Optional[Dict] = None,
     ) -> None:
         """
         Write a batch of data to a sheet.
@@ -891,9 +904,21 @@ class ExcelWriter(BatchWriter):
         headers : list of str, optional
             Display names for the header row. Overrides the writer-level ``headers``
             set at initialisation for this batch only. Must match the column count.
+        formatting : ExcelFormat or dict, optional
+            Per-call formatting override. ``None`` (default) uses the writer-level
+            formatting. Pass ``{}`` to write this sheet with no formatting.
         """
         if self.workbook is None:
             raise RuntimeError("Workbook not initialized")
+
+        if isinstance(formatting, ExcelFormat):
+            formatting = formatting.to_dict()
+        effective_fmt = self.formatting if formatting is None else formatting
+        call_col_rules = [
+            (k.lower(), k, v.to_dict() if isinstance(v, ColumnRule) else v)
+            for k, v in effective_fmt.get('columns', {}).items()
+        ]
+        self._register_call_styles(effective_fmt)
 
         target_sheet = sheet_name or self.active_sheet or 'Data'
         if sheet_name:
@@ -911,6 +936,8 @@ class ExcelWriter(BatchWriter):
             worksheet=worksheet,
             write_headers=self.write_headers,
             headers=headers,
+            effective_fmt=effective_fmt,
+            col_rules=call_col_rules,
         )
 
         self._row_num += row_count
@@ -1526,6 +1553,7 @@ class LinkedExcelWriter(ExcelWriter):
         sheet_name: Optional[str] = None,
         headers: Optional[List[str]] = None,
         links: Optional[Dict[str, str]] = None,
+        formatting: Optional[Dict] = None,
     ) -> None:
         """
         Write a batch with optional hyperlinking.
@@ -1535,7 +1563,18 @@ class LinkedExcelWriter(ExcelWriter):
 
         headers: display names for this batch, overriding the writer-level default
         links: dict column_name → "source_name" or "source_name:internal"
+        formatting: per-call formatting override; None uses writer-level formatting,
+            {} writes with no formatting
         """
+        if isinstance(formatting, ExcelFormat):
+            formatting = formatting.to_dict()
+        effective_fmt = self.formatting if formatting is None else formatting
+        call_col_rules = [
+            (k.lower(), k, v.to_dict() if isinstance(v, ColumnRule) else v)
+            for k, v in effective_fmt.get('columns', {}).items()
+        ]
+        self._register_call_styles(effective_fmt)
+
         target_sheet = sheet_name or self.active_sheet or 'Data'
         if sheet_name:
             self.active_sheet = target_sheet
@@ -1579,7 +1618,9 @@ class LinkedExcelWriter(ExcelWriter):
             headers=headers,
             link_mapping=link_mapping,
             source_for_this_sheet=source_for_this_sheet,
-            target_sheet=target_sheet
+            target_sheet=target_sheet,
+            effective_fmt=effective_fmt,
+            col_rules=call_col_rules,
         )
 
         self._row_num += row_count
@@ -1595,11 +1636,14 @@ class LinkedExcelWriter(ExcelWriter):
         link_mapping: Optional[Dict[str, tuple]] = None,
         source_for_this_sheet: Optional[list] = None,
         target_sheet: Optional[str] = None,
+        effective_fmt: Optional[dict] = None,
+        col_rules: Optional[list] = None,
     ) -> int:
         self._link_mapping = link_mapping or {}
         self._source_for_this_sheet = source_for_this_sheet or []
         self._target_sheet = target_sheet
-        return super()._write_to_worksheet(data, worksheet, columns, write_headers, headers)
+        return super()._write_to_worksheet(data, worksheet, columns, write_headers, headers,
+                                           effective_fmt=effective_fmt, col_rules=col_rules)
 
     def _apply_cell_overrides(self, cell, record, col_name, col_idx, row_idx, style_names):
         link_spec = self._link_mapping.get(col_name)
