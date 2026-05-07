@@ -76,6 +76,7 @@ fmt = {
     'min_column_width':  4,       # minimum auto-sized column width
     'max_column_width':  40,      # maximum auto-sized column width
     'auto_filter':       True,    # enable dropdown filter on header row
+    'tab_color':         '#4472C4',  # worksheet tab color (hex string)
 }
 
 with ExcelWriter(file='report.xlsx', formatting=fmt) as writer:
@@ -387,29 +388,6 @@ Explicit `width` values in column rules are not affected.
 ```
 
 Explicit `width` values in column rules are not affected.
-
----
-
-### Tab Color
-
-Set the worksheet tab color with a hex string (`'#RRGGBB'` or `'RRGGBB'`):
-
-```python
-'tab_color': '#4472C4'   # blue tab
-```
-
-This is useful when writing multiple sheets from one writer — each call to `write_batch()` can carry its own `tab_color` via the per-sheet `formatting` override:
-
-```python
-al_fmt = { ..., 'tab_color': '#8BB4C6' }   # muted blue for American League
-nl_fmt = { ..., 'tab_color': '#E0BDB5' }   # muted pink for National League
-
-with ExcelWriter(file='report.xlsx', formatting=al_fmt) as writer:
-    for team in american_league_teams:
-        writer.write_batch(reader, sheet_name=team)               # uses al_fmt tab color
-    for team in national_league_teams:
-        writer.write_batch(reader, sheet_name=team, formatting=nl_fmt)  # pink tab
-```
 
 ---
 
