@@ -39,7 +39,7 @@ fmt = {
                         'width': 5, 'header_style': 'header_vert_style'},
         'putouts:fielding_pct': {'style': 'fielding_style', 'group_label': 'Fielding',
                         'width': 5, 'header_style': 'header_vert_style'},
-        'home_runs':   {'style_fn': lambda rec: 'alert_style' if rec.home_runs >= 15 else None},
+        'home_runs':   {'conditional_style': lambda rec: 'alert_style' if rec.home_runs >= 15 else None},
         'batting_avg:slugging_pct':     {'style': {'number_format': '0.000'}, 'width': 7},
         'fielding_pct': {'style': {'number_format': '0.000'}, 'width': 7,
                          'comment': 'Putouts + Assists / total chances'},

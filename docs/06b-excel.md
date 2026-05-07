@@ -181,7 +181,7 @@ The following styles are registered on every workbook and can be used directly b
 | Key | Type | Effect |
 |---|---|---|
 | `style` | style name or inline dict | Applied to every **data** cell in this column |
-| `style_fn` | callable or list of callables | `lambda rec: style_name_or_None` — per-row conditional style(s); composed on top of all other styles when non-None |
+| `conditional_style` | callable or list of callables | `lambda rec: style_name_or_None` — per-row conditional style(s); composed on top of all other styles when non-None |
 | `header_style` | style name or inline dict | Applied to the **header** cell only; owns the cell entirely (include `font: {bold: True}` if needed) |
 | `width` | float | Column width in Excel character units; overrides auto-sizing |
 | `hidden` | 0 or 1 | Hide (`1`) or explicitly un-hide (`0`) the column |
@@ -205,11 +205,11 @@ The following styles are registered on every workbook and can be used directly b
 }
 ```
 
-**Per-row conditional styles** use a `style_fn` callable in the column rule. The lambda receives the full record and returns a style name (or `None`). This overrides both the column's static `style` and any row-level style when non-None:
+**Per-row conditional styles** use a `conditional_style` callable in the column rule. The lambda receives the full record and returns a style name (or `None`). This overrides both the column's static `style` and any row-level style when non-None:
 
 ```python
 'columns': {
-    'max_capacity': {'style_fn': lambda rec: 'fmt_warn' if rec.max_capacity < 10 else None},
+    'max_capacity': {'conditional_style': lambda rec: 'fmt_warn' if rec.max_capacity < 10 else None},
 }
 ```
 
@@ -259,7 +259,7 @@ Each key maps to a dict that may contain `height` and/or `style`. The `'data'` k
         'style':    'fmt_data',                           # static style for all data rows
         'odd':      {'style': 'fmt_stripe'},              # rows 1, 3, 5, … (overrides data style)
         'even':     {'style': 'fmt_alt'},                 # rows 2, 4, 6, …
-        'style_fn': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+        'conditional_style': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
     },
 }
 ```
@@ -283,19 +283,19 @@ You can define only one side if you only want every-other-row coloring:
 'rows': {'data': {'odd': {'style': 'fmt_stripe'}}}   # only odd rows get a background
 ```
 
-**Conditional row styles** use `style_fn` under `'data'`. It accepts a callable or a list of callables; each receives the full record and returns a style name or `None`. Multiple callables are composed in order, later ones taking precedence:
+**Conditional row styles** use `conditional_style` under `'data'`. It accepts a callable or a list of callables; each receives the full record and returns a style name or `None`. Multiple callables are composed in order, later ones taking precedence:
 
 ```python
 'rows': {
     'data': {
-        'style_fn': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
+        'conditional_style': lambda rec: 'fmt_alerts' if rec['status'] == 'OVERDUE' else None,
     },
 }
 
 # Multiple callables — both applied, last non-None wins per property
 'rows': {
     'data': {
-        'style_fn': [
+        'conditional_style': [
             lambda rec: 'fmt_stripe' if rec['row_num'] % 2 else None,
             lambda rec: 'fmt_alerts' if rec['overdue'] else None,
         ],
@@ -310,8 +310,8 @@ You can define only one side if you only want every-other-row coloring:
 3. `rows['*']['style']`
 4. `rows['data']['style']`
 5. `rows['data']['odd'|'even']['style']`
-6. `rows['data']['style_fn']` callable(s)
-7. Column `style_fn` callable(s)
+6. `rows['data']['conditional_style']` callable(s)
+7. Column `conditional_style` callable(s)
 8. `hyperlink_style` (applied by `LinkedExcelWriter` to linked cells)
 
 Styles at higher priority levels are composed on top — they override individual properties (fill, font, number format) rather than replacing the whole style.
@@ -571,7 +571,7 @@ with LinkedExcelWriter(file='report.xlsx', formatting=fmt) as writer:
 | Key | Type | Description |
 |---|---|---|
 | `style` | style name or dict | Style applied to data cells |
-| `style_fn` | callable or list | Per-row conditional style(s); composed on top of all other styles |
+| `conditional_style` | callable or list | Per-row conditional style(s); composed on top of all other styles |
 | `header_style` | style name or dict | Style applied to the header cell only |
 | `width` | float | Override auto-sized width |
 | `hidden` | 0 or 1 | Hide or explicitly un-hide the column |

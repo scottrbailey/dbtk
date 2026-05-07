@@ -67,7 +67,7 @@ class ColumnRule:
     group_label : str, optional
         Label for a group super-header spanning this column range.
         Only valid on range patterns (``'col_a:col_z'``).
-    style_fn : callable or list[callable], optional
+    conditional_style : callable or list[callable], optional
         ``lambda record: style_name_or_None`` — evaluated per row; overrides
         ``style`` and row styles when non-``None``. Multiple callables
         are composed in order.
@@ -80,7 +80,7 @@ class ColumnRule:
     comment: Optional[str] = None
     filter: bool = False
     group_label: Optional[str] = None
-    style_fn: Optional[Union[Callable, List[Callable]]] = None
+    conditional_style: Optional[Union[Callable, List[Callable]]] = None
 
     def to_dict(self) -> dict:
         d: dict = {}
@@ -98,8 +98,8 @@ class ColumnRule:
             d['filter'] = self.filter
         if self.group_label is not None:
             d['group_label'] = self.group_label
-        if self.style_fn is not None:
-            d['style_fn'] = self.style_fn
+        if self.conditional_style is not None:
+            d['conditional_style'] = self.conditional_style
         return d
 
 
@@ -136,13 +136,13 @@ class ExcelFormat:
 
           - ``'style'``: str or dict applied to all data rows.
           - ``'odd'``  / ``'even'``: ``{'style': style_name}`` for striping.
-          - ``'style_fn'``: callable or list of callables
+          - ``'conditional_style'``: callable or list of callables
             ``lambda record: style_name_or_None``.
             Multiple callables are composed in order.
           - ``'height'``: uniform row height for data rows.
 
         Cascade (lowest → highest priority): ``'*'`` → ``'odd'``/``'even'``
-        → ``'style_fn'`` callable(s).
+        → ``'conditional_style'`` callable(s).
     min_column_width : float, default 6
         Minimum auto-sized column width.
     max_column_width : float, default 60
@@ -721,7 +721,7 @@ class ExcelWriter(BatchWriter):
         worksheet: 'Worksheet',
         data_start_row: int,
         col_fmt: list,
-        col_style_fns: list,
+        col_conditional_styles: list,
         rows_fmt,
         header_widths: list,
         data_widths: list,
@@ -730,8 +730,8 @@ class ExcelWriter(BatchWriter):
 
         Style cascade per cell (lowest → highest priority):
           date/datetime base → column ``style`` → ``'*'`` style →
-          ``'data'`` style → ``'odd'``/``'even'`` style → ``style_fn``
-          callable(s) → column ``style_fn`` callable(s) →
+          ``'data'`` style → ``'odd'``/``'even'`` style → ``conditional_style``
+          callable(s) → column ``conditional_style`` callable(s) →
           ``_apply_cell_overrides`` hook.
         All active styles are composed once per unique combination via
         ``_compose_styles`` and cached for reuse.
@@ -752,9 +752,9 @@ class ExcelWriter(BatchWriter):
         odd_style      = data_props.get('odd', {}).get('style')
         even_style     = data_props.get('even', {}).get('style')
 
-        style_fns = data_props.get('style_fn')
-        if style_fns is not None and not isinstance(style_fns, list):
-            style_fns = [style_fns]
+        conditional_styles = data_props.get('conditional_style')
+        if conditional_styles is not None and not isinstance(conditional_styles, list):
+            conditional_styles = [conditional_styles]
 
         width_sample_size = 15
         row_count = 0
@@ -770,7 +770,7 @@ class ExcelWriter(BatchWriter):
 
             # Per-row styles evaluated once, reused for every cell in this row
             alt = odd_style if data_row_num % 2 else even_style
-            fn_results = [fn(record) for fn in (style_fns or [])]
+            fn_results = [fn(record) for fn in (conditional_styles or [])]
 
             for col_idx, value in enumerate(values, 1):
                 col_name = self.columns[col_idx - 1]
@@ -799,7 +799,7 @@ class ExcelWriter(BatchWriter):
                     base_style = None
 
                 col_style = col_fmt[col_idx - 1].get('style') if col_fmt else None
-                col_fn = col_style_fns[col_idx - 1] if col_style_fns else None
+                col_fn = col_conditional_styles[col_idx - 1] if col_conditional_styles else None
                 cell_style = col_fn(record) if col_fn else None
 
                 style_names = [
@@ -833,7 +833,7 @@ class ExcelWriter(BatchWriter):
             raise ValueError("Could not determine columns from data")
 
         col_fmt = self._build_col_fmt_map(self.columns)
-        col_style_fns = [p.get('style_fn') for p in col_fmt] if col_fmt else []
+        col_conditional_styles = [p.get('conditional_style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
         display_headers = headers if headers is not None else self._get_headers(data)
@@ -860,7 +860,7 @@ class ExcelWriter(BatchWriter):
                     cell.font = header_font
 
         row_count = self._write_rows(
-            worksheet, data_start_row, col_fmt, col_style_fns, rows_fmt,
+            worksheet, data_start_row, col_fmt, col_conditional_styles, rows_fmt,
             header_widths, data_widths,
         )
 
@@ -929,7 +929,7 @@ class ExcelWriter(BatchWriter):
             raise RuntimeError("Workbook not initialized")
 
         col_fmt = self._build_col_fmt_map(self.columns)
-        col_style_fns = [p.get('style_fn') for p in col_fmt] if col_fmt else []
+        col_conditional_styles = [p.get('conditional_style') for p in col_fmt] if col_fmt else []
         rows_fmt = self.formatting.get('rows', {})
 
         target_sheet = self.active_sheet or 'Data'
@@ -967,7 +967,7 @@ class ExcelWriter(BatchWriter):
             self._headers_written = True
 
         row_count = self._write_rows(
-            worksheet, data_start_row, col_fmt, col_style_fns, rows_fmt,
+            worksheet, data_start_row, col_fmt, col_conditional_styles, rows_fmt,
             header_widths, data_widths,
         )
 
