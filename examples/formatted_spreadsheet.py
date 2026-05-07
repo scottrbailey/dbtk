@@ -66,11 +66,13 @@ if __name__ == '__main__':
     nl_fmt['columns']['pos:weight']['style'] = 'demo_nl_style'
     # replace _'s in headers for a more readable display
     columns = [col.replace('_', ' ') for col in all_data.columns]
-    with dbtk.writers.ExcelWriter(None, OUT_FILE, headers=columns) as writer:
+    # The American League format (al_fmt) will be the default if not overridden in write_batch
+    with dbtk.writers.ExcelWriter(None, OUT_FILE, headers=columns, formatting=al_fmt) as writer:
         for team_name in AMERICAN_LEAGUE + NATIONAL_LEAGUE:
             team_df = all_data.filter(pl.col('team_name') == team_name)
             reader  = dbtk.readers.DataFrameReader(team_df, add_row_num=False)
-            fmt = al_fmt if team_name in AMERICAN_LEAGUE else nl_fmt
+            # formatting on writer init is persisted but ephemeral in write_batch
+            fmt = nl_fmt if team_name in NATIONAL_LEAGUE else None
             writer.write_batch(reader, sheet_name=team_name, formatting=fmt)
             print(f"  {team_name}")
     print(f"\nSaved → {OUT_FILE}")
