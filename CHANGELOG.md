@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.8.4] - 2026-05-06
+## [0.8.4] - 2026-05-07
 
 ### Added
 
@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `min_column_width` — floor for auto-sized columns (default `6`); lower for
     narrow indicator columns.
 
-  Inline format dicts for `format` / `header_format` are deduplicated via
+  Inline format dicts for `style` / `header_style` are deduplicated via
   content-based MD5 `NamedStyle` names. Header and data widths are tracked
   separately; `_finalize_headers()` consolidates all post-write worksheet setup
   across all three write paths (`write()`, `write_batch()`,
