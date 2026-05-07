@@ -3,7 +3,6 @@
 Excel writer for database results using openpyxl.
 """
 import logging
-from dataclasses import dataclass, field
 from typing import Any, Callable, Union, List, Optional, Iterable, Dict, TYPE_CHECKING
 from pathlib import Path
 from datetime import datetime, date, time
@@ -38,7 +37,6 @@ _BUILTIN_STYLE_NAMES = frozenset({
 })
 
 
-@dataclass
 class ColumnRule:
     """Per-column formatting rule for use with :class:`ExcelFormat`.
 
@@ -73,16 +71,18 @@ class ColumnRule:
         are composed in order.
     """
 
-    style: Optional[Union[str, dict]] = None
-    header_style: Optional[Union[str, dict]] = None
-    width: Optional[float] = None
-    hidden: bool = False
-    comment: Optional[str] = None
-    filter: bool = False
-    group_label: Optional[str] = None
-    conditional_style: Optional[Union[Callable, List[Callable]]] = None
+    def __init__(self, style=None, header_style=None, width=None, hidden=False,
+                 comment=None, filter=False, group_label=None, conditional_style=None):
+        self.style = style
+        self.header_style = header_style
+        self.width = width
+        self.hidden = hidden
+        self.comment = comment
+        self.filter = filter
+        self.group_label = group_label
+        self.conditional_style = conditional_style
 
-    def to_dict(self) -> dict:
+    def to_dict(self):
         d: dict = {}
         if self.style is not None:
             d['style'] = self.style
@@ -103,7 +103,6 @@ class ColumnRule:
         return d
 
 
-@dataclass
 class ExcelFormat:
     """Formatting configuration for :class:`ExcelWriter`.
 
@@ -161,17 +160,20 @@ class ExcelFormat:
         Worksheet tab color as a hex string (``'#FF0000'`` or ``'FF0000'``).
     """
 
-    styles: Dict[str, dict] = field(default_factory=dict)
-    columns: Dict[str, Union[dict, ColumnRule]] = field(default_factory=dict)
-    rows: dict = field(default_factory=dict)
-    min_column_width: float = 6
-    max_column_width: float = 60
-    auto_filter: bool = False
-    freeze: Optional[Any] = None
-    header_auto_rotate: Optional[Any] = None
-    tab_color: Optional[str] = None
+    def __init__(self, styles=None, columns=None, rows=None,
+                 min_column_width=6, max_column_width=60, auto_filter=False,
+                 freeze=None, header_auto_rotate=None, tab_color=None):
+        self.styles = styles if styles is not None else {}
+        self.columns = columns if columns is not None else {}
+        self.rows = rows if rows is not None else {}
+        self.min_column_width = min_column_width
+        self.max_column_width = max_column_width
+        self.auto_filter = auto_filter
+        self.freeze = freeze
+        self.header_auto_rotate = header_auto_rotate
+        self.tab_color = tab_color
 
-    def to_dict(self) -> dict:
+    def to_dict(self):
         d: dict = {
             'min_column_width': self.min_column_width,
             'max_column_width': self.max_column_width,
