@@ -918,7 +918,7 @@ def encrypt_config_file(filename: Union[str, Path, None] = None) -> None:
 
         if changes > 0:
             with open(filename, 'w') as fp:
-                yaml.safe_dump(config, fp, default_flow_style=False)
+                yaml.safe_dump(config, fp, default_flow_style=False, sort_keys=False)
             print(f"Encrypted {changes} passwords in {filename}")
         else:
             print(f"No passwords to encrypt in {filename}")
@@ -942,7 +942,7 @@ def migrate_config(source_file: str, target_file: str, new_encryption_key: str) 
             pwd_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
 
     with open(target_file, 'w') as f:
-        yaml.safe_dump(new_config, f, default_flow_style=False)
+        yaml.safe_dump(new_config, f, default_flow_style=False, sort_keys=False)
 
 def setup_config() -> None:
     """
