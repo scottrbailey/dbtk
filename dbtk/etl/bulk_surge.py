@@ -306,6 +306,11 @@ class BulkSurge(BaseSurge):
         cols = ", ".join(self._get_columns('insert'))
         sql = f"COPY {self.table.name} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\\N')"
 
+        if self.cursor.connection.driver.__name__ == 'psycopg':
+            return self._load_postgres_psycopg3(records, sql)
+        return self._load_postgres_psycopg2(records, sql)
+
+    def _load_postgres_psycopg2(self, records: Iterable[Record], sql: str) -> int:
         buffer = DequeBuffer(max_rows=self.batch_size * 3)
         exception = None
 
@@ -334,6 +339,16 @@ class BulkSurge(BaseSurge):
         if exception:
             raise exception
 
+        return self.total_loaded
+
+    def _load_postgres_psycopg3(self, records: Iterable[Record], sql: str) -> int:
+        import io
+        with self.cursor._cursor.copy(sql) as copy:
+            for batch in self.batched(records):
+                buf = io.StringIO()
+                writer = CSVWriter(data=None, file=buf, write_headers=False, null_string='\\N')
+                writer.write_batch(batch)
+                copy.write(buf.getvalue())
         return self.total_loaded
 
     def _load_oracle_direct(self, records: Iterable[Record]) -> int:

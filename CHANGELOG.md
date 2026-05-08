@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reordering all keys alphabetically on save. Key order is now preserved (matching the
   behaviour of `setup_config`).
 
+- **`BulkSurge` fails with psycopg3 (psycopg)** — `_load_postgres_direct` called
+  `copy_expert()`, which is psycopg2-only and raises `AttributeError` on psycopg3.
+  The method now detects the driver and routes to a new `_load_postgres_psycopg3` path
+  that uses psycopg3's `cursor.copy()` context-manager API. No background thread or
+  `DequeBuffer` is needed; CSV batches are written directly via `copy.write()`. The
+  psycopg2 path is unchanged.
+
 ---
 
 ## [0.8.4] - 2026-05-07
