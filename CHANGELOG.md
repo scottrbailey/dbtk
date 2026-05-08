@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`dbtk store-key --force` flag ignored** — `args.force` was not forwarded to
   `store_key()`, so passing `--force` had no effect.
 
+- **`encrypt-config` and `migrate-config` sort keys alphabetically** — `yaml.safe_dump`
+  was called without `sort_keys=False` in `encrypt_config_file` and `migrate_config`,
+  reordering all keys alphabetically on save. Key order is now preserved (matching the
+  behaviour of `setup_config`).
+
 ---
 
 ## [0.8.4] - 2026-05-07
