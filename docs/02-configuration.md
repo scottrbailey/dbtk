@@ -250,6 +250,16 @@ $ dbtk checkup
 $ dbtk config-setup
 ```
 
+If the `dbtk` command is not found (e.g. pip-installed without admin privileges so the
+scripts directory is not in PATH), every command above can be run as `python -m dbtk`
+instead:
+
+```bash
+python -m dbtk config-setup
+python -m dbtk checkup
+python -m dbtk encrypt-config
+```
+
 ### Using Encrypted Passwords
 
 In your config file, use `encrypted_password` instead of `password`:
