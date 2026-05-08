@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`dbtk config-setup` encryption key not usable during wizard** — after generating
+  and storing a new key in the system keyring, `has_keyring_key` was not updated, so
+  `can_encrypt` remained `False` for the remainder of the wizard and passwords were
+  always offered as plaintext even though the key was ready.
+
+- **`dbtk encrypt-config` requires explicit config file argument** — when called
+  without an argument the function received `None` and crashed on `open(None)`. It
+  now searches the standard config locations (`./dbtk.yml`, `./dbtk.yaml`,
+  `~/.config/dbtk.yml`, `~/.config/dbtk.yaml`) and reports a clear message if none
+  is found.
+
+- **`~` not expanded in config file paths** — paths containing `~` (e.g.
+  `dbtk encrypt-config ~/.config/dbtk.yml`) were not expanded, causing a
+  `FileNotFoundError`. Both `encrypt_config_file` and `ConfigManager._find_config_file`
+  now call `Path.expanduser()`.
+
+- **`dbtk store-key --force` flag ignored** — `args.force` was not forwarded to
+  `store_key()`, so passing `--force` had no effect.
+
+---
+
 ## [0.8.4] - 2026-05-07
 
 ### Added
