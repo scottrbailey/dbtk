@@ -299,7 +299,7 @@ class ConfigManager:
     def _find_config_file(self, config_file: Optional[Union[str, Path]]) -> Path:
         """Find the configuration file."""
         if config_file:
-            path = Path(config_file)
+            path = Path(config_file).expanduser()
             if not path.exists():
                 raise FileNotFoundError(f"Config file not found: {config_file}")
             return path
@@ -868,8 +868,23 @@ def encrypt_password(password: str = None, encryption_key: str = None) -> str:
     return encrypted
 
 
-def encrypt_config_file(filename: Union[str, Path]) -> None:
+def encrypt_config_file(filename: Union[str, Path, None] = None) -> None:
     """CLI Utility to encrypt all passwords in a config file."""
+    if filename is None:
+        for candidate in [
+            Path("dbtk.yml"),
+            Path("dbtk.yaml"),
+            Path.home() / ".config" / "dbtk.yml",
+            Path.home() / ".config" / "dbtk.yaml",
+        ]:
+            if candidate.exists():
+                filename = candidate
+                break
+        if filename is None:
+            print("No config file found. Specify a path or run 'dbtk config-setup'.")
+            return
+    else:
+        filename = Path(filename).expanduser()
     temp_config = ConfigManager.__new__(ConfigManager)
     temp_config._fernet = None
     with open(filename) as fp:
@@ -1049,6 +1064,7 @@ def setup_config() -> None:
                 # Generate and store in keyring
                 key = generate_encryption_key()
                 store_key(key)
+                has_keyring_key = True
                 print(f"\n✓ Generated encryption key and stored in system keyring")
 
         elif choice == '2':
