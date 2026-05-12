@@ -22,6 +22,7 @@ CREATE TABLE genres (
 );
 """
 
+import argparse
 import dbtk
 import polars as pl
 from pathlib import Path
@@ -47,6 +48,11 @@ def wrap_array(val) -> str:
 
 if __name__ == '__main__':
     dbtk.setup_logging()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--num_rows', type=int, help='Number of rows to load', default=100_000)
+    parser.add_argument('--method', choices=['bulk','conventional'],
+                        help='Bulk (BulkSurge), Conventional (DataSurge)', default='bulk')
+    args = parser.parse_args()
     db = dbtk.connect('imdb')
     cur = db.cursor()
     cur.execute('TRUNCATE table public.titles')
@@ -72,19 +78,23 @@ if __name__ == '__main__':
     titles = Table('titles', title_cols, cursor=cur)
     # Use polars ridiculously fast... but lazy csv reader
     titles_path = Path.home() / 'Downloads' / 'title.basics.tsv.gz'
+    print(f'Loading {args.num_rows:,} from IMDB titles using {args.method} load method.')
     df = pl.scan_csv(titles_path,
                      separator="\t",
                      null_values=r'\N',
-                     quote_char=None,     # This file has partially quoted fields that cause errors otherwise
-                     ignore_errors=True,
-                     # n_rows=100_000,    # uncomment to limit number of rows loaded
+                     quote_char=None,        # This file has partially quoted fields that cause errors otherwise
+                     n_rows=args.num_rows
                      ).collect()
     with DataFrameReader(df, add_row_num=False) as reader:
-        title_surge = BulkSurge(titles)
-        title_surge.load(reader)
-        # Swap these two lines to load using inserts instead of COPY FROM
-        # title_surge = dbtk.etl.DataSurge(titles, use_transaction=True)
-        # title_surge.insert(reader)
+        if args.method == 'conventional':
+            # load using SQL inserts with DataSurge
+            title_surge = dbtk.etl.DataSurge(titles, use_transaction=True)
+            title_surge.insert(reader)
+        else:
+            # load using Postgres COPY
+            title_surge = BulkSurge(titles)
+            title_surge.load(reader)
+
 
     genre_insert = 'INSERT INTO genres (genre, title) VALUES (%s, %s) ON CONFLICT DO NOTHING'
     new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]

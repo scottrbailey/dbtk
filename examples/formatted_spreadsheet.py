@@ -18,6 +18,7 @@ Key techniques shown:
   - Writer-level headers= replacing underscores with spaces for display labels
     while keeping underscore field names for column rule pattern matching
 """
+
 import copy
 import dbtk
 import polars as pl
@@ -27,6 +28,12 @@ DATA_FILE = Path(__file__).parent / 'output' / '1927_baseball.parquet'
 OUT_FILE  = Path(__file__).parent / 'output' / 'MLB-1927.xlsx'
 AMERICAN_LEAGUE = ['Detroit Tigers', 'New York Yankees', 'Philadelphia Athletics', 'Washington Senators']
 NATIONAL_LEAGUE = ['Chicago Cubs', 'New York Giants', 'Pittsburgh Pirates', 'St. Louis Cardinals']
+
+"""Columns: 
+Name, Pos, Bats, Throws, Age, Birth_Year, Birth_City, Birth_State, Birth_Country, Height, Weight, Games_Played, 
+At_Bats, Runs, Hits, Doubles, Triples, Home_Runs, Runs_Batted_In, Walks, Strikeouts, Batting_Avg, On_Base_Pct, 
+Slugging_Pct, Putouts, Assists, Errors, Double_Plays, Fielding_Pct, team_name
+"""
 
 al_fmt = {
     'styles': {
@@ -56,7 +63,8 @@ al_fmt = {
     'freeze':              'B3',                # Freeze so player name and headers are always visible
     'min_column_width':    4,                   # Decrease min column width from 6 to 4
     'header_auto_rotate':  {'min_length': 4},   # Turns on header rotations if header > 4 and header / data ratio > 1.5 (default)
-    'tab_color' :  '#8BB4C6'}
+    'tab_color' :  '#8BB4C6'                    # Light blue tabs for American League
+}
 
 if __name__ == '__main__':
     all_data = pl.read_parquet(DATA_FILE)
