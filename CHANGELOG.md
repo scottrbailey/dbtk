@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Generalized encrypted parameter support** — any connection config key prefixed with
+  `encrypted_` is now decrypted at connection time and stored under the bare key name
+  (e.g. `encrypted_private_key_file_pwd` → `private_key_file_pwd`). Previously only
+  `encrypted_password` was handled. `migrate_config()` re-encrypts all such keys, and
+  `_validate_connection_params(config_only=True)` keeps them without warnings. Note that
+  `encrypt_config_file()` still only encrypts `password`; other values must be encrypted
+  with `encrypt_password()` and added to the config by hand.
+
+### Fixed
+
+- **Three-part table names (`db.schema.table`)** — `PostgresDialect` and `OracleDialect`
+  `table_metadata()` and BulkSurge's Oracle direct-path load previously required exactly
+  two parts to recognize a schema, so a three-part name lost its schema entirely. They now
+  take the last two parts as schema and table. The database part is not used for lookup;
+  metadata comes from whichever database the connection is attached to.
+
+- **`Table.get_column_definitions()` now quotes the table name** with `quote_identifier()`,
+  matching every other SQL statement `Table` generates. A name that needs quoting
+  (spaces, mixed case) previously failed in the introspection query.
+
+### Documentation
+
+- **RecordShaper documented in place of the removed column-shaping functions** — the
+  "Working with Streaming Records" guide, readers/writers guides, and API reference still
+  described `select_columns()`/`exclude_columns()`/`rename_columns()`/`tuples_to_records()`
+  after their 0.9.0 removal. They now cover `RecordShaper`, including `strict=False` and
+  single-pass behavior. The removed `columns=` writer parameter was also dropped from the
+  documented signatures.
+
+---
+
 ## [0.9.0] - 2026-10-13
 
 ### Added
