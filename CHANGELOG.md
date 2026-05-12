@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`BulkSurge` support for psycopg3** - that uses psycopg3's `cursor.copy()` context-manager API. 
+  No background thread or `DequeBuffer` is needed; CSV batches are written directly via `copy.write()`. 
+  The psycopg2 path is unchanged.
+
+### Fixed
+
+- **`dbtk config-setup` encryption key not usable during wizard** — after generating
+  and storing a new key in the system keyring, `has_keyring_key` was not updated, so
+  `can_encrypt` remained `False` for the remainder of the wizard and passwords were
+  always offered as plaintext even though the key was ready.
+
+- **`dbtk encrypt-config` requires explicit config file argument** — when called
+  without an argument the function received `None` and crashed on `open(None)`. It
+  now searches the standard config locations (`./dbtk.yml`, `./dbtk.yaml`,
+  `~/.config/dbtk.yml`, `~/.config/dbtk.yaml`) and reports a clear message if none
+  is found.
+
+- **`~` not expanded in config file paths** — paths containing `~` (e.g.
+  `dbtk encrypt-config ~/.config/dbtk.yml`) were not expanded, causing a
+  `FileNotFoundError`. Both `encrypt_config_file` and `ConfigManager._find_config_file`
+  now call `Path.expanduser()`.
+
+- **`dbtk store-key --force` flag ignored** — `args.force` was not forwarded to
+  `store_key()`, so passing `--force` had no effect.
+
+- **`encrypt-config` and `migrate-config` sort keys alphabetically** — `yaml.safe_dump`
+  was called without `sort_keys=False` in `encrypt_config_file` and `migrate_config`,
+  reordering all keys alphabetically on save. Key order is now preserved (matching the
+  behaviour of `setup_config`).
+
+- **`examples/bulk_load_imdb_subset[_pg].py` fails with add_filter call** — An earlier refactor 
+  replaced polars `filter` with dbtk's `add_filter`, causing example scripts to fail.
+  
+
+---
+
 ## [0.8.4] - 2026-05-07
 
 ### Added

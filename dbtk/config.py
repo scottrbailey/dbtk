@@ -299,7 +299,7 @@ class ConfigManager:
     def _find_config_file(self, config_file: Optional[Union[str, Path]]) -> Path:
         """Find the configuration file."""
         if config_file:
-            path = Path(config_file)
+            path = Path(config_file).expanduser()
             if not path.exists():
                 raise FileNotFoundError(f"Config file not found: {config_file}")
             return path
@@ -868,8 +868,23 @@ def encrypt_password(password: str = None, encryption_key: str = None) -> str:
     return encrypted
 
 
-def encrypt_config_file(filename: Union[str, Path]) -> None:
+def encrypt_config_file(filename: Union[str, Path, None] = None) -> None:
     """CLI Utility to encrypt all passwords in a config file."""
+    if filename is None:
+        for candidate in [
+            Path("dbtk.yml"),
+            Path("dbtk.yaml"),
+            Path.home() / ".config" / "dbtk.yml",
+            Path.home() / ".config" / "dbtk.yaml",
+        ]:
+            if candidate.exists():
+                filename = candidate
+                break
+        if filename is None:
+            print("No config file found. Specify a path or run 'dbtk config-setup'.")
+            return
+    else:
+        filename = Path(filename).expanduser()
     temp_config = ConfigManager.__new__(ConfigManager)
     temp_config._fernet = None
     with open(filename) as fp:
@@ -903,7 +918,7 @@ def encrypt_config_file(filename: Union[str, Path]) -> None:
 
         if changes > 0:
             with open(filename, 'w') as fp:
-                yaml.safe_dump(config, fp, default_flow_style=False)
+                yaml.safe_dump(config, fp, default_flow_style=False, sort_keys=False)
             print(f"Encrypted {changes} passwords in {filename}")
         else:
             print(f"No passwords to encrypt in {filename}")
@@ -927,7 +942,7 @@ def migrate_config(source_file: str, target_file: str, new_encryption_key: str) 
             pwd_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
 
     with open(target_file, 'w') as f:
-        yaml.safe_dump(new_config, f, default_flow_style=False)
+        yaml.safe_dump(new_config, f, default_flow_style=False, sort_keys=False)
 
 def setup_config() -> None:
     """
@@ -1049,6 +1064,7 @@ def setup_config() -> None:
                 # Generate and store in keyring
                 key = generate_encryption_key()
                 store_key(key)
+                has_keyring_key = True
                 print(f"\n✓ Generated encryption key and stored in system keyring")
 
         elif choice == '2':

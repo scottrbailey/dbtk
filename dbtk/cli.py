@@ -160,7 +160,7 @@ def main():
     elif args.command == 'generate-key':
         return config.generate_encryption_key()
     elif args.command == 'store-key':
-        return config.store_key(args.key)
+        return config.store_key(args.key, force=args.force)
     elif args.command == 'encrypt-config':
         return config.encrypt_config_file(args.config_file)
     elif args.command == 'encrypt-password':
