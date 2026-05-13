@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`'field': '*'` Table columns were being excluded from updates by Table.calc_update_excludes.
+  The check is to ensure a column is not nulled out because the source column is not present in 
+  the data source. The '*' syntax passes the entire record into the fn (thus always present).  
+
 - **`dbtk config-setup` encryption key not usable during wizard** — after generating
   and storing a new key in the system keyring, `has_keyring_key` was not updated, so
   `can_encrypt` remained `False` for the remainder of the wizard and passwords were
