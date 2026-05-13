@@ -71,24 +71,24 @@ connections:
     database: /data/test_states.db
 
   # Snowflake — user/password auth
-  # sample_snowflake:
-  #   type: snowflake
-  #   account: xy12345.us-east-1.aws   # From your Snowflake URL: <account>.snowflakecomputing.com
-  #   database: mydb
-  #   warehouse: compute_wh
-  #   user: etl_user
-  #   encrypted_password: gAAAAABh...   # Use: dbtk encrypt-config
+  sample_snowflake:
+    type: snowflake
+    account: xy12345.us-east-1.aws   # From your Snowflake URL: <account>.snowflakecomputing.com
+    database: mydb
+    warehouse: compute_wh
+    user: etl_user
+    encrypted_password: gAAAAABh...   # Use: dbtk encrypt-config
 
   # Snowflake — key-pair auth with encrypted passphrase
-  # sample_snowflake_keypair:
-  #   type: snowflake
-  #   account: xy12345.us-east-1.aws
-  #   database: mydb
-  #   warehouse: compute_wh
-  #   user: etl_user
-  #   authenticator: snowflake_jwt
-  #   private_key_file: ~/.ssh/snowflake_rsa_key.p8
-  #   encrypted_private_key_file_pwd: gAAAAABh...   # Any encrypted_<param> is decrypted automatically
+  sample_snowflake_keypair:
+    type: snowflake
+    account: xy12345.us-east-1.aws
+    database: mydb
+    warehouse: compute_wh
+    user: etl_user
+    authenticator: snowflake_jwt
+    private_key_file: ~/.ssh/snowflake_rsa_key.p8
+    encrypted_private_key_file_pwd: gAAAAABh...   # Any encrypted_<param> is decrypted automatically
 
 # Encrypted passwords (optional)
 passwords:
