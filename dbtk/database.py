@@ -201,14 +201,13 @@ DRIVERS = {
         'database_type': 'snowflake',
         'module': 'snowflake.connector',
         'priority': 11,
-        'param_map': {'host': 'account'},
-        'required_params': [{'host', 'database', 'user', 'warehouse'},
-                            {'account', 'database', 'user', 'warehouse'}],
+        'param_map': {},
+        'required_params': [{'account', 'database', 'user', 'warehouse'}],
         'optional_params': {'password', 'schema', 'role', 'authenticator',
                            'private_key', 'private_key_file', 'private_key_file_pwd',
                            'token', 'passcode', 'passcode_in_password',
                            'login_timeout', 'network_timeout', 'socket_timeout',
-                           'warehouse', 'session_parameters'},
+                           'session_parameters'},
         'connection_method': 'kwargs',
         'default_port': 443,
         'note': 'pip install snowflake-connector-python',
@@ -995,7 +994,7 @@ def snowflake(user: str, password: Optional[str] = None, account: str = None,
     See Also:
         Database.create() for more connection options
     """
-    return Database.create('snowflake', user=user, password=password, host=account,
+    return Database.create('snowflake', user=user, password=password, account=account,
                            database=database, warehouse=warehouse, schema=schema,
                            role=role, **kwargs)
 
