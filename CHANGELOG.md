@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Generalized encrypted parameter support** — any connection config key prefixed with
+  `encrypted_` is now decrypted at connection time and stored under the bare key name
+  (e.g. `encrypted_token` → `token`). `migrate_config` re-encrypts all such keys, not
+  just `encrypted_password`. Enables encrypting Snowflake params like `token`, `passcode`,
+  and `private_key_file_pwd`.
+
 - **Snowflake support** — `snowflake.connector` registered as a driver; `SnowflakeDialect`
   added covering MERGE-based upsert (standard ANSI, no quirks), session-scoped temp tables,
   Snowflake type mapping (`NUMBER`, `FLOAT`, `BOOLEAN`, `TIMESTAMP_NTZ/LTZ/TZ`, `VARIANT`),

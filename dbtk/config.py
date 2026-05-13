@@ -508,10 +508,12 @@ class ConfigManager:
 
         config = connections[name].copy()
 
-        # Handle password decryption first (before env var expansion)
-        if 'encrypted_password' in config:
-            config['password'] = self.decrypt_password(config['encrypted_password'])
-            del config['encrypted_password']
+        # Decrypt any encrypted_* keys before env var expansion
+        for key in list(config.keys()):
+            if key.startswith('encrypted_'):
+                plain_key = key[len('encrypted_'):]
+                config[plain_key] = self.decrypt_password(config[key])
+                del config[key]
 
         # Expand environment variables in all string connection params
         # Supports ${VAR} and ${VAR:default} syntax
@@ -930,16 +932,13 @@ def migrate_config(source_file: str, target_file: str, new_encryption_key: str) 
     source_config_mgr = ConfigManager(source_file)
     new_config = deepcopy(source_config_mgr.config)
 
-    # Re-encrypt all passwords
-    for conn_name, conn_config in new_config.get('connections', {}).items():
-        if 'encrypted_password' in conn_config:
-            password = source_config_mgr.decrypt_password(conn_config['encrypted_password'])
-            conn_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
-
-    for pwd_name, pwd_config in new_config.get('passwords', {}).items():
-        if 'encrypted_password' in pwd_config:
-            password = source_config_mgr.decrypt_password(pwd_config['encrypted_password'])
-            pwd_config['encrypted_password'] = encrypt_password(password, new_encryption_key)
+    # Re-encrypt all encrypted_* values
+    for section in ('connections', 'passwords'):
+        for entry_config in new_config.get(section, {}).values():
+            for key in list(entry_config.keys()):
+                if key.startswith('encrypted_'):
+                    value = source_config_mgr.decrypt_password(entry_config[key])
+                    entry_config[key] = encrypt_password(value, new_encryption_key)
 
     with open(target_file, 'w') as f:
         yaml.safe_dump(new_config, f, default_flow_style=False, sort_keys=False)
