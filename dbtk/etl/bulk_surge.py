@@ -397,10 +397,10 @@ class BulkSurge(BaseSurge):
         cols = self._get_columns('insert')
 
         tabname = self.table.name.split('.')
-        if len(tabname) == 2:
-            schema, table_name = tabname
+        if len(tabname) >= 2:
+            schema, table_name = tabname[-2], tabname[-1]
         else:
-            raise ValueError("Schema is required, use [schema].[table] format")
+            raise ValueError("Schema is required, use [schema].[table] or [db].[schema].[table] format")
 
         # Check if driver supports direct_path_load
         if not hasattr(self.cursor.connection, 'direct_path_load'):

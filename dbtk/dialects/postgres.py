@@ -6,11 +6,9 @@ class PostgresDialect(DatabaseDialect):
     """PostgreSQL dialect. Inherits ON CONFLICT upsert and MERGE template from base."""
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
-        tab_info = table_name.lower().split('.')
-        schema = None
-        if len(tab_info) == 2:
-            schema = tab_info[0]
-            table_name = tab_info[1]
+        parts = table_name.lower().split('.')
+        schema = parts[-2] if len(parts) >= 2 else None
+        table_name = parts[-1]
 
         table_comment = None
         if add_comments:
