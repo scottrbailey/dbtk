@@ -196,6 +196,24 @@ DRIVERS = {
         'default_port': 1521
     },
 
+    # Snowflake
+    'snowflake.connector': {
+        'database_type': 'snowflake',
+        'module': 'snowflake.connector',
+        'priority': 11,
+        'param_map': {'host': 'account'},
+        'required_params': [{'host', 'database', 'user', 'warehouse'},
+                            {'account', 'database', 'user', 'warehouse'}],
+        'optional_params': {'password', 'schema', 'role', 'authenticator',
+                           'private_key', 'private_key_file', 'private_key_file_pwd',
+                           'token', 'passcode', 'passcode_in_password',
+                           'login_timeout', 'network_timeout', 'socket_timeout',
+                           'warehouse', 'session_parameters'},
+        'connection_method': 'kwargs',
+        'default_port': 443,
+        'note': 'pip install snowflake-connector-python',
+    },
+
     # SQLite Driver
     'sqlite3': {
         'database_type': 'sqlite',
@@ -943,6 +961,43 @@ def sqlserver(user: str, password: Optional[str] = None, database: str = None,
     """
     return Database.create('sqlserver', user=user, password=password, database=database,
                            host=host, port=port, **kwargs)
+
+
+def snowflake(user: str, password: Optional[str] = None, account: str = None,
+              database: str = None, warehouse: str = None, schema: str = None,
+              role: str = None, **kwargs) -> Database:
+    """
+    Create a Snowflake database connection.
+
+    Args:
+        user: Snowflake username
+        password: Password (or use authenticator/private_key for SSO/key-pair auth)
+        account: Snowflake account identifier (e.g. ``xy12345`` or ``xy12345.us-east-1.aws``)
+        database: Database name
+        warehouse: Warehouse name (required for query execution)
+        schema: Default schema (optional)
+        role: Role to assume (optional)
+        **kwargs: Additional connector parameters (authenticator, private_key_file, etc.)
+
+    Returns:
+        Database connection object with context manager support
+
+    Example
+    -------
+    ::
+        >>> from dbtk.database import snowflake
+        >>> with snowflake(user='analyst', password='secret',
+        ...                account='xy12345', database='analytics',
+        ...                warehouse='compute_wh') as db:
+        ...     cursor = db.cursor()
+        ...     cursor.execute("SELECT CURRENT_VERSION()")
+
+    See Also:
+        Database.create() for more connection options
+    """
+    return Database.create('snowflake', user=user, password=password, host=account,
+                           database=database, warehouse=warehouse, schema=schema,
+                           role=role, **kwargs)
 
 
 def sqlite(database: str, **kwargs) -> Database:
