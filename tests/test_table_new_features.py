@@ -167,6 +167,45 @@ class TestWholeRecordAccess:
         assert table.is_ready('insert')
 
 
+class TestWholeRecordUpdateExcludes:
+    """Test that field='*' columns are not incorrectly excluded from updates."""
+
+    def test_field_asterisk_not_excluded_from_update(self, cursor, test_schema):
+        """field='*' columns should never be excluded from updates.
+
+        Bug: calc_update_excludes checked `field not in record_fields`, which
+        is always True for '*' since it's not a real field name, causing the
+        column to be silently dropped from UPDATE statements.
+        """
+        table = Table('users', {
+            'user_id': {'field': 'id', 'primary_key': True},
+            'name': {'field': 'name'},
+            'vip_status': {
+                'field': '*',
+                'fn': lambda r: 'VIP' if r.get('age', 0) > 65 else 'Regular'
+            }
+        }, cursor=cursor)
+
+        record_fields = {'id', 'name', 'age'}
+        table.calc_update_excludes(record_fields)
+
+        assert 'vip_status' not in table._update_excludes
+
+    def test_normal_missing_field_still_excluded(self, cursor, test_schema):
+        """Normal field names absent from the record should still be excluded."""
+        table = Table('users', {
+            'user_id': {'field': 'id', 'primary_key': True},
+            'name': {'field': 'name'},
+            'email': {'field': 'email'},
+        }, cursor=cursor)
+
+        record_fields = {'id', 'name'}  # email missing
+        table.calc_update_excludes(record_fields)
+
+        assert 'email' in table._update_excludes
+        assert 'name' not in table._update_excludes
+
+
 class TestCombinedFeatures:
     """Test combination of new features together."""
 
