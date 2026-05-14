@@ -572,7 +572,7 @@ class ValidationCollector:
         self,
         lookup: Optional[TableLookup] = None,
         desc_field: Optional[str] = None,
-        return_desc: bool = True,
+        return_desc: bool = False,
     ):
         self.lookup = lookup
         self.desc_field = desc_field
