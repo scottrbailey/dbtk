@@ -297,14 +297,17 @@ class Table:
         self.counts['incomplete'] = 0
 
         self._record_fields = set()
-        self._update_excludes: Set[str] = set()
+        self._update_excludes: Set[str] = {
+            col_def['bind_name']
+            for col_def in validated_columns.values()
+            if col_def.get('no_update')
+        }
         self._update_excludes_calculated = False
 
         self.values: Dict[str, Any] = {}
         self._ops_ready: int = 0
 
         self._generate_sql('insert')
-        self.calc_update_excludes()
 
         for col_name, col_def in self._columns.items():
             fn = col_def.get('fn')
@@ -773,7 +776,11 @@ class Table:
     def _reset(self):
         self._sql_statements = {op: None for op in self.OPERATIONS}
         self._param_config = {op: () for op in self.OPERATIONS}
-        self._update_excludes = set()
+        self._update_excludes = {
+            col_def['bind_name']
+            for col_def in self._columns.values()
+            if col_def.get('no_update')
+        }
         self._update_excludes_calculated = False
         self._record_fields = set()
         self._reset_counts()
@@ -846,9 +853,12 @@ class Table:
         return self._bind_name_map.get(bind_name)
 
     def calc_update_excludes(self, record_fields: Optional[Set[str]] = None):
-        # unchanged original implementation
         if record_fields is None:
             record_fields = self._record_fields
+
+        if not record_fields:
+            logger.debug(f"No record_fields available for {self.name}, skipping missing-field exclude calculation")
+            return
 
         current_excludes = self._update_excludes
         excludes = []
@@ -857,10 +867,9 @@ class Table:
             field = col_def.get('field')
 
             if col_def.get('no_update'):
-                excludes.append(bind_name)
-                continue
+                continue  # already in _update_excludes from __init__
 
-            if record_fields and field and field != '*':
+            if field and field != '*':
                 if isinstance(field, list):
                     missing_fields = [f for f in field if f not in record_fields]
                     if missing_fields:
@@ -883,11 +892,10 @@ class Table:
 
         if excludes:
             logger.debug(
-                f"Columns excluded from update/merge because source field is missing "
-                f"or no_update attribute set:\n{excludes}"
+                f"Columns excluded from update/merge because source field is missing:\n{excludes}"
             )
-        self._update_excludes = set(excludes)
-        self._update_excludes_calculated = bool(record_fields)
+        self._update_excludes |= set(excludes)
+        self._update_excludes_calculated = True
         if current_excludes != self._update_excludes:
             self._sql_statements['update'] = None
             self._sql_statements['merge'] = None
@@ -972,7 +980,7 @@ class Table:
             logger.error(msg)
             raise ValueError(msg)
 
-        if operation in ('update', 'merge') and not self._update_excludes_calculated:
+        if operation in ('update', 'merge') and self._record_fields and not self._update_excludes_calculated:
             self.calc_update_excludes(self._record_fields)
 
         if not self.is_ready(operation):
