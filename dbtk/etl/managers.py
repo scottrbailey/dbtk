@@ -604,15 +604,15 @@ class ValidationCollector:
 
         if hasattr(result, "get"):
             if self.desc_field:
-                return result.get(self.desc_field, "")
+                return str(result.get(self.desc_field, ""))
             for field in ("title", "description", "name", "label"):
                 val = result.get(field)
                 if val:
-                    return val
+                    return str(val)
             return str(result)
 
         if isinstance(result, (tuple, list)) and len(result) > 1:
-            return result[1]
+            return str(result[1])
 
         return str(result)
 
