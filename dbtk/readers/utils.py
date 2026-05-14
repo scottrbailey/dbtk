@@ -344,9 +344,10 @@ def get_reader(filename: Union[str, Path],
     zip_member = kwargs.pop('zip_member', None)
 
     if ext in ('csv', 'tsv'):
-        from .csv import CSVReader
+        from .csv import CSVReader, excel_tab
+        dialect = excel_tab if ext == 'tsv' else None
         fp = open_file(filename, encoding=effective_encoding, zip_member=zip_member)
-        return CSVReader(fp, **kwargs)
+        return CSVReader(fp, dialect=dialect, **kwargs)
     elif ext in ('xls', 'xlsx'):
         # Excel files are already compressed (ZIP-based), handle normally
         from .excel import open_workbook, get_sheet_by_index, get_sheet_by_name, XLSReader, ExcelReader

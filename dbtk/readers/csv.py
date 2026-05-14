@@ -6,7 +6,7 @@ import csv
 import os
 from typing import TextIO, List, Any, Iterator, Optional
 from .base import Reader, logger
-
+from csv import excel_tab
 
 class CSVReader(Reader):
     """
