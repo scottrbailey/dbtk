@@ -860,7 +860,6 @@ class Table:
             logger.debug(f"No record_fields available for {self.name}, skipping missing-field exclude calculation")
             return
 
-        current_excludes = self._update_excludes
         excludes = []
         for col, col_def in self._columns.items():
             bind_name = col_def['bind_name']
@@ -894,6 +893,7 @@ class Table:
             logger.debug(
                 f"Columns excluded from update/merge because source field is missing:\n{excludes}"
             )
+        current_excludes = self._update_excludes.copy()
         self._update_excludes |= set(excludes)
         self._update_excludes_calculated = True
         if current_excludes != self._update_excludes:

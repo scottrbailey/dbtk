@@ -671,8 +671,9 @@ class TestUpdateExclusions:
         update_sql = airbender_table.get_sql('update')
         merge_sql = airbender_table.get_sql('merge')
 
-        assert 'instructor' not in update_sql.lower().split('where')[0].split('set')[-1]
-        assert 'instructor' not in merge_sql.lower().split('when matched')[1].split('when not matched')[0]
+        # instructor is the no_update column; it must not be in any SET clause
+        assert 'instructor' not in update_sql.lower()
+        assert 'instructor = ' not in merge_sql.lower()
 
     def test_no_update_excluded_after_set_values(self, airbender_table):
         """no_update columns remain excluded after set_values populates record_fields."""
@@ -769,7 +770,10 @@ class TestReset:
 
         assert airbender_table._sql_statements['insert'] is None
         assert airbender_table._param_config['insert'] == ()
-        assert len(airbender_table._update_excludes) == 0
+        # _reset restores no_update excludes; manually added 'test_col' should be gone
+        instructor_bind = airbender_table.columns['instructor']['bind_name']
+        assert instructor_bind in airbender_table._update_excludes
+        assert 'test_col' not in airbender_table._update_excludes
         assert airbender_table.counts['insert'] == 0
         assert airbender_table.counts['incomplete'] == 0
         assert len(airbender_table.values) == 0
