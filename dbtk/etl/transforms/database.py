@@ -214,9 +214,8 @@ class TableLookup:
                 # Single return column - store scalar
                 self._cache[cache_key] = row[num_keys]
             else:
-                # Multiple return columns - store the return portion of row
-                # This will be a list slice - cursor type doesn't matter for preload
-                self._cache[cache_key] = row[num_keys:]
+                # Multiple return columns - store full row Record (consistent with _lookup)
+                self._cache[cache_key] = row
 
     def _make_cache_key(self, bind_vars: dict) -> tuple:
         """Create cache key from bind variables."""
