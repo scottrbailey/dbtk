@@ -578,8 +578,9 @@ class ValidationCollector:
         self.desc_field = desc_field
         self.return_desc = return_desc
 
-        self.existing: Dict[Any, str] = {}              # code -> description
-        self.added: Dict[Any, Dict[str, Any]] = {}   # new codes -> extra fields
+        self.existing: Dict[Any, str] = {}   # code -> description
+        self.added: Dict[Any, Any] = {}      # new codes: None until annotated, then dict
+        self._recently_added: bool = False
 
         if lookup:
             self.key_name = (
@@ -620,6 +621,8 @@ class ValidationCollector:
         if value is None:
             return value
 
+        self._recently_added = False
+
         if isinstance(value, str):
             raw_codes = [c.strip() for c in value.split(",") if c.strip()]
         elif isinstance(value, (list, tuple, set)):
@@ -643,11 +646,13 @@ class ValidationCollector:
                         self.existing[code] = desc
                     else:
                         desc = code
-                        self.added.setdefault(code, {})
+                        self.added[code] = None
+                        self._recently_added = True
                 else:
                     # No lookup or preloaded (cache miss = definitely new)
                     desc = code
-                    self.added.setdefault(code, {})
+                    self.added[code] = None
+                    self._recently_added = True
 
             enriched.append(desc if self.return_desc else code)
 
@@ -702,22 +707,22 @@ class ValidationCollector:
         combined.update({code: code for code in self.added})
         return combined
 
-    def annotate_new(self, code: Any, data: Optional[Dict[str, Any]] = None, **fields) -> None:
+    def collect_new(self, code: Any, **fields) -> None:
         """
-        Attach extra fields to a new code for later bulk insertion.
+        Attach extra fields to a newly-encountered code for later bulk insertion.
 
-        Call this after processing each record when a new code was encountered,
-        to store the additional columns (e.g. description, title) needed to
-        insert a new row into the validation table.
+        No-ops immediately when the preceding ``__call__`` did not add a new code
+        (``_recently_added`` is False), so it is safe to call unconditionally on
+        every record. First annotation wins — subsequent calls for the same code
+        are ignored.
 
         Parameters
         ----------
         code : Any
-            The new code (must already be in ``added``).
-        data : dict, optional
-            Dict of extra fields to merge.
+            The code value that was passed to the validator (used as a cross-check
+            and as the key into ``added``).
         **fields
-            Extra fields as keyword arguments.
+            Extra columns to store, e.g. ``stvcipc_desc=record.cip_discipline``.
 
         Example
         -------
@@ -725,29 +730,26 @@ class ValidationCollector:
 
             cip_validator = ValidationCollector(lookup=cip_lookup)
             for record in reader:
-                stvmajr.set_values(record)          # triggers cip_validator(record.cip_code)
-                cip_validator.annotate_new(
-                    record.cip_code,
-                    stvcipc_desc=record.cip_discipline,
-                )
+                stvmajr.set_values(record)      # triggers cip_validator(record.cip_code)
+                cip_validator.collect_new(record.cip_code, stvcipc_desc=record.cip_discipline)
 
             for row in cip_validator.get_new_records('stvcipc_code'):
                 cur.execute(insert_sql, row)
         """
-        if code not in self.added:
+        if not self._recently_added:
             return
-        if data:
-            self.added[code].update(data)
-        if fields:
-            self.added[code].update(fields)
+        self._recently_added = False
+        if self.added.get(code) is None:
+            self.added[code] = fields
 
     def get_new_records(self, code_field: str = 'code') -> List[Dict[str, Any]]:
         """
-        Return new codes and their annotated fields as a list of dicts.
+        Return new codes and their collected fields as a list of dicts.
 
         Each dict contains the code under ``code_field`` plus any extra fields
-        attached via :meth:`annotate_new`, ready for bulk insertion into the
-        validation table.
+        attached via :meth:`collect_new`, ready for bulk insertion into the
+        validation table. Codes with no extra fields (never annotated) are
+        included with only the code key.
 
         Parameters
         ----------
@@ -769,7 +771,7 @@ class ValidationCollector:
                     row,
                 )
         """
-        return [{code_field: code, **fields} for code, fields in self.added.items()]
+        return [{code_field: code, **(fields or {})} for code, fields in self.added.items()]
 
     def get_all(self) -> set:
         """
