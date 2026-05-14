@@ -10,6 +10,39 @@ Like the elemental benders of Avatar, this library gives you precise control ove
 Extract data from various sources, transform it through powerful operations, and load it exactly where it needs to go.
 This library is designed by and for data integrators.
 
+Why DBTK?
+---------
+
+**Most data integration tools make you run infrastructure.**
+
+Airbyte, Boomi, Pentaho — powerful tools, but you're deploying Docker containers,
+configuring connectors through a UI, and maintaining a platform just to move data between
+systems. A slow job needs scheduling, monitoring, failure recovery, a maintenance window.
+When something breaks, you're debugging someone else's abstraction layer.
+
+The alternative — SQLAlchemy + pandas + custom batch loops — means writing the same
+boilerplate across every interface, slowly accreting defensive code for every edge case.
+And when you finally write the database load, you're still doing row-at-a-time inserts
+through an ORM that knows nothing about COPY or bcp.
+
+**DBTK is a library, not a platform.**
+
+``pip install dbtk`` and you have native bulk loading for PostgreSQL, Oracle, MySQL, and
+SQL Server — in a cron job, a Lambda function, a Jupyter notebook, or embedded in your
+application. No Docker. No daemon. No server. The pipeline *is* Python.
+
+**It handles the formats everyone else ignores.**
+
+Finance, healthcare, logistics, and government move enormous data volumes in fixed-width
+text and EDI formats. The modern Python data stack has largely ignored these because
+they're unglamorous. DBTK handles them with the same clean API as CSV and JSON — because
+real integration work lives there.
+
+**DBTK threads the needle between power and control.**
+
+It's declarative enough to eliminate repetition, explicit enough that you stay in
+control. When something breaks, you know exactly where to look.
+
 **Perfect for:**
 
 * Data integration and ELT jobs
@@ -37,10 +70,12 @@ This library is designed by and for data integrators.
 * Integrated Logging - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
 * Encrypted Configuration - YAML-based config with password encryption and environment variable support
 
-**Speed and Memory** The primary objective of DBTK is to give data integrators an elegant toolkit to speed up your development.
-But DBTK's throughput and memory usage are very good. BulkSurge streaming from a polars and doing direct loads to PostgreSQL will
-process 1M rows in 3-4 seconds. But even with a standard Python csv reader and numerous column transforms, DataSurge is able to
-write 1M rows to every supported database in 5-10 seconds.
+**Speed and Memory** BulkSurge streaming from polars and doing direct loads to PostgreSQL will
+process 1M rows in 3-4 seconds. Even with a standard Python CSV reader and numerous column
+transforms, DataSurge writes 1M rows to every supported database in 5-10 seconds. These aren't
+toy benchmarks — they include field mapping, type conversions, validation, and real database
+constraints. The same pipeline that takes seconds in DBTK can take hours in a drag-and-drop
+ETL platform.
 
 Philosophy
 ----------

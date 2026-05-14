@@ -863,7 +863,7 @@ class Table:
                 excludes.append(bind_name)
                 continue
 
-            if field:
+            if field and field != '*':
                 if isinstance(field, list):
                     missing_fields = [f for f in field if f not in record_fields]
                     if missing_fields:

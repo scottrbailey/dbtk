@@ -36,6 +36,12 @@ To store connections and encrypt/decrypt passwords you will need a config file (
 dbtk config-setup
 ```
 
+If the `dbtk` command is not found (common when pip-installing without admin privileges), use the `python -m` form instead — it always works regardless of PATH:
+
+```bash
+python -m dbtk config-setup
+```
+
 See the [Configuration & Security](02-configuration.md) for detailed instructions.
 
 See the [Troubleshooting Guide](12-troubleshooting.md#dbtk-command-not-found-windows) if the `dbtk` command is not found.
@@ -346,6 +352,9 @@ See [ETL: Tools & Logging](09-etl-tools.md) for details.
 ## Quick Command Reference
 
 ```bash
+# If 'dbtk' is not in PATH, prefix any command with 'python -m':
+python -m dbtk config-setup
+
 # Check installation and available drivers
 dbtk checkup
 
