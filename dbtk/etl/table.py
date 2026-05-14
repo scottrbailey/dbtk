@@ -304,6 +304,7 @@ class Table:
         self._ops_ready: int = 0
 
         self._generate_sql('insert')
+        self.calc_update_excludes()
 
         for col_name, col_def in self._columns.items():
             fn = col_def.get('fn')
