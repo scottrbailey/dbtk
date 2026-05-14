@@ -578,8 +578,8 @@ class ValidationCollector:
         self.desc_field = desc_field
         self.return_desc = return_desc
 
-        self.existing: Dict[Any, str] = {}  # code -> description
-        self.added: set = set()             # new codes
+        self.existing: Dict[Any, str] = {}              # code -> description
+        self.added: Dict[Any, Dict[str, Any]] = {}   # new codes -> extra fields
 
         if lookup:
             self.key_name = (
@@ -643,11 +643,11 @@ class ValidationCollector:
                         self.existing[code] = desc
                     else:
                         desc = code
-                        self.added.add(code)
+                        self.added.setdefault(code, {})
                 else:
                     # No lookup or preloaded (cache miss = definitely new)
                     desc = code
-                    self.added.add(code)
+                    self.added.setdefault(code, {})
 
             enriched.append(desc if self.return_desc else code)
 
@@ -702,6 +702,75 @@ class ValidationCollector:
         combined.update({code: code for code in self.added})
         return combined
 
+    def annotate_new(self, code: Any, data: Optional[Dict[str, Any]] = None, **fields) -> None:
+        """
+        Attach extra fields to a new code for later bulk insertion.
+
+        Call this after processing each record when a new code was encountered,
+        to store the additional columns (e.g. description, title) needed to
+        insert a new row into the validation table.
+
+        Parameters
+        ----------
+        code : Any
+            The new code (must already be in ``added``).
+        data : dict, optional
+            Dict of extra fields to merge.
+        **fields
+            Extra fields as keyword arguments.
+
+        Example
+        -------
+        ::
+
+            cip_validator = ValidationCollector(lookup=cip_lookup)
+            for record in reader:
+                stvmajr.set_values(record)          # triggers cip_validator(record.cip_code)
+                cip_validator.annotate_new(
+                    record.cip_code,
+                    stvcipc_desc=record.cip_discipline,
+                )
+
+            for row in cip_validator.get_new_records('stvcipc_code'):
+                cur.execute(insert_sql, row)
+        """
+        if code not in self.added:
+            return
+        if data:
+            self.added[code].update(data)
+        if fields:
+            self.added[code].update(fields)
+
+    def get_new_records(self, code_field: str = 'code') -> List[Dict[str, Any]]:
+        """
+        Return new codes and their annotated fields as a list of dicts.
+
+        Each dict contains the code under ``code_field`` plus any extra fields
+        attached via :meth:`annotate_new`, ready for bulk insertion into the
+        validation table.
+
+        Parameters
+        ----------
+        code_field : str
+            The key name to use for the code value in each returned dict.
+
+        Returns
+        -------
+        list of dict
+
+        Example
+        -------
+        ::
+
+            for row in cip_validator.get_new_records('stvcipc_code'):
+                cur.execute(
+                    "INSERT INTO stvcipc (stvcipc_code, stvcipc_desc) "
+                    "VALUES (:stvcipc_code, :stvcipc_desc)",
+                    row,
+                )
+        """
+        return [{code_field: code, **fields} for code, fields in self.added.items()]
+
     def get_all(self) -> set:
         """
         Get all codes (existing + added) as a set.
@@ -732,4 +801,4 @@ class ValidationCollector:
             # Or with dbtk reader filtering
             reader.filter(lambda r: r.tconst in title_collector)  # Uses __contains__
         """
-        return set(self.existing.keys()) | self.added
+        return set(self.existing.keys()) | set(self.added.keys())

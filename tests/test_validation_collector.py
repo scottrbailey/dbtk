@@ -175,3 +175,94 @@ class TestValidationCollector:
         filtered_ids = [id_ for id_ in test_ids if id_ in all_codes]
 
         assert filtered_ids == ['id1', 'id3']
+
+    # ------------------------------------------------------------------
+    # annotate_new / get_new_records
+    # ------------------------------------------------------------------
+
+    def test_annotate_new_with_kwargs(self):
+        """annotate_new attaches extra fields to a new code via kwargs."""
+        collector = ValidationCollector()
+        collector('CIP01')
+        collector.annotate_new('CIP01', desc='Computer Science', active='Y')
+
+        records = collector.get_new_records('code')
+        assert len(records) == 1
+        assert records[0] == {'code': 'CIP01', 'desc': 'Computer Science', 'active': 'Y'}
+
+    def test_annotate_new_with_dict(self):
+        """annotate_new accepts a data dict."""
+        collector = ValidationCollector()
+        collector('CIP02')
+        collector.annotate_new('CIP02', data={'desc': 'Biology'})
+
+        records = collector.get_new_records('code')
+        assert records[0]['desc'] == 'Biology'
+
+    def test_annotate_new_merges(self):
+        """Successive annotate_new calls merge fields."""
+        collector = ValidationCollector()
+        collector('CIP03')
+        collector.annotate_new('CIP03', desc='Physics')
+        collector.annotate_new('CIP03', active='Y')
+
+        records = collector.get_new_records('code')
+        assert records[0] == {'code': 'CIP03', 'desc': 'Physics', 'active': 'Y'}
+
+    def test_annotate_new_ignores_existing_codes(self):
+        """annotate_new is a no-op for codes not in added."""
+        collector = ValidationCollector()
+        collector.existing['OLD01'] = 'Old description'
+        collector.annotate_new('OLD01', desc='Should not appear')
+
+        assert collector.get_new_records('code') == []
+
+    def test_get_new_records_custom_code_field(self):
+        """get_new_records uses the supplied code_field name."""
+        collector = ValidationCollector()
+        collector('CIP04')
+        collector.annotate_new('CIP04', stvcipc_desc='Engineering')
+
+        records = collector.get_new_records('stvcipc_code')
+        assert records[0]['stvcipc_code'] == 'CIP04'
+        assert records[0]['stvcipc_desc'] == 'Engineering'
+
+    def test_get_new_records_unannotated(self):
+        """get_new_records works for codes with no extra annotations."""
+        collector = ValidationCollector()
+        collector('CIP05')
+        collector('CIP06')
+
+        records = collector.get_new_records('code')
+        codes = {r['code'] for r in records}
+        assert codes == {'CIP05', 'CIP06'}
+        assert all(list(r.keys()) == ['code'] for r in records)
+
+    def test_get_new_records_multiple_codes(self):
+        """get_new_records returns one dict per new code."""
+        collector = ValidationCollector()
+        collector('A')
+        collector('B')
+        collector.annotate_new('A', desc='Alpha')
+        collector.annotate_new('B', desc='Beta')
+
+        records = {r['code']: r for r in collector.get_new_records('code')}
+        assert records['A']['desc'] == 'Alpha'
+        assert records['B']['desc'] == 'Beta'
+
+    def test_added_is_dict_not_set(self):
+        """Internal added attribute is a dict keyed by code."""
+        collector = ValidationCollector()
+        collector('X1')
+        assert isinstance(collector.added, dict)
+        assert 'X1' in collector.added
+
+    def test_annotate_new_does_not_duplicate_on_repeated_call(self):
+        """Calling the collector twice with the same code keeps one entry."""
+        collector = ValidationCollector()
+        collector('DUP')
+        collector('DUP')
+        collector.annotate_new('DUP', desc='Duplicate code')
+
+        records = collector.get_new_records('code')
+        assert len(records) == 1
