@@ -578,7 +578,7 @@ class ValidationCollector:
         self.desc_field = desc_field
         self.return_desc = return_desc
 
-        self.existing: Dict[Any, str] = {}   # code -> description
+        self.existing: Dict[Any, Any] = {}   # code -> raw lookup result
         self.added: Dict[Any, Any] = {}      # new codes: None until annotated, then dict
         self._recently_added: bool = False
 
@@ -593,11 +593,10 @@ class ValidationCollector:
                 self._preload_all()
 
     def _preload_all(self):
-        """Extract all valid codes + descriptions from preloaded cache."""
+        """Populate existing from preloaded cache, storing raw results."""
         for cache_key, result in self.lookup._cache.items():
             code = cache_key[0] if isinstance(cache_key, tuple) else cache_key
-            desc = self._extract_desc(result)
-            self.existing[code] = desc
+            self.existing[code] = result
 
     def _extract_desc(self, result: Any) -> str:
         if isinstance(result, (str, int, float)):
@@ -633,32 +632,34 @@ class ValidationCollector:
         enriched = []
         for code in raw_codes:
             if code in self.existing:
-                desc = self.existing[code]
+                desc = self._extract_desc(self.existing[code])
             elif code in self.added:
-                desc = code
+                data = self.added[code]
+                desc = self._extract_desc(data) if data is not None else None
             else:
                 # Only query DB if lookup exists and isn't preloaded
                 # Preloaded means all valid values are in cache, so cache miss = new value
                 if self.lookup and not self.lookup._preloaded:
                     result = self.lookup({self.key_name: code})
                     if result:
+                        self.existing[code] = result
                         desc = self._extract_desc(result)
-                        self.existing[code] = desc
                     else:
-                        desc = code
                         self.added[code] = None
                         self._recently_added = True
+                        desc = None
                 else:
                     # No lookup or preloaded (cache miss = definitely new)
-                    desc = code
                     self.added[code] = None
                     self._recently_added = True
+                    desc = None
 
             enriched.append(desc if self.return_desc else code)
 
         # Return in original format
         if isinstance(value, str):
-            return ",".join(enriched)
+            joined = ",".join(e for e in enriched if e is not None)
+            return joined if joined else None
         return enriched if isinstance(value, (list, tuple)) else enriched[0]
 
     def __contains__(self, value: Any) -> bool:
@@ -696,15 +697,18 @@ class ValidationCollector:
         return value in self.existing or value in self.added
 
     # Reporting
-    def get_valid_mapping(self) -> Dict[Any, str]:
-        return dict(self.existing)
+    def get_valid_mapping(self) -> Dict[Any, Optional[str]]:
+        return {code: self._extract_desc(result) for code, result in self.existing.items()}
 
     def get_new_codes(self) -> List[Any]:
         return sorted(self.added)
 
-    def get_all_mapping(self) -> Dict[Any, str]:
-        combined = dict(self.existing)
-        combined.update({code: code for code in self.added})
+    def get_all_mapping(self) -> Dict[Any, Optional[str]]:
+        combined = {code: self._extract_desc(result) for code, result in self.existing.items()}
+        combined.update({
+            code: self._extract_desc(fields) if fields else None
+            for code, fields in self.added.items()
+        })
         return combined
 
     def collect_new(self, code: Any, **fields) -> None:
