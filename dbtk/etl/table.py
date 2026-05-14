@@ -849,10 +849,6 @@ class Table:
         if record_fields is None:
             record_fields = self._record_fields
 
-        if not record_fields:
-            logger.debug(f"No record_fields available for {self.name}, skipping exclude calculation")
-            return
-
         current_excludes = self._update_excludes
         excludes = []
         for col, col_def in self._columns.items():
@@ -863,7 +859,7 @@ class Table:
                 excludes.append(bind_name)
                 continue
 
-            if field and field != '*':
+            if record_fields and field and field != '*':
                 if isinstance(field, list):
                     missing_fields = [f for f in field if f not in record_fields]
                     if missing_fields:
@@ -890,7 +886,7 @@ class Table:
                 f"or no_update attribute set:\n{excludes}"
             )
         self._update_excludes = set(excludes)
-        self._update_excludes_calculated = True
+        self._update_excludes_calculated = bool(record_fields)
         if current_excludes != self._update_excludes:
             self._sql_statements['update'] = None
             self._sql_statements['merge'] = None
@@ -975,7 +971,7 @@ class Table:
             logger.error(msg)
             raise ValueError(msg)
 
-        if operation in ('update', 'merge') and self._record_fields and not self._update_excludes_calculated:
+        if operation in ('update', 'merge') and not self._update_excludes_calculated:
             self.calc_update_excludes(self._record_fields)
 
         if not self.is_ready(operation):
