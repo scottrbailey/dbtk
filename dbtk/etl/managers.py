@@ -708,7 +708,7 @@ class ValidationCollector:
 
             # Filter principals based on collected titles
             with get_reader('title.principals.tsv.gz') as reader:
-                reader.filter(lambda r: r.tconst in title_collector)
+                reader.add_filter(lambda r: r.tconst in title_collector)
                 for record in reader:
                     process(record)
         """
@@ -823,6 +823,6 @@ class ValidationCollector:
             )
 
             # Or with dbtk reader filtering
-            reader.filter(lambda r: r.tconst in title_collector)  # Uses __contains__
+            reader.add_filter(lambda r: r.tconst in title_collector)  # Uses __contains__
         """
         return set(self.existing.keys()) | set(self.added.keys())
