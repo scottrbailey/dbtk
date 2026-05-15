@@ -452,9 +452,9 @@ def test_resolver(shorthand: str) -> Callable:
     params = [_parse_param(p) for p in parts[1:]] if len(parts) > 1 else []
     if cast and cast in casts:
         t = casts[cast]
-        return lambda x, _t=t, _m=fn: getattr(_t(x), _m)(*params)
+        return lambda x, _t=t, _m=fn: None if x is None else getattr(_t(x), _m)(*params)
     elif callable(fn):
-        return lambda x: fn(x, *params)
+        return lambda x: None if x is None else fn(x, *params)
     else:
         raise ValueError(f'Unrecognized fn shorthand: {shorthand}')
 
