@@ -61,10 +61,10 @@ class DataFrameReader(Reader):
         df_type = type(df).__module__
 
         if df_type.startswith('pandas'):
-            self.columns = list(df.columns)
+            self.columns = [col.strip() for col in df.columns]
             iterator = df.itertuples(index=False, name=None)
         elif df_type.startswith('polars'):
-            self.columns = df.columns
+            self.columns = [col.strip() for col in df.columns]
             iterator = df.rows()
         else:
             raise TypeError(f"Unsupported DataFrame type: {type(df)}")
