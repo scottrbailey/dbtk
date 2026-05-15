@@ -184,8 +184,12 @@ if __name__ == '__main__':
     db = dbtk.connect('example')
     cur = db.cursor()
 
+    cur.execute('TRUNCATE TABLE cip_codes')
+    cur.execute('TRUNCATE TABLE institutions')
+    cur.execute('TRUNCATE TABLE completions')
+
     data_dir = Path.home() / 'Downloads' / 'ipeds'
-    state_dir = Path('state')
+    state_dir = Path('output')
     state_dir.mkdir(exist_ok=True)
 
     st = time.monotonic()
@@ -237,7 +241,8 @@ if __name__ == '__main__':
     institution_lookup = TableLookup(cur,
                                      table='institutions',
                                      key_cols='unitid',
-                                     return_cols=['institution_id', 'unitid', 'opeid', 'name'])
+                                     return_cols=['institution_id', 'unitid', 'opeid', 'name'],
+                                     cache=TableLookup.CACHE_PRELOAD)
     institution_mgr = IdentityManager(
         source_key='unitid',
         target_key='institution_id',
@@ -261,6 +266,7 @@ if __name__ == '__main__':
     df_completions = pl.read_csv(
         data_dir / 'C2022_A.csv',
         null_values=['', '.'],
+        schema_overrides={'CIPCODE': pl.Utf8}  # cip code will be interpreted as float otherwise
     ).filter(
         pl.col('MAJORNUM') == 1          # first major only
     ).with_columns(
@@ -268,11 +274,15 @@ if __name__ == '__main__':
     )
 
     skipped = 0
+    params = []
+    completions_insert = completions_table.get_sql('insert')
     with dbtk.readers.DataFrameReader(df_completions) as reader:
         for row in reader:
             # Resolve UNITID → institution_id.  On first encounter of each UNITID,
             # IdentityManager queries the database; subsequent rows with the same
             # UNITID are served from the entity cache.
+            if (row.unitid,) not in institution_lookup._cache:
+                continue
             entity = institution_mgr.resolve(row['UNITID'])
 
             if entity['_status'] != EntityStatus.RESOLVED:
@@ -292,33 +302,15 @@ if __name__ == '__main__':
             # set_values runs cip_collector via the fn pipeline, flagging _recently_added
             # if this CIP code has not been seen before.
             completions_table.set_values(row)
-
-            # collect_new is a no-op unless the preceding set_values encountered a new
-            # code.  It records the code for later bulk-insertion.  If the CIP file had
-            # a title column you would pass it here:
-            #   cip_collector.collect_new(row['CIPCODE'], cip_title=row['CIPTITLE'])
-            cip_collector.collect_new(row['CIPCODE'])
-
-            completions_table.execute('insert')
+            if completions_table.is_ready('insert'):
+                params.append(completions_table.get_bind_params('insert'))
+            if len(params) == 5000:
+                cur.executemany(completions_insert, params)
+                params = []
+        if params:
+            cur.executemany(completions_insert, params)
 
     db.commit()
-
-    # -----------------------------------------------------------------------
-    # Stage 4: Back-fill any CIP codes discovered but absent from the reference
-    # -----------------------------------------------------------------------
-    # get_new_records returns one dict per new code.  Unannotated codes (no collect_new
-    # kwargs) get only the code field; annotated ones include the extra kwargs too.
-    new_cip_records = cip_collector.get_new_records('cip_code')
-    if new_cip_records:
-        new_cip_table = Table('cip_codes', columns={
-            'cip_code':  {'field': 'cip_code',  'primary_key': True},
-            'cip_title': {'field': 'cip_title'},
-        }, cursor=cur)
-        df_new_cip = pl.DataFrame(new_cip_records)
-        with dbtk.readers.DataFrameReader(df_new_cip) as reader:
-            surge = DataSurge(new_cip_table)
-            surge.insert(reader)
-        db.commit()
 
     # -----------------------------------------------------------------------
     # Reporting and state persistence
@@ -338,7 +330,5 @@ if __name__ == '__main__':
     print(f'  Institutions not found: {stats["not_found"]:,}  (2-year / for-profit — intentionally excluded)')
     print(f'  Completion rows skipped: {skipped:,}')
     print(f'  CIP codes — reference: {len(cip_collector.existing):,}, newly discovered: {len(cip_collector.added):,}')
-    if new_cip_records:
-        print(f'  New CIP codes back-filled: {len(new_cip_records):,}')
     print(f'\n  Institution state saved → {state_dir / "institutions.json"}')
     print(f'  Resume with: IdentityManager.load_state(..., resolver=institution_lookup)')
