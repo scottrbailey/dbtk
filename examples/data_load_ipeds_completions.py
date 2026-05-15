@@ -176,7 +176,6 @@ import time
 from pathlib import Path
 from dbtk.etl import DataSurge, Table, ValidationCollector, EntityStatus, TableLookup
 from dbtk.etl.managers import IdentityManager
-from dbtk.utils import ErrorDetail
 
 
 if __name__ == '__main__':
@@ -199,8 +198,8 @@ if __name__ == '__main__':
     # -----------------------------------------------------------------------
     # CIPCode2020.csv columns: CIPCode, CIPTitle, IsNew, Action
     cip_codes_table = Table('cip_codes', columns={
-        'cip_code':  {'field': 'CIPCode',  'primary_key': True, 'fn': 'trim:="'},
-        'cip_title': {'field': 'CIPTitle', 'nullable': False,  'fn': ['trim:="', 'maxlen:200']},
+        'cip_code':  {'field': 'CIPCode',  'primary_key': True, 'fn': 'trim:="'}, # remove Excel junk in column e.g. '="01.0101"'
+        'cip_title': {'field': 'CIPTitle', 'nullable': False,  'fn': 'maxlen:200'},
     }, cursor=cur)
 
     with dbtk.readers.get_reader(data_dir / 'CIPCode2020.csv') as reader:
@@ -237,12 +236,17 @@ if __name__ == '__main__':
 
     # Resolver: look up institution_id and opeid by unitid.
     # IdentityManager caches each resolved entity so each UNITID hits the database
-    # at most once across the entire completions load.
     institution_lookup = TableLookup(cur,
                                      table='institutions',
                                      key_cols='unitid',
                                      return_cols=['institution_id', 'unitid', 'opeid', 'name'],
                                      cache=TableLookup.CACHE_PRELOAD)
+
+    # There will be a lot of institutions here that we didn't load in step 2
+    # Instead of querying the database each time a new unitid is encountered
+    # IdentityManager will pull from the cached values on institution_lookup.
+    # Cache misses will be returned as "not found" without requerying the database
+    # due to the institution_lookup.exhaustive = True flag (set by preloading the cache).
     institution_mgr = IdentityManager(
         source_key='unitid',
         target_key='institution_id',
@@ -278,22 +282,10 @@ if __name__ == '__main__':
     completions_insert = completions_table.get_sql('insert')
     with dbtk.readers.DataFrameReader(df_completions) as reader:
         for row in reader:
-            # Resolve UNITID → institution_id.  Each unique UNITID hits the database
-            # at most once; resolved entities are cached for subsequent rows.
-            # Because institution_lookup uses CACHE_PRELOAD with exhaustive=True,
-            # misses (2-year / for-profit schools) are returned as NOT_FOUND immediately
-            # without a database round-trip.
+            # Resolve UNITID → institution_id.  Contrived in this example, but
             entity = institution_mgr.resolve(row['UNITID'])
 
             if entity['_status'] != EntityStatus.RESOLVED:
-                # 2-year and for-profit schools were not loaded in Stage 2 and will
-                # consistently NOT_FOUND here — log once and skip all their completions.
-                institution_mgr.add_error(
-                    row['UNITID'],
-                    ErrorDetail('Institution out of scope (2-year or for-profit)',
-                                field='unitid')
-                )
-                skipped += 1
                 continue
 
             # Inject the resolved internal key so completions_table can bind it.
@@ -302,6 +294,7 @@ if __name__ == '__main__':
             # set_values runs cip_collector via the fn pipeline, flagging _recently_added
             # if this CIP code has not been seen before.
             completions_table.set_values(row)
+            # insert in batches instead of hitting the database on every row
             if completions_table.is_ready('insert'):
                 params.append(completions_table.get_bind_params('insert'))
             if len(params) == 5000:
@@ -330,5 +323,7 @@ if __name__ == '__main__':
     print(f'  Institutions not found: {stats["not_found"]:,}  (2-year / for-profit — intentionally excluded)')
     print(f'  Completion rows skipped: {skipped:,}')
     print(f'  CIP codes — reference: {len(cip_collector.existing):,}, newly discovered: {len(cip_collector.added):,}')
+    if len(cip_collector.added) <= 10:
+        print(f'    New CIP codes encountered: {", ".join(cip_collector.added)}')
     print(f'\n  Institution state saved → {state_dir / "institutions.json"}')
     print(f'  Resume with: IdentityManager.load_state(..., resolver=institution_lookup)')
