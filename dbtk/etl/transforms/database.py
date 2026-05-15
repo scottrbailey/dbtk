@@ -196,47 +196,28 @@ class TableLookup:
                 self._cache[tuple(key_values)] = True
             return
 
-        # Non-validator: only prepend key cols that are not already in return_cols.
-        # Including a key col that appears in return_cols would produce duplicate
-        # columns in the SELECT and a bloated (or broken) Record from the cursor.
-        return_col_names = [c.strip('"\'`[] ') for c in self._return_cols]
-        extra_key = [
-            (qname, uname)
-            for qname, uname in zip(self._key_cols, self._key_col_names)
-            if uname not in return_col_names
-        ]
-        num_extra = len(extra_key)
-        extra_names = [n for _, n in extra_key]
+        # Prepend only key cols not already in return_cols to avoid duplicate columns.
+        extra_key_cols = [col for col in self._key_cols if col not in self._return_cols]
+        num_extra = len(extra_key_cols)
+        all_cols = extra_key_cols + self._return_cols
 
-        select_cols = ', '.join([q for q, _ in extra_key] + self._return_cols)
-        query = f"SELECT {select_cols} FROM {self._table}"
+        query = f"SELECT {', '.join(all_cols)} FROM {self._table}"
         self._cursor.execute(query)
 
         for row in self._cursor.fetchall():
-            # Extract each key value from whichever part of the row it lives in.
-            key_values = []
-            for key_name in self._key_col_names:
-                if key_name in extra_names:
-                    key_values.append(row[extra_names.index(key_name)])
-                else:
-                    key_values.append(row[num_extra + return_col_names.index(key_name)])
-
+            # Each key col is either in the extra prefix or somewhere in return_cols.
+            key_values = tuple(
+                row[all_cols.index(col)] for col in self._key_cols
+            )
             if any(k in (None, '') for k in key_values):
                 continue
 
-            cache_key = tuple(key_values)
-
             if len(self._return_cols) == 1:
-                self._cache[cache_key] = row[num_extra]
+                self._cache[key_values] = row[num_extra]
             elif num_extra == 0:
-                # SELECT was return_cols only — row is already a proper Record,
-                # identical in structure to what the lazy _lookup path returns.
-                self._cache[cache_key] = row
+                self._cache[key_values] = row          # row IS the return_cols Record
             else:
-                # Key cols were prepended; slice off the prefix.  The result is a
-                # plain tuple rather than a Record, but this mirrors the pre-existing
-                # behaviour for this uncommon case.
-                self._cache[cache_key] = tuple(row[num_extra:])
+                self._cache[key_values] = tuple(row[num_extra:])
 
     def _make_cache_key(self, bind_vars: dict) -> tuple:
         """Create cache key from bind variables."""
