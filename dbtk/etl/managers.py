@@ -148,6 +148,7 @@ class IdentityManager:
         self.source_key = source_key
         self.target_key = target_key
         self.alternate_keys = alternate_keys if alternate_keys else []
+        self._lookup: Optional[TableLookup] = None  # kept when resolver is a TableLookup
         self.resolver = resolver  # goes through property setter
         self.entities: Dict[Any, Record] = {}
         self._record_factory: Optional[type[Record]] = None  # lazy-created
@@ -167,10 +168,13 @@ class IdentityManager:
         """
         if value is None:
             self._resolver = None
+            self._lookup = None
         elif isinstance(value, TableLookup):
             self._resolver = value._stmt
+            self._lookup = value
         elif isinstance(value, PreparedStatement):
             self._resolver = value
+            self._lookup = None
         else:
             raise ValueError('Resolver must be either a PreparedStatement or TableLookup')
 
@@ -286,6 +290,20 @@ class IdentityManager:
             bind_vars = self.resolver.cursor.prepare_params(self.resolver.param_names, self.entities[source_id])
         else:
             bind_vars = {self.source_key: source_id}
+
+        # If the resolver is backed by an exhaustive preloaded cache, a miss means the
+        # record definitively does not exist — skip the DB round-trip.  Only applies
+        # once _record_factory is warm (first hit establishes it via the normal path).
+        if self._lookup and self._lookup.exhaustive and self._record_factory:
+            cache_key = tuple(bind_vars.get(n) for n in self._lookup._key_col_names)
+            if cache_key not in self._lookup._cache:
+                entity = self._record_factory(**{self.source_key: source_id})
+                entity['_messages'] = []
+                entity['_errors'] = []
+                entity['_status'] = EntityStatus.NOT_FOUND
+                self.entities[source_id] = entity
+                return entity
+
         self.resolver.execute(bind_vars)
         resolved_raw = self.resolver.fetchone()
         if self._record_factory is None:

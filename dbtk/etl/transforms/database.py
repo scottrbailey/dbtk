@@ -140,6 +140,7 @@ class TableLookup:
         self._cache_strategy = cache
         self._cache = {}
         self._preloaded = False
+        self.exhaustive: bool = (cache == self.CACHE_PRELOAD)
 
         # Build SQL
         self._build_sql()

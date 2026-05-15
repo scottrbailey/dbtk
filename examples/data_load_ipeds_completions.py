@@ -278,11 +278,11 @@ if __name__ == '__main__':
     completions_insert = completions_table.get_sql('insert')
     with dbtk.readers.DataFrameReader(df_completions) as reader:
         for row in reader:
-            # Resolve UNITID → institution_id.  On first encounter of each UNITID,
-            # IdentityManager queries the database; subsequent rows with the same
-            # UNITID are served from the entity cache.
-            if (row.unitid,) not in institution_lookup._cache:
-                continue
+            # Resolve UNITID → institution_id.  Each unique UNITID hits the database
+            # at most once; resolved entities are cached for subsequent rows.
+            # Because institution_lookup uses CACHE_PRELOAD with exhaustive=True,
+            # misses (2-year / for-profit schools) are returned as NOT_FOUND immediately
+            # without a database round-trip.
             entity = institution_mgr.resolve(row['UNITID'])
 
             if entity['_status'] != EntityStatus.RESOLVED:
