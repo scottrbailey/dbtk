@@ -423,17 +423,17 @@ def fn_resolver(shorthand: str):
         'timestamp'      → parse_timestamp
 
     String manipulation
-        'lower', 'upper', 'strip'  → str.lower / upper / strip (whitespace)
-        'trim'                     → strip whitespace from both ends (alias for strip)
-        'ltrim'                    → strip whitespace from left end
-        'rtrim'                    → strip whitespace from right end
-        'trim:chars'               → strip specific characters from both ends
-        'ltrim:chars'              → strip specific characters from left end
-        'rtrim:chars'              → strip specific characters from right end
+        'lower', 'upper'             → str.lower / str.upper
+        'strip'                      → str.strip (whitespace)
+        'lstrip'                     → str.lstrip (whitespace)
+        'rstrip'                     → str.rstrip (whitespace)
+        'strip:chars'                → strip specific characters from both ends
+        'lstrip:chars'               → strip specific characters from left end
+        'rstrip:chars'               → strip specific characters from right end
 
-        Examples: 'trim:="'   strips = and " characters (useful for Excel-quoted CSVs)
-                  'trim: ,'   strips spaces and commas
-                  'ltrim:0'   strips leading zeros
+        Examples: 'strip:="'  strips = and " characters (useful for Excel-quoted CSVs)
+                  'strip: ,'  strips spaces and commas
+                  'lstrip:0'  strips leading zeros
 
         'maxlen:50'      → truncate to 50 characters
         'maxlen:255'     → (most common in your life)
@@ -525,9 +525,8 @@ def fn_resolver(shorthand: str):
         'lower': str.lower,
         'upper': str.upper,
         'strip':  str.strip,
-        'trim':   str.strip,
-        'ltrim':  str.lstrip,
-        'rtrim':  str.rstrip,
+        'lstrip': str.lstrip,
+        'rstrip': str.rstrip,
         'indicator': indicator,
         'date': parse_date,
         'datetime': parse_datetime,
@@ -616,11 +615,10 @@ def fn_resolver(shorthand: str):
             raise ValueError(f"Fill character must be exactly 1 character: {shorthand}")
         return lambda x, w=width, c=fillchar: str(x or '').ljust(w, c)
 
-    # trim:chars, ltrim:chars, rtrim:chars — strip specific characters
-    if shorthand.startswith(('trim:', 'ltrim:', 'rtrim:')):
+    # strip:chars, lstrip:chars, rstrip:chars — strip specific characters
+    if shorthand.startswith(('strip:', 'lstrip:', 'rstrip:')):
         prefix, _, chars = shorthand.partition(':')
-        method = {'trim': 'strip', 'ltrim': 'lstrip', 'rtrim': 'rstrip'}[prefix]
-        return lambda x, m=method, c=chars: getattr(str(x), m)(c) if x is not None else None
+        return lambda x, m=prefix, c=chars: getattr(str(x), m)(c) if x is not None else None
 
     # Cast and call: 'type.method' → type(val).method()
     # e.g. 'int.to_bytes', 'str.encode', 'float.hex', 'bytes.hex'
