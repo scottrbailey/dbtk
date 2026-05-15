@@ -198,14 +198,12 @@ class TableLookup:
 
         # Prepend only key cols not already in return_cols to avoid duplicate columns.
         extra_key_cols = [col for col in self._key_cols if col not in self._return_cols]
-        num_extra = len(extra_key_cols)
         all_cols = extra_key_cols + self._return_cols
 
         query = f"SELECT {', '.join(all_cols)} FROM {self._table}"
         self._cursor.execute(query)
 
         for row in self._cursor.fetchall():
-            # Each key col is either in the extra prefix or somewhere in return_cols.
             key_values = tuple(
                 row[all_cols.index(col)] for col in self._key_cols
             )
@@ -213,11 +211,11 @@ class TableLookup:
                 continue
 
             if len(self._return_cols) == 1:
-                self._cache[key_values] = row[num_extra]
-            elif num_extra == 0:
+                self._cache[key_values] = row[len(extra_key_cols)]
+            elif not extra_key_cols:
                 self._cache[key_values] = row          # row IS the return_cols Record
             else:
-                self._cache[key_values] = tuple(row[num_extra:])
+                self._cache[key_values] = tuple(row[len(extra_key_cols):])
 
     def _make_cache_key(self, bind_vars: dict) -> tuple:
         """Create cache key from bind variables."""
