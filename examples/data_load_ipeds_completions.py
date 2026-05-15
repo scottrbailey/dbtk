@@ -192,8 +192,8 @@ if __name__ == '__main__':
     # -----------------------------------------------------------------------
     # CIPCode2020.csv columns: CIPCode, CIPTitle, IsNew, Action
     cip_codes_table = Table('cip_codes', columns={
-        'cip_code':  {'field': 'CIPCode',  'primary_key': True},
-        'cip_title': {'field': 'CIPTitle', 'nullable': False, 'fn': 'maxlen:200'},
+        'cip_code':  {'field': 'CIPCode',  'primary_key': True, 'fn': 'trim:="'},
+        'cip_title': {'field': 'CIPTitle', 'nullable': False,  'fn': ['trim:="', 'maxlen:200']},
     }, cursor=cur)
 
     df_cip = pl.read_csv(data_dir / 'CIPCode2020.csv')
