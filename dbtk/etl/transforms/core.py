@@ -256,7 +256,7 @@ def maxlen(val:Any, limit:int) -> str:
 
 def nth(val:Any, n:int) -> Any:
     n = int(n)
-    if val and -len(val) <= n and n < len(val) - 1:
+    if val and -len(val) <= n < len(val):
         return val[n]
 
 def normalize_whitespace(val: Any) -> str:
@@ -420,267 +420,122 @@ def _parse_param(p):
         return int(p[1:])
     return p
 
-def test_resolver(shorthand: str) -> Callable:
-    shorthand = shorthand.lstrip()  # using strip will remove some delimiters (\t for instance)
-    # Handle database transforms - these return _DeferredTransform objects
-    if shorthand.startswith(('lookup:', 'validate:')):
-        from .database import _DeferredTransform
-        return _DeferredTransform.from_string(shorthand)
-
-    parts = shorthand.split(':')
-    casts = {'int': int, 'float': float, 'str': str, 'bool': bool,
-             'bytes': bytes, 'datetime': parse_datetime}
-    direct = {
-        'int': int,
-        'float': float,
-        'bool': bool,
-        'digits': get_digits,
-        'number': to_number,
-        'indicator': indicator,
-        'date': parse_date,
-        'datetime': parse_datetime,
-        'time': parse_time,
-        'timestamp': parse_timestamp,
-        'maxlen': maxlen,
-        'nth': nth
-    }
-    if '.' in parts[0]:
-        cast, fn = parts[0].split('.')
-    else:
-        fn = direct[parts[0]] if parts[0] in direct else None
-        cast = None
-    params = [_parse_param(p) for p in parts[1:]] if len(parts) > 1 else []
-    if cast and cast in casts:
-        t = casts[cast]
-        return lambda x, _t=t, _m=fn: None if x is None else getattr(_t(x), _m)(*params)
-    elif callable(fn):
-        return lambda x: None if x is None else fn(x, *params)
-    else:
-        raise ValueError(f'Unrecognized fn shorthand: {shorthand}')
-
-
-def fn_resolver(shorthand: str):
+def fn_resolver(shorthand: str) -> Callable:
     """
-    Convert a concise string shorthand into a real transformation function.
+    Convert a concise string shorthand into a transformation function.
 
-    This is the heart of dbtk's zero-lambda column definitions.
+    Syntax
+    ------
+    Shorthands take one of three forms::
 
-    Supported shorthands
-    --------------------
-    Basic type conversion
-        'int'            → get_int (None → None)
-        'int:0'          → get_int, but ''/None → 0
-        'float'          → get_float
-        'bool'           → get_bool
-        'digits'         → get_digits
-        'number'         → to_number
-        'date'           → parse_date
-        'datetime'       → parse_datetime
-        'time'           → parse_time
-        'timestamp'      → parse_timestamp
+        name                 simple name, no arguments          e.g. 'int'
+        name:arg1:arg2       name with colon-separated args     e.g. 'maxlen:200'
+        type.method:arg1     cast to type, call method          e.g. 'str.rjust:+9:0'
 
-    String manipulation
-        'lower', 'upper'             → str.lower / str.upper
-        'strip', 'lstrip', 'rstrip'  → str.strip (whitespace)
-        'strip:chars'                → strip specific characters (works with lstrip/rstrip too)
+    Parameters passed after the first ``:`` are strings by default.
+    Prefix a number with ``+`` to force it to int (required where the
+    Python method expects an integer, e.g. ``str.rjust``).
+    The bare strings ``True``, ``False``, and ``None`` are parsed to their
+    Python equivalents.
 
-        Examples: 'strip:="'  strips = and " characters (useful for Excel-quoted CSVs)
-                  'strip: ,'  strips spaces and commas
-                  'lstrip:0'  strips leading zeros
+    Names
+    -----
+    Type conversion — None-safe (empty string or None returns None):
+        ``int``, ``float``, ``bool``
+        ``digits``       strip non-digit characters
+        ``number``       parse formatted numbers (e.g. ``'1,234.56'``)
 
-        'maxlen:50'      → truncate to 50 characters
-        'maxlen:255'     → (most common in your life)
-        'rjust:9:0'      → right-justify to width 9, padding with '0'
-        'ljust:10: '     → left-justify to width 10, padding with space
+    Date / time:
+        ``date``, ``datetime``, ``time``, ``timestamp``
 
-    List / delimited strings
-        'split:,'        → split on comma (default)
-        'split:\\t'      → split on tab
-        'split:\\|'      → split on pipe
-        'nth:0'          → first item
-        'nth:1'          → second item
-        'nth:-1'         → last item
-        'nth:2:\\t'      → third tab-delimited field
+    String:
+        ``lower``, ``upper``
+        ``strip``, ``lstrip``, ``rstrip``     strip whitespace
+        ``strip:chars``                       strip specific chars
+        ``maxlen:50``                         truncate to 50 characters
+        ``nth:0``                             first element of a list or sequence
 
-    Boolean indicators
-        'indicator'      → True → 'Y', False/None → None
-        'indicator:inv'  → False → 'Y', True → None  (the classic "active flag" case)
-        'indicator:Y/N'  → True → 'Y', False → 'N'
-        'indicator:1/0'  → True → '1', False → '0'
+    Boolean indicators:
+        ``indicator``           True → ``'Y'``, False/None → ``None``
+        ``indicator:Y:N``       True → ``'Y'``, False → ``'N'``
+        ``indicator:N:Y``       True → ``'N'``, False → ``'Y'``  (inverted)
+        ``indicator:1:0``       True → ``'1'``, False → ``'0'``
 
-    Cast and call
-        'type.method' casts the value to ``type`` then calls ``.method()`` with no
-        additional arguments. Supported types: ``int``, ``float``, ``str``, ``bytes``.
+    Cast and call (``type.method``):
+        ``str.upper``                   ``str(val).upper()``
+        ``str.strip:="``                strip ``=`` and ``"`` chars
+        ``str.lstrip:0``                strip leading zeros
+        ``str.split:,``                 split on comma → list
+        ``str.rjust:+9:0``              right-justify to width 9, padded with ``'0'``
+        ``str.ljust:+10: ``             left-justify to width 10, padded with space
+        ``datetime.strftime:%Y-%m-%d``  format a parsed datetime
+        ``int.to_bytes``                ``int(val).to_bytes()``   (Python 3.11+)
+        ``float.hex``                   ``float(val).hex()``
 
-        'int.to_bytes'   → int(val).to_bytes()        (no-arg form requires Python 3.11+)
-        'str.encode'     → str(val).encode()           → bytes, UTF-8
-        'float.hex'      → float(val).hex()            → e.g. '0x1.8p+1'
-        'bytes.hex'      → bytes(val).hex()            → lowercase hex string
+        Supported cast types: ``int``, ``float``, ``str``, ``bytes``, ``datetime``.
 
-        Note: ``str.lower``, ``str.upper``, and ``str.strip`` resolve via the direct
-        mapping above and never reach this path.
-
-    Database lookups and validation
-        'lookup:states:code:state'              → lookup state from code
-        'lookup:states:code:state:2'            → lookup with preload cache
-        'validate:regions:name'                 → validate name exists in regions
-        'validate:regions:name:no_cache'        → validate without caching
-
-    Examples
-    --------
-    ::
-    >>> from dbtk.etl.transforms.core import fn_resolver
-    >>> fn_resolver('int:0')('123')
-    123
-    >>> fn_resolver('int:0')('')
-    0
-    >>> fn_resolver('nth:0')('action,comedy,drama')
-    'action'
-    >>> fn_resolver('maxlen:10')('supercalifragilistic')
-    'supercalif'
-    >>> fn_resolver('indicator:inv')(False)
-    'Y'
-    >>> fn_resolver('rjust:9:0')('123')
-    '000000123'
+    Database:
+        ``lookup:table:key_col:val_col``    look up val_col from table by key_col
+        ``validate:table:key_col``          assert key_col exists in table
 
     Returns
     -------
     callable or _DeferredTransform
-        A function that takes a single value and returns the transformed result.
-        For 'lookup:' and 'validate:', returns a _DeferredTransform that must
-        be bound to a cursor before use.
+        Single-argument function; or a _DeferredTransform for ``lookup:``/``validate:``
+        that must be bound to a cursor before use.
 
     Raises
     ------
     ValueError
         If the shorthand is not recognized.
 
-    Note
-    ----
-    This function now handles ALL transform shorthands, including database
-    lookups and validations. The Table class simply calls fn_resolver for
-    any string transform.
+    Examples
+    --------
+    >>> fn_resolver('int')('123')
+    123
+    >>> fn_resolver('maxlen:10')('supercalifragilistic')
+    'supercalif'
+    >>> fn_resolver('indicator:N:Y')(True)
+    'N'
+    >>> fn_resolver('str.rjust:+9:0')('123')
+    '000000123'
+    >>> fn_resolver('str.split:,')('a,b,c')
+    ['a', 'b', 'c']
     """
-    shorthand = shorthand.lstrip()  # using strip will remove some delimiters (\t for instance)
+    shorthand = shorthand.lstrip()  # lstrip only — strip would eat tab delimiters
 
-    # Handle database transforms - these return _DeferredTransform objects
     if shorthand.startswith(('lookup:', 'validate:')):
         from .database import _DeferredTransform
         return _DeferredTransform.from_string(shorthand)
 
-    # Direct mappings
-    direct = {
-        'int': get_int,
-        'float': get_float,
-        'bool': get_bool,
-        'digits': get_digits,
-        'number': to_number,
-        'lower': str.lower,
-        'upper': str.upper,
-        'strip':  str.strip,
-        'lstrip': str.lstrip,
-        'rstrip': str.rstrip,
-        'indicator': indicator,
-        'date': parse_date,
-        'datetime': parse_datetime,
-        'time': parse_time,
-        'timestamp': parse_timestamp
+    parts = shorthand.split(':')
+    casts = {
+        'int': int, 'float': float, 'str': str,
+        'bool': bool, 'bytes': bytes, 'datetime': parse_datetime,
     }
-    if shorthand in direct:
-        return direct[shorthand]
+    direct = {
+        'int': get_int, 'float': get_float, 'bool': get_bool,
+        'digits': get_digits, 'number': to_number,
+        'lower': str.lower, 'upper': str.upper,
+        'strip': str.strip, 'lstrip': str.lstrip, 'rstrip': str.rstrip,
+        'indicator': indicator,
+        'date': parse_date, 'datetime': parse_datetime,
+        'time': parse_time, 'timestamp': parse_timestamp,
+        'maxlen': maxlen, 'nth': nth,
+    }
 
-    # Special cases
-    if shorthand == 'int:0':
-        return lambda x: get_int(x) or 0
+    if '.' in parts[0]:
+        cast, fn = parts[0].split('.', 1)
+    else:
+        fn = direct.get(parts[0])
+        cast = None
 
-    if shorthand == 'indicator:inv':
-        return lambda x: indicator(x, None, 'Y')
+    params = [_parse_param(p) for p in parts[1:]] if len(parts) > 1 else []
 
-    # indicator:true/false
-    if shorthand.startswith('indicator:'):
-        rest = shorthand[10:]
-        if rest == 'inv':
-            return lambda x: indicator(x, None, 'Y')
-        parts = rest.split('/', 1)
-        true_val = parts[0] or 'Y'
-        false_val = parts[1] if len(parts) > 1 else None
-        return lambda x: indicator(x, true_val, false_val)
-
-    # split:delimiter
-    if shorthand.startswith('split:'):
-        delim = shorthand[6:] or ','
-        return lambda x: parse_list(x, delimiter=delim) if x not in ('', None) else []
-
-    # nth:index[:delimiter]
-    if shorthand.startswith('nth:'):
-        rest = shorthand[4:]
-        delim = ','
-        if ':' in rest:
-            idx_part, delim = rest.split(':', 1)
-        else:
-            idx_part = rest
-        try:
-            idx = int(idx_part)
-        except ValueError:
-            raise ValueError(f"Invalid index in 'nth:' shorthand: {shorthand}")
-        return lambda x, i=idx, d=delim: get_list_item(x, i, delimiter=d)
-
-    # maxlen:n or trunc:n
-    if shorthand.startswith(('maxlen:', 'trunc:')):
-        prefix = 'maxlen:' if shorthand.startswith('maxlen:') else 'trunc:'
-        try:
-            n = int(shorthand[len(prefix):])
-            if n < 0:
-                raise ValueError
-        except ValueError:
-            raise ValueError(f"Invalid length in {shorthand}")
-        return lambda x, n=n: str(x or '')[:n]
-
-    # rjust:width:char
-    if shorthand.startswith('rjust:'):
-        parts = shorthand[6:].split(':', 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid rjust spec: '{shorthand}'. Expected 'rjust:width:char'")
-        try:
-            width = int(parts[0])
-            if width < 0:
-                raise ValueError
-        except ValueError:
-            raise ValueError(f"Invalid width in rjust: {shorthand}")
-        fillchar = parts[1]
-        if len(fillchar) != 1:
-            raise ValueError(f"Fill character must be exactly 1 character: {shorthand}")
-        return lambda x, w=width, c=fillchar: str(x or '').rjust(w, c)
-
-    # ljust:width:char
-    if shorthand.startswith('ljust:'):
-        parts = shorthand[6:].split(':', 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid ljust spec: '{shorthand}'. Expected 'ljust:width:char'")
-        try:
-            width = int(parts[0])
-            if width < 0:
-                raise ValueError
-        except ValueError:
-            raise ValueError(f"Invalid width in ljust: {shorthand}")
-        fillchar = parts[1]
-        if len(fillchar) != 1:
-            raise ValueError(f"Fill character must be exactly 1 character: {shorthand}")
-        return lambda x, w=width, c=fillchar: str(x or '').ljust(w, c)
-
-    # strip:chars, lstrip:chars, rstrip:chars — strip specific characters
-    if shorthand.startswith(('strip:', 'lstrip:', 'rstrip:')):
-        prefix, _, chars = shorthand.partition(':')
-        return lambda x, m=prefix, c=chars: getattr(str(x), m)(c) if x is not None else None
-
-    # Cast and call: 'type.method' → type(val).method()
-    # e.g. 'int.to_bytes', 'str.encode', 'float.hex', 'bytes.hex'
-    _cast_types = {'int': int, 'float': float, 'str': str, 'bytes': bytes}
-    if '.' in shorthand:
-        type_name, _, method_name = shorthand.partition('.')
-        if type_name in _cast_types and method_name:
-            t = _cast_types[type_name]
-            return lambda x, _t=t, _m=method_name: getattr(_t(x), _m)()
-
-    raise ValueError(f"Unrecognized fn shorthand: '{shorthand}'. "
-                     f"See dbtk.etl.transforms.core.fn_resolver() docstring for valid options.")
+    if cast and cast in casts:
+        t = casts[cast]
+        return lambda x, _t=t, _m=fn: None if x is None else getattr(_t(x), _m)(*params)
+    elif callable(fn):
+        return lambda x: None if x is None else fn(x, *params)
+    else:
+        raise ValueError(f"Unrecognized fn shorthand: '{shorthand}'")
