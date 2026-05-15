@@ -7,7 +7,7 @@ Includes text processing, type conversion, and basic utility functions.
 
 import re
 from .datetime import parse_datetime, parse_date, parse_time, parse_timestamp
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, Callable
 
 # Number regex patterns
 intsOnlyPattern = re.compile(r'^[\-\+]?\d+$')
@@ -247,6 +247,17 @@ def get_float(val: Any) -> Optional[float]:
     """
     return to_number(val)
 
+def maxlen(val:Any, limit:int) -> str:
+    limit = int(limit)
+    if limit < 1:
+        raise ValueError('Maxlen must be at least 1.')
+    if val:
+        return str(val)[:limit]
+
+def nth(val:Any, n:int) -> Any:
+    n = int(n)
+    if val and -len(val) <= n and n < len(val) - 1:
+        return val[n]
 
 def normalize_whitespace(val: Any) -> str:
     """
@@ -401,6 +412,52 @@ def get_list_item(val: str, index: int, delimiter: str = ',') -> Optional[str]:
             return values[index].strip()
     return None
 
+def _parse_param(p):
+    _sentinals = {'True': True, 'False': False, 'None': None}
+    if p in _sentinals:
+        return _sentinals[p]
+    if p.startswith('+') and p[1:].isdigit():
+        return int(p[1:])
+    return p
+
+def test_resolver(shorthand: str) -> Callable:
+    shorthand = shorthand.lstrip()  # using strip will remove some delimiters (\t for instance)
+    # Handle database transforms - these return _DeferredTransform objects
+    if shorthand.startswith(('lookup:', 'validate:')):
+        from .database import _DeferredTransform
+        return _DeferredTransform.from_string(shorthand)
+
+    parts = shorthand.split(':')
+    casts = {'int': int, 'float': float, 'str': str, 'bool': bool,
+             'bytes': bytes, 'datetime': parse_datetime}
+    direct = {
+        'int': int,
+        'float': float,
+        'bool': bool,
+        'digits': get_digits,
+        'number': to_number,
+        'indicator': indicator,
+        'date': parse_date,
+        'datetime': parse_datetime,
+        'time': parse_time,
+        'timestamp': parse_timestamp,
+        'maxlen': maxlen,
+        'nth': nth
+    }
+    if '.' in parts[0]:
+        cast, fn = parts[0].split('.')
+    else:
+        fn = direct[parts[0]] if parts[0] in direct else None
+        cast = None
+    params = [_parse_param(p) for p in parts[1:]] if len(parts) > 1 else []
+    if cast and cast in casts:
+        t = casts[cast]
+        return lambda x, _t=t, _m=fn: getattr(_t(x), _m)(*params)
+    elif callable(fn):
+        return lambda x: fn(x, *params)
+    else:
+        raise ValueError(f'Unrecognized fn shorthand: {shorthand}')
+
 
 def fn_resolver(shorthand: str):
     """
@@ -424,12 +481,8 @@ def fn_resolver(shorthand: str):
 
     String manipulation
         'lower', 'upper'             → str.lower / str.upper
-        'strip'                      → str.strip (whitespace)
-        'lstrip'                     → str.lstrip (whitespace)
-        'rstrip'                     → str.rstrip (whitespace)
-        'strip:chars'                → strip specific characters from both ends
-        'lstrip:chars'               → strip specific characters from left end
-        'rstrip:chars'               → strip specific characters from right end
+        'strip', 'lstrip', 'rstrip'  → str.strip (whitespace)
+        'strip:chars'                → strip specific characters (works with lstrip/rstrip too)
 
         Examples: 'strip:="'  strips = and " characters (useful for Excel-quoted CSVs)
                   'strip: ,'  strips spaces and commas
