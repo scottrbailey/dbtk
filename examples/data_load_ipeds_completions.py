@@ -198,7 +198,7 @@ if __name__ == '__main__':
     # -----------------------------------------------------------------------
     # CIPCode2020.csv columns: CIPCode, CIPTitle, IsNew, Action
     cip_codes_table = Table('cip_codes', columns={
-        'cip_code':  {'field': 'CIPCode',  'primary_key': True, 'fn': 'strip:="'}, # remove Excel junk in column e.g. '="01.0101"'
+        'cip_code':  {'field': 'CIPCode',  'primary_key': True, 'fn': 'str.strip:="'}, # remove Excel junk in column e.g. '="01.0101"'
         'cip_title': {'field': 'CIPTitle', 'nullable': False,  'fn': 'maxlen:200'},
     }, cursor=cur)
 

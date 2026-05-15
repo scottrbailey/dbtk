@@ -19,7 +19,7 @@ from dbtk.etl.transforms.core import (
     normalize_whitespace,
     format_number,
     parse_list,
-    get_list_item,
+    split_and_get,
     intsOnlyPattern,
     numbersOnlyPattern,
     fn_resolver
@@ -391,36 +391,36 @@ class TestGetListItem:
 
     def test_get_list_item_first(self):
         """Test getting first item from Avatar team."""
-        assert get_list_item("Aang,Katara,Sokka,Toph", 0) == "Aang"
-        assert get_list_item("Fire,Water,Earth,Air", 0) == "Fire"
+        assert split_and_get("Aang,Katara,Sokka,Toph", 0) == "Aang"
+        assert split_and_get("Fire,Water,Earth,Air", 0) == "Fire"
 
     def test_get_list_item_middle(self):
         """Test getting middle items."""
-        assert get_list_item("Aang,Katara,Sokka,Toph", 1) == "Katara"
-        assert get_list_item("Aang,Katara,Sokka,Toph", 2) == "Sokka"
+        assert split_and_get("Aang,Katara,Sokka,Toph", 1) == "Katara"
+        assert split_and_get("Aang,Katara,Sokka,Toph", 2) == "Sokka"
 
     def test_get_list_item_last(self):
         """Test getting last item."""
-        assert get_list_item("Aang,Katara,Sokka,Toph", 3) == "Toph"
+        assert split_and_get("Aang,Katara,Sokka,Toph", 3) == "Toph"
 
     def test_get_list_item_custom_delimiter(self):
         """Test getting item with custom delimiter."""
-        assert get_list_item("Fire|Water|Earth|Air", 1, "|") == "Water"
-        assert get_list_item("North-South-East-West", 2, "-") == "East"
+        assert split_and_get("Fire|Water|Earth|Air", 1, "|") == "Water"
+        assert split_and_get("North-South-East-West", 2, "-") == "East"
 
     def test_get_list_item_strips_whitespace(self):
         """Test that whitespace is stripped from items."""
-        assert get_list_item("Aang , Katara , Sokka", 1) == "Katara"
+        assert split_and_get("Aang , Katara , Sokka", 1) == "Katara"
 
     def test_get_list_item_out_of_range(self):
         """Test getting item beyond list length returns None."""
-        assert get_list_item("Aang,Katara", 5) is None
-        assert get_list_item("Fire,Water", 10) is None
+        assert split_and_get("Aang,Katara", 5) is None
+        assert split_and_get("Fire,Water", 10) is None
 
     def test_get_list_item_empty(self):
         """Test getting item from empty values."""
-        assert get_list_item(None, 0) is None
-        assert get_list_item('', 0) is None
+        assert split_and_get(None, 0) is None
+        assert split_and_get('', 0) is None
 
 
 class TestRegexPatterns:

@@ -389,7 +389,7 @@ def parse_list(val: Any, delimiter: Optional[str] = None) -> List[str]:
     return [item.strip() for item in items]
 
 
-def get_list_item(val: str, index: int, delimiter: str = ',') -> Optional[str]:
+def split_and_get(val: str, index: int, delimiter: str = ',') -> Optional[str]:
     """
     Get an item from a delimited string list.
 
@@ -402,13 +402,13 @@ def get_list_item(val: str, index: int, delimiter: str = ',') -> Optional[str]:
         Item at specified index (stripped), or None if index out of range
 
     Example:
-        get_list_item("a,b,c", 1)       # "b"
-        get_list_item("a|b|c", 0, "|")  # "a"
-        get_list_item("a,b", 5)         # None
+        split_and_get("a,b,c", 1)       # "b"
+        split_and_get("a|b|c", 0, "|")  # "a"
+        split_and_get("a,b", 5)         # None
     """
     if val:
         values = val.split(delimiter)
-        if index < len(values):
+        if -len(values) <= index < len(values):
             return values[index].strip()
     return None
 
@@ -454,6 +454,7 @@ def fn_resolver(shorthand: str) -> Callable:
         ``strip:chars``                       strip specific chars
         ``maxlen:50``                         truncate to 50 characters
         ``nth:0``                             first element of a list or sequence
+        ``split_and_get:0:|``                 split a | delimited string and return first element
 
     Boolean indicators:
         ``indicator``           True → ``'Y'``, False/None → ``None``
@@ -521,7 +522,7 @@ def fn_resolver(shorthand: str) -> Callable:
         'indicator': indicator,
         'date': parse_date, 'datetime': parse_datetime,
         'time': parse_time, 'timestamp': parse_timestamp,
-        'maxlen': maxlen, 'nth': nth,
+        'maxlen': maxlen, 'nth': nth, 'split_and_get': split_and_get,
     }
 
     if '.' in parts[0]:
