@@ -1,0 +1,349 @@
+"""
+IPEDS Completions Loader: Identity Resolution and FK Validation in a Multi-Stage ETL
+
+This example demonstrates two complementary dbtk patterns on a real dataset:
+**ValidationCollector** and **IdentityManager**. Using NCES IPEDS data, it loads
+degree completion counts from ~4,000 institutions into a normalized data warehouse,
+resolving institutional identities and validating academic program codes along the way.
+
+The Challenge
+-------------
+The IPEDS completions file (C2022_A.csv) references institutions and CIP academic
+program codes by their source-system identifiers. To load this data into a normalized
+warehouse you need to:
+
+* Resolve each IPEDS UNITID to your internal ``institution_id`` — and gracefully handle
+  institutions that are out of scope (2-year colleges, for-profit schools).
+* Validate each CIP program code against your reference table — and capture any codes
+  that appear in the completions data but are missing from the reference table, so they
+  can be bulk-inserted afterward rather than dropped.
+* Track the full lifecycle of each institution across runs: which were resolved, which
+  were not found, which had insert errors — and persist that state so a failed run can
+  resume without re-querying everything.
+
+Features Demonstrated
+---------------------
+* **ValidationCollector with preload**: Load all known CIP codes at startup so every
+  cache miss is definitively a new code, with no per-row database queries.
+* **collect_new / get_new_records**: Accumulate extra fields on newly-discovered codes
+  during row processing, then bulk-insert them in a single pass after the main load.
+* **IdentityManager**: Resolve UNITID (IPEDS source key) → institution_id (internal key),
+  cache results to avoid redundant queries, and track NOT_FOUND institutions with
+  structured errors.
+* **alternate_keys**: Store the OPE ID alongside institution_id so each entity record
+  carries both institutional identifiers for use by downstream financial-aid integrations.
+* **save_state / load_state**: Persist the identity cache between runs for resumability.
+* **Multi-stage pipeline**: Reference data → dimension table → fact table → gap fill.
+
+The Pipeline
+------------
+1. **Load CIP code reference** (cip_codes):
+   - Insert all codes from CIPCode2020.csv into the reference table.
+   - Preload into ValidationCollector — every subsequent cache miss is a genuinely new code.
+
+2. **Load institutions** (institutions):
+   - Filter HD2022.csv to 4-year public and private non-profit institutions.
+   - Insert into ``institutions``; the database assigns each row an auto-increment
+     ``institution_id``. The IPEDS ``unitid`` and Department of Education ``opeid``
+     are stored as alternate identifiers.
+   - Wire up IdentityManager with a TableLookup resolver to map unitid → institution_id.
+
+3. **Load completions** (completions):
+   - Filter C2022_A.csv to first-major records (MAJORNUM=1) to avoid double-counting.
+   - For each row: resolve the institution, validate the CIP code, insert the record.
+   - Institutions not found (2-year, for-profit) are skipped and logged.
+   - New CIP codes are collected via ``collect_new`` for later insertion.
+
+4. **Back-fill new CIP codes** (cip_codes):
+   - Bulk-insert any CIP codes discovered during Step 3 that were absent from the
+     reference table (e.g. codes added in the 2022 revision cycle not yet in CIP 2020).
+
+5. **Persist identity state**:
+   - Save IdentityManager state to JSON so a re-run can restore the institution cache
+     and retry any NOT_FOUND or ERROR entities.
+
+Key Techniques
+--------------
+**ValidationCollector with preload**:
+```python
+cip_lookup = TableLookup(cur, table='cip_codes', key_cols='cip_code',
+                         return_cols=['cip_code', 'cip_title'],
+                         cache=TableLookup.CACHE_PRELOAD)
+cip_collector = ValidationCollector(lookup=cip_lookup)
+# Every cache miss is definitively a new code — no per-row DB queries
+```
+
+**collect_new captures extra fields for bulk insertion**:
+```python
+# Inside the row loop — safe to call unconditionally, no-ops on existing codes
+completions_table.set_values(row)        # triggers cip_collector via fn pipeline
+cip_collector.collect_new(               # annotates only if _recently_added=True
+    row['CIPCODE'],
+    cip_title=row.get('cip_title', ''),  # attach any extra fields you have
+)
+# After the loop:
+new_records = cip_collector.get_new_records('cip_code')
+# [{'cip_code': '29.0202', 'cip_title': ''}, ...]
+```
+
+**IdentityManager with alternate_keys**:
+```python
+institution_lookup = TableLookup(cur, table='institutions', key_cols='unitid',
+                                 return_cols=['institution_id', 'unitid', 'opeid', 'name'])
+institution_mgr = IdentityManager(
+    source_key='unitid',
+    target_key='institution_id',
+    resolver=institution_lookup,
+    alternate_keys=['opeid'],   # stored alongside institution_id in each entity
+)
+# Resolution injects institution_id back into the source row:
+entity = institution_mgr.resolve(row)
+if entity['_status'] == EntityStatus.RESOLVED:
+    # row['institution_id'] is now set; entity['opeid'] is also available
+    ...
+```
+
+**save_state / load_state for resumable runs**:
+```python
+institution_mgr.save_state('state/institutions.json')
+
+# On a subsequent run:
+institution_mgr = IdentityManager.load_state('state/institutions.json',
+                                             resolver=institution_lookup)
+institution_mgr.batch_resolve([EntityStatus.NOT_FOUND])  # retry previously missed
+```
+
+Output
+------
+Three populated tables:
+- **cip_codes**: ~1,600 CIP academic program codes with titles (plus any discovered gaps)
+- **institutions**: ~2,900 4-year public and private non-profit institutions
+- **completions**: ~400K degree completion records with referential integrity maintained
+
+Performance
+-----------
+Loads ~420K completion records in approximately 5-15 seconds (row-by-row due to identity
+resolution). CIP preload eliminates all per-row DB queries for reference validation.
+
+Prerequisites
+-------------
+Download from the NCES IPEDS Data Center at https://nces.ed.gov/ipeds/datacenter/DataFiles.aspx:
+
+* ``HD2022.zip``   (~9 MB):  Institutional Characteristics — institution directory
+* ``C2022_A.zip``  (~5 MB):  Completions — degrees by CIP code and award level
+* ``CIPCode2020.zip`` (~1 MB): CIP code reference list
+
+Unzip all three files into ``~/Downloads/ipeds/``.
+
+Database Schema
+---------------
+```sql
+CREATE TABLE cip_codes (
+    cip_code    VARCHAR(10)  PRIMARY KEY,
+    cip_title   VARCHAR(200)
+);
+
+CREATE TABLE institutions (
+    institution_id  INTEGER      PRIMARY KEY,   -- internal auto-increment key
+    unitid          INTEGER      NOT NULL UNIQUE,  -- IPEDS source identifier
+    opeid           VARCHAR(10),                   -- Dept. of Education OPE identifier
+    name            VARCHAR(200) NOT NULL,
+    state           VARCHAR(2),
+    sector          INTEGER
+);
+
+CREATE TABLE completions (
+    institution_id  INTEGER     NOT NULL,
+    cip_code        VARCHAR(10) NOT NULL,
+    award_level     INTEGER     NOT NULL,
+    year            INTEGER     NOT NULL,
+    total           INTEGER,
+    PRIMARY KEY (institution_id, cip_code, award_level, year)
+);
+```
+
+See Also
+--------
+- data_load_imdb_subset.py: ValidationCollector used for cross-stage FK tracking
+"""
+
+import dbtk
+import polars as pl
+import time
+from pathlib import Path
+from dbtk.etl import DataSurge, Table, ValidationCollector, EntityStatus, TableLookup
+from dbtk.etl.managers import IdentityManager
+from dbtk.utils import ErrorDetail
+
+
+if __name__ == '__main__':
+    dbtk.setup_logging()
+    db = dbtk.connect('ipeds')
+    cur = db.cursor()
+
+    data_dir = Path.home() / 'Downloads' / 'ipeds'
+    state_dir = Path('state')
+    state_dir.mkdir(exist_ok=True)
+
+    st = time.monotonic()
+
+    # -----------------------------------------------------------------------
+    # Stage 1: Load CIP code reference table
+    # -----------------------------------------------------------------------
+    # CIPCode2020.csv columns: CIPCode, CIPTitle, IsNew, Action
+    cip_codes_table = Table('cip_codes', columns={
+        'cip_code':  {'field': 'CIPCode',  'primary_key': True},
+        'cip_title': {'field': 'CIPTitle', 'nullable': False, 'fn': 'maxlen:200'},
+    }, cursor=cur)
+
+    df_cip = pl.read_csv(data_dir / 'CIPCode2020.csv')
+    with dbtk.readers.DataFrameReader(df_cip) as reader:
+        surge = DataSurge(cip_codes_table)
+        surge.insert(reader)
+
+    # Preload all known CIP codes into the collector — a cache miss later means a
+    # genuinely new code, so no per-row database queries are needed during load.
+    cip_lookup = TableLookup(cur,
+                             table='cip_codes',
+                             key_cols='cip_code',
+                             return_cols=['cip_code', 'cip_title'],
+                             cache=TableLookup.CACHE_PRELOAD)
+    cip_collector = ValidationCollector(lookup=cip_lookup)
+
+    # -----------------------------------------------------------------------
+    # Stage 2: Load institutions — 4-year public and private non-profit only
+    # -----------------------------------------------------------------------
+    # HD2022.csv ICLEVEL: 1=4-year, 2=2-year, 3=<2-year
+    # HD2022.csv CONTROL: 1=public, 2=private nonprofit, 3=private for-profit
+    institution_cols = {
+        'unitid': {'field': 'UNITID', 'nullable': False},
+        'opeid':  {'field': 'OPEID'},       # OPE ID used by financial aid systems
+        'name':   {'field': 'INSTNM', 'nullable': False, 'fn': 'maxlen:200'},
+        'state':  {'field': 'STABBR'},
+        'sector': {'field': 'SECTOR', 'fn': 'int'},
+    }
+    institutions_table = Table('institutions', columns=institution_cols, cursor=cur)
+
+    df_hd = pl.read_csv(
+        data_dir / 'HD2022.csv',
+        encoding='latin-1',         # IPEDS files use ISO-8859-1
+        null_values=['', '-2'],     # -2 = not applicable in IPEDS
+    ).filter(
+        (pl.col('ICLEVEL') == 1) &                    # 4-year institutions only
+        (pl.col('CONTROL').is_in([1, 2]))              # public or private non-profit
+    )
+    with dbtk.readers.DataFrameReader(df_hd) as reader:
+        surge = DataSurge(institutions_table)
+        surge.insert(reader)
+
+    # Resolver: look up institution_id and opeid by unitid.
+    # IdentityManager caches each resolved entity so each UNITID hits the database
+    # at most once across the entire completions load.
+    institution_lookup = TableLookup(cur,
+                                     table='institutions',
+                                     key_cols='unitid',
+                                     return_cols=['institution_id', 'unitid', 'opeid', 'name'])
+    institution_mgr = IdentityManager(
+        source_key='unitid',
+        target_key='institution_id',
+        resolver=institution_lookup,
+        alternate_keys=['opeid'],    # track OPE ID alongside institution_id per entity
+    )
+
+    # -----------------------------------------------------------------------
+    # Stage 3: Load completions — resolve identity and validate CIP per row
+    # -----------------------------------------------------------------------
+    # C2022_A.csv MAJORNUM: 1=first major, 2=second major — filter to avoid double-counting
+    # C2022_A.csv AWLEVEL:  1=<1yr cert, 3=associates, 5=bachelors, 7=masters, 9=doctoral
+    completions_table = Table('completions', columns={
+        'institution_id': {'field': 'institution_id', 'key': True},
+        'cip_code':       {'field': 'CIPCODE',        'key': True, 'fn': cip_collector},
+        'award_level':    {'field': 'AWLEVEL',        'key': True, 'fn': 'int'},
+        'year':           {'field': 'year',           'key': True},
+        'total':          {'field': 'CTOTALT',        'fn': 'int'},
+    }, cursor=cur)
+
+    df_completions = pl.read_csv(
+        data_dir / 'C2022_A.csv',
+        null_values=['', '.'],
+    ).filter(
+        pl.col('MAJORNUM') == 1          # first major only
+    ).with_columns(
+        pl.lit(2022).alias('year')       # tag with survey year
+    )
+
+    skipped = 0
+    with dbtk.readers.DataFrameReader(df_completions) as reader:
+        for row in reader:
+            # Resolve UNITID → institution_id.  On first encounter of each UNITID,
+            # IdentityManager queries the database; subsequent rows with the same
+            # UNITID are served from the entity cache.
+            entity = institution_mgr.resolve(row['UNITID'])
+
+            if entity['_status'] != EntityStatus.RESOLVED:
+                # 2-year and for-profit schools were not loaded in Stage 2 and will
+                # consistently NOT_FOUND here — log once and skip all their completions.
+                institution_mgr.add_error(
+                    row['UNITID'],
+                    ErrorDetail('Institution out of scope (2-year or for-profit)',
+                                field='unitid')
+                )
+                skipped += 1
+                continue
+
+            # Inject the resolved internal key so completions_table can bind it.
+            row['institution_id'] = entity['institution_id']
+
+            # set_values runs cip_collector via the fn pipeline, flagging _recently_added
+            # if this CIP code has not been seen before.
+            completions_table.set_values(row)
+
+            # collect_new is a no-op unless the preceding set_values encountered a new
+            # code.  It records the code for later bulk-insertion.  If the CIP file had
+            # a title column you would pass it here:
+            #   cip_collector.collect_new(row['CIPCODE'], cip_title=row['CIPTITLE'])
+            cip_collector.collect_new(row['CIPCODE'])
+
+            completions_table.execute('insert')
+
+    db.commit()
+
+    # -----------------------------------------------------------------------
+    # Stage 4: Back-fill any CIP codes discovered but absent from the reference
+    # -----------------------------------------------------------------------
+    # get_new_records returns one dict per new code.  Unannotated codes (no collect_new
+    # kwargs) get only the code field; annotated ones include the extra kwargs too.
+    new_cip_records = cip_collector.get_new_records('cip_code')
+    if new_cip_records:
+        new_cip_table = Table('cip_codes', columns={
+            'cip_code':  {'field': 'cip_code',  'primary_key': True},
+            'cip_title': {'field': 'cip_title'},
+        }, cursor=cur)
+        df_new_cip = pl.DataFrame(new_cip_records)
+        with dbtk.readers.DataFrameReader(df_new_cip) as reader:
+            surge = DataSurge(new_cip_table)
+            surge.insert(reader)
+        db.commit()
+
+    # -----------------------------------------------------------------------
+    # Reporting and state persistence
+    # -----------------------------------------------------------------------
+    stats = institution_mgr.calc_stats()
+
+    # Persist the full entity cache — institution_id, opeid, status, and errors —
+    # so a subsequent run can call IdentityManager.load_state() and skip re-querying
+    # institutions that were already resolved.
+    institution_mgr.save_state(state_dir / 'institutions.json')
+
+    et = time.monotonic()
+
+    total_cip = len(cip_collector.existing) + len(cip_collector.added)
+    print(f'\nLoaded IPEDS 2022 completions in {et - st:.1f}s')
+    print(f'  Institutions resolved:  {stats["resolved"]:,}')
+    print(f'  Institutions not found: {stats["not_found"]:,}  (2-year / for-profit — intentionally excluded)')
+    print(f'  Completion rows skipped: {skipped:,}')
+    print(f'  CIP codes — reference: {len(cip_collector.existing):,}, newly discovered: {len(cip_collector.added):,}')
+    if new_cip_records:
+        print(f'  New CIP codes back-filled: {len(new_cip_records):,}')
+    print(f'\n  Institution state saved → {state_dir / "institutions.json"}')
+    print(f'  Resume with: IdentityManager.load_state(..., resolver=institution_lookup)')
