@@ -184,39 +184,59 @@ class TableLookup:
 
     def _preload_all(self):
         """Preload entire lookup table into cache."""
-        # Build SELECT for all data
         if self._validator_mode:
-            # Just need the keys
             select_cols = ', '.join(self._key_cols)
-        else:
-            # Need keys + return columns
-            select_cols = ', '.join(self._key_cols + self._return_cols)
+            query = f"SELECT {select_cols} FROM {self._table}"
+            self._cursor.execute(query)
+            num_keys = len(self._key_cols)
+            for row in self._cursor.fetchall():
+                key_values = row[:num_keys]
+                if any(k in (None, '') for k in key_values):
+                    continue
+                self._cache[tuple(key_values)] = True
+            return
 
+        # Non-validator: only prepend key cols that are not already in return_cols.
+        # Including a key col that appears in return_cols would produce duplicate
+        # columns in the SELECT and a bloated (or broken) Record from the cursor.
+        return_col_names = [c.strip('"\'`[] ') for c in self._return_cols]
+        extra_key = [
+            (qname, uname)
+            for qname, uname in zip(self._key_cols, self._key_col_names)
+            if uname not in return_col_names
+        ]
+        num_extra = len(extra_key)
+        extra_names = [n for _, n in extra_key]
+
+        select_cols = ', '.join([q for q, _ in extra_key] + self._return_cols)
         query = f"SELECT {select_cols} FROM {self._table}"
         self._cursor.execute(query)
 
-        num_keys = len(self._key_cols)
-
         for row in self._cursor.fetchall():
-            # Extract key values (first N columns)
-            key_values = row[:num_keys]
+            # Extract each key value from whichever part of the row it lives in.
+            key_values = []
+            for key_name in self._key_col_names:
+                if key_name in extra_names:
+                    key_values.append(row[extra_names.index(key_name)])
+                else:
+                    key_values.append(row[num_extra + return_col_names.index(key_name)])
 
-            # Skip rows with null/empty keys
             if any(k in (None, '') for k in key_values):
                 continue
 
-            # Build cache key (tuple, preserving original case)
             cache_key = tuple(key_values)
 
-            # Store appropriate value
-            if self._validator_mode:
-                self._cache[cache_key] = True
-            elif len(self._return_cols) == 1:
-                # Single return column - store scalar
-                self._cache[cache_key] = row[num_keys]
-            else:
-                # Multiple return columns - store full row Record (consistent with _lookup)
+            if len(self._return_cols) == 1:
+                self._cache[cache_key] = row[num_extra]
+            elif num_extra == 0:
+                # SELECT was return_cols only — row is already a proper Record,
+                # identical in structure to what the lazy _lookup path returns.
                 self._cache[cache_key] = row
+            else:
+                # Key cols were prepended; slice off the prefix.  The result is a
+                # plain tuple rather than a Record, but this mirrors the pre-existing
+                # behaviour for this uncommon case.
+                self._cache[cache_key] = tuple(row[num_extra:])
 
     def _make_cache_key(self, bind_vars: dict) -> tuple:
         """Create cache key from bind variables."""
