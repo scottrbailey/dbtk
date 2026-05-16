@@ -33,6 +33,9 @@ Features Demonstrated
 * **alternate_keys**: Store the OPE ID alongside institution_id so each entity record
   carries both institutional identifiers for use by downstream financial-aid integrations.
 * **save_state / load_state**: Persist the identity cache between runs for resumability.
+* **Batched executemany**: Identity resolution forces row-by-row processing, but that
+  doesn't mean row-by-row database writes. Accumulate bind-param tuples and flush with
+  ``executemany`` every N rows to retain most of the throughput of a bulk load.
 * **Multi-stage pipeline**: Reference data → dimension table → fact table → gap fill.
 
 The Pipeline
@@ -101,6 +104,29 @@ entity = institution_mgr.resolve(row)
 if entity['_status'] == EntityStatus.RESOLVED:
     # row['institution_id'] is now set; entity['opeid'] is also available
     ...
+```
+
+**Batched writes with executemany**:
+```python
+# Identity resolution requires a row loop, but writes can still be batched.
+# Pre-fetch the INSERT SQL once; accumulate bind-param tuples; flush every N rows.
+BATCH = 5000
+params = []
+insert_sql = completions_table.get_sql('insert')
+for row in reader:
+    entity = institution_mgr.resolve(row['UNITID'])
+    if entity['_status'] != EntityStatus.RESOLVED:
+        continue
+    row['institution_id'] = entity['institution_id']
+    completions_table.set_values(row)
+    if completions_table.is_ready('insert'):
+        params.append(completions_table.get_bind_params('insert'))
+    if len(params) == BATCH:
+        cur.executemany(insert_sql, params)
+        params = []
+if params:
+    cur.executemany(insert_sql, params)
+# Result: ~420K rows written in a handful of round-trips instead of 420K.
 ```
 
 **save_state / load_state for resumable runs**:
@@ -277,27 +303,23 @@ if __name__ == '__main__':
         pl.lit(2022).alias('year')       # tag with survey year
     )
 
-    skipped = 0
+    # Pre-fetch SQL once; batch bind-param tuples; flush every BATCH rows.
+    # Identity resolution forces a row loop, but writes are still batched —
+    # ~420K rows reach the database in a handful of executemany round-trips.
+    BATCH = 5000
     params = []
     completions_insert = completions_table.get_sql('insert')
     with dbtk.readers.DataFrameReader(df_completions) as reader:
         for row in reader:
-            # Resolve UNITID → institution_id.  Contrived in this example, but
             entity = institution_mgr.resolve(row['UNITID'])
-
             if entity['_status'] != EntityStatus.RESOLVED:
                 continue
 
-            # Inject the resolved internal key so completions_table can bind it.
             row['institution_id'] = entity['institution_id']
-
-            # set_values runs cip_collector via the fn pipeline, flagging _recently_added
-            # if this CIP code has not been seen before.
-            completions_table.set_values(row)
-            # insert in batches instead of hitting the database on every row
+            completions_table.set_values(row)   # runs cip_collector via fn pipeline
             if completions_table.is_ready('insert'):
                 params.append(completions_table.get_bind_params('insert'))
-            if len(params) == 5000:
+            if len(params) == BATCH:
                 cur.executemany(completions_insert, params)
                 params = []
         if params:
