@@ -866,7 +866,7 @@ class Table:
             field = col_def.get('field')
 
             if col_def.get('no_update'):
-                continue  # already in _update_excludes from __init__
+                excludes.append(bind_name)
 
             if field and field != '*':
                 if isinstance(field, list):
@@ -894,7 +894,7 @@ class Table:
                 f"Columns excluded from update/merge because source field is missing:\n{excludes}"
             )
         current_excludes = self._update_excludes.copy()
-        self._update_excludes |= set(excludes)
+        self._update_excludes = set(excludes)
         self._update_excludes_calculated = True
         if current_excludes != self._update_excludes:
             self._sql_statements['update'] = None

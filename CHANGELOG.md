@@ -22,9 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`+N`), and negative integers (`-N`), converting them to their Python equivalents before
     dispatch.
 
-- **`coalesce` shorthand** — available as `'fn': 'coalesce'` in the direct dispatch table;
-  returns the first non-`None`, non-empty value from a comma-separated field.
-
 - **`ValidationCollector(return_col=...)`** — a single `return_col` parameter replaces the
   separate `desc_field` + `return_desc` pair. Pass `None` (default) to always return the raw
   code; pass a field name (e.g. `'title'`) to extract that field from the lookup result for
@@ -61,8 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`nth` off-by-one** — the bounds check used `n < len(val) - 1`, making the last element
-  unreachable by index. Corrected to `n < len(val)`.
+- **`Table` 'no_update' attribute was being ignored.** A change in 0.8.5 introduced a bug that
+  caused columns with the 'no_update' attribute to still show up in the update and merge statements.  
+  The bug was fixed and several additional tests were created to ensure it doesn't happen again. 
 
 - **`ValidationCollector` new-code return value with `return_col`** — new codes now return
   `None` instead of the raw code string when `return_col` is set. This is correct for FK
