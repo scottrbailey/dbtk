@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`fn_resolver` unified shorthand engine** — replaced the 200-line `if startswith(...)` dispatch
+  table with a single clean function supporting two dispatch paths:
+  - **Direct path** — named functions (`maxlen`, `split_and_get`, `coalesce`, `indicator`,
+    `digits`, `nth`, date/time parsers, etc.) called as `fn(value, *params)`.
+  - **Cast-and-call path** — `type.method:arg1:arg2` syntax (e.g. `str.upper`,
+    `str.rjust:+10:0`, `int.to_bytes:+4:little`, `bytes.hex`). The value is cast to the
+    named type and the method is called with the supplied arguments.
+  - `_parse_param` handles sentinel strings (`True`/`False`/`None`), non-negative integers
+    (`+N`), and negative integers (`-N`), converting them to their Python equivalents before
+    dispatch.
+
+- **`coalesce` shorthand** — available as `'fn': 'coalesce'` in the direct dispatch table;
+  returns the first non-`None`, non-empty value from a comma-separated field.
+
+- **`ValidationCollector(return_col=...)`** — a single `return_col` parameter replaces the
+  separate `desc_field` + `return_desc` pair. Pass `None` (default) to always return the raw
+  code; pass a field name (e.g. `'title'`) to extract that field from the lookup result for
+  existing codes and return `None` for new codes. This matches `TableLookup.return_col`
+  vocabulary and makes FK-column semantics explicit: an unknown code has no description yet.
+
+- **`ValidationCollector` unified storage shape** — `existing` now stores the raw lookup
+  result (dict, scalar, or tuple) rather than a pre-extracted description string. Field
+  extraction via `_extract_col` happens at call time, preserving all columns from multi-column
+  lookups. `added` follows the same convention: `None` until annotated by `collect_new`,
+  then the annotation dict.
+
+- **`examples/data_load_ipeds_completions.py`** — new runnable ETL example loading NCES IPEDS
+  degree-completion data. Demonstrates `IdentityManager` for UNITID → `institution_id`
+  resolution, `ValidationCollector` with `CACHE_PRELOAD` for zero-per-row CIP code validation,
+  and — critically — how to retain batched `executemany` throughput even when identity
+  resolution forces a row-by-row loop.
+
+- **IPEDS entry in `examples/README.md`** — documents the new example alongside the existing
+  IMDB and baseball entries.
+
+- **`polars` in pip extras** — `polars>=1.0` (gated on `python_version>='3.8'`) added to both
+  `pip install dbtk[recommended]` and `pip install dbtk[all]`.
+
+### Changed
+
+- **`get_list_item` renamed to `split_and_get`** — more descriptive name that matches the
+  shorthand spelling. The function now calls `int(index)` internally so the `+` prefix is not
+  required in shorthands: `'fn': 'split_and_get:0'` works without `+0`.
+
+- **`ValidationCollector` comma-separated input with `return_col`** — new codes are dropped
+  from the joined output rather than included as bare code strings. Input `'A,NEW,B'` with
+  existing codes `A` and `B` returns `'Alpha,Beta'`, not `'Alpha,NEW,Beta'`.
+
+### Fixed
+
+- **`nth` off-by-one** — the bounds check used `n < len(val) - 1`, making the last element
+  unreachable by index. Corrected to `n < len(val)`.
+
+- **`ValidationCollector` new-code return value with `return_col`** — new codes now return
+  `None` instead of the raw code string when `return_col` is set. This is correct for FK
+  columns where an unknown code has no associated description yet.
+
+---
+
 ## [0.8.5] - 2026-05-13
 
 ### Added
@@ -383,6 +446,7 @@ Initial public release of DBTK — Data Benders Toolkit.
 
 ---
 
+[Unreleased]: https://github.com/scottrbailey/dbtk/compare/v0.8.5...HEAD
 [0.8.4]: https://github.com/scottrbailey/dbtk/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/scottrbailey/dbtk/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/scottrbailey/dbtk/compare/v0.8.1...v0.8.2
