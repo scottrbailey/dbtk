@@ -860,14 +860,13 @@ class Table:
             logger.debug(f"No record_fields available for {self.name}, skipping missing-field exclude calculation")
             return
 
-        no_update_excludes = []
-        missing_field_excludes = []
+        excludes = []
         for col, col_def in self._columns.items():
             bind_name = col_def['bind_name']
             field = col_def.get('field')
 
             if col_def.get('no_update'):
-                no_update_excludes.append(bind_name)
+                excludes.append(bind_name)
                 continue
 
             if field and field != '*':
@@ -880,7 +879,7 @@ class Table:
                                 f"but {missing_fields} are missing from source."
                             )
                         else:
-                            missing_field_excludes.append(bind_name)
+                            excludes.append(bind_name)
                 else:
                     if field not in record_fields:
                         if bind_name in self.key_cols:
@@ -889,18 +888,14 @@ class Table:
                                 f"but is missing from source."
                             )
                         else:
-                            missing_field_excludes.append(bind_name)
+                            excludes.append(bind_name)
 
-        if no_update_excludes:
+        if excludes:
             logger.debug(
-                f"Columns excluded from update/merge due to no_update:\n{no_update_excludes}"
-            )
-        if missing_field_excludes:
-            logger.debug(
-                f"Columns excluded from update/merge because source field is missing:\n{missing_field_excludes}"
+                f"Columns excluded from update/merge because source field is missing:\n{excludes}"
             )
         current_excludes = self._update_excludes.copy()
-        self._update_excludes = set(no_update_excludes + missing_field_excludes)
+        self._update_excludes = set(excludes)
         self._update_excludes_calculated = True
         if current_excludes != self._update_excludes:
             self._sql_statements['update'] = None
