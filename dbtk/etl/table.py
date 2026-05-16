@@ -892,7 +892,7 @@ class Table:
 
         if excludes:
             logger.debug(
-                f"Columns excluded from update/merge because source field is missing:\n{excludes}"
+                f"Columns excluded from update/merge because source field is missing or no_update attribute was set:\n{excludes}"
             )
         current_excludes = self._update_excludes.copy()
         self._update_excludes = set(excludes)
