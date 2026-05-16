@@ -455,8 +455,11 @@ def fn_resolver(shorthand: str) -> Callable:
         ``strip``, ``lstrip``, ``rstrip``     strip whitespace
         ``strip:chars``                       strip specific chars
         ``maxlen:50``                         truncate to 50 characters
-        ``nth:0``                             first element of a list or sequence
         ``split_and_get:0:|``                 split a | delimited string and return first element
+
+    List, Tuple:
+         ``nth:0``                            first element of a list or sequence
+         ``coalesce``                         return the first non null value
 
     Boolean indicators:
         ``indicator``           True → ``'Y'``, False/None → ``None``
@@ -521,10 +524,10 @@ def fn_resolver(shorthand: str) -> Callable:
         'digits': get_digits, 'number': to_number,
         'lower': str.lower, 'upper': str.upper,
         'strip': str.strip, 'lstrip': str.lstrip, 'rstrip': str.rstrip,
-        'indicator': indicator,
         'date': parse_date, 'datetime': parse_datetime,
         'time': parse_time, 'timestamp': parse_timestamp,
-        'maxlen': maxlen, 'nth': nth, 'split_and_get': split_and_get,
+        'maxlen': maxlen, 'split_and_get': split_and_get,
+        'nth': nth, 'coalesce': coalesce, 'indicator': indicator,
     }
 
     if '.' in parts[0]:
