@@ -435,10 +435,10 @@ def fn_resolver(shorthand: str) -> Callable:
         type.method:arg1     cast to type, call method          e.g. 'str.rjust:+9:0'
 
     Parameters passed after the first ``:`` are strings by default.
-    Prefix a number with ``+`` to force it to int (required where the
-    Python method expects an integer, e.g. ``str.rjust``).
-    The bare strings ``True``, ``False``, and ``None`` are parsed to their
-    Python equivalents.
+    Prefix an integer with ``+`` for non-negative or ``-`` for negative to force
+    it to int (required where the called function expects an integer, e.g.
+    ``str.rjust``, ``split_and_get``). ``True``, ``False``, and ``None`` are
+    parsed to their Python equivalents.
 
     Names
     -----
@@ -451,25 +451,27 @@ def fn_resolver(shorthand: str) -> Callable:
         ``date``, ``datetime``, ``time``, ``timestamp``
 
     String:
-        ``lower``, ``upper``
-        ``strip``, ``lstrip``, ``rstrip``     strip whitespace
-        ``strip:chars``                       strip specific chars
-        ``maxlen:50``                         truncate to 50 characters
-        ``split_and_get:0:|``                 split a | delimited string and return first element
+        ``lower``, ``upper``, ``capitalize``
+        ``strip``, ``lstrip``, ``rstrip``        strip whitespace
+        ``strip:chars``, ``lstrip:chars``, ``rstrip:chars``  strip specific chars
+        ``maxlen:50``                            truncate to 50 characters
 
-    List, Tuple:
-         ``nth:0``                            first element of a list or sequence
-         ``coalesce``                         return the first non null value
+    List / Tuple:
+        ``nth:0``                    first element of a sequence (``nth:-1`` → last)
+        ``coalesce``                 first non-empty, non-None value
+        ``split_and_get:+0``         first comma-delimited field
+        ``split_and_get:+1:\t``      second tab-delimited field
 
     Boolean indicators:
         ``indicator``           True → ``'Y'``, False/None → ``None``
         ``indicator:Y:N``       True → ``'Y'``, False → ``'N'``
         ``indicator:N:Y``       True → ``'N'``, False → ``'Y'``  (inverted)
+        ``indicator:None:Y``    True → ``None``, False → ``'Y'``  (active-flag inversion)
         ``indicator:1:0``       True → ``'1'``, False → ``'0'``
 
     Cast and call (``type.method``):
         ``str.upper``                   ``str(val).upper()``
-        ``str.strip:="``                strip ``=`` and ``"`` chars
+        ``str.strip:="``                strip ``=`` and ``"`` chars (e.g. Excel ``="val"``)
         ``str.lstrip:0``                strip leading zeros
         ``str.split:,``                 split on comma → list
         ``str.rjust:+9:0``              right-justify to width 9, padded with ``'0'``
@@ -522,7 +524,7 @@ def fn_resolver(shorthand: str) -> Callable:
     direct = {
         'int': get_int, 'float': get_float, 'bool': get_bool,
         'digits': get_digits, 'number': to_number,
-        'lower': str.lower, 'upper': str.upper,
+        'lower': str.lower, 'upper': str.upper, 'capitalize': capitalize,
         'strip': str.strip, 'lstrip': str.lstrip, 'rstrip': str.rstrip,
         'date': parse_date, 'datetime': parse_datetime,
         'time': parse_time, 'timestamp': parse_timestamp,
