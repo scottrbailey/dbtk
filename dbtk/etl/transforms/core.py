@@ -418,6 +418,8 @@ def _parse_param(p):
         return _sentinals[p]
     if p.startswith('+') and p[1:].isdigit():
         return int(p[1:])
+    if p.startswith('-') and len(p) > 1 and p[1:].isdigit():
+        return int(p)
     return p
 
 def fn_resolver(shorthand: str) -> Callable:

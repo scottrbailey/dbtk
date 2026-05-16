@@ -506,11 +506,11 @@ class TestFnResolver:
         assert fn(None) is None
 
     def test_int_with_default_shorthand(self):
-        """Test 'int:0' shorthand with default value."""
-        fn = fn_resolver('int:0')
+        """Test 'int' shorthand — empty/None returns None; use column default: 0 for zero-default."""
+        fn = fn_resolver('int')
         assert fn('123') == 123
-        assert fn('') == 0
-        assert fn(None) == 0
+        assert fn('') is None
+        assert fn(None) is None
 
     def test_float_shorthand(self):
         """Test 'float' shorthand resolves to get_float."""
@@ -567,22 +567,22 @@ class TestFnResolver:
     # ======== Indicator Variations ========
 
     def test_indicator_inv_shorthand(self):
-        """Test 'indicator:inv' shorthand for inverted logic."""
-        fn = fn_resolver('indicator:inv')
+        """Test inverted indicator: indicator:None:Y returns 'Y' when False."""
+        fn = fn_resolver('indicator:None:Y')
         assert fn(False) == 'Y'
         assert fn(True) is None
 
     def test_indicator_custom_values(self):
-        """Test 'indicator:true/false' shorthand with custom values."""
-        fn = fn_resolver('indicator:Y/N')
+        """Test indicator with colon-separated true/false values."""
+        fn = fn_resolver('indicator:Y:N')
         assert fn(True) == 'Y'
         assert fn(False) == 'N'
 
-        fn = fn_resolver('indicator:1/0')
+        fn = fn_resolver('indicator:1:0')
         assert fn(True) == '1'
         assert fn(False) == '0'
 
-        fn = fn_resolver('indicator:Active/Inactive')
+        fn = fn_resolver('indicator:Active:Inactive')
         assert fn(True) == 'Active'
         assert fn(False) == 'Inactive'
 
@@ -593,68 +593,66 @@ class TestFnResolver:
         fn = fn_resolver('maxlen:10')
         assert fn('Avatar Aang') == 'Avatar Aan'
         assert fn('Short') == 'Short'
-        assert fn(None) == ''
+        assert fn(None) is None
 
         fn = fn_resolver('maxlen:255')
         long_str = 'a' * 300
         assert len(fn(long_str)) == 255
 
     def test_trunc_shorthand(self):
-        """Test 'trunc:n' shorthand (alias for maxlen)."""
-        fn = fn_resolver('trunc:5')
+        """Test 'maxlen:n' shorthand — trunc alias removed."""
+        fn = fn_resolver('maxlen:5')
         assert fn('Fire Nation') == 'Fire '
         assert fn('Air') == 'Air'
 
     # ======== List Operations ========
 
     def test_split_default_shorthand(self):
-        """Test 'split:' shorthand with default comma delimiter."""
-        fn = fn_resolver('split:,')
+        """Test 'str.split:,' shorthand with comma delimiter."""
+        fn = fn_resolver('str.split:,')
         assert fn('Aang,Katara,Sokka') == ['Aang', 'Katara', 'Sokka']
         assert fn('Fire,Water,Earth,Air') == ['Fire', 'Water', 'Earth', 'Air']
-        assert fn(None) == []
+        assert fn(None) is None
 
     def test_split_tab_shorthand(self):
-        """Test 'split:\\t' shorthand with tab delimiter."""
-        fn = fn_resolver('split:\t')
+        """Test 'str.split:\\t' shorthand with tab delimiter."""
+        fn = fn_resolver('str.split:\t')
         result = fn('Aang\tKatara\tSokka')
         assert result == ['Aang', 'Katara', 'Sokka']
 
     def test_split_pipe_shorthand(self):
-        """Test 'split:|' shorthand with pipe delimiter."""
-        fn = fn_resolver('split:|')
+        """Test 'str.split:|' shorthand with pipe delimiter."""
+        fn = fn_resolver('str.split:|')
         assert fn('Fire|Water|Earth|Air') == ['Fire', 'Water', 'Earth', 'Air']
 
     def test_nth_default_delimiter(self):
-        """Test 'nth:index' shorthand with default comma delimiter."""
-        fn = fn_resolver('nth:0')
+        """Test 'split_and_get:+n' shorthand — split on comma then get nth item."""
+        fn = fn_resolver('split_and_get:+0')
         assert fn('Aang,Katara,Sokka') == 'Aang'
 
-        fn = fn_resolver('nth:1')
+        fn = fn_resolver('split_and_get:+1')
         assert fn('Aang,Katara,Sokka') == 'Katara'
 
-        fn = fn_resolver('nth:2')
+        fn = fn_resolver('split_and_get:+2')
         assert fn('Aang,Katara,Sokka') == 'Sokka'
 
     def test_nth_custom_delimiter(self):
-        """Test 'nth:index:delimiter' shorthand with custom delimiter."""
-        fn = fn_resolver('nth:0:|')
+        """Test 'split_and_get:+n:delim' shorthand with custom delimiter."""
+        fn = fn_resolver('split_and_get:+0:|')
         assert fn('Fire|Water|Earth') == 'Fire'
 
-        fn = fn_resolver('nth:1:\t')
+        fn = fn_resolver('split_and_get:+1:\t')
         assert fn('Aang\tKatara\tSokka') == 'Katara'
 
     def test_nth_out_of_range(self):
-        """Test nth with out of range index returns None."""
-        fn = fn_resolver('nth:10')
+        """Test split_and_get with out-of-range index returns None."""
+        fn = fn_resolver('split_and_get:+10')
         assert fn('Aang,Katara') is None
 
     def test_nth_negative_index(self):
-        """Test nth supports negative indices (gets last + offset)."""
-        fn = fn_resolver('nth:-1')
-        result = fn('Aang,Katara,Sokka')
-        # -1 is treated as index -1 by get_list_item, which returns last item
-        assert result == 'Sokka'
+        """Test split_and_get supports negative indices."""
+        fn = fn_resolver('split_and_get:-1')
+        assert fn('Aang,Katara,Sokka') == 'Sokka'
 
     # ======== Error Handling ========
 
@@ -667,29 +665,29 @@ class TestFnResolver:
             fn_resolver('notafunction')
 
     def test_invalid_maxlen_error(self):
-        """Test that invalid maxlen value raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid length"):
-            fn_resolver('maxlen:abc')
+        """Test that invalid maxlen value raises ValueError at call time."""
+        fn = fn_resolver('maxlen:abc')
+        with pytest.raises(ValueError):
+            fn('some value')
 
-        with pytest.raises(ValueError, match="Invalid length"):
-            fn_resolver('maxlen:-5')
+        fn = fn_resolver('maxlen:-5')
+        with pytest.raises(ValueError, match="Maxlen must be at least 1"):
+            fn('some value')
 
     def test_invalid_nth_index_error(self):
-        """Test that invalid nth index raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid index"):
-            fn_resolver('nth:abc')
-
-        with pytest.raises(ValueError, match="Invalid index"):
-            fn_resolver('nth:')
+        """Test that non-integer nth index raises ValueError at call time."""
+        fn = fn_resolver('nth:abc')
+        with pytest.raises(ValueError):
+            fn([1, 2, 3])
 
     # ======== Real-World Use Cases ========
 
     def test_imdb_year_extraction(self):
-        """Test IMDB-style year extraction from string."""
-        fn = fn_resolver('int:0')
+        """Test IMDB-style year extraction — use column default: 0 for zero-default."""
+        fn = fn_resolver('int')
         assert fn('1999') == 1999
-        assert fn('') == 0
-        assert fn(None) == 0
+        assert fn('') is None
+        assert fn(None) is None
 
     def test_title_truncation(self):
         """Test truncating long movie titles."""
@@ -701,14 +699,14 @@ class TestFnResolver:
 
     def test_genre_extraction(self):
         """Test extracting first genre from comma-separated list."""
-        fn = fn_resolver('nth:0')
+        fn = fn_resolver('split_and_get:+0')
         assert fn('Action,Adventure,Sci-Fi') == 'Action'
         assert fn('Drama,Romance') == 'Drama'
         assert fn('Comedy') == 'Comedy'
 
     def test_active_flag_conversion(self):
         """Test converting boolean to Y/N active flag."""
-        fn = fn_resolver('indicator:Y/N')
+        fn = fn_resolver('indicator:Y:N')
         assert fn(True) == 'Y'
         assert fn(False) == 'N'
         assert fn(1) == 'Y'
@@ -733,7 +731,7 @@ class TestFnResolver:
 
     def test_currency_to_number(self):
         """Test converting currency strings to numbers."""
-        fn_int = fn_resolver('int:0')
+        fn_int = fn_resolver('int')
         assert fn_int('$1,234.56') == 1234
 
         fn_float = fn_resolver('float')
