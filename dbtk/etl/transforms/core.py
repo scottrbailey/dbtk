@@ -523,8 +523,6 @@ def fn_resolver(shorthand: str) -> Callable:
     direct = {
         'int': get_int, 'float': get_float, 'bool': get_bool,
         'digits': get_digits, 'number': to_number,
-        'lower': str.lower, 'upper': str.upper,
-        'strip': str.strip, 'lstrip': str.lstrip, 'rstrip': str.rstrip,
         'date': parse_date, 'datetime': parse_datetime,
         'time': parse_time, 'timestamp': parse_timestamp,
         'maxlen': maxlen, 'split_and_get': split_and_get,

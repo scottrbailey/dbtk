@@ -539,20 +539,20 @@ class TestFnResolver:
         assert fn('1,234.56') == 1234.56
 
     def test_lower_shorthand(self):
-        """Test 'lower' shorthand resolves to str.lower."""
-        fn = fn_resolver('lower')
+        """Test 'str.lower' cast-and-call shorthand."""
+        fn = fn_resolver('str.lower')
         assert fn('AANG') == 'aang'
         assert fn('Fire Nation') == 'fire nation'
 
     def test_upper_shorthand(self):
-        """Test 'upper' shorthand resolves to str.upper."""
-        fn = fn_resolver('upper')
+        """Test 'str.upper' cast-and-call shorthand."""
+        fn = fn_resolver('str.upper')
         assert fn('aang') == 'AANG'
         assert fn('Water Tribe') == 'WATER TRIBE'
 
     def test_strip_shorthand(self):
-        """Test 'strip' shorthand resolves to str.strip."""
-        fn = fn_resolver('strip')
+        """Test 'str.strip' cast-and-call shorthand."""
+        fn = fn_resolver('str.strip')
         assert fn('  Aang  ') == 'Aang'
         assert fn('\tKatara\n') == 'Katara'
 
@@ -722,11 +722,11 @@ class TestFnResolver:
     def test_whitespace_normalization(self):
         """Test strip and lower for name normalization."""
         # Using strip
-        fn_strip = fn_resolver('strip')
+        fn_strip = fn_resolver('str.strip')
         assert fn_strip('  Avatar Aang  ') == 'Avatar Aang'
 
         # Using lower
-        fn_lower = fn_resolver('lower')
+        fn_lower = fn_resolver('str.lower')
         assert fn_lower('AVATAR AANG') == 'avatar aang'
 
     def test_currency_to_number(self):
