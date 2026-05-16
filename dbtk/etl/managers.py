@@ -576,25 +576,24 @@ class ValidationCollector:
     During row-wise processing:
       - Collects unique codes
       - Optionally enriches them with descriptions using TableLookup
-      - Can return enriched values (titles) instead of raw codes
+      - Can return a specific field from the lookup result instead of the raw code
 
     Supports:
       - Preload mode: instant enrichment, perfect valid/new split
       - Lazy mode: enrich on first encounter
       - No lookup: pure collection
 
-    Returns enriched value if return_desc=True (default), else raw.
+    Set ``return_col`` to the field name you want returned; ``None`` (default)
+    returns the raw code.
     """
 
     def __init__(
         self,
         lookup: Optional[TableLookup] = None,
-        desc_field: Optional[str] = None,
-        return_desc: bool = False,
+        return_col: Optional[str] = None,
     ):
         self.lookup = lookup
-        self.desc_field = desc_field
-        self.return_desc = return_desc
+        self.return_col = return_col
 
         self.existing: Dict[Any, Any] = {}   # code -> raw lookup result
         self.added: Dict[Any, Any] = {}      # new codes: None until annotated, then dict
@@ -616,22 +615,18 @@ class ValidationCollector:
             code = cache_key[0] if isinstance(cache_key, tuple) else cache_key
             self.existing[code] = result
 
-    def _extract_desc(self, result: Any) -> str:
+    def _extract_col(self, result: Any) -> Optional[str]:
+        """Extract return_col from a lookup result, or str-ify a scalar."""
+        if self.return_col is None:
+            return None
         if isinstance(result, (str, int, float)):
             return str(result)
-
         if hasattr(result, "get"):
-            if self.desc_field:
-                return str(result.get(self.desc_field, ""))
-            for field in ("title", "description", "name", "label"):
-                val = result.get(field)
-                if val:
-                    return str(val)
-            return str(result)
-
-        if isinstance(result, (tuple, list)) and len(result) > 1:
-            return str(result[1])
-
+            val = result.get(self.return_col)
+            return str(val) if val is not None else None
+        if isinstance(result, (tuple, list)):
+            # Fall back to second element when result is a plain sequence
+            return str(result[1]) if len(result) > 1 else None
         return str(result)
 
     def __call__(self, value: Any) -> Any:
@@ -650,10 +645,10 @@ class ValidationCollector:
         enriched = []
         for code in raw_codes:
             if code in self.existing:
-                desc = self._extract_desc(self.existing[code])
+                col = self._extract_col(self.existing[code])
             elif code in self.added:
                 data = self.added[code]
-                desc = self._extract_desc(data) if data is not None else None
+                col = self._extract_col(data) if data is not None else None
             else:
                 # Only query DB if lookup exists and isn't preloaded
                 # Preloaded means all valid values are in cache, so cache miss = new value
@@ -661,18 +656,18 @@ class ValidationCollector:
                     result = self.lookup({self.key_name: code})
                     if result:
                         self.existing[code] = result
-                        desc = self._extract_desc(result)
+                        col = self._extract_col(result)
                     else:
                         self.added[code] = None
                         self._recently_added = True
-                        desc = None
+                        col = None
                 else:
                     # No lookup or preloaded (cache miss = definitely new)
                     self.added[code] = None
                     self._recently_added = True
-                    desc = None
+                    col = None
 
-            enriched.append(desc if self.return_desc else code)
+            enriched.append(col if self.return_col else code)
 
         # Return in original format
         if isinstance(value, str):
@@ -716,15 +711,15 @@ class ValidationCollector:
 
     # Reporting
     def get_valid_mapping(self) -> Dict[Any, Optional[str]]:
-        return {code: self._extract_desc(result) for code, result in self.existing.items()}
+        return {code: self._extract_col(result) for code, result in self.existing.items()}
 
     def get_new_codes(self) -> List[Any]:
         return sorted(self.added)
 
     def get_all_mapping(self) -> Dict[Any, Optional[str]]:
-        combined = {code: self._extract_desc(result) for code, result in self.existing.items()}
+        combined = {code: self._extract_col(result) for code, result in self.existing.items()}
         combined.update({
-            code: self._extract_desc(fields) if fields else None
+            code: self._extract_col(fields) if fields else None
             for code, fields in self.added.items()
         })
         return combined

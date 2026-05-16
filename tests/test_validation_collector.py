@@ -306,77 +306,77 @@ class TestValidationCollector:
         assert len(collector.added) == 1
 
     # ------------------------------------------------------------------
-    # return_desc parity: existing vs added
+    # return_col: existing vs added
     # ------------------------------------------------------------------
 
-    def test_return_desc_true_new_code_returns_none(self):
-        """return_desc=True returns None for new codes (description not yet known)."""
-        collector = ValidationCollector(return_desc=True)
+    def test_return_col_new_code_returns_none(self):
+        """return_col set: new codes return None (field value not yet known)."""
+        collector = ValidationCollector(return_col='title')
         result = collector('NEW01')
         assert result is None
 
-    def test_return_desc_false_new_code_returns_code(self):
-        """return_desc=False always returns the raw code, including new codes."""
-        collector = ValidationCollector(return_desc=False)
+    def test_no_return_col_new_code_returns_code(self):
+        """return_col=None (default): always returns the raw code."""
+        collector = ValidationCollector()
         result = collector('NEW01')
         assert result == 'NEW01'
 
-    def test_return_desc_true_existing_code_returns_description(self):
-        """return_desc=True returns description for existing codes."""
-        collector = ValidationCollector(return_desc=True)
+    def test_return_col_existing_code_returns_field(self):
+        """return_col set: existing codes return the named field from the lookup result."""
+        collector = ValidationCollector(return_col='title')
         collector.existing['E01'] = {'title': 'Ethnic Studies', 'year': 2020}
         result = collector('E01')
         assert result == 'Ethnic Studies'
 
-    def test_return_desc_false_existing_code_returns_code(self):
-        """return_desc=False returns raw code even for existing codes."""
-        collector = ValidationCollector(return_desc=False)
+    def test_no_return_col_existing_code_returns_code(self):
+        """return_col=None: returns raw code even for existing codes."""
+        collector = ValidationCollector()
         collector.existing['E01'] = {'title': 'Ethnic Studies'}
         result = collector('E01')
         assert result == 'E01'
 
     def test_existing_stores_raw_result_not_description(self):
-        """existing stores the full lookup result, not just the extracted description."""
+        """existing stores the full lookup result, not just the extracted field."""
         collector = ValidationCollector()
         raw = {'stvcipc_desc': 'Computer Science', 'stvcipc_pub_year': 2020}
         collector.existing['05'] = raw
         assert collector.existing['05'] is raw
 
-    def test_return_desc_after_collect_new(self):
-        """After collect_new annotates a code, subsequent calls return the description."""
-        collector = ValidationCollector(return_desc=True)
+    def test_return_col_after_collect_new(self):
+        """After collect_new annotates a code, subsequent calls return the named field."""
+        collector = ValidationCollector(return_col='title')
         collector('CIP01')                                    # new — returns None
         collector.collect_new('CIP01', title='Computer Science')
         result = collector('CIP01')                           # now annotated
         assert result == 'Computer Science'
 
     def test_comma_separated_mixed_existing_and_new(self):
-        """Comma-separated input: existing codes return descriptions, new codes are dropped."""
-        collector = ValidationCollector(return_desc=True)
-        collector.existing['A'] = 'Alpha'
-        collector.existing['B'] = 'Beta'
+        """Comma-separated input with return_col: existing return field, new codes dropped."""
+        collector = ValidationCollector(return_col='title')
+        collector.existing['A'] = {'title': 'Alpha'}
+        collector.existing['B'] = {'title': 'Beta'}
         result = collector('A,NEW,B')
         assert result == 'Alpha,Beta'
 
-    def test_comma_separated_return_desc_false(self):
-        """return_desc=False returns all codes in comma-separated input."""
-        collector = ValidationCollector(return_desc=False)
-        collector.existing['A'] = 'Alpha'
+    def test_comma_separated_no_return_col(self):
+        """return_col=None: all codes returned in comma-separated input."""
+        collector = ValidationCollector()
+        collector.existing['A'] = {'title': 'Alpha'}
         result = collector('A,NEW,B')
         assert result == 'A,NEW,B'
 
-    def test_get_valid_mapping_extracts_descriptions(self):
-        """get_valid_mapping returns extracted descriptions, not raw results."""
-        collector = ValidationCollector()
+    def test_get_valid_mapping_extracts_col(self):
+        """get_valid_mapping returns the return_col field from each stored result."""
+        collector = ValidationCollector(return_col='title')
         collector.existing['05'] = {'title': 'Ethnic Studies', 'year': 2020}
-        collector.existing['11'] = 'Computer Science'
+        collector.existing['11'] = {'title': 'Computer Science'}
         mapping = collector.get_valid_mapping()
         assert mapping['05'] == 'Ethnic Studies'
         assert mapping['11'] == 'Computer Science'
 
     def test_get_all_mapping_parity(self):
-        """get_all_mapping returns descriptions for existing and None for unannotated new codes."""
-        collector = ValidationCollector()
+        """get_all_mapping: return_col field for existing, None for unannotated new codes."""
+        collector = ValidationCollector(return_col='title')
         collector.existing['E'] = {'title': 'Existing'}
         collector('N')
         mapping = collector.get_all_mapping()
@@ -384,8 +384,8 @@ class TestValidationCollector:
         assert mapping['N'] is None
 
     def test_get_all_mapping_annotated_new_code(self):
-        """get_all_mapping returns description for annotated new codes."""
-        collector = ValidationCollector()
+        """get_all_mapping returns return_col field for annotated new codes."""
+        collector = ValidationCollector(return_col='title')
         collector('N')
         collector.collect_new('N', title='New Thing')
         mapping = collector.get_all_mapping()
