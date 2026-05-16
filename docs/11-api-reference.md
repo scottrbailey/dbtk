@@ -492,10 +492,10 @@ Use string shorthand in Table column config:
 'fn': 'bool'                 # None-safe bool
 'fn': 'digits'               # Extract digit characters only
 'fn': 'maxlen:100'           # Truncate to 100 chars
-'fn': 'lower'                # str.lower()
-'fn': 'upper'                # str.upper()
-'fn': 'strip'                # str.strip()
-'fn': 'strip:="'             # Strip specific characters
+'fn': 'str.lower'            # str(val).lower()
+'fn': 'str.upper'            # str(val).upper()
+'fn': 'str.strip'            # str(val).strip()
+'fn': 'str.strip:="'         # Strip specific characters
 'fn': 'indicator'            # True → 'Y', False/None → None
 'fn': 'indicator:Y:N'        # Custom true/false values
 'fn': 'indicator:None:Y'     # Inverted (False → 'Y', True → None)
