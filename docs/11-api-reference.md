@@ -474,7 +474,7 @@ Located in `dbtk.etl.transforms`
 ### Lists
 
 - `parse_list(value, delimiter=',')` - Split string to list
-- `get_list_item(lst, index, default=None)` - Get item by index
+- `split_and_get(val, index, delimiter=',')` - Split string and get nth item
 
 ### Utilities
 
@@ -487,21 +487,26 @@ Located in `dbtk.etl.transforms`
 Use string shorthand in Table column config:
 
 ```python
-'fn': 'int:0'           # get_int with default 0
-'fn': 'float'           # get_float
-'fn': 'bool'            # get_bool
-'fn': 'digits'          # get_digits
-'fn': 'maxlen:100'      # Truncate to 100 chars
-'fn': 'lower'           # str.lower()
-'fn': 'upper'           # str.upper()
-'fn': 'strip'           # str.strip()
-'fn': 'indicator'       # indicator()
-'fn': 'indicator:Y/N'   # indicator with custom values
-'fn': 'indicator:inv'   # inverted indicator
-'fn': 'split:,'         # Split on comma
-'fn': 'nth:0'           # Get first item
-'fn': 'lookup:table:key:return'          # Database lookup
-'fn': 'validate:table:key'               # Database validation
+'fn': 'int'                  # None-safe int (empty string → None)
+'fn': 'float'                # None-safe float
+'fn': 'bool'                 # None-safe bool
+'fn': 'digits'               # Extract digit characters only
+'fn': 'maxlen:100'           # Truncate to 100 chars
+'fn': 'lower'                # str.lower()
+'fn': 'upper'                # str.upper()
+'fn': 'strip'                # str.strip()
+'fn': 'strip:="'             # Strip specific characters
+'fn': 'indicator'            # True → 'Y', False/None → None
+'fn': 'indicator:Y:N'        # Custom true/false values
+'fn': 'indicator:None:Y'     # Inverted (False → 'Y', True → None)
+'fn': 'split_and_get:0'      # First comma-delimited field
+'fn': 'split_and_get:1:\t'   # Second tab-delimited field
+'fn': 'str.split:,'          # Split on comma → list
+'fn': 'str.rjust:+9:0'       # Right-justify to width 9, pad with '0'
+'fn': 'nth:0'                # First element of a list/sequence
+'fn': 'coalesce'             # First non-empty, non-None value
+'fn': 'lookup:table:key:return'   # Database lookup
+'fn': 'validate:table:key'        # Database validation
 ```
 
 ---
