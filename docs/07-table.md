@@ -578,8 +578,6 @@ table = dbtk.etl.Table('movies', {
 | `'bool'`                           | Parse boolean          | `'yes'` → `True`                                   |
 | `'digits'`                         | Extract digits only    | `'(800) 123-4567'` → `'8001234567'`                |
 | `'number'`                         | Convert to number      | `'$42.35'` → `42.35`                               |
-| `'lower'` / `'upper'` / `'strip'`  | String ops             | `'  AANG  '` → `'aang'`                            |
-| `'strip:chars'`                    | Strip specific chars   | `'strip:="'` on `'="01.01"'` → `'01.01'`           |
 | `'maxlen:n'`                       | Truncate to n chars    | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'`  |
 | `'split_and_get:0'`                | First delimited field  | `'action,comedy,drama'` → `'action'`               |
 | `'split_and_get:1:\t'`             | Second tab field       | `'a\tb\tc'` → `'b'`                                |
@@ -595,7 +593,9 @@ table = dbtk.etl.Table('movies', {
 
 | Shorthand                    | Equivalent                      |
 |------------------------------|---------------------------------|
+| `'str.lower'`                | `str(val).lower()`              |
 | `'str.upper'`                | `str(val).upper()`              |
+| `'str.strip'`                | `str(val).strip()`              |
 | `'str.strip:="'`             | `str(val).strip('="')`          |
 | `'str.lstrip:0'`             | `str(val).lstrip('0')`          |
 | `'str.split:,'`              | `str(val).split(',')`           |
@@ -611,8 +611,8 @@ Supported cast types: `int`, `float`, `str`, `bytes`, `datetime`.
 ```python
 # Works in lists - functions are applied in order
 table = dbtk.etl.Table('users', {
-    'username': {'field': 'email', 'fn': ['lower', 'strip', 'maxlen:50']},
-    'is_admin': {'field': 'role', 'fn': ['upper', 'indicator:Y:N']},
+    'username': {'field': 'email', 'fn': ['str.lower', 'str.strip', 'maxlen:50']},
+    'is_admin': {'field': 'role', 'fn': ['str.upper', 'indicator:Y:N']},
 }, cursor=cursor)
 ```
 
