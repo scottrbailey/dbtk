@@ -656,6 +656,46 @@ class TestUpdateExclusions:
         instructor_bind = airbender_table.columns['instructor']['bind_name']
         assert instructor_bind in airbender_table._update_excludes
 
+    def test_no_update_excluded_at_init(self, airbender_table):
+        """no_update columns must be in _update_excludes immediately after Table construction.
+
+        Regression: a prior implementation silently omitted no_update columns
+        when calc_update_excludes had not yet been called (e.g. before set_values).
+        This caused no_update to be ignored whenever get_sql was called first.
+        """
+        instructor_bind = airbender_table.columns['instructor']['bind_name']
+        assert instructor_bind in airbender_table._update_excludes
+
+    def test_no_update_excluded_in_sql_before_set_values(self, airbender_table):
+        """no_update columns must not appear in UPDATE/MERGE SET clause before set_values is called."""
+        update_sql = airbender_table.get_sql('update')
+        merge_sql = airbender_table.get_sql('merge')
+
+        # instructor is the no_update column; it must not be in any SET clause
+        assert 'instructor' not in update_sql.lower()
+        assert 'instructor = ' not in merge_sql.lower()
+
+    def test_no_update_excluded_after_set_values(self, airbender_table):
+        """no_update columns remain excluded after set_values populates record_fields."""
+        airbender_table.set_values({
+            'trainee_id': 'A001',
+            'monk_name': 'Aang',
+            'home_temple': 'Southern Air Temple',
+        })
+
+        instructor_bind = airbender_table.columns['instructor']['bind_name']
+        assert instructor_bind in airbender_table._update_excludes
+
+        update_sql = airbender_table.get_sql('update')
+        assert 'instructor' not in update_sql.lower().split('where')[0].split('set')[-1]
+
+    def test_no_update_excluded_after_reset(self, airbender_table):
+        """no_update columns are restored after _reset(), not cleared."""
+        airbender_table._reset()
+
+        instructor_bind = airbender_table.columns['instructor']['bind_name']
+        assert instructor_bind in airbender_table._update_excludes
+
     def test_calc_update_excludes_uses_cached_fields(self, airbender_table):
         """Test that calc_update_excludes uses cached _record_fields when called without arguments."""
         # Set values to cache record fields
@@ -730,7 +770,10 @@ class TestReset:
 
         assert airbender_table._sql_statements['insert'] is None
         assert airbender_table._param_config['insert'] == ()
-        assert len(airbender_table._update_excludes) == 0
+        # _reset restores no_update excludes; manually added 'test_col' should be gone
+        instructor_bind = airbender_table.columns['instructor']['bind_name']
+        assert instructor_bind in airbender_table._update_excludes
+        assert 'test_col' not in airbender_table._update_excludes
         assert airbender_table.counts['insert'] == 0
         assert airbender_table.counts['incomplete'] == 0
         assert len(airbender_table.values) == 0

@@ -140,6 +140,7 @@ class TableLookup:
         self._cache_strategy = cache
         self._cache = {}
         self._preloaded = False
+        self.exhaustive: bool = (cache == self.CACHE_PRELOAD)
 
         # Build SQL
         self._build_sql()
@@ -183,40 +184,38 @@ class TableLookup:
 
     def _preload_all(self):
         """Preload entire lookup table into cache."""
-        # Build SELECT for all data
         if self._validator_mode:
-            # Just need the keys
             select_cols = ', '.join(self._key_cols)
-        else:
-            # Need keys + return columns
-            select_cols = ', '.join(self._key_cols + self._return_cols)
+            query = f"SELECT {select_cols} FROM {self._table}"
+            self._cursor.execute(query)
+            num_keys = len(self._key_cols)
+            for row in self._cursor.fetchall():
+                key_values = row[:num_keys]
+                if any(k in (None, '') for k in key_values):
+                    continue
+                self._cache[tuple(key_values)] = True
+            return
 
-        query = f"SELECT {select_cols} FROM {self._table}"
+        # Prepend only key cols not already in return_cols to avoid duplicate columns.
+        extra_key_cols = [col for col in self._key_cols if col not in self._return_cols]
+        all_cols = extra_key_cols + self._return_cols
+
+        query = f"SELECT {', '.join(all_cols)} FROM {self._table}"
         self._cursor.execute(query)
 
-        num_keys = len(self._key_cols)
-
         for row in self._cursor.fetchall():
-            # Extract key values (first N columns)
-            key_values = row[:num_keys]
-
-            # Skip rows with null/empty keys
+            key_values = tuple(
+                row[all_cols.index(col)] for col in self._key_cols
+            )
             if any(k in (None, '') for k in key_values):
                 continue
 
-            # Build cache key (tuple, preserving original case)
-            cache_key = tuple(key_values)
-
-            # Store appropriate value
-            if self._validator_mode:
-                self._cache[cache_key] = True
-            elif len(self._return_cols) == 1:
-                # Single return column - store scalar
-                self._cache[cache_key] = row[num_keys]
+            if len(self._return_cols) == 1:
+                self._cache[key_values] = row[len(extra_key_cols)]
+            elif not extra_key_cols:
+                self._cache[key_values] = row          # row IS the return_cols Record
             else:
-                # Multiple return columns - store the return portion of row
-                # This will be a list slice - cursor type doesn't matter for preload
-                self._cache[cache_key] = row[num_keys:]
+                self._cache[key_values] = tuple(row[len(extra_key_cols):])
 
     def _make_cache_key(self, bind_vars: dict) -> tuple:
         """Create cache key from bind variables."""

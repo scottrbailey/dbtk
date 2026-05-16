@@ -349,9 +349,9 @@ table = Table('users', {
     'age': {'field': 'age_string', 'fn': tx.get_int},  # Returns None if invalid
 }, cursor=cursor)
 
-# Or use string shorthand with default
+# Or use string shorthand — returns None for invalid, use column default: 0 for zero-default
 table = Table('users', {
-    'age': {'field': 'age_string', 'fn': 'int:0'},  # Returns 0 if invalid
+    'age': {'field': 'age_string', 'fn': 'int', 'default': 0},
 }, cursor=cursor)
 
 # For custom error handling

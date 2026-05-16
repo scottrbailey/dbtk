@@ -148,6 +148,7 @@ class IdentityManager:
         self.source_key = source_key
         self.target_key = target_key
         self.alternate_keys = alternate_keys if alternate_keys else []
+        self._lookup: Optional[TableLookup] = None  # kept when resolver is a TableLookup
         self.resolver = resolver  # goes through property setter
         self.entities: Dict[Any, Record] = {}
         self._record_factory: Optional[type[Record]] = None  # lazy-created
@@ -167,10 +168,13 @@ class IdentityManager:
         """
         if value is None:
             self._resolver = None
+            self._lookup = None
         elif isinstance(value, TableLookup):
             self._resolver = value._stmt
+            self._lookup = value
         elif isinstance(value, PreparedStatement):
             self._resolver = value
+            self._lookup = None
         else:
             raise ValueError('Resolver must be either a PreparedStatement or TableLookup')
 
@@ -286,6 +290,20 @@ class IdentityManager:
             bind_vars = self.resolver.cursor.prepare_params(self.resolver.param_names, self.entities[source_id])
         else:
             bind_vars = {self.source_key: source_id}
+
+        # If the resolver is backed by an exhaustive preloaded cache, a miss means the
+        # record definitively does not exist — skip the DB round-trip.  Only applies
+        # once _record_factory is warm (first hit establishes it via the normal path).
+        if self._lookup and self._lookup.exhaustive and self._record_factory:
+            cache_key = tuple(bind_vars.get(n) for n in self._lookup._key_col_names)
+            if cache_key not in self._lookup._cache:
+                entity = self._record_factory(**{self.source_key: source_id})
+                entity['_messages'] = []
+                entity['_errors'] = []
+                entity['_status'] = EntityStatus.NOT_FOUND
+                self.entities[source_id] = entity
+                return entity
+
         self.resolver.execute(bind_vars)
         resolved_raw = self.resolver.fetchone()
         if self._record_factory is None:
@@ -558,28 +576,28 @@ class ValidationCollector:
     During row-wise processing:
       - Collects unique codes
       - Optionally enriches them with descriptions using TableLookup
-      - Can return enriched values (titles) instead of raw codes
+      - Can return a specific field from the lookup result instead of the raw code
 
     Supports:
       - Preload mode: instant enrichment, perfect valid/new split
       - Lazy mode: enrich on first encounter
       - No lookup: pure collection
 
-    Returns enriched value if return_desc=True (default), else raw.
+    Set ``return_col`` to the field name you want returned; ``None`` (default)
+    returns the raw code.
     """
 
     def __init__(
         self,
         lookup: Optional[TableLookup] = None,
-        desc_field: Optional[str] = None,
-        return_desc: bool = True,
+        return_col: Optional[str] = None,
     ):
         self.lookup = lookup
-        self.desc_field = desc_field
-        self.return_desc = return_desc
+        self.return_col = return_col
 
-        self.existing: Dict[Any, str] = {}  # code -> description
-        self.added: set = set()             # new codes
+        self.existing: Dict[Any, Any] = {}   # code -> raw lookup result
+        self.added: Dict[Any, Any] = {}      # new codes: None until annotated, then dict
+        self._recently_added: bool = False
 
         if lookup:
             self.key_name = (
@@ -592,33 +610,30 @@ class ValidationCollector:
                 self._preload_all()
 
     def _preload_all(self):
-        """Extract all valid codes + descriptions from preloaded cache."""
+        """Populate existing from preloaded cache, storing raw results."""
         for cache_key, result in self.lookup._cache.items():
             code = cache_key[0] if isinstance(cache_key, tuple) else cache_key
-            desc = self._extract_desc(result)
-            self.existing[code] = desc
+            self.existing[code] = result
 
-    def _extract_desc(self, result: Any) -> str:
+    def _extract_col(self, result: Any) -> Optional[str]:
+        """Extract return_col from a lookup result, or str-ify a scalar."""
+        if self.return_col is None:
+            return None
         if isinstance(result, (str, int, float)):
             return str(result)
-
         if hasattr(result, "get"):
-            if self.desc_field:
-                return result.get(self.desc_field, "")
-            for field in ("title", "description", "name", "label"):
-                val = result.get(field)
-                if val:
-                    return val
-            return str(result)
-
-        if isinstance(result, (tuple, list)) and len(result) > 1:
-            return result[1]
-
+            val = result.get(self.return_col)
+            return str(val) if val is not None else None
+        if isinstance(result, (tuple, list)):
+            # Fall back to second element when result is a plain sequence
+            return str(result[1]) if len(result) > 1 else None
         return str(result)
 
     def __call__(self, value: Any) -> Any:
         if value is None:
             return value
+
+        self._recently_added = False
 
         if isinstance(value, str):
             raw_codes = [c.strip() for c in value.split(",") if c.strip()]
@@ -630,30 +645,34 @@ class ValidationCollector:
         enriched = []
         for code in raw_codes:
             if code in self.existing:
-                desc = self.existing[code]
+                col = self._extract_col(self.existing[code])
             elif code in self.added:
-                desc = code
+                data = self.added[code]
+                col = self._extract_col(data) if data is not None else None
             else:
                 # Only query DB if lookup exists and isn't preloaded
                 # Preloaded means all valid values are in cache, so cache miss = new value
                 if self.lookup and not self.lookup._preloaded:
                     result = self.lookup({self.key_name: code})
                     if result:
-                        desc = self._extract_desc(result)
-                        self.existing[code] = desc
+                        self.existing[code] = result
+                        col = self._extract_col(result)
                     else:
-                        desc = code
-                        self.added.add(code)
+                        self.added[code] = None
+                        self._recently_added = True
+                        col = None
                 else:
                     # No lookup or preloaded (cache miss = definitely new)
-                    desc = code
-                    self.added.add(code)
+                    self.added[code] = None
+                    self._recently_added = True
+                    col = None
 
-            enriched.append(desc if self.return_desc else code)
+            enriched.append(col if self.return_col else code)
 
         # Return in original format
         if isinstance(value, str):
-            return ",".join(enriched)
+            joined = ",".join(e for e in enriched if e is not None)
+            return joined if joined else None
         return enriched if isinstance(value, (list, tuple)) else enriched[0]
 
     def __contains__(self, value: Any) -> bool:
@@ -684,23 +703,92 @@ class ValidationCollector:
 
             # Filter principals based on collected titles
             with get_reader('title.principals.tsv.gz') as reader:
-                reader.filter(lambda r: r.tconst in title_collector)
+                reader.add_filter(lambda r: r.tconst in title_collector)
                 for record in reader:
                     process(record)
         """
         return value in self.existing or value in self.added
 
     # Reporting
-    def get_valid_mapping(self) -> Dict[Any, str]:
-        return dict(self.existing)
+    def get_valid_mapping(self) -> Dict[Any, Optional[str]]:
+        return {code: self._extract_col(result) for code, result in self.existing.items()}
 
     def get_new_codes(self) -> List[Any]:
         return sorted(self.added)
 
-    def get_all_mapping(self) -> Dict[Any, str]:
-        combined = dict(self.existing)
-        combined.update({code: code for code in self.added})
+    def get_all_mapping(self) -> Dict[Any, Optional[str]]:
+        combined = {code: self._extract_col(result) for code, result in self.existing.items()}
+        combined.update({
+            code: self._extract_col(fields) if fields else None
+            for code, fields in self.added.items()
+        })
         return combined
+
+    def collect_new(self, code: Any, **fields) -> None:
+        """
+        Attach extra fields to a newly-encountered code for later bulk insertion.
+
+        No-ops immediately when the preceding ``__call__`` did not add a new code
+        (``_recently_added`` is False), so it is safe to call unconditionally on
+        every record. First annotation wins — subsequent calls for the same code
+        are ignored.
+
+        Parameters
+        ----------
+        code : Any
+            The code value that was passed to the validator (used as a cross-check
+            and as the key into ``added``).
+        **fields
+            Extra columns to store, e.g. ``stvcipc_desc=record.cip_discipline``.
+
+        Example
+        -------
+        ::
+
+            cip_validator = ValidationCollector(lookup=cip_lookup)
+            for record in reader:
+                stvmajr.set_values(record)      # triggers cip_validator(record.cip_code)
+                cip_validator.collect_new(record.cip_code, stvcipc_desc=record.cip_discipline)
+
+            for row in cip_validator.get_new_records('stvcipc_code'):
+                cur.execute(insert_sql, row)
+        """
+        if not self._recently_added:
+            return
+        self._recently_added = False
+        if self.added.get(code) is None:
+            self.added[code] = fields
+
+    def get_new_records(self, code_field: str = 'code') -> List[Dict[str, Any]]:
+        """
+        Return new codes and their collected fields as a list of dicts.
+
+        Each dict contains the code under ``code_field`` plus any extra fields
+        attached via :meth:`collect_new`, ready for bulk insertion into the
+        validation table. Codes with no extra fields (never annotated) are
+        included with only the code key.
+
+        Parameters
+        ----------
+        code_field : str
+            The key name to use for the code value in each returned dict.
+
+        Returns
+        -------
+        list of dict
+
+        Example
+        -------
+        ::
+
+            for row in cip_validator.get_new_records('stvcipc_code'):
+                cur.execute(
+                    "INSERT INTO stvcipc (stvcipc_code, stvcipc_desc) "
+                    "VALUES (:stvcipc_code, :stvcipc_desc)",
+                    row,
+                )
+        """
+        return [{code_field: code, **(fields or {})} for code, fields in self.added.items()]
 
     def get_all(self) -> set:
         """
@@ -730,6 +818,6 @@ class ValidationCollector:
             )
 
             # Or with dbtk reader filtering
-            reader.filter(lambda r: r.tconst in title_collector)  # Uses __contains__
+            reader.add_filter(lambda r: r.tconst in title_collector)  # Uses __contains__
         """
-        return set(self.existing.keys()) | self.added
+        return set(self.existing.keys()) | set(self.added.keys())
