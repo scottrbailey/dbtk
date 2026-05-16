@@ -343,9 +343,9 @@ if __name__ == '__main__':
     print(f'\nLoaded IPEDS 2022 completions in {et - st:.1f}s')
     print(f'  Institutions resolved:  {stats["resolved"]:,}')
     print(f'  Institutions not found: {stats["not_found"]:,}  (2-year / for-profit — intentionally excluded)')
-    print(f'  Completion rows skipped: {skipped:,}')
     print(f'  CIP codes — reference: {len(cip_collector.existing):,}, newly discovered: {len(cip_collector.added):,}')
-    if len(cip_collector.added) <= 10:
-        print(f'    New CIP codes encountered: {", ".join(cip_collector.added)}')
+    if cip_collector.added:
+        codes = ', '.join(f"'{c}'" for c in sorted(cip_collector.added))
+        print(f'    New code values: {codes}')
     print(f'\n  Institution state saved → {state_dir / "institutions.json"}')
     print(f'  Resume with: IdentityManager.load_state(..., resolver=institution_lookup)')
