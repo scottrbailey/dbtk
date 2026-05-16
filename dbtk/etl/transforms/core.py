@@ -407,6 +407,7 @@ def split_and_get(val: str, index: int, delimiter: str = ',') -> Optional[str]:
         split_and_get("a,b", 5)         # None
     """
     if val:
+        index = int(index)
         values = val.split(delimiter)
         if -len(values) <= index < len(values):
             return values[index].strip()
@@ -437,7 +438,7 @@ def fn_resolver(shorthand: str) -> Callable:
     Parameters passed after the first ``:`` are strings by default.
     Prefix an integer with ``+`` for non-negative or ``-`` for negative to force
     it to int (required where the called function expects an integer, e.g.
-    ``str.rjust``, ``split_and_get``). ``True``, ``False``, and ``None`` are
+    ``str.rjust``). ``True``, ``False``, and ``None`` are
     parsed to their Python equivalents.
 
     Names
@@ -451,16 +452,14 @@ def fn_resolver(shorthand: str) -> Callable:
         ``date``, ``datetime``, ``time``, ``timestamp``
 
     String:
-        ``lower``, ``upper``, ``capitalize``
-        ``strip``, ``lstrip``, ``rstrip``        strip whitespace
-        ``strip:chars``, ``lstrip:chars``, ``rstrip:chars``  strip specific chars
-        ``maxlen:50``                            truncate to 50 characters
+        ``maxlen:50``                truncate to 50 characters
+        ``split_and_get:0``          first comma-delimited field
+        ``split_and_get:1:\t``       second tab-delimited field
+        ``str.method``               all string methods (capitalize, upper, lower, split) are available using cast and call format, see below.
 
     List / Tuple:
         ``nth:0``                    first element of a sequence (``nth:-1`` → last)
         ``coalesce``                 first non-empty, non-None value
-        ``split_and_get:+0``         first comma-delimited field
-        ``split_and_get:+1:\t``      second tab-delimited field
 
     Boolean indicators:
         ``indicator``           True → ``'Y'``, False/None → ``None``
@@ -524,7 +523,7 @@ def fn_resolver(shorthand: str) -> Callable:
     direct = {
         'int': get_int, 'float': get_float, 'bool': get_bool,
         'digits': get_digits, 'number': to_number,
-        'lower': str.lower, 'upper': str.upper, 'capitalize': capitalize,
+        'lower': str.lower, 'upper': str.upper,
         'strip': str.strip, 'lstrip': str.lstrip, 'rstrip': str.rstrip,
         'date': parse_date, 'datetime': parse_datetime,
         'time': parse_time, 'timestamp': parse_timestamp,
