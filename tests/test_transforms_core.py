@@ -626,27 +626,27 @@ class TestFnResolver:
         assert fn('Fire|Water|Earth|Air') == ['Fire', 'Water', 'Earth', 'Air']
 
     def test_nth_default_delimiter(self):
-        """Test 'split_and_get:+n' shorthand — split on comma then get nth item."""
-        fn = fn_resolver('split_and_get:+0')
+        """Test 'split_and_get:n' shorthand — split on comma then get nth item."""
+        fn = fn_resolver('split_and_get:0')
         assert fn('Aang,Katara,Sokka') == 'Aang'
 
-        fn = fn_resolver('split_and_get:+1')
+        fn = fn_resolver('split_and_get:1')
         assert fn('Aang,Katara,Sokka') == 'Katara'
 
-        fn = fn_resolver('split_and_get:+2')
+        fn = fn_resolver('split_and_get:2')
         assert fn('Aang,Katara,Sokka') == 'Sokka'
 
     def test_nth_custom_delimiter(self):
-        """Test 'split_and_get:+n:delim' shorthand with custom delimiter."""
-        fn = fn_resolver('split_and_get:+0:|')
+        """Test 'split_and_get:n:delim' shorthand with custom delimiter."""
+        fn = fn_resolver('split_and_get:0:|')
         assert fn('Fire|Water|Earth') == 'Fire'
 
-        fn = fn_resolver('split_and_get:+1:\t')
+        fn = fn_resolver('split_and_get:1:\t')
         assert fn('Aang\tKatara\tSokka') == 'Katara'
 
     def test_nth_out_of_range(self):
         """Test split_and_get with out-of-range index returns None."""
-        fn = fn_resolver('split_and_get:+10')
+        fn = fn_resolver('split_and_get:10')
         assert fn('Aang,Katara') is None
 
     def test_nth_negative_index(self):
@@ -699,7 +699,7 @@ class TestFnResolver:
 
     def test_genre_extraction(self):
         """Test extracting first genre from comma-separated list."""
-        fn = fn_resolver('split_and_get:+0')
+        fn = fn_resolver('split_and_get:0')
         assert fn('Action,Adventure,Sci-Fi') == 'Action'
         assert fn('Drama,Romance') == 'Drama'
         assert fn('Comedy') == 'Comedy'
