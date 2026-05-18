@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.8.6] - 2026-05-18
 
 ### Added
 
@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`Table` `no_update` attribute ignored since 0.8.5** — `calc_update_excludes` was merging
+- **`Table` `no_update` attribute ignored in 0.8.5** — `calc_update_excludes` was merging
   onto the existing `_update_excludes` set with `|=` instead of replacing it, so a re-run
   after the first `set_values` call could leave `no_update` columns in UPDATE/MERGE statements.
   The method now rebuilds the full exclusion set from scratch on each call.
