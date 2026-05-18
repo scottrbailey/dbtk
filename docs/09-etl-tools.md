@@ -249,10 +249,25 @@ for record in reader:
 
 # With lookup — enrich codes with descriptions on first encounter
 genre_lookup = TableLookup(cursor=cur, table='genres', key_cols='code',
-                           return_cols='name', cache=TableLookup.CACHE_PRELOAD)
-genre_collector = ValidationCollector(lookup=genre_lookup, desc_field='name')
+                           return_cols='title', cache=TableLookup.CACHE_PRELOAD)
+genre_collector = ValidationCollector(lookup=genre_lookup)
+title_cols = {
+        'tconst': {'field': 'tconst', 'primary_key': True, 'fn': title_collector},
+        'title_type': {'field': 'titleType', 'nullable': False},
+        'primary_title': {'field': 'primaryTitle', 'nullable': False},
+        'start_year': {'field': 'startYear'},
+        'end_year': {'field': 'endYear'},
+        'is_adult': {'field': 'isAdult', 'fn': 'bool'},
+        'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
+        'genre': {'field': 'genre_code', 'fn': genre_collector}
+    }
+titles = Table('titles_subset', columns=title_cols, cursor=cur)
 for record in reader:
-    genre_name = genre_collector(record['genre_code'])  # Returns enriched name
+    titles.set_values(record)
+    # If your source data contains data needed for validation tables you can enhance it in the main loop
+    # Be sure to call it after `set_values` because `collect_new` will only process after a new value is found.
+    # This prevents the collector from degrading performance on large datasets.
+    genre_collector.collect_new(record.genre_code, title=record.genre_description)
 ```
 
 For detailed `TableLookup` documentation including caching strategies and string shorthand syntax, see [Table Lookups and Validation](07-table.md#database-lookups-and-validation).
