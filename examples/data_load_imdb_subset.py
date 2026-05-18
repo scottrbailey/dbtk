@@ -217,7 +217,7 @@ if __name__ == '__main__':
         'end_year': {'field': 'endYear'},
         'is_adult': {'field': 'isAdult', 'fn': 'bool'},
         'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
-        'genres': {'field': 'genres', 'fn': ['split:,', genre_collector, array_to_json]}
+        'genres': {'field': 'genres', 'fn': ['str.split:,', genre_collector, array_to_json]}
     }
     titles = Table('titles_subset', columns=title_cols, cursor=cur)
     df = pl.scan_csv(
