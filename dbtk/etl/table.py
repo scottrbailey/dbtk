@@ -818,7 +818,7 @@ class Table:
             ...     print(f"{name}: {sql_type}")
         """
         # Query all columns from database table
-        self._cursor.execute(f"SELECT * FROM {self._name} WHERE 1=0")
+        self._cursor.execute(f"SELECT * FROM {quote_identifier(self._name)} WHERE 1=0")
 
         # Build case-insensitive map of column name to type info
         db_columns = {

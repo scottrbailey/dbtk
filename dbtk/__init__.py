@@ -3,7 +3,7 @@
 DBTK - Data Benders ToolKit
 
 A lightweight database integration toolkit that provides:
-- Uniform interface across different databases (PostgreSQL, Oracle, MySQL, SQL Server, SQLite)
+- Uniform interface across different databases (PostgreSQL, Oracle, MySQL, SQL Server, SQLite, Snowflake)
 - Flexible cursor types returning different data structures
 - YAML-based configuration with password encryption
 - Writers for CSV, Excel, fixed-width, and database-to-database export
@@ -23,7 +23,7 @@ Basic usage::
         dbtk.writers.to_excel(cursor, 'report.xlsx')
 
 Direct connections:
-    from dbtk.database import postgres, oracle
+    from dbtk.database import postgres, oracle, snowflake
 
     db = postgres(user='user', password='pass', database='db')
     cursor = db.cursor()  # Returns Record objects
