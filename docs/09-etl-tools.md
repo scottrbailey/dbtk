@@ -249,10 +249,25 @@ for record in reader:
 
 # With lookup — enrich codes with descriptions on first encounter
 genre_lookup = TableLookup(cursor=cur, table='genres', key_cols='code',
-                           return_cols='name', cache=TableLookup.CACHE_PRELOAD)
-genre_collector = ValidationCollector(lookup=genre_lookup, desc_field='name')
+                           return_cols='title', cache=TableLookup.CACHE_PRELOAD)
+genre_collector = ValidationCollector(lookup=genre_lookup)
+title_cols = {
+        'tconst': {'field': 'tconst', 'primary_key': True, 'fn': title_collector},
+        'title_type': {'field': 'titleType', 'nullable': False},
+        'primary_title': {'field': 'primaryTitle', 'nullable': False},
+        'start_year': {'field': 'startYear'},
+        'end_year': {'field': 'endYear'},
+        'is_adult': {'field': 'isAdult', 'fn': 'bool'},
+        'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
+        'genre': {'field': 'genre_code', 'fn': genre_collector}
+    }
+titles = Table('titles_subset', columns=title_cols, cursor=cur)
 for record in reader:
-    genre_name = genre_collector(record['genre_code'])  # Returns enriched name
+    titles.set_values(record)
+    # collect_new annotates a newly-seen code with extra fields from the source row.
+    # Call it right after set_values — the collector's _recently_added flag reflects
+    # the most recent __call__ and will be cleared on the next row.
+    genre_collector.collect_new(record.genre_code, title=record.genre_description)
 ```
 
 For detailed `TableLookup` documentation including caching strategies and string shorthand syntax, see [Table Lookups and Validation](07-table.md#database-lookups-and-validation).

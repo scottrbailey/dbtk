@@ -43,7 +43,7 @@ from .core import (
     get_digits,
     get_float,
     get_int,
-    get_list_item,
+    split_and_get,
     indicator,
     intsOnlyPattern,
     normalize_whitespace,
@@ -76,7 +76,7 @@ __all__ = [
     'get_digits',
 
     # List/string utilities
-    'get_list_item',
+    'split_and_get',
     'parse_list',
     'format_number',
 

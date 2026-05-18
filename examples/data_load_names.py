@@ -59,7 +59,7 @@ if __name__ == '__main__':
         'primary_name': {'field': 'primaryName', 'nullable': False, 'fn': 'maxlen:100'},
         'birth_year': {'field': 'birthYear', 'fn': 'int'},
         'death_year': {'field': 'deathYear', 'fn': 'int'},
-        'primary_profession': {'field': 'primaryProfession', 'fn': ['split:,', prof_collector, wrap_array]},
+        'primary_profession': {'field': 'primaryProfession', 'fn': ['str.split:,', prof_collector, wrap_array]},
         'known_for_titles': {'field': 'knownForTitles', 'fn': wrap_array},
     }
     names = dbtk.etl.Table('names_subset', names_cols, cursor=cur)

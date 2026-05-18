@@ -503,7 +503,7 @@ Requires `usaddress` library: `pip install usaddress`
 | Function                                  | Description              | Example                               | Returns           |
 |-------------------------------------------|--------------------------|---------------------------------------|-------------------|
 | `parse_list(value, delimiter=',')`        | Split string to list     | `parse_list('a,b,c')`                 | `['a', 'b', 'c']` |
-| `get_list_item(lst, index, default=None)` | Get item by index safely | `get_list_item(['a','b'], 5, 'N/A')`  | `'N/A'`           |
+| `split_and_get(val, index, delimiter=',')` | Split string and get nth item | `split_and_get('a,b,c', 1)` | `'b'`       |
 
 #### Utilities
 
@@ -546,7 +546,7 @@ table = Table('users', {
 
 **The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax.
 
-**The solution:** DBTK supports **string shorthand** for transformations — just write `'fn': 'int:0'` and it works. No imports, no lambdas, just clean configuration.
+**The solution:** DBTK supports **string shorthand** for transformations — just write `'fn': 'int'` and it works. No imports, no lambdas, just clean configuration.
 
 ```python
 import dbtk
@@ -554,7 +554,7 @@ import dbtk
 # OLD WAY - verbose, needs imports
 from dbtk.etl.transforms import get_int, Lookup
 table = dbtk.etl.Table('movies', {
-    'year': {'field': 'startYear', 'fn': lambda x: get_int(x) or 0},
+    'year': {'field': 'startYear', 'fn': lambda x: get_int(x)},
     'title_short': {'field': 'primaryTitle', 'fn': lambda x: str(x or '')[:255]},
     'first_genre': {'field': 'genres', 'fn': lambda x: x.split(',')[0] if x else None},
     'state_abbrev': {'field': 'location', 'fn': Lookup('states', 'name', 'abbrev')},
@@ -562,46 +562,57 @@ table = dbtk.etl.Table('movies', {
 
 # String shorthand - clean, no imports needed
 table = dbtk.etl.Table('movies', {
-    'year': {'field': 'startYear', 'fn': 'int:0'},
+    'year': {'field': 'startYear', 'fn': 'int'},
     'title_short': {'field': 'primaryTitle', 'fn': 'maxlen:255'},
-    'first_genre': {'field': 'genres', 'fn': 'nth:0'},
+    'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},
     'state_abbrev': {'field': 'location', 'fn': 'lookup:states:name:abbrev'},
 }, cursor=db.cursor())
 ```
 
 **Supported shorthands:**
 
-| Shorthand                         | Function               | Example                                           |
-|-----------------------------------|------------------------|---------------------------------------------------|
-| `'int'`                           | Parse integer          | `'123'` → `123`                                   |
-| `'int:0'`                         | Parse int with default | `''` → `0`                                        |
-| `'float'`                         | Parse float            | `'$1,234.56'` → `1234.56`                         |
-| `'bool'`                          | Parse boolean          | `'yes'` → `True`                                  |
-| `'digits'`                        | Extract digits only    | `'(800) 123-4567'` → `'8001234567'`               |
-| `'number'`                        | Convert to number      | `'$42.35'` → `42.35`                              | 
-| `'lower'` / `'upper'` / `'strip'` | String ops             | `'  AANG  '` → `'aang'`                           |
-| `'maxlen:n'`                      | Truncate to n chars    | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'` |
-| `'indicator'`                     | Boolean → Y/None       | `True` → `'Y'`, `False` → `None`                  |
-| `'indicator:inv'`                 | Inverted indicator     | `False` → `'Y'`, `True` → `None`                  |         |
-| `'indicator:Y/N'`                 | Custom true/false      | `True` → `'Y'`, `False` → `'N'`                   |
-| `'split:,'`                       | Split on delimiter     | `'a,b,c'` → `['a', 'b', 'c']`                     |
-| `'split:\t'`                      | Split on tab           | `'a\tb\tc'` → `['a', 'b', 'c']`                   |
-| `'nth:0'`                         | Get first item         | `'action,comedy,drama'` → `'action'`              |
-| `'nth:2:\t'`                      | Get 3rd tab-delimited  | `'a\tb\tc'` → `'c'`                               |
-| `'lookup:...'`                    | Database lookup        | See below ↓                                       |
-| `'validate:...'`                  | Database validation    | See below ↓                                       |
-| `'int.to_bytes'`                  | Cast then call method  | `'4'` → `b'\x04'` (Python 3.11+)                 |
-| `'str.encode'`                    | Cast then call method  | `'hello'` → `b'hello'`                            |
+| Shorthand                          | Function               | Example                                            |
+|------------------------------------|------------------------|----------------------------------------------------|
+| `'int'`                            | Parse integer          | `'123'` → `123`, `''` → `None`                    |
+| `'float'`                          | Parse float            | `'$1,234.56'` → `1234.56`                          |
+| `'bool'`                           | Parse boolean          | `'yes'` → `True`                                   |
+| `'digits'`                         | Extract digits only    | `'(800) 123-4567'` → `'8001234567'`                |
+| `'number'`                         | Convert to number      | `'$42.35'` → `42.35`                               |
+| `'maxlen:n'`                       | Truncate to n chars    | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'`  |
+| `'split_and_get:0'`                | First delimited field  | `'action,comedy,drama'` → `'action'`               |
+| `'split_and_get:1:\t'`             | Second tab field       | `'a\tb\tc'` → `'b'`                                |
+| `'nth:0'`                          | First list element     | `['action', 'comedy']` → `'action'`                |
+| `'coalesce'`                       | First non-empty value  | `[None, '', 'first']` → `'first'`                  |
+| `'indicator'`                      | Boolean → Y/None       | `True` → `'Y'`, `False` → `None`                   |
+| `'indicator:Y:N'`                  | Custom true/false      | `True` → `'Y'`, `False` → `'N'`                    |
+| `'indicator:None:Y'`               | Inverted indicator     | `False` → `'Y'`, `True` → `None`                   |
+| `'lookup:...'`                     | Database lookup        | See below ↓                                        |
+| `'validate:...'`                   | Database validation    | See below ↓                                        |
 
-The `'type.method'` pattern is a general shorthand: cast the value to `type` (`int`, `float`, `str`, or `bytes`) then call `.method()` with no additional arguments. Any no-argument method on those types works — `'float.hex'`, `'bytes.hex'`, etc.
+**Cast-and-call (`type.method`) shorthand:** cast the value to a type then call any method on it. Pass arguments with `:` — prefix integers with `+` when the method expects an `int`.
+
+| Shorthand                    | Equivalent                      |
+|------------------------------|---------------------------------|
+| `'str.lower'`                | `str(val).lower()`              |
+| `'str.upper'`                | `str(val).upper()`              |
+| `'str.strip'`                | `str(val).strip()`              |
+| `'str.strip:="'`             | `str(val).strip('="')`          |
+| `'str.lstrip:0'`             | `str(val).lstrip('0')`          |
+| `'str.split:,'`              | `str(val).split(',')`           |
+| `'str.rjust:+9:0'`           | `str(val).rjust(9, '0')`        |
+| `'str.ljust:+10: '`          | `str(val).ljust(10, ' ')`       |
+| `'datetime.strftime:%Y-%m-%d'` | `parse_datetime(val).strftime('%Y-%m-%d')` |
+| `'float.hex'`                | `float(val).hex()`              |
+
+Supported cast types: `int`, `float`, `str`, `bytes`, `datetime`.
 
 **Chaining transformations:**
 
 ```python
 # Works in lists - functions are applied in order
 table = dbtk.etl.Table('users', {
-    'username': {'field': 'email', 'fn': ['lower', 'strip', 'maxlen:50']},
-    'is_admin': {'field': 'role', 'fn': ['upper', 'indicator:Y/N']},
+    'username': {'field': 'email', 'fn': ['str.lower', 'str.strip', 'maxlen:50']},
+    'is_admin': {'field': 'role', 'fn': ['str.upper', 'indicator:Y:N']},
 }, cursor=cursor)
 ```
 
@@ -615,11 +626,11 @@ titles_table = dbtk.etl.Table('imdb_titles', {
     'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500'},
     'original_title': {'field': 'originalTitle', 'fn': 'maxlen:500'},
     'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y:N'},
-    'start_year': {'field': 'startYear', 'fn': 'int:0'},
+    'start_year': {'field': 'startYear', 'fn': 'int'},
     'end_year': {'field': 'endYear', 'fn': 'int'},
     'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
-    'first_genre': {'field': 'genres', 'fn': 'nth:0'},  # Extract first genre
-    'all_genres': {'field': 'genres', 'fn': 'split:,'},  # Or keep all as list
+    'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},  # Extract first genre
+    'all_genres': {'field': 'genres', 'fn': 'str.split:,'},       # Or keep all as list
 }, cursor=cursor)
 
 # Process file
@@ -777,8 +788,8 @@ etl_table = dbtk.etl.Table('payroll', {
 **Chaining with other transforms:**
 
 ```python
-# QueryLookup returns a code; 'upper' normalizes it
-'fn': [QueryLookup(filename='sql/region_lookup.sql', return_col='region_code'), 'upper']
+# QueryLookup returns a code; 'str.upper' normalizes it
+'fn': [QueryLookup(filename='sql/region_lookup.sql', return_col='region_code'), 'str.upper']
 ```
 
 > **Note:** `QueryLookup` does not cache results. For simple single-table lookups, `TableLookup` /

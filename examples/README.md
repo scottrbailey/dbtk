@@ -49,6 +49,29 @@ to rebuild it from the
 
 ---
 
+## [`data_load_ipeds_completions.py`](data_load_ipeds_completions.py)
+
+Multi-stage ETL that loads NCES IPEDS degree-completion data into a normalized
+warehouse, resolving institutional identities and validating CIP program codes.
+
+**Demonstrates:**
+- `IdentityManager` — resolve IPEDS UNITID → internal `institution_id`, cache
+  results, and track NOT_FOUND institutions (2-year / for-profit, out of scope)
+- `ValidationCollector` with `CACHE_PRELOAD` — preload all known CIP codes so
+  every cache miss is definitively a new code with no per-row DB queries
+- `TableLookup` exhaustive preload — cache misses short-circuit to NOT_FOUND
+  without re-querying the database for institutions not in scope
+- `alternate_keys` — store OPE ID alongside `institution_id` per entity
+- `save_state` / `load_state` — persist the identity cache for resumable runs
+- **Batched `executemany`** — identity resolution requires a row loop, but writes
+  are still batched (5,000 rows per round-trip) to retain bulk-load throughput
+- Multi-stage pipeline: reference data → dimension table → fact table
+
+**Requires:** Polars, [NCES IPEDS Data Center](https://nces.ed.gov/ipeds/datacenter/DataFiles.aspx)
+(`HD2022.zip`, `C2022_A.zip`, `CIPCode2020.zip`)
+
+---
+
 ## [`data_load_imdb_subset.py`](data_load_imdb_subset.py)
 
 ETL pipeline that builds a referentially-intact subset of the IMDB dataset
