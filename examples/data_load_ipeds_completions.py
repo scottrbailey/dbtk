@@ -25,8 +25,8 @@ Features Demonstrated
 ---------------------
 * **ValidationCollector with preload**: Load all known CIP codes at startup so every
   cache miss is definitively a new code, with no per-row database queries.
-* **collect_new / get_new_records**: Accumulate extra fields on newly-discovered codes
-  during row processing, then bulk-insert them in a single pass after the main load.
+* **collect_new / added**: Accumulate extra fields on newly-discovered codes during row
+  processing; iterate ``cip_collector.added.items()`` afterward for bulk insertion.
 * **IdentityManager**: Resolve UNITID (IPEDS source key) → institution_id (internal key),
   cache results to avoid redundant queries, and track NOT_FOUND institutions with
   structured errors.
@@ -84,9 +84,10 @@ cip_collector.collect_new(               # annotates only if _recently_added=Tru
     row['CIPCODE'],
     cip_title=row.get('cip_title', ''),  # attach any extra fields you have
 )
-# After the loop:
-new_records = cip_collector.get_new_records('cip_code')
-# [{'cip_code': '29.0202', 'cip_title': ''}, ...]
+# After the loop — iterate added.items() directly for bulk insertion:
+# [('29.0202', {'cip_title': ''}), ...]
+for code, fields in cip_collector.added.items():
+    cur.execute(insert_cip_sql, {'cip_code': code, **(fields or {})})
 ```
 
 **IdentityManager with alternate_keys**:

@@ -599,12 +599,6 @@ ValidationCollector(lookup=None, return_col=None)
 **`get_valid_mapping()`** → dict
 - Returns `{code: return_col_value}` for codes found in the reference table
 
-**`get_new_codes()`** → list
-- Returns sorted list of codes not found in the reference table
-
-**`get_new_records(code_field='code')`** → list[dict]
-- Returns one dict per new code with the code field plus any fields set by `collect_new`
-
 **`get_all()`** → set
 - Returns all collected codes (existing + new)
 

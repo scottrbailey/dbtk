@@ -294,7 +294,7 @@ if __name__ == '__main__':
     # ----------------------------------------------------------------------------------------------
     # Import new genres we collected.
     # ----------------------------------------------------------------------------------------------
-    new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]
+    new_genre = [(val, val.replace('_', ' ').title()) for val in sorted(genre_collector.added)]
     if new_genre:
         genre_insert = 'INSERT INTO genres (genre, title) VALUES (%s, %s)'
         cur.executemany(genre_insert, new_genre)

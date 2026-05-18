@@ -177,7 +177,7 @@ class TestValidationCollector:
         assert filtered_ids == ['id1', 'id3']
 
     # ------------------------------------------------------------------
-    # collect_new / get_new_records
+    # collect_new
     # ------------------------------------------------------------------
 
     def test_collect_new_noop_when_not_recently_added(self):
@@ -187,7 +187,7 @@ class TestValidationCollector:
         collector('OLD')                                   # existing — _recently_added stays False
         collector.collect_new('OLD', desc='Should not appear')
 
-        assert collector.get_new_records('code') == []
+        assert collector.added == {}
 
     def test_collect_new_annotates_new_code(self):
         """collect_new stores extra fields on a genuinely new code."""
@@ -195,9 +195,7 @@ class TestValidationCollector:
         collector('CIP01')
         collector.collect_new('CIP01', stvcipc_desc='Computer Science', active='Y')
 
-        records = collector.get_new_records('code')
-        assert len(records) == 1
-        assert records[0] == {'code': 'CIP01', 'stvcipc_desc': 'Computer Science', 'active': 'Y'}
+        assert collector.added['CIP01'] == {'stvcipc_desc': 'Computer Science', 'active': 'Y'}
 
     def test_collect_new_clears_flag(self):
         """collect_new clears _recently_added so a second call is a no-op."""
@@ -226,7 +224,7 @@ class TestValidationCollector:
         collector('E01')
         collector.collect_new('E01', desc='Should not appear')
 
-        assert collector.get_new_records('code') == []
+        assert collector.added == {}
 
     def test_recently_added_false_after_existing_code(self):
         """_recently_added is False after processing a known code."""
@@ -249,39 +247,6 @@ class TestValidationCollector:
         collector.existing['K01'] = 'Known'
         collector('K01')                                 # existing — False
         assert collector._recently_added is False
-
-    def test_get_new_records_unannotated(self):
-        """get_new_records returns unannotated codes with only the code field."""
-        collector = ValidationCollector()
-        collector('CIP05')
-        collector('CIP06')
-
-        records = collector.get_new_records('code')
-        codes = {r['code'] for r in records}
-        assert codes == {'CIP05', 'CIP06'}
-        assert all(list(r.keys()) == ['code'] for r in records)
-
-    def test_get_new_records_custom_code_field(self):
-        """get_new_records uses the supplied code_field name."""
-        collector = ValidationCollector()
-        collector('CIP07')
-        collector.collect_new('CIP07', stvcipc_desc='Engineering')
-
-        records = collector.get_new_records('stvcipc_code')
-        assert records[0]['stvcipc_code'] == 'CIP07'
-        assert records[0]['stvcipc_desc'] == 'Engineering'
-
-    def test_get_new_records_multiple_codes(self):
-        """get_new_records returns one dict per new code."""
-        collector = ValidationCollector()
-        collector('A')
-        collector.collect_new('A', desc='Alpha')
-        collector('B')
-        collector.collect_new('B', desc='Beta')
-
-        records = {r['code']: r for r in collector.get_new_records('code')}
-        assert records['A']['desc'] == 'Alpha'
-        assert records['B']['desc'] == 'Beta'
 
     def test_added_uses_none_sentinel(self):
         """New codes are stored as None until annotated."""

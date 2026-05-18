@@ -294,7 +294,7 @@ with dbtk.readers.get_reader('title.principals.tsv.gz') as reader:
 mapping = collector.get_valid_mapping()  # {code: description}
 
 # New codes (not in reference table)
-new_codes = collector.get_new_codes()  # sorted list
+new_codes = sorted(collector.added)    # codes not in reference table
 
 # All codes as a set (useful for polars filtering)
 all_codes = collector.get_all()
