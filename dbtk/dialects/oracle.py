@@ -65,7 +65,8 @@ class OracleDialect(DatabaseDialect):
                 table_comment = row[0]
 
         col_query = '''
-            SELECT LOWER(atc.column_name) column_name, atc.data_type, atc.nullable,
+            SELECT LOWER(atc.column_name) column_name, atc.data_type, atc.data_scale,
+                atc.nullable,
                 CASE WHEN pkc.position IS NOT NULL THEN 'Y' ELSE 'N' END key_column,
                 cc.comments
             FROM all_tab_cols atc
@@ -89,7 +90,7 @@ class OracleDialect(DatabaseDialect):
         columns = {}
         column_comments = {}
         for row in cursor:
-            col_name, data_type, is_nullable, is_key, comment = row
+            col_name, data_type, data_scale, is_nullable, is_key, comment = row
 
             if add_comments and comment:
                 column_comments[col_name] = comment
@@ -99,7 +100,9 @@ class OracleDialect(DatabaseDialect):
                 col_config['fn'] = 'datetime'  # Oracle DATE includes time
             elif data_type in ('TIMESTAMP', 'TIMESTAMP WITH TIME ZONE', 'TIMESTAMP WITH LOCAL TIME ZONE'):
                 col_config['fn'] = 'timestamp'
-            elif data_type in ('NUMBER', 'FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE'):
+            elif data_type == 'NUMBER':
+                col_config['fn'] = 'int' if data_scale == 0 else 'float'
+            elif data_type in ('FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE'):
                 col_config['fn'] = 'float'
 
             if is_key == 'Y':
