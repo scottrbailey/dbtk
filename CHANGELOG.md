@@ -56,11 +56,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the joined output rather than included as bare code strings. Input `'A,NEW,B'` with
   existing codes `A` and `B` returns `'Alpha,Beta'`, not `'Alpha,NEW,Beta'`.
 
+- **`lower`/`upper`/`strip`/`lstrip`/`rstrip` removed from `fn_resolver` direct dict** —
+  these are now exclusively cast-and-call: `'str.lower'`, `'str.upper'`, `'str.strip'`, etc.
+  The cast form is safer as it coerces the value to `str` before calling the method.
+
+- **`ValidationCollector.added` replaces `get_new_codes()` / `get_new_records()`** — both
+  helper methods were removed; iterate `collector.added.items()` or `sorted(collector.added)`
+  directly. The `added` attribute has always been public.
+
 ### Fixed
 
-- **`Table` 'no_update' attribute was being ignored.** A change in 0.8.5 introduced a bug that
-  caused columns with the 'no_update' attribute to still show up in the update and merge statements.  
-  The bug was fixed and several additional tests were created to ensure it doesn't happen again. 
+- **`Table` `no_update` attribute ignored since 0.8.5** — `calc_update_excludes` was merging
+  onto the existing `_update_excludes` set with `|=` instead of replacing it, so a re-run
+  after the first `set_values` call could leave `no_update` columns in UPDATE/MERGE statements.
+  The method now rebuilds the full exclusion set from scratch on each call.
+
+- **`column_defs_from_db` — `db_fn` typo generated unusable column config** — the
+  auto-timestamp heuristics (columns ending in `_at`, MySQL `created_at`/`updated_at`, SQL
+  Server `CreatedDate`/`ModifiedDate`) wrote `{'db_fn': '...'}` into the output. The Table
+  class only recognises `db_expr`; `db_fn` was silently ignored. Fixed to `db_expr` across
+  all three dialects.
+
+- **`column_defs_from_db` — `numeric`/`decimal` columns with integer scale mapped to `'float'`**
+  — PostgreSQL and SQL Server now fetch `numeric_scale` and map `numeric(n,0)` / `decimal(n,0)`
+  to `'int'`, matching the Oracle fix from earlier in this release. Unconstrained `numeric` and
+  any positive scale remains `'float'`.
+
+- **`column_defs_from_db` — MySQL `tinyint(1)` mapped to `'int'` instead of `'bool'`** —
+  MySQL conventionally uses `tinyint(1)` for boolean columns. The query now fetches
+  `column_type` (which includes the width) and maps `tinyint(1)` to `'bool'` while other
+  tinyint widths remain `'int'`.
 
 - **`ValidationCollector` new-code return value with `return_col`** — new codes now return
   `None` instead of the raw code string when `return_col` is set. This is correct for FK

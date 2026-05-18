@@ -48,6 +48,7 @@ class MySQLDialect(DatabaseDialect):
             SELECT
                 c.column_name,
                 c.data_type,
+                c.column_type,
                 c.is_nullable,
                 CASE WHEN c.column_key = 'PRI' THEN 'Y' ELSE 'N' END as key_column,
                 COALESCE(c.column_comment, '') as comments
@@ -61,13 +62,13 @@ class MySQLDialect(DatabaseDialect):
         columns = {}
         column_comments = {}
         for row in cursor:
-            col_name, data_type, is_nullable, is_key, comment = row
+            col_name, data_type, column_type, is_nullable, is_key, comment = row
 
             if add_comments and comment:
                 column_comments[col_name] = comment
 
             if col_name in ('created_at', 'updated_at') and data_type in ('datetime', 'timestamp'):
-                columns[col_name] = {'db_fn': 'CURRENT_TIMESTAMP'}
+                columns[col_name] = {'db_expr': 'CURRENT_TIMESTAMP'}
                 continue
 
             col_config = {'field': col_name}
@@ -77,6 +78,8 @@ class MySQLDialect(DatabaseDialect):
                 col_config['fn'] = 'datetime'
             elif data_type == 'time':
                 col_config['fn'] = 'time'
+            elif data_type == 'tinyint' and column_type == 'tinyint(1)':
+                col_config['fn'] = 'bool'
             elif data_type in ('tinyint', 'smallint', 'mediumint', 'int', 'bigint'):
                 col_config['fn'] = 'int'
             elif data_type in ('decimal', 'numeric', 'float', 'double'):

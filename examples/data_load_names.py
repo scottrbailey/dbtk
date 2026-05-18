@@ -66,7 +66,7 @@ if __name__ == '__main__':
     with dbtk.etl.DataSurge(names) as names_loader:
         names_loader.insert(reader)
     prof_insert = 'INSERT INTO professions (profession, title) VALUES (%s, %s)'
-    new_professions = [(val, val.replace('_', ' ').title()) for val in prof_collector.get_new_codes()]
+    new_professions = [(val, val.replace('_', ' ').title()) for val in sorted(prof_collector.added)]
     if new_professions:
         cur.executemany(prof_insert, new_professions)
         db.commit()

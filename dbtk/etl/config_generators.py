@@ -31,7 +31,7 @@ def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> 
             'id': {'field': 'id', 'primary_key': True},
             'name': {'field': 'name', 'nullable': False},
             'email': {'field': 'email'},
-            'created_at': {'db_fn': 'CURRENT_TIMESTAMP'}
+            'created_at': {'db_expr': 'CURRENT_TIMESTAMP'}
         }
 
         >>> # Copy output into your code:
@@ -39,7 +39,7 @@ def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> 
         ...     'id': {'field': 'id', 'primary_key': True},
         ...     'name': {'field': 'name', 'nullable': False},
         ...     'email': {'field': 'email'},
-        ...     'created_at': {'db_fn': 'CURRENT_TIMESTAMP'}
+        ...     'created_at': {'db_expr': 'CURRENT_TIMESTAMP'}
         ... }, cursor=cursor)
     """
     metadata = cursor.connection.dialect.table_metadata(cursor, table_name, add_comments)

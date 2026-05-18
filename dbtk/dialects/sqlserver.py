@@ -68,6 +68,7 @@ class SQLServerDialect(DatabaseDialect):
             SELECT
                 c.column_name,
                 c.data_type,
+                c.numeric_scale,
                 c.is_nullable,
                 CASE WHEN pk.column_name IS NOT NULL THEN 'Y' ELSE 'N' END as key_column,
                 COALESCE(ep.value, '') as comments
@@ -93,13 +94,13 @@ class SQLServerDialect(DatabaseDialect):
         columns = {}
         column_comments = {}
         for row in cursor:
-            col_name, data_type, is_nullable, is_key, comment = row
+            col_name, data_type, numeric_scale, is_nullable, is_key, comment = row
 
             if add_comments and comment:
                 column_comments[col_name] = comment
 
             if col_name in ('CreatedDate', 'ModifiedDate') and data_type in ('datetime', 'datetime2'):
-                columns[col_name] = {'db_fn': 'GETDATE()'}
+                columns[col_name] = {'db_expr': 'GETDATE()'}
                 continue
 
             col_config = {'field': col_name}
@@ -113,7 +114,9 @@ class SQLServerDialect(DatabaseDialect):
                 col_config['fn'] = 'time'
             elif data_type in ('int', 'bigint', 'smallint', 'tinyint'):
                 col_config['fn'] = 'int'
-            elif data_type in ('decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'):
+            elif data_type in ('decimal', 'numeric'):
+                col_config['fn'] = 'int' if numeric_scale == 0 else 'float'
+            elif data_type in ('float', 'real', 'money', 'smallmoney'):
                 col_config['fn'] = 'float'
             elif data_type == 'bit':
                 col_config['fn'] = 'bool'

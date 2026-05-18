@@ -577,29 +577,33 @@ Located in `dbtk.etl.ValidationCollector`
 ### Constructor
 
 ```python
-ValidationCollector(lookup=None, desc_field=None)
+ValidationCollector(lookup=None, return_col=None)
 ```
+
+- `lookup` — optional `TableLookup`; if supplied, codes are validated against it on first encounter
+- `return_col` — field name to extract from the lookup result and return from `__call__`; `None` (default) always returns the raw code
 
 ### Methods
 
 **`__call__(value)`** → value
-- Collects value, optionally enriches
-- Returns: original or enriched value
+- Collects value, checks it against the lookup if configured
+- Returns: raw code if `return_col` is None; the named field for existing codes, `None` for new codes if `return_col` is set
 
 **`__contains__(value)`** → bool
-- Checks if value has been collected
+- Checks if value has been seen (in either existing or added)
+
+**`collect_new(code, **fields)`**
+- Annotates a newly-added code with extra fields from the source row
+- No-op if the code was not just added (safe to call unconditionally after `set_values`)
 
 **`get_valid_mapping()`** → dict
-- Returns {code: description} for codes found in reference
-
-**`get_new_codes()`** → list
-- Returns sorted list of codes not in reference
+- Returns `{code: return_col_value}` for codes found in the reference table
 
 **`get_all()`** → set
-- Returns all collected codes
+- Returns all collected codes (existing + new)
 
 **`get_all_mapping()`** → dict
-- Returns all codes with descriptions (enriched or original)
+- Returns all codes with their `return_col` value; new unannotated codes map to `None`
 
 ---
 

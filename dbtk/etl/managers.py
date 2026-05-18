@@ -713,9 +713,6 @@ class ValidationCollector:
     def get_valid_mapping(self) -> Dict[Any, Optional[str]]:
         return {code: self._extract_col(result) for code, result in self.existing.items()}
 
-    def get_new_codes(self) -> List[Any]:
-        return sorted(self.added)
-
     def get_all_mapping(self) -> Dict[Any, Optional[str]]:
         combined = {code: self._extract_col(result) for code, result in self.existing.items()}
         combined.update({
@@ -750,45 +747,12 @@ class ValidationCollector:
                 stvmajr.set_values(record)      # triggers cip_validator(record.cip_code)
                 cip_validator.collect_new(record.cip_code, stvcipc_desc=record.cip_discipline)
 
-            for row in cip_validator.get_new_records('stvcipc_code'):
-                cur.execute(insert_sql, row)
         """
         if not self._recently_added:
             return
         self._recently_added = False
         if self.added.get(code) is None:
             self.added[code] = fields
-
-    def get_new_records(self, code_field: str = 'code') -> List[Dict[str, Any]]:
-        """
-        Return new codes and their collected fields as a list of dicts.
-
-        Each dict contains the code under ``code_field`` plus any extra fields
-        attached via :meth:`collect_new`, ready for bulk insertion into the
-        validation table. Codes with no extra fields (never annotated) are
-        included with only the code key.
-
-        Parameters
-        ----------
-        code_field : str
-            The key name to use for the code value in each returned dict.
-
-        Returns
-        -------
-        list of dict
-
-        Example
-        -------
-        ::
-
-            for row in cip_validator.get_new_records('stvcipc_code'):
-                cur.execute(
-                    "INSERT INTO stvcipc (stvcipc_code, stvcipc_desc) "
-                    "VALUES (:stvcipc_code, :stvcipc_desc)",
-                    row,
-                )
-        """
-        return [{code_field: code, **(fields or {})} for code, fields in self.added.items()]
 
     def get_all(self) -> set:
         """
