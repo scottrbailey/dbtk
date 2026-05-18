@@ -264,9 +264,9 @@ title_cols = {
 titles = Table('titles_subset', columns=title_cols, cursor=cur)
 for record in reader:
     titles.set_values(record)
-    # If your source data contains data needed for validation tables you can enhance it in the main loop
-    # Be sure to call it after `set_values` because `collect_new` will only process after a new value is found.
-    # This prevents the collector from degrading performance on large datasets.
+    # collect_new annotates a newly-seen code with extra fields from the source row.
+    # Call it right after set_values — the collector's _recently_added flag reflects
+    # the most recent __call__ and will be cleared on the next row.
     genre_collector.collect_new(record.genre_code, title=record.genre_description)
 ```
 
