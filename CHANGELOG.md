@@ -60,10 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   these are now exclusively cast-and-call: `'str.lower'`, `'str.upper'`, `'str.strip'`, etc.
   The cast form is safer as it coerces the value to `str` before calling the method.
 
-- **`ValidationCollector.added` replaces `get_new_codes()` / `get_new_records()`** — both
-  helper methods were removed; iterate `collector.added.items()` or `sorted(collector.added)`
-  directly. The `added` attribute has always been public.
-
 ### Fixed
 
 - **`Table` `no_update` attribute ignored in 0.8.5** — `calc_update_excludes` was merging
