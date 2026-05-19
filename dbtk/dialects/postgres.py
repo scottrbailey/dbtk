@@ -30,6 +30,7 @@ class PostgresDialect(DatabaseDialect):
             SELECT
                 c.column_name,
                 c.data_type,
+                c.numeric_scale,
                 c.is_nullable,
                 CASE WHEN kcu.column_name IS NOT NULL THEN 'Y' ELSE 'N' END as key_column,
                 COALESCE(col_description(pgc.oid, c.ordinal_position), '') as comments
@@ -51,7 +52,7 @@ class PostgresDialect(DatabaseDialect):
         columns = {}
         column_comments = {}
         for row in cursor:
-            col_name, data_type, is_nullable, is_key, comment = row
+            col_name, data_type, numeric_scale, is_nullable, is_key, comment = row
 
             if add_comments and comment:
                 column_comments[col_name] = comment
@@ -60,7 +61,7 @@ class PostgresDialect(DatabaseDialect):
                 'timestamp', 'timestamptz',
                 'timestamp without time zone', 'timestamp with time zone'
             ):
-                columns[col_name] = {'db_fn': 'CURRENT_TIMESTAMP'}
+                columns[col_name] = {'db_expr': 'CURRENT_TIMESTAMP'}
                 continue
 
             col_config = {'field': col_name}
@@ -74,7 +75,9 @@ class PostgresDialect(DatabaseDialect):
                 col_config['fn'] = 'time'
             elif data_type in ('smallint', 'integer', 'bigint'):
                 col_config['fn'] = 'int'
-            elif data_type in ('real', 'double precision', 'numeric', 'decimal'):
+            elif data_type in ('numeric', 'decimal'):
+                col_config['fn'] = 'int' if numeric_scale == 0 else 'float'
+            elif data_type in ('real', 'double precision'):
                 col_config['fn'] = 'float'
             elif data_type == 'boolean':
                 col_config['fn'] = 'bool'

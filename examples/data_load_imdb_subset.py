@@ -217,7 +217,7 @@ if __name__ == '__main__':
         'end_year': {'field': 'endYear'},
         'is_adult': {'field': 'isAdult', 'fn': 'bool'},
         'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
-        'genres': {'field': 'genres', 'fn': ['split:,', genre_collector, array_to_json]}
+        'genres': {'field': 'genres', 'fn': ['str.split:,', genre_collector, array_to_json]}
     }
     titles = Table('titles_subset', columns=title_cols, cursor=cur)
     df = pl.scan_csv(
@@ -334,7 +334,7 @@ if __name__ == '__main__':
     # ----------------------------------------------------------------------------------------------
     # Import new genres we collected.
     # ----------------------------------------------------------------------------------------------
-    new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]
+    new_genre = [(val, val.replace('_', ' ').title()) for val in sorted(genre_collector.added)]
     if new_genre:
         genre_insert = 'INSERT INTO genres (genre, title) VALUES (:genre, :title)'
         # convert query to match databases paramstyle, forcing positional

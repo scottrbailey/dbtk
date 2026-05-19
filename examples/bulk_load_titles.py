@@ -73,7 +73,7 @@ if __name__ == '__main__':
         'end_year': {'field': 'endYear'},
         'is_adult': {'field': 'isAdult', 'fn': 'bool'},
         'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
-        'genres': {'field': 'genres', 'fn': ['split:,', genre_collector, wrap_array]}
+        'genres': {'field': 'genres', 'fn': ['str.split:,', genre_collector, wrap_array]}
     }
     titles = Table('titles', title_cols, cursor=cur)
     # Use polars ridiculously fast... but lazy csv reader
@@ -97,7 +97,7 @@ if __name__ == '__main__':
 
 
     genre_insert = 'INSERT INTO genres (genre, title) VALUES (%s, %s) ON CONFLICT DO NOTHING'
-    new_genre = [(val, val.replace('_', ' ').title()) for val in genre_collector.get_new_codes()]
+    new_genre = [(val, val.replace('_', ' ').title()) for val in sorted(genre_collector.added)]
 
     if new_genre:
         cur.executemany(genre_insert, new_genre)

@@ -788,8 +788,8 @@ etl_table = dbtk.etl.Table('payroll', {
 **Chaining with other transforms:**
 
 ```python
-# QueryLookup returns a code; 'upper' normalizes it
-'fn': [QueryLookup(filename='sql/region_lookup.sql', return_col='region_code'), 'upper']
+# QueryLookup returns a code; 'str.upper' normalizes it
+'fn': [QueryLookup(filename='sql/region_lookup.sql', return_col='region_code'), 'str.upper']
 ```
 
 > **Note:** `QueryLookup` does not cache results. For simple single-table lookups, `TableLookup` /
