@@ -6,7 +6,7 @@
 
 **The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
 
-**The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation. Use `:named` or `%(pyformat)s` SQL parameters throughout — DBTK converts them to whatever your database requires.
+**The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
 
 For SQL file execution and `PreparedStatement`, see [Database Connections](03-database-connections.md).
 
