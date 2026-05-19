@@ -309,8 +309,8 @@ class TestNormalizeWhitespace:
         assert normalize_whitespace('   ') == ''
 
 
-class TestFormatNumber:
-    """Test format_number function for pattern formatting."""
+class TestFormatDigits:
+    """Test format_digits function for pattern formatting."""
 
     def test_format_phone_number(self):
         """Test formatting Fire Nation phone numbers."""
