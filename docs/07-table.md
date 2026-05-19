@@ -187,6 +187,7 @@ table = dbtk.etl.Table('movies', {
 | `'str.rjust:+9:0'`           | `str(val).rjust(9, '0')`        |
 | `'str.ljust:+10: '`          | `str(val).ljust(10, ' ')`       |
 | `'datetime.strftime:%Y-%m-%d'` | `parse_datetime(val).strftime('%Y-%m-%d')` |
+| `'int.to_bytes'`             | `int(val).to_bytes()`  (Python 3.11+) |
 | `'float.hex'`                | `float(val).hex()`              |
 
 Supported cast types: `int`, `float`, `str`, `datetime`.
