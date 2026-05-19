@@ -424,10 +424,9 @@ def fn_resolver(shorthand: str) -> Callable:
         ``str.rjust:+9:0``              right-justify to width 9, padded with ``'0'``
         ``str.ljust:+10: ``             left-justify to width 10, padded with space
         ``datetime.strftime:%Y-%m-%d``  format a parsed datetime
-        ``int.to_bytes``                ``int(val).to_bytes()``   (Python 3.11+)
         ``float.hex``                   ``float(val).hex()``
 
-        Supported cast types: ``int``, ``float``, ``str``, ``bytes``, ``datetime``.
+        Supported cast types: ``int``, ``float``, ``str``, ``datetime``.
 
     Database:
         ``lookup:table:key_col:val_col``    look up val_col from table by key_col
@@ -466,7 +465,7 @@ def fn_resolver(shorthand: str) -> Callable:
     parts = shorthand.split(':')
     casts = {
         'int': int, 'float': float, 'str': str,
-        'bool': bool, 'bytes': bytes, 'datetime': parse_datetime,
+        'bool': bool, 'datetime': parse_datetime,
     }
     direct = {
         'int': get_int, 'float': get_float, 'bool': get_bool,

@@ -189,7 +189,7 @@ table = dbtk.etl.Table('movies', {
 | `'datetime.strftime:%Y-%m-%d'` | `parse_datetime(val).strftime('%Y-%m-%d')` |
 | `'float.hex'`                | `float(val).hex()`              |
 
-Supported cast types: `int`, `float`, `str`, `bytes`, `datetime`.
+Supported cast types: `int`, `float`, `str`, `datetime`.
 
 **Chaining transformations:**
 
