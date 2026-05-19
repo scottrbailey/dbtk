@@ -8,8 +8,6 @@
 
 **The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
 
-For SQL file execution and `PreparedStatement`, see [Database Connections](03-database-connections.md).
-
 ## Quick Start
 
 Define a `Table`, map your source fields to database columns, and start loading data:
@@ -21,13 +19,13 @@ cursor = dbtk.connect('mydb')
 
 titles_table = dbtk.etl.Table('imdb_titles', {
     'tconst': {'field': 'tconst', 'primary_key': True},
-    'title_type': {'field': 'titleType', 'fn': 'maxlen:50'},
-    'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500'},
+    'title_type': {'field': 'titleType', 'fn': 'maxlen:50', 'required': True},
+    'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500', 'no_update': True},
     'original_title': {'field': 'originalTitle', 'fn': 'maxlen:500'},
     'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y:N'},
     'start_year': {'field': 'startYear', 'fn': 'int'},
     'end_year': {'field': 'endYear', 'fn': 'int'},
-    'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
+    'runtime_minutes': {'field': 'runtimeMinutes', 'db_expr': 'MINUTES_TO_HRS(#)'},
     'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},
     'all_genres': {'field': 'genres', 'fn': 'str.split:,'},
 }, cursor=cursor)
