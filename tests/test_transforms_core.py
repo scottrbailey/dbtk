@@ -17,8 +17,7 @@ from dbtk.etl.transforms.core import (
     get_int,
     get_float,
     normalize_whitespace,
-    format_number,
-    parse_list,
+    format_digits,
     split_and_get,
     intsOnlyPattern,
     numbersOnlyPattern,
@@ -315,75 +314,28 @@ class TestFormatNumber:
 
     def test_format_phone_number(self):
         """Test formatting Fire Nation phone numbers."""
-        assert format_number('8001234567', '(###) ###-####') == '(800) 123-4567'
-        assert format_number('5551234567', '###.###.####') == '555.123.4567'
+        assert format_digits('8001234567', '(###) ###-####') == '(800) 123-4567'
+        assert format_digits('5551234567', '###.###.####') == '555.123.4567'
 
     def test_format_ssn(self):
         """Test formatting Earth Kingdom citizen IDs."""
-        assert format_number('012345678', '###-##-####') == '012-34-5678'
-        assert format_number('123456789', '###-##-####') == '123-45-6789'
+        assert format_digits('012345678', '###-##-####') == '012-34-5678'
+        assert format_digits('123456789', '###-##-####') == '123-45-6789'
 
     def test_format_with_non_numeric(self):
         """Test formatting extracts digits from input."""
-        assert format_number('(800) 123-4567', '###.###.####') == '800.123.4567'
-        assert format_number('012-34-5678', '### ## ####') == '012 34 5678'
+        assert format_digits('(800) 123-4567', '###.###.####') == '800.123.4567'
+        assert format_digits('012-34-5678', '### ## ####') == '012 34 5678'
 
     def test_format_wrong_length(self):
         """Test formatting with wrong digit count returns original."""
-        assert format_number('12345', '###-##-####') == '12345'
-        assert format_number('123456789012', '(###) ###-####') == '123456789012'
+        assert format_digits('12345', '###-##-####') == '12345'
+        assert format_digits('123456789012', '(###) ###-####') == '123456789012'
 
     def test_format_empty(self):
         """Test formatting empty values."""
-        assert format_number(None, '###-##-####') == ''
-        assert format_number('', '###-##-####') == ''
-
-
-class TestParseList:
-    """Test parse_list function for splitting delimited strings."""
-
-    def test_parse_list_comma(self):
-        """Test parsing comma-delimited Avatar team members."""
-        assert parse_list("Aang,Katara,Sokka,Toph") == ["Aang", "Katara", "Sokka", "Toph"]
-        assert parse_list("Water,Earth,Fire,Air") == ["Water", "Earth", "Fire", "Air"]
-
-    def test_parse_list_with_spaces(self):
-        """Test parsing strips whitespace from items."""
-        assert parse_list("Aang, Katara, Sokka") == ["Aang", "Katara", "Sokka"]
-        assert parse_list("Fire Nation , Earth Kingdom , Water Tribe") == ["Fire Nation", "Earth Kingdom", "Water Tribe"]
-
-    def test_parse_list_tab(self):
-        """Test parsing tab-delimited lists."""
-        result = parse_list("Aang\tKatara\tSokka")
-        assert result == ["Aang", "Katara", "Sokka"]
-
-    def test_parse_list_pipe(self):
-        """Test parsing pipe-delimited lists."""
-        assert parse_list("Fire|Water|Earth|Air", "|") == ["Fire", "Water", "Earth", "Air"]
-
-    def test_parse_list_auto_detect_comma(self):
-        """Test auto-detecting comma delimiter."""
-        result = parse_list("North,South,East,West")
-        assert result == ["North", "South", "East", "West"]
-
-    def test_parse_list_auto_detect_tab(self):
-        """Test auto-detecting tab delimiter."""
-        result = parse_list("Fire\tWater\tEarth")
-        assert result == ["Fire", "Water", "Earth"]
-
-    def test_parse_list_multiple_delimiters_error(self):
-        """Test error when multiple delimiter types found."""
-        with pytest.raises(ValueError, match="Multiple delimiters found"):
-            parse_list("Aang,Katara|Sokka")
-
-    def test_parse_list_no_delimiter(self):
-        """Test single item when no delimiter found."""
-        assert parse_list("Avatar Aang") == ["Avatar Aang"]
-
-    def test_parse_list_empty(self):
-        """Test parsing empty values."""
-        assert parse_list(None) == []
-        assert parse_list('') == []
+        assert format_digits(None, '###-##-####') == ''
+        assert format_digits('', '###-##-####') == ''
 
 
 class TestGetListItem:
@@ -467,7 +419,7 @@ class TestEdgeCases:
     def test_very_long_strings(self):
         """Test handling very long strings."""
         long_list = ",".join([f"Member{i}" for i in range(1000)])
-        result = parse_list(long_list)
+        result = long_list.split(",")
         assert len(result) == 1000
         assert result[0] == "Member0"
         assert result[999] == "Member999"
@@ -489,7 +441,6 @@ class TestEdgeCases:
         """Test that appropriate types are preserved."""
         assert isinstance(get_int("123"), int)
         assert isinstance(get_float("123.45"), float)
-        assert isinstance(parse_list("a,b,c"), list)
         assert isinstance(get_digits("123"), str)
 
 

@@ -498,22 +498,16 @@ Requires `usaddress` library: `pip install usaddress`
 | `validate_us_address(value)`  | Validate US address format  | `validate_us_address('123 Main St')`       | Returns bool    |
 | `standardize_address(value)` | Standardize address format  | `standardize_address('123 main street')`   | `'123 Main St'` |
 
-#### Lists and Parsing
-
-| Function                                  | Description              | Example                               | Returns           |
-|-------------------------------------------|--------------------------|---------------------------------------|-------------------|
-| `parse_list(value, delimiter=',')`        | Split string to list     | `parse_list('a,b,c')`                 | `['a', 'b', 'c']` |
-| `split_and_get(val, index, delimiter=',')` | Split string and get nth item | `split_and_get('a,b,c', 1)` | `'b'`       |
-
 #### Utilities
 
-| Function                                                      | Description                 | Example                                 | Returns      |
-|---------------------------------------------------------------|-----------------------------|-----------------------------------------|--------------|
-| `coalesce(*values)`                                           | Return first non-None value | `coalesce(None, '', 'first', 'second')` | `'first'`    |
-| `indicator(value, true_val='Y', false_val=None, invert=False)` | Boolean to indicator       | `indicator(True)`                       | `'Y'`        |
-|                                                               |                             | `indicator(False)`                      | `None`       |
-|                                                               |                             | `indicator(True, 'Active', 'Inactive')` | `'Active'`   |
-| `format_number(value, decimals=2, thousands_sep=',')`         | Format number               | `format_number(1234.567)`               | `'1,234.57'` |
+| Function                                         | Description                                    | Example                                     | Returns         |
+|--------------------------------------------------|------------------------------------------------|---------------------------------------------|-----------------|
+| `coalesce(*values)`                              | Return first non-None value                    | `coalesce(None, '', 'first', 'second')`     | `'first'`       |
+| `indicator(value, true_val='Y', false_val=None)` | Boolean to indicator                           | `indicator(True)`                           | `'Y'`           |
+|                                                  |                                                | `indicator(False)`                          | `None`          |
+| `format_digits(value, pattern)`                  | Extract digits and format according to pattern | `format_digits('123456789', '###-##-####)`  | `'123-45-6789'` |
+| `split_and_get(val, index, delimiter=',')`       | Split string and get nth item                 | `split_and_get('a,b,c', 1)`                 | `'b'`       |
+
 
 #### Using in Table Definitions
 
