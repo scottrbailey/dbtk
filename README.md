@@ -69,8 +69,8 @@ The architecture is intentionally layered — use what you need, skip what you d
 Configuration   → encrypted YAML, env vars, named connections, driver overrides, smart logging
 Connection      → consistent connection and parameter handling, clean reference hierarchy
 Record          → ergonomic row handling, memory-efficient at scale
-Table           → field mapping, transforms, validation, upserts
-DataSurge       → batched inserts with progress tracking and stats
+Table           → field mapping, transforms, validation, row-wise CRUD operations
+DataSurge       → batched CRUD + merge/upsert with progress tracking and stats
 BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throughput
 Readers/Writers → consistent API across every file format and compression type
 ```

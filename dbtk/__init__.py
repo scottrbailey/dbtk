@@ -2,12 +2,14 @@
 """
 DBTK - Data Benders ToolKit
 
-A lightweight database integration toolkit that provides:
-- Uniform interface across different databases (PostgreSQL, Oracle, MySQL, SQL Server, SQLite)
-- Flexible cursor types returning different data structures
-- YAML-based configuration with password encryption
-- Writers for CSV, Excel, fixed-width, and database-to-database export
-- Context managers for connections and transactions
+A lightweight database integration / ETL toolkit that provides:
+- Configuration: encrypted YAML, named connections, env vars, driver overrides, smart logging
+- Connection: consistent connection and parameter handling, clean reference hierarchy
+- Record: ergonomic row handling, memory-efficient at scale
+- Table: field mapping, built-in and extensible transforms, robust transform shorthand, validation, CRUD + merge/upsert
+- DataSurge/BulkSurge: efficient batched processing with logging and stats using either SQL or direct loads
+- Readers/Writers: consistent API across every supported file format and compression type
+
 
 Basic usage::
 
@@ -19,17 +21,14 @@ Basic usage::
         cursor.execute("SELECT * FROM users")
 
         # Export results
-        dbtk.writers.to_csv(cursor, 'users.csv')
         dbtk.writers.to_excel(cursor, 'report.xlsx')
 
 Direct connections:
-    from dbtk.database import postgres, oracle
-
-    db = postgres(user='user', password='pass', database='db')
+    db = dbtk.database.postgres(user='user', password='pass', database='db')
     cursor = db.cursor()  # Returns Record objects
 """
 
-__version__ = '0.8.4'
+__version__ = '0.8.6'
 __author__ = 'Scott Bailey <scottrbailey@gmail.com>'
 
 from .database import Database
