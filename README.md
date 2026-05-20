@@ -67,7 +67,7 @@ The architecture is intentionally layered — use what you need, skip what you d
 
 ```
 Configuration   → encrypted YAML, env vars, named connections, driver overrides, smart logging
-Connection      → consistent connection and parameter handling, clean reference hierarchy
+Connection      → consistent connection and parameter handling; `:named` and `%(pyformat)s` SQL works everywhere
 Record          → ergonomic row handling, memory-efficient at scale; returned by all cursors and readers
 Table           → field mapping, transforms, validation, row-wise CRUD operations
 Transformations → built-in functions for dates, phones, emails, lookups and validations; simple string shorthand 
