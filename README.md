@@ -239,6 +239,8 @@ for row in cursor:
 
 **Normalized field names** let you write resilient code. Whether your source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`, you can always access it as `row.employee_id`. This means your Table field mappings work regardless of how the source system names its columns.
 
+**Polars and pandas work directly with DBTK data** — Records are dict-compatible, so `pl.from_dicts(cursor)` and `pd.DataFrame(cursor)` just work with no conversion needed. This gives you access to every format polars and pandas support (parquet, avro, Arrow IPC, and more) without any adapter code.
+
 See [Record Objects](docs/04-record.md) for complete documentation.
 
 ## Documentation
