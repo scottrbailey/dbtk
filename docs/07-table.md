@@ -660,7 +660,7 @@ for record in reader:
 import dbtk
 from dbtk.etl import transforms
 
-cursor = dbtk.connect('intel_prod')
+cursor = dbtk.connect('intel_prod').cursor()
 
 phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
     'soldier_id': {'field': 'recruit_number', 'primary_key': True},
