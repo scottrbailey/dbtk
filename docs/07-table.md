@@ -15,7 +15,7 @@ Define a `Table`, map your source fields to database columns, and start loading 
 ```python
 import dbtk
 
-cursor = dbtk.connect('mydb')
+cursor = dbtk.connect('mydb').cursor()
 
 titles_table = dbtk.etl.Table('imdb_titles', {
     'tconst': {'field': 'tconst', 'primary_key': True},
@@ -143,7 +143,7 @@ table = dbtk.etl.Table('movies', {
     'title_short': {'field': 'primaryTitle', 'fn': lambda x: str(x or '')[:255]},
     'first_genre': {'field': 'genres', 'fn': lambda x: x.split(',')[0] if x else None},
     'state_abbrev': {'field': 'location', 'fn': Lookup('states', 'name', 'abbrev')},
-}, cursor=db.cursor())
+}, cursor=cur)
 
 # String shorthand - clean, no imports needed
 table = dbtk.etl.Table('movies', {
@@ -151,7 +151,7 @@ table = dbtk.etl.Table('movies', {
     'title_short': {'field': 'primaryTitle', 'fn': 'maxlen:255'},
     'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},
     'state_abbrev': {'field': 'location', 'fn': 'lookup:states:name:abbrev'},
-}, cursor=db.cursor())
+}, cursor=cur)
 ```
 
 **Supported shorthands:**
@@ -174,21 +174,22 @@ table = dbtk.etl.Table('movies', {
 | `'lookup:...'`                     | Database lookup        | See [Database Lookups](#database-lookups-and-validation) ↓ |
 | `'validate:...'`                   | Database validation    | See [Database Lookups](#database-lookups-and-validation) ↓ |
 
-**Cast-and-call (`type.method`) shorthand:** cast the value to a type then call any method on it. Pass arguments with `:` — prefix integers with `+` when the method expects an `int`.
+**Cast-and-call (`type.method`) shorthand:** cast the value to a type then call any method on it. Pass arguments with `:` — prefix integers with `+` or `-` when the method expects an `int`.
 
-| Shorthand                    | Equivalent                      |
-|------------------------------|---------------------------------|
-| `'str.lower'`                | `str(val).lower()`              |
-| `'str.upper'`                | `str(val).upper()`              |
-| `'str.strip'`                | `str(val).strip()`              |
-| `'str.strip:="'`             | `str(val).strip('="')`          |
-| `'str.lstrip:0'`             | `str(val).lstrip('0')`          |
-| `'str.split:,'`              | `str(val).split(',')`           |
-| `'str.rjust:+9:0'`           | `str(val).rjust(9, '0')`        |
-| `'str.ljust:+10: '`          | `str(val).ljust(10, ' ')`       |
+| Shorthand                      | Equivalent                                 |
+|--------------------------------|--------------------------------------------|
+| `'str.lower'`                  | `str(val).lower()`                         |
+| `'str.upper'`                  | `str(val).upper()`                         |
+| `'str.strip'`                  | `str(val).strip()`                         |
+| `'str.strip:="'`               | `str(val).strip('="')`                     |
+| `'str.lstrip:0'`               | `str(val).lstrip('0')`                     |
+| `'str.split:,'`                | `str(val).split(',')`                      |
+| `'str.rjust:+9:0'`             | `str(val).rjust(9, '0')`                   |
+| `'str.ljust:+10: '`            | `str(val).ljust(10, ' ')`                  |
 | `'datetime.strftime:%Y-%m-%d'` | `parse_datetime(val).strftime('%Y-%m-%d')` |
 | `'int.to_bytes:+4:big'`      | `int(val).to_bytes(4, 'big')`   |
-| `'float.hex'`                | `float(val).hex()`              |
+| `'datetime.isoformat'`         | `parse_datetime(val).isoformat()`          |
+| `'float.hex'`                  | `float(val).hex()`                         |
 
 Supported cast types: `int`, `float`, `str`, `datetime`.
 
