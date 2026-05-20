@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`encoding='detect'` for all text-based readers** — pass `encoding='detect'` to
+  `get_reader()` or `open_file()` to auto-detect file encoding via `charset-normalizer`.
+  Reads a 32 KB sample of raw bytes before opening, works transparently through gzip, bz2,
+  lzma, and zip decompressors. Falls back to `utf-8-sig` with a warning if
+  `charset-normalizer` is not installed. Useful when sources inconsistently export
+  UTF-8 vs Windows-1252/latin-1 (e.g. Excel "CSV UTF-8" vs "CSV").
+
+- **`charset-normalizer>=2.0`** added to `dbtk[recommended]` and `dbtk[all]` pip extras.
+
+### Changed
+
+- **`format_number` renamed to `format_digits`** — the function formats digit strings
+  using a `#`-placeholder pattern (phone numbers, SSNs, etc.) and has nothing to do with
+  numeric formatting. The old name was misleading and attracted incorrect documentation.
+
+- **`bytes` removed as a cast type from `fn_resolver`** — `bytes(n)` produces n null bytes
+  and `bytes(str)` requires an encoding argument that cannot be passed in the shorthand
+  syntax. Neither form is useful in an ETL context. Use `int.to_bytes:+n:byteorder` (which
+  casts to `int` first) if byte conversion is genuinely needed.
+
+- **`parse_list` removed** — the auto-delimiter detection raised `ValueError` on ambiguous
+  input and only covered comma, tab, and pipe. Use the `str.split:delimiter` cast-and-call
+  shorthand instead (e.g. `'str.split:|'`).
+
+### Fixed
+
+- **`ExcelWriter` LOB column handling** — `*LOB` columns (cx_Oracle, oracledb) now correctly
+  call `.read()` before cell assignment when `preserve_types=True`. Previously openpyxl
+  received the raw LOB object and raised an error.
+
+---
+
 ## [0.8.6] - 2026-05-18
 
 ### Added
