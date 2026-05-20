@@ -324,6 +324,6 @@ df.write_avro('output.avro')
 
 # pandas — write parquet, feather, HDF5, and more
 with dbtk.readers.get_reader('data.csv') as reader:
-    df = pd.DataFrame.from_dict(reader)
+    df = pd.DataFrame(reader)
     df.to_parquet('output.parquet')
 ```
