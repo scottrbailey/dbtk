@@ -6,52 +6,38 @@
 
 **The problem:** Production ETL pipelines need field mapping, data validation, type conversions, database function integration, and error handling. Building all of this from scratch for each pipeline is time-consuming and error-prone.
 
-**The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation. Use `:named` or `%(pyformat)s` SQL parameters throughout — DBTK converts them to whatever your database requires.
+**The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
 
-For SQL file execution and `PreparedStatement`, see [Database Connections](03-database-connections.md).
+## Quick Start
 
-## Table Class for ETL
-
-The Table class provides a stateful interface for complex ETL operations with field mapping, transformations, and validations:
+Define a `Table`, map your source fields to database columns, and start loading data:
 
 ```python
 import dbtk
-from dbtk.etl import transforms
 
-cursor = dbtk.connect('intel_prod')
-# Auto-generate configuration from existing table
-config = dbtk.etl.column_defs_from_db(cursor, 'soldier_training')
+cursor = dbtk.connect('mydb').cursor()
 
-# Define ETL mapping with transformations
-phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
-    'soldier_id': {'field': 'recruit_number', 'primary_key': True},
-    'name': {'field': 'full_name', 'nullable': False},
-    'home_village': {'field': 'birthplace', 'nullable': False},
-    'firebending_skill': {'field': 'flame_control_level', 'fn': transforms.get_int},
-    'enlistment_date': {'field': 'joined_army', 'fn': transforms.parse_date},
-    'combat_name': {'field': 'full_name', 'db_expr': 'generate_fire_nation_callsign(#)'},
-    'last_drill': {'db_expr': 'CURRENT_TIMESTAMP'},
-    'conscription_source': {'default': 'Sozin Recruitment Drive'}},
-    cursor=cursor)
+titles_table = dbtk.etl.Table('imdb_titles', {
+    'tconst': {'field': 'tconst', 'primary_key': True},
+    'title_type': {'field': 'titleType', 'fn': 'maxlen:50', 'required': True},
+    'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500', 'no_update': True},
+    'original_title': {'field': 'originalTitle', 'fn': 'maxlen:500'},
+    'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y:N'},
+    'start_year': {'field': 'startYear', 'fn': 'int'},
+    'end_year': {'field': 'endYear', 'fn': 'int'},
+    'runtime_minutes': {'field': 'runtimeMinutes', 'db_expr': 'MINUTES_TO_HRS(#)'},
+    'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},
+    'all_genres': {'field': 'genres', 'fn': 'str.split:,'},
+}, cursor=cursor)
 
-# Process records with validation and upsert logic
-with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
-    for recruit in reader:
-        phoenix_king_army.set_values(recruit)
-        if phoenix_king_army.is_ready('insert'):  # Fast O(1) cached check
-            # phoenix_king_army.execute('merge') also available
-            existing_soldier = phoenix_king_army.fetch()
-            if existing_soldier:
-                phoenix_king_army.execute('update')
-            else:
-                phoenix_king_army.execute('insert')
-                
-        else:
-            missing = phoenix_king_army.reqs_missing('insert')
-            print(f"Recruit {phoenix_king_army.values['name']} ({phoenix_king_army.values['soldier_id']}) rejected: missing {missing}")
-
-print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
+with open('title.basics.tsv') as f:
+    reader = dbtk.readers.CSVReader(f, delimiter='\t')
+    for record in reader:
+        titles_table.set_values(record)
+        titles_table.execute('insert')
 ```
+
+Each column maps a source field to a database column, with optional `fn` for transformation. The `'int'`, `'maxlen:50'`, `'indicator:Y:N'` values are **string shorthand** — see [String Shorthand](#string-shorthand-for-transformations) for the full reference.
 
 ## Column Configuration Schema
 
@@ -141,270 +127,81 @@ columns_config = {
 }
 ```
 
-## Value Resolution Process
+## String Shorthand for Transformations
 
-For each column, `set_values()` processes data in this order:
+**The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax.
 
-### 1. Value Sourcing
-- **field**: Extract from source record.
-- If `field` is a list, value will also be a list.
-- If `field` is `'*'`, the entire record is passed to the transformation function instead of extracting a specific field.
-
-### 2. Null Conversion
-The value matches any entries in table.null_values it will be set to `None`.
-This is configurable but the default is: `('', 'NULL', '<null>', '\\N')`
-
-### 3. Default Fallback
-If value is `None` or `''`, apply **default** if defined. If `default` is callable,
-it is called with no arguments at this point — the return value is used. This lets
-you bind a column to a runtime value (CLI arg, job context, etc.) without knowing
-it at column-definition time:
+**The solution:** DBTK supports **string shorthand** for transformations — just write `'fn': 'int'` and it works. No imports, no lambdas, just clean configuration.
 
 ```python
-conf_vars = {}  # create before column defs, populate later
+import dbtk
 
-columns = {
-    'user_id': {'default': lambda: conf_vars['user_id']},
-    'name':    {'field': 'name'},
-}
+# OLD WAY - verbose, needs imports
+from dbtk.etl.transforms import get_int, Lookup
+table = dbtk.etl.Table('movies', {
+    'year': {'field': 'startYear', 'fn': lambda x: get_int(x)},
+    'title_short': {'field': 'primaryTitle', 'fn': lambda x: str(x or '')[:255]},
+    'first_genre': {'field': 'genres', 'fn': lambda x: x.split(',')[0] if x else None},
+    'state_abbrev': {'field': 'location', 'fn': Lookup('states', 'name', 'abbrev')},
+}, cursor=cur)
 
-table = Table('my_table', columns, cursor=cursor)
-
-# Populate conf_vars after arg parsing, before processing records
-conf_vars['user_id'] = args.user_id
+# String shorthand - clean, no imports needed
+table = dbtk.etl.Table('movies', {
+    'year': {'field': 'startYear', 'fn': 'int'},
+    'title_short': {'field': 'primaryTitle', 'fn': 'maxlen:255'},
+    'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},
+    'state_abbrev': {'field': 'location', 'fn': 'lookup:states:name:abbrev'},
+}, cursor=cur)
 ```
 
-### 4. Transformation
-Apply **fn** if defined. Functions can:
-- Transform existing values
-- Generate new values from scratch
-- If `fn` is a list, execute in order (pipeline).
-- See [Provided Data Transformations](#data-transformations) and [String Shorthand](#string-shorthand-for-transformations) sections below.
+**Supported shorthands:**
 
-### 5. Database Expression
-If **db_expr** is defined:
-- **With `#`**: Pass value from steps 1-4 as parameter
-  Example: `{'field': 'name', 'db_expr': 'UPPER(#)'}`
-- **Without `#`**: Standalone function (ignores steps 1-4)
-  Example: `{'db_expr': 'CURRENT_TIMESTAMP'}`
+| Shorthand                          | Function               | Example                                            |
+|------------------------------------|------------------------|----------------------------------------------------|
+| `'int'`                            | Parse integer          | `'123'` → `123`, `''` → `None`                    |
+| `'float'`                          | Parse float            | `'$1,234.56'` → `1234.56`                          |
+| `'bool'`                           | Parse boolean          | `'yes'` → `True`                                   |
+| `'digits'`                         | Extract digits only    | `'(800) 123-4567'` → `'8001234567'`                |
+| `'number'`                         | Convert to number      | `'$42.35'` → `42.35`                               |
+| `'maxlen:n'`                       | Truncate to n chars    | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'`  |
+| `'split_and_get:0'`                | First delimited field  | `'action,comedy,drama'` → `'action'`               |
+| `'split_and_get:1:\t'`             | Second tab field       | `'a\tb\tc'` → `'b'`                                |
+| `'nth:0'`                          | First list element     | `['action', 'comedy']` → `'action'`                |
+| `'coalesce'`                       | First non-empty value  | `[None, '', 'first']` → `'first'`                  |
+| `'indicator'`                      | Boolean → Y/None       | `True` → `'Y'`, `False` → `None`                   |
+| `'indicator:Y:N'`                  | Custom true/false      | `True` → `'Y'`, `False` → `'N'`                    |
+| `'indicator:None:Y'`               | Inverted indicator     | `False` → `'Y'`, `True` → `None`                   |
+| `'lookup:...'`                     | Database lookup        | See [Database Lookups](#database-lookups-and-validation) ↓ |
+| `'validate:...'`                   | Database validation    | See [Database Lookups](#database-lookups-and-validation) ↓ |
 
-**Key features:**
-- Field mapping and renaming
-- Data type transformations
-- Database function integration (`db_expr` lets you leverage database capabilities)
-- Required field validation with clear error messages
-- Primary key management
-- Automatic UPDATE exclusions
-- Support for INSERT, UPDATE, DELETE, MERGE operations
-- Incomplete record tracking with `counts['incomplete']`
-- `fetch()` method to retrieve existing record by primary key after `set_values()`
-- `last_error` attribute — set to an `ErrorDetail` on `DatabaseError` (when `raise_error=False`), `None` on success; useful for feeding errors directly into `IdentityManager.add_error()`
+**Cast-and-call (`type.method`) shorthand:** cast the value to a type then call any method on it. Pass arguments with `:` — prefix integers with `+` or `-` when the method expects an `int`.
 
-## Handling Incomplete Records
+| Shorthand                      | Equivalent                                 |
+|--------------------------------|--------------------------------------------|
+| `'str.lower'`                  | `str(val).lower()`                         |
+| `'str.upper'`                  | `str(val).upper()`                         |
+| `'str.strip'`                  | `str(val).strip()`                         |
+| `'str.strip:="'`               | `str(val).strip('="')`                     |
+| `'str.lstrip:0'`               | `str(val).lstrip('0')`                     |
+| `'str.split:,'`                | `str(val).split(',')`                      |
+| `'str.rjust:+9:0'`             | `str(val).rjust(9, '0')`                   |
+| `'str.ljust:+10: '`            | `str(val).ljust(10, ' ')`                  |
+| `'datetime.strftime:%Y-%m-%d'` | `parse_datetime(val).strftime('%Y-%m-%d')` |
+| `'int.to_bytes:+4:big'`      | `int(val).to_bytes(4, 'big')`   |
+| `'datetime.isoformat'`         | `parse_datetime(val).isoformat()`          |
+| `'float.hex'`                  | `float(val).hex()`                         |
 
-DBTK supports three patterns for handling incomplete records:
+Supported cast types: `int`, `float`, `str`, `datetime`.
+
+**Chaining transformations:**
 
 ```python
-# Pattern 1: Tables expected to be complete - let execute() handle validation
-# Use this when you want to track all incomplete records
-for record in records:
-    soldier_table.set_values(record)
-    # execute() automatically validates keys and required columns have values
-    soldier_table.execute('insert', raise_error=False)  # Track incomplete, don't raise
-
-print(f"Inserted: {soldier_table.counts['insert']}")
-print(f"Skipped (incomplete data): {soldier_table.counts['incomplete']}")
-
-# Pattern 2: "Optional" tables, check requirements before executing DML
-# Use this when missing data is expected and you want to skip incomplete records.
-# If you call execute(raise_error=False) with many incomplete records you will flood
-# your logs.
-for record in records:
-    recruit_table.set_values(record)
-    if recruit_table.is_ready('insert'):  # Fast cached check
-        recruit_table.execute('insert')
-    # Records with missing data are silently skipped.
-
-print(f"Inserted: {recruit_table.counts['insert']}")
-
-# Pattern 3: Strict mode - raise errors on incomplete data
-# Use this when all data must be complete
-for record in records:
-    critical_table.set_values(record)
-    critical_table.execute('insert', raise_error=True)  # Raises ValueError if incomplete
+# Works in lists - functions are applied in order
+table = dbtk.etl.Table('users', {
+    'username': {'field': 'email', 'fn': ['str.lower', 'str.strip', 'maxlen:50']},
+    'is_admin': {'field': 'role', 'fn': ['str.upper', 'indicator:Y:N']},
+}, cursor=cursor)
 ```
-
-### Readiness Checking Methods
-
-Table provides three methods for checking if a record is ready for execution:
-
-**`is_ready(operation)` → bool** - Fast O(1) cached readiness check (RECOMMENDED)
-```python
-# ✅ Use this in loops and hot paths
-table.set_values(record)
-if table.is_ready('insert'):
-    table.execute('insert')
-
-# Conditional operations based on data completeness
-if table.is_ready('update'):
-    table.execute('update')
-elif table.is_ready('insert'):
-    table.execute('insert')
-```
-- Returns True if all required columns have values for the operation
-- Calculated automatically every time `set_values()` is called
-- **Use this for performance-critical code**
-
-If you directly modify table.values, you must recalculate requirements 
-**`refresh_readiness()`** Recalculates requirements and caches results
-**`reqs_met(operation)`** Recalculates requirements no caching
-
-```python
-table.set_values(record)
-# reqs_met calculates requirements but does not cache results
-if table.reqs_met('insert'):
-    table.execute('insert')
-else:
-  table.values['status'] = 'active'  # Direct modification
-  table.refresh_readiness()          # Recalculates requirements and caches results
-  if table.is_ready('insert'):
-      table.execute('insert')
-```
-
-**`reqs_missing(operation)` → Set[str]** - Get missing column names
-```python
-# Useful for error reporting and diagnostics
-table.set_values(record)
-if not table.is_ready('insert'):
-    missing = table.reqs_missing('insert')
-    logger.warning(f"Cannot insert record {record.id}: missing {missing}")
-    # Output: Cannot insert record 123: missing {'email', 'status'}
-
-# Debug incomplete records
-for record in reader:
-    table.set_values(record)
-    missing = table.reqs_missing('insert')
-    if missing:
-        print(f"Row {record._row_num}: missing required fields: {missing}")
-```
-- Returns set of column names that are missing values
-- Empty set means record is ready
-- Perfect for error messages and validation reporting
-
-### Fetching Existing Records
-
-The `fetch()` method retrieves an existing record from the database using the primary key values from the current `table.values`. This is essential for update-or-insert logic.
-
-```python
-# Standard update-or-insert pattern
-for record in reader:
-    table.set_values(record)
-    existing = table.fetch()  # SELECT using primary key
-
-    if existing:
-        # Record exists - update it
-        table.execute('update')
-    else:
-        # Record doesn't exist - insert it
-        table.execute('insert')
-
-# Check specific fields before deciding
-for record in reader:
-    table.set_values(record)
-    existing = table.fetch()
-
-    if existing and existing.status == 'archived':
-        logger.info(f"Skipping archived record: {existing.id}")
-        continue
-    elif existing:
-        table.execute('update')
-    else:
-        table.execute('insert')
-```
-
-**Key behaviors:**
-- Returns a Record object if found, `None` if not found
-- Uses primary key columns from `table.values` for the SELECT
-- Raises `ValueError` if primary key values are missing or None
-- Executes immediately (not batched)
-- Returns the Record with all columns from the database
-
-**Common pattern with IdentityManager:**
-```python
-from dbtk.etl import IdentityManager, EntityStatus
-
-im = IdentityManager('source_id', 'target_id', resolver=stmt)
-
-for record in reader:
-    entity = im.resolve(record)  # Gets target_id
-    if entity['_status'] != EntityStatus.RESOLVED:
-        continue
-
-    table.set_values(record)  # Now has target_id populated
-    if table.fetch():  # Check if exists in database
-        table.execute('update')
-    else:
-        table.execute('insert')
-```
-
-### Error Tracking with last_error
-
-The `last_error` attribute is automatically set when database operations fail with `raise_error=False`. It contains an `ErrorDetail` object for structured error handling.
-
-```python
-from dbtk.utils import ErrorDetail
-
-# Pattern 1: Simple error tracking
-for record in reader:
-    table.set_values(record)
-    if table.execute('insert', raise_error=False):  # Returns 1 on error
-        print(f"Insert failed: {table.last_error}")
-        # Output: Insert failed: ErrorDetail(message='duplicate key', field='email', ...)
-
-# Pattern 2: Feed errors to IdentityManager
-from dbtk.etl import IdentityManager, EntityStatus
-
-im = IdentityManager('student_id', 'person_id', resolver=stmt)
-
-for record in reader:
-    entity = im.resolve(record)
-    if entity['_status'] != EntityStatus.RESOLVED:
-        continue
-
-    table.set_values(record)
-    if table.execute('insert', raise_error=False):
-        # On error: mark entity as ERROR and attach error details
-        entity['_status'] = EntityStatus.ERROR
-        im.add_error(record['student_id'], table.last_error)
-
-# Pattern 3: Collect errors for reporting
-errors = []
-for record in reader:
-    table.set_values(record)
-    if table.execute('insert', raise_error=False):
-        errors.append({
-            'row': record._row_num,
-            'id': record.id,
-            'error': table.last_error
-        })
-
-# Generate error report
-for err in errors:
-    print(f"Row {err['row']} (ID: {err['id']}): {err['error'].message}")
-```
-
-**ErrorDetail attributes:**
-- `message` - Error description
-- `field` - Column/field that caused the error (if applicable)
-- `code` - Error code (database-specific)
-- `value` - The value that caused the error (if applicable)
-
-**Key behaviors:**
-- Set to `ErrorDetail` object on DatabaseError
-- Set to `None` on successful execution
-- Only populated when `raise_error=False`
-- Preserved until next `execute()` call
-- Perfect for integration with IdentityManager error tracking
 
 ## Data Transformations
 
@@ -496,18 +293,17 @@ Requires `usaddress` library: `pip install usaddress`
 | Function                      | Description                 | Example                                    | Notes           |
 |-------------------------------|-----------------------------|--------------------------------------------|-----------------|
 | `validate_us_address(value)`  | Validate US address format  | `validate_us_address('123 Main St')`       | Returns bool    |
-| `standardize_address(value)` | Standardize address format  | `standardize_address('123 main street')`   | `'123 Main St'` |
+| `standardize_address(value)`  | Standardize address format  | `standardize_address('123 main street')`   | `'123 Main St'` |
 
 #### Utilities
 
-| Function                                         | Description                                    | Example                                     | Returns         |
-|--------------------------------------------------|------------------------------------------------|---------------------------------------------|-----------------|
-| `coalesce(*values)`                              | Return first non-None value                    | `coalesce(None, '', 'first', 'second')`     | `'first'`       |
-| `indicator(value, true_val='Y', false_val=None)` | Boolean to indicator                           | `indicator(True)`                           | `'Y'`           |
-|                                                  |                                                | `indicator(False)`                          | `None`          |
-| `format_digits(value, pattern)`                  | Extract digits and format according to pattern | `format_digits('123456789', '###-##-####)`  | `'123-45-6789'` |
-| `split_and_get(val, index, delimiter=',')`       | Split string and get nth item                 | `split_and_get('a,b,c', 1)`                 | `'b'`       |
-
+| Function                                         | Description                                    | Example                                      | Returns         |
+|--------------------------------------------------|------------------------------------------------|----------------------------------------------|-----------------|
+| `coalesce(*values)`                              | Return first non-None value                    | `coalesce(None, '', 'first', 'second')`      | `'first'`       |
+| `indicator(value, true_val='Y', false_val=None)` | Boolean to indicator                           | `indicator(True)`                            | `'Y'`           |
+|                                                  |                                                | `indicator(False)`                           | `None`          |
+| `format_digits(value, pattern)`                  | Extract digits and format according to pattern | `format_digits('123456789', '###-##-####')`  | `'123-45-6789'` |
+| `split_and_get(val, index, delimiter=',')`        | Split string and get nth item                  | `split_and_get('a,b,c', 1)`                  | `'b'`           |
 
 #### Using in Table Definitions
 
@@ -536,104 +332,23 @@ table = Table('users', {
 }, cursor=cursor)
 ```
 
-## String Shorthand for Transformations
+**Custom transformations:**
 
-**The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax.
-
-**The solution:** DBTK supports **string shorthand** for transformations — just write `'fn': 'int'` and it works. No imports, no lambdas, just clean configuration.
+Create your own transformation functions for domain-specific logic:
 
 ```python
-import dbtk
+def standardize_nation(val):
+    nation_map = {
+        'Fire Nation Colonies': 'Earth Kingdom',
+        'Foggy Swamp Tribe': 'Earth Kingdom',
+        'Kyoshi Warriors': 'Earth Kingdom'
+    }
+    return nation_map.get(val, val)
 
-# OLD WAY - verbose, needs imports
-from dbtk.etl.transforms import get_int, Lookup
-table = dbtk.etl.Table('movies', {
-    'year': {'field': 'startYear', 'fn': lambda x: get_int(x)},
-    'title_short': {'field': 'primaryTitle', 'fn': lambda x: str(x or '')[:255]},
-    'first_genre': {'field': 'genres', 'fn': lambda x: x.split(',')[0] if x else None},
-    'state_abbrev': {'field': 'location', 'fn': Lookup('states', 'name', 'abbrev')},
-}, cursor=db.cursor())
-
-# String shorthand - clean, no imports needed
-table = dbtk.etl.Table('movies', {
-    'year': {'field': 'startYear', 'fn': 'int'},
-    'title_short': {'field': 'primaryTitle', 'fn': 'maxlen:255'},
-    'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},
-    'state_abbrev': {'field': 'location', 'fn': 'lookup:states:name:abbrev'},
-}, cursor=db.cursor())
-```
-
-**Supported shorthands:**
-
-| Shorthand                          | Function               | Example                                            |
-|------------------------------------|------------------------|----------------------------------------------------|
-| `'int'`                            | Parse integer          | `'123'` → `123`, `''` → `None`                    |
-| `'float'`                          | Parse float            | `'$1,234.56'` → `1234.56`                          |
-| `'bool'`                           | Parse boolean          | `'yes'` → `True`                                   |
-| `'digits'`                         | Extract digits only    | `'(800) 123-4567'` → `'8001234567'`                |
-| `'number'`                         | Convert to number      | `'$42.35'` → `42.35`                               |
-| `'maxlen:n'`                       | Truncate to n chars    | `'maxlen:10'` on `'Avatar Aang'` → `'Avatar Aan'`  |
-| `'split_and_get:0'`                | First delimited field  | `'action,comedy,drama'` → `'action'`               |
-| `'split_and_get:1:\t'`             | Second tab field       | `'a\tb\tc'` → `'b'`                                |
-| `'nth:0'`                          | First list element     | `['action', 'comedy']` → `'action'`                |
-| `'coalesce'`                       | First non-empty value  | `[None, '', 'first']` → `'first'`                  |
-| `'indicator'`                      | Boolean → Y/None       | `True` → `'Y'`, `False` → `None`                   |
-| `'indicator:Y:N'`                  | Custom true/false      | `True` → `'Y'`, `False` → `'N'`                    |
-| `'indicator:None:Y'`               | Inverted indicator     | `False` → `'Y'`, `True` → `None`                   |
-| `'lookup:...'`                     | Database lookup        | See below ↓                                        |
-| `'validate:...'`                   | Database validation    | See below ↓                                        |
-
-**Cast-and-call (`type.method`) shorthand:** cast the value to a type then call any method on it. Pass arguments with `:` — prefix integers with `+` when the method expects an `int`.
-
-| Shorthand                    | Equivalent                      |
-|------------------------------|---------------------------------|
-| `'str.lower'`                | `str(val).lower()`              |
-| `'str.upper'`                | `str(val).upper()`              |
-| `'str.strip'`                | `str(val).strip()`              |
-| `'str.strip:="'`             | `str(val).strip('="')`          |
-| `'str.lstrip:0'`             | `str(val).lstrip('0')`          |
-| `'str.split:,'`              | `str(val).split(',')`           |
-| `'str.rjust:+9:0'`           | `str(val).rjust(9, '0')`        |
-| `'str.ljust:+10: '`          | `str(val).ljust(10, ' ')`       |
-| `'datetime.strftime:%Y-%m-%d'` | `parse_datetime(val).strftime('%Y-%m-%d')` |
-| `'float.hex'`                | `float(val).hex()`              |
-
-Supported cast types: `int`, `float`, `str`, `bytes`, `datetime`.
-
-**Chaining transformations:**
-
-```python
-# Works in lists - functions are applied in order
-table = dbtk.etl.Table('users', {
-    'username': {'field': 'email', 'fn': ['str.lower', 'str.strip', 'maxlen:50']},
-    'is_admin': {'field': 'role', 'fn': ['str.upper', 'indicator:Y:N']},
-}, cursor=cursor)
-```
-
-**Real-world example (IMDB dataset):**
-
-```python
-# Loading 12 million IMDB titles with clean configuration
-titles_table = dbtk.etl.Table('imdb_titles', {
-    'tconst': {'field': 'tconst', 'primary_key': True},
-    'title_type': {'field': 'titleType', 'fn': 'maxlen:50'},
-    'primary_title': {'field': 'primaryTitle', 'fn': 'maxlen:500'},
-    'original_title': {'field': 'originalTitle', 'fn': 'maxlen:500'},
-    'is_adult': {'field': 'isAdult', 'fn': 'indicator:Y:N'},
-    'start_year': {'field': 'startYear', 'fn': 'int'},
-    'end_year': {'field': 'endYear', 'fn': 'int'},
-    'runtime_minutes': {'field': 'runtimeMinutes', 'fn': 'int'},
-    'first_genre': {'field': 'genres', 'fn': 'split_and_get:0'},  # Extract first genre
-    'all_genres': {'field': 'genres', 'fn': 'str.split:,'},       # Or keep all as list
-}, cursor=cursor)
-
-# Process file
-with open('title.basics.tsv') as f:
-    reader = dbtk.readers.CSVReader(f, delimiter='\t')
-    for record in reader:
-        titles_table.set_values(record)
-        titles_table.execute('insert')
-
+four_nations_census = dbtk.etl.Table('population_registry', {
+    'nation': {'field': 'home_nation', 'fn': standardize_nation},
+    # ... other fields
+})
 ```
 
 ## Database Lookups and Validation
@@ -789,26 +504,305 @@ etl_table = dbtk.etl.Table('payroll', {
 > **Note:** `QueryLookup` does not cache results. For simple single-table lookups, `TableLookup` /
 > `Lookup()` / `'lookup:...'` offer lazy and preload caching.
 
-**Custom transformations:**
+## Value Resolution Process
 
-Create your own transformation functions for domain-specific logic:
+For each column, `set_values()` processes data in this order:
+
+### 1. Value Sourcing
+- **field**: Extract from source record.
+- If `field` is a list, value will also be a list.
+- If `field` is `'*'`, the entire record is passed to the transformation function instead of extracting a specific field.
+
+### 2. Null Conversion
+The value matches any entries in table.null_values it will be set to `None`.
+This is configurable but the default is: `('', 'NULL', '<null>', '\\N')`
+
+### 3. Default Fallback
+If value is `None` or `''`, apply **default** if defined. If `default` is callable,
+it is called with no arguments at this point — the return value is used. This lets
+you bind a column to a runtime value (CLI arg, job context, etc.) without knowing
+it at column-definition time:
 
 ```python
-def standardize_nation(val):
-    """Standardize nation names to official designations."""
-    nation_map = {
-        'Fire Nation Colonies': 'Earth Kingdom',
-        'Foggy Swamp Tribe': 'Earth Kingdom',
-        'Kyoshi Warriors': 'Earth Kingdom'
-    }
-    return nation_map.get(val, val)
+conf_vars = {}  # create before column defs, populate later
 
-# Use in Table configuration
-four_nations_census = dbtk.etl.Table('population_registry', {
-    'nation': {'field': 'home_nation', 'fn': standardize_nation},
-    # ... other fields
-})
+columns = {
+    'user_id': {'default': lambda: conf_vars['user_id']},
+    'name':    {'field': 'name'},
+}
+
+table = Table('my_table', columns, cursor=cursor)
+
+# Populate conf_vars after arg parsing, before processing records
+conf_vars['user_id'] = args.user_id
 ```
+
+### 4. Transformation
+Apply **fn** if defined. Functions can:
+- Transform existing values
+- Generate new values from scratch
+- If `fn` is a list, execute in order (pipeline).
+- See [Provided Data Transformations](#data-transformations) and [String Shorthand](#string-shorthand-for-transformations) sections above.
+
+### 5. Database Expression
+If **db_expr** is defined:
+- **With `#`**: Pass value from steps 1-4 as parameter
+  Example: `{'field': 'name', 'db_expr': 'UPPER(#)'}`
+- **Without `#`**: Standalone function (ignores steps 1-4)
+  Example: `{'db_expr': 'CURRENT_TIMESTAMP'}`
+
+**Key features:**
+- Field mapping and renaming
+- Data type transformations
+- Database function integration (`db_expr` lets you leverage database capabilities)
+- Required field validation with clear error messages
+- Primary key management
+- Automatic UPDATE exclusions
+- Support for INSERT, UPDATE, DELETE, MERGE operations
+- Incomplete record tracking with `counts['incomplete']`
+- `fetch()` method to retrieve existing record by primary key after `set_values()`
+- `last_error` attribute — set to an `ErrorDetail` on `DatabaseError` (when `raise_error=False`), `None` on success; useful for feeding errors directly into `IdentityManager.add_error()`
+
+## Handling Incomplete Records
+
+DBTK supports three patterns for handling incomplete records:
+
+```python
+# Pattern 1: Tables expected to be complete - let execute() handle validation
+# Use this when you want to track all incomplete records
+for record in records:
+    soldier_table.set_values(record)
+    # execute() automatically validates keys and required columns have values
+    soldier_table.execute('insert', raise_error=False)  # Track incomplete, don't raise
+
+print(f"Inserted: {soldier_table.counts['insert']}")
+print(f"Skipped (incomplete data): {soldier_table.counts['incomplete']}")
+
+# Pattern 2: "Optional" tables, check requirements before executing DML
+# Use this when missing data is expected and you want to skip incomplete records.
+# If you call execute(raise_error=False) with many incomplete records you will flood
+# your logs.
+for record in records:
+    recruit_table.set_values(record)
+    if recruit_table.is_ready('insert'):  # Fast cached check
+        recruit_table.execute('insert')
+    # Records with missing data are silently skipped.
+
+print(f"Inserted: {recruit_table.counts['insert']}")
+
+# Pattern 3: Strict mode - raise errors on incomplete data
+# Use this when all data must be complete
+for record in records:
+    critical_table.set_values(record)
+    critical_table.execute('insert', raise_error=True)  # Raises ValueError if incomplete
+```
+
+### Readiness Checking Methods
+
+Table provides three methods for checking if a record is ready for execution:
+
+**`is_ready(operation)` → bool** - Fast O(1) cached readiness check (RECOMMENDED)
+```python
+# ✅ Use this in loops and hot paths
+table.set_values(record)
+if table.is_ready('insert'):
+    table.execute('insert')
+
+# Conditional operations based on data completeness
+if table.is_ready('update'):
+    table.execute('update')
+elif table.is_ready('insert'):
+    table.execute('insert')
+```
+- Returns True if all required columns have values for the operation
+- Calculated automatically every time `set_values()` is called
+- **Use this for performance-critical code**
+
+If you directly modify table.values, you must recalculate requirements 
+**`refresh_readiness()`** Recalculates requirements and caches results
+**`reqs_met(operation)`** Recalculates requirements no caching
+
+```python
+table.set_values(record)
+# reqs_met calculates requirements but does not cache results
+if table.reqs_met('insert'):
+    table.execute('insert')
+else:
+  table.values['status'] = 'active'  # Direct modification
+  table.refresh_readiness()          # Recalculates requirements and caches results
+  if table.is_ready('insert'):
+      table.execute('insert')
+```
+
+**`reqs_missing(operation)` → Set[str]** - Get missing column names
+```python
+# Useful for error reporting and diagnostics
+table.set_values(record)
+if not table.is_ready('insert'):
+    missing = table.reqs_missing('insert')
+    logger.warning(f"Cannot insert record {record.id}: missing {missing}")
+    # Output: Cannot insert record 123: missing {'email', 'status'}
+
+# Debug incomplete records
+for record in reader:
+    table.set_values(record)
+    missing = table.reqs_missing('insert')
+    if missing:
+        print(f"Row {record._row_num}: missing required fields: {missing}")
+```
+- Returns set of column names that are missing values
+- Empty set means record is ready
+- Perfect for error messages and validation reporting
+
+**Complete example — update-or-insert with readiness checking:**
+
+```python
+import dbtk
+from dbtk.etl import transforms
+
+cursor = dbtk.connect('intel_prod').cursor()
+
+phoenix_king_army = dbtk.etl.Table('fire_nation_soldiers', {
+    'soldier_id': {'field': 'recruit_number', 'primary_key': True},
+    'name': {'field': 'full_name', 'nullable': False},
+    'home_village': {'field': 'birthplace', 'nullable': False},
+    'firebending_skill': {'field': 'flame_control_level', 'fn': 'int'},
+    'enlistment_date': {'field': 'joined_army', 'fn': 'date'},
+    'combat_name': {'field': 'full_name', 'db_expr': 'generate_fire_nation_callsign(#)'},
+    'last_drill': {'db_expr': 'CURRENT_TIMESTAMP'},
+    'conscription_source': {'default': 'Sozin Recruitment Drive'}},
+    cursor=cursor)
+
+with dbtk.readers.get_reader('fire_nation_conscripts.csv') as reader:
+    for recruit in reader:
+        phoenix_king_army.set_values(recruit)
+        if phoenix_king_army.is_ready('insert'):
+            existing_soldier = phoenix_king_army.fetch()
+            if existing_soldier:
+                phoenix_king_army.execute('update')
+            else:
+                phoenix_king_army.execute('insert')
+        else:
+            missing = phoenix_king_army.reqs_missing('insert')
+            print(f"Recruit {phoenix_king_army.values['name']} rejected: missing {missing}")
+
+print(f"Processed {phoenix_king_army.counts['insert'] + phoenix_king_army.counts['update']} soldiers")
+```
+
+### Fetching Existing Records
+
+The `fetch()` method retrieves an existing record from the database using the primary key values from the current `table.values`. This is essential for update-or-insert logic.
+
+```python
+# Standard update-or-insert pattern
+for record in reader:
+    table.set_values(record)
+    existing = table.fetch()  # SELECT using primary key
+
+    if existing:
+        # Record exists - update it
+        table.execute('update')
+    else:
+        # Record doesn't exist - insert it
+        table.execute('insert')
+
+# Check specific fields before deciding
+for record in reader:
+    table.set_values(record)
+    existing = table.fetch()
+
+    if existing and existing.status == 'archived':
+        logger.info(f"Skipping archived record: {existing.id}")
+        continue
+    elif existing:
+        table.execute('update')
+    else:
+        table.execute('insert')
+```
+
+**Key behaviors:**
+- Returns a Record object if found, `None` if not found
+- Uses primary key columns from `table.values` for the SELECT
+- Raises `ValueError` if primary key values are missing or None
+- Executes immediately (not batched)
+- Returns the Record with all columns from the database
+
+**Common pattern with IdentityManager:**
+```python
+from dbtk.etl import IdentityManager, EntityStatus
+
+im = IdentityManager('source_id', 'target_id', resolver=stmt)
+
+for record in reader:
+    entity = im.resolve(record)  # Gets target_id
+    if entity['_status'] != EntityStatus.RESOLVED:
+        continue
+
+    table.set_values(record)  # Now has target_id populated
+    if table.fetch():  # Check if exists in database
+        table.execute('update')
+    else:
+        table.execute('insert')
+```
+
+### Error Tracking with last_error
+
+The `last_error` attribute is automatically set when database operations fail with `raise_error=False`. It contains an `ErrorDetail` object for structured error handling.
+
+```python
+from dbtk.utils import ErrorDetail
+
+# Pattern 1: Simple error tracking
+for record in reader:
+    table.set_values(record)
+    if table.execute('insert', raise_error=False):  # Returns 1 on error
+        print(f"Insert failed: {table.last_error}")
+        # Output: Insert failed: ErrorDetail(message='duplicate key', field='email', ...)
+
+# Pattern 2: Feed errors to IdentityManager
+from dbtk.etl import IdentityManager, EntityStatus
+
+im = IdentityManager('student_id', 'person_id', resolver=stmt)
+
+for record in reader:
+    entity = im.resolve(record)
+    if entity['_status'] != EntityStatus.RESOLVED:
+        continue
+
+    table.set_values(record)
+    if table.execute('insert', raise_error=False):
+        # On error: mark entity as ERROR and attach error details
+        entity['_status'] = EntityStatus.ERROR
+        im.add_error(record['student_id'], table.last_error)
+
+# Pattern 3: Collect errors for reporting
+errors = []
+for record in reader:
+    table.set_values(record)
+    if table.execute('insert', raise_error=False):
+        errors.append({
+            'row': record._row_num,
+            'id': record.id,
+            'error': table.last_error
+        })
+
+# Generate error report
+for err in errors:
+    print(f"Row {err['row']} (ID: {err['id']}): {err['error'].message}")
+```
+
+**ErrorDetail attributes:**
+- `message` - Error description
+- `field` - Column/field that caused the error (if applicable)
+- `code` - Error code (database-specific)
+- `value` - The value that caused the error (if applicable)
+
+**Key behaviors:**
+- Set to `ErrorDetail` object on DatabaseError
+- Set to `None` on successful execution
+- Only populated when `raise_error=False`
+- Preserved until next `execute()` call
+- Perfect for integration with IdentityManager error tracking
 
 ## See Also
 

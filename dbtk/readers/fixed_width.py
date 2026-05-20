@@ -29,7 +29,9 @@ class FixedReader(Reader):
         processing options.
 
         Attributes:
-            fp (TextIO): The file pointer from which data is read.
+            fp (TextIO): The file pointer from which data is read. For encoding
+                detection, use ``get_reader('file.txt', encoding='detect')``
+                instead of opening the file directly.
             columns (List[FixedColumn]): A list of FixedColumn objects defining the
                 structure of columns in the data.
             auto_trim (bool): Determines whether to automatically trim whitespace
