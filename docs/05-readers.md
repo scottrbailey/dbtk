@@ -341,6 +341,24 @@ with readers.get_reader('data.csv', skip_rows=5) as reader:
         print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
 ```
 
+## Encoding
+
+All text-based readers default to `utf-8-sig`, which handles UTF-8 with or without a BOM. If your source files have inconsistent encoding — for example, Excel's "CSV UTF-8" and "CSV" exports produce different encodings — use `encoding='detect'` to auto-detect via `charset-normalizer`:
+
+```python
+# Auto-detect encoding — useful when source encoding is inconsistent
+with readers.get_reader('export.csv', encoding='detect') as reader:
+    for record in reader:
+        print(record.name)
+
+# Works transparently with compressed files too
+with readers.get_reader('export.csv.gz', encoding='detect') as reader:
+    for record in reader:
+        print(record.name)
+```
+
+`encoding='detect'` requires `charset-normalizer` (`pip install charset-normalizer`, included in `dbtk[recommended]`). If not installed, a warning is logged and encoding falls back to `utf-8-sig`.
+
 ## Filtering Records
 
 Use `add_filter()` to selectively process records. Multiple filters accumulate in a pipeline — all must return True for a record to be included.
