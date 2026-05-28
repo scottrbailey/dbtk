@@ -64,9 +64,9 @@ DRIVERS = {
         'database_type': 'oracle',
         'priority': 11,
         'param_map': {'database': 'service_name'},
-        'required_params': [{'dsn', 'user'}, {'host', 'port', 'database', 'user'}],
+        'required_params': [{'dsn', 'user'}, {'dsn', 'extra_auth_params'}, {'host', 'port', 'database', 'user'}],
         'optional_params': {'password', 'mode', 'events', 'purity', 'cclass', 'tag', 'matchanytag',
-                           'config_dir', 'wallet_location', 'wallet_password'},
+                           'config_dir', 'wallet_location', 'wallet_password', 'extra_auth_params'},
         'connection_method': 'dsn',
         'default_port': 1521
     },
@@ -323,8 +323,9 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     database_type = driver_info['database_type']
 
     # Normalize param keys to lowercase so callers can pass TrustServerCertificate,
-    # Port, etc. without being silently ignored.
-    params = {k.lower(): v for k, v in params.items()}
+    # Port, etc. without being silently ignored.  Drop None values so that
+    # optional arguments with defaults don't falsely satisfy required_params sets.
+    params = {k.lower(): v for k, v in params.items() if v is not None}
 
     # Initialize with config-only parameters if needed
     validated_params = {}
@@ -784,6 +785,14 @@ class Database:
                 port = params.pop('port', None)
                 service_name = params.pop('service_name', None)
                 params['dsn'] = db_driver.makedsn(host, port, service_name=service_name)
+            if 'extra_auth_params' in params:
+                driver_version = tuple(int(x) for x in db_driver.__version__.split('.')[:2])
+                if driver_version < (4, 0):
+                    raise ImportError(
+                        f"Cloud native authentication (extra_auth_params) requires oracledb >= 4.0 "
+                        f"(installed: {db_driver.__version__})"
+                    )
+                importlib.import_module('oracledb.plugins.oci_tokens')
             connection = db_driver.connect(**params)
         elif driver_conf['connection_method'] == 'odbc_string':
             cx_string = _get_odbc_string(odbc_driver_name=driver_conf.get('odbc_driver_name', None), **params)
@@ -834,8 +843,8 @@ def postgres(user: str, password: Optional[str] = None, database: str = 'postgre
                            host=host, port=port, driver=driver, **kwargs)
 
 
-def oracle(user: str, password: Optional[str] = None, database: str = None,
-           host: Optional[str] = None, port: int = 1521, driver: str = None,  **kwargs) -> Database:
+def oracle(user: Optional[str] = None, password: Optional[str] = None, database: str = None,
+           host: Optional[str] = None, port: int = 1521, driver: str = None, **kwargs) -> Database:
     """
     Create an Oracle database connection.
 
@@ -843,13 +852,14 @@ def oracle(user: str, password: Optional[str] = None, database: str = None,
     the best available Oracle driver (oracledb or cx_Oracle).
 
     Args:
-        user: Database username
-        password: Database password (prompts if None)
+        user: Database username. Not required when using OCI cloud native authentication
+            via ``extra_auth_params``.
+        password: Database password
         database: Service name or SID
         host: Server hostname or IP (required if not using dsn)
         port: Server port (default: 1521)
         driver: Specific driver to use ('oracledb', 'cx_Oracle')
-        **kwargs: Additional driver-specific parameters (dsn, mode, etc.)
+        **kwargs: Additional driver-specific parameters (dsn, mode, extra_auth_params, etc.)
 
     Returns:
         Database connection object with context manager support
@@ -865,6 +875,10 @@ def oracle(user: str, password: Optional[str] = None, database: str = None,
         >>> # Using DSN directly
         >>> db = oracle(user='scott', password='tiger',
         ...             dsn='oracle.example.com:1521/ORCL')
+        >>>
+        >>> # OCI Resource Principal (no credentials needed)
+        >>> db = oracle(dsn='mydb.adb.us-phoenix-1.oraclecloud.com:1521/myservice',
+        ...             extra_auth_params={'auth_type': 'ResourcePrincipal'})
 
     See Also:
         Database.create() for more connection options
