@@ -818,7 +818,7 @@ def postgres(user: str, password: Optional[str] = None, database: str = 'postgre
 
     Args:
         user: Database username
-        password: Database password (prompts if None)
+        password: Database password
         database: Database name (default: 'postgres')
         host: Server hostname or IP (default: 'localhost')
         port: Server port (default: 5432)
@@ -897,7 +897,7 @@ def mysql(user: str, password: Optional[str] = None, database: str = 'mysql',
 
     Args:
         user: Database username
-        password: Database password (prompts if None)
+        password: Database password
         database: Database name (default: 'mysql')
         host: Server hostname or IP (default: 'localhost')
         port: Server port (default: 3306)
@@ -931,7 +931,7 @@ def sqlserver(user: str, password: Optional[str] = None, database: str = None,
 
     Args:
         user: Database username
-        password: Database password (prompts if None)
+        password: Database password
         database: Database name
         host: Server hostname or IP (default: 'localhost')
         port: Server port (default: 1433)
