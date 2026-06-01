@@ -20,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`charset-normalizer>=2.0`** added to `dbtk[recommended]` and `dbtk[all]` pip extras.
 
+- **OCI cloud native authentication for Oracle** — `oracledb >= 4.0` connections now support
+  Oracle Cloud Infrastructure auth via `extra_auth_params`, eliminating the need for a
+  username or password:
+  - **Resource Principal** (`auth_type: ResourcePrincipal`) — for code running inside OCI
+    (compute instances, functions, containers); identity is provided automatically by the
+    OCI runtime.
+  - **Session Token** (`auth_type: SecurityToken`) — for code running outside OCI,
+    authenticating via OCI IAM; reads token and key from `~/.oci/config` by default.
+  - `extra_auth_params` is passed through as a dict directly to `oracledb.connect()`.
+    The `oracledb.plugins.oci_tokens` plugin is imported automatically at connect time.
+    A clear error is raised if the installed oracledb version is below 4.0.
+  - The `user` argument to `dbtk.database.oracle()` is now optional.
+
 ### Changed
 
 - **`format_number` renamed to `format_digits`** — the function formats digit strings

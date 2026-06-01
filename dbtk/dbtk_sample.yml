@@ -43,6 +43,26 @@ connections:
     user: app_user
     encrypted_password: gAAAAABh...
 
+  # OCI Resource Principal — for code running inside OCI (compute, functions, containers).
+  # No credentials needed; the OCI runtime provides the identity automatically.
+  sample_oracle_resource_principal:
+    type: oracle
+    driver: oracledb        # requires oracledb >= 4.0
+    dsn: mydb.adb.us-phoenix-1.oraclecloud.com:1521/myservice_high
+    extra_auth_params:
+      auth_type: ResourcePrincipal
+
+  # OCI Session Token — for code running outside OCI, authenticating via OCI IAM.
+  # Reads token and key from your OCI config file (defaults to ~/.oci/config).
+  sample_oracle_session_token:
+    type: oracle
+    driver: oracledb        # requires oracledb >= 4.0
+    dsn: mydb.adb.us-phoenix-1.oraclecloud.com:1521/myservice_high
+    extra_auth_params:
+      auth_type: SecurityToken
+      # file_location: ~/.oci/config   # optional, this is the default
+      # profile: DEFAULT               # optional, this is the default
+
   sample_odbc_dsn:
     driver: pyodbc_postgres
     dsn: IMDB_PG  # user or system DSN
