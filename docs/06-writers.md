@@ -308,3 +308,22 @@ For large datasets, here's when to use each writer:
 - **XML**: Use XMLStreamer for > 100K records
 - **ExcelWriter / LinkedExcelWriter**: Multi-sheet reports (any size per sheet < 1M)
 - **Fixed-width / EDI**: Legacy system integration, NACHA ACH, mainframe extracts
+
+## Writing Additional Formats
+
+For formats DBTK doesn't cover natively — parquet, avro, Arrow IPC, and anything else polars or pandas supports — no adapter code is needed. DBTK Records are dict-compatible, so both libraries consume them directly:
+
+```python
+import polars as pl
+import pandas as pd
+
+# polars — write parquet, avro, Arrow IPC, and more
+df = pl.from_dicts(cursor)
+df.write_parquet('output.parquet')
+df.write_avro('output.avro')
+
+# pandas — write parquet, feather, HDF5, and more
+with dbtk.readers.get_reader('data.csv') as reader:
+    df = pd.DataFrame(reader)
+    df.to_parquet('output.parquet')
+```

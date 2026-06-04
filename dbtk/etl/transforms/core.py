@@ -286,7 +286,7 @@ def normalize_whitespace(val: Any) -> str:
     return normalized.strip()
 
 
-def format_number(val: Any, pattern: str) -> str:
+def format_digits(val: Any, pattern: str) -> str:
     """
     Format a number string according to a pattern.
 
@@ -301,10 +301,10 @@ def format_number(val: Any, pattern: str) -> str:
         Formatted string if digit count matches, otherwise original string
 
     Example:
-        format_number('8001234567', '(###) ###-####')     # "(800) 123-4567"
-        format_number('012345678', '###-##-####')         # "012-34-5678"
-        format_number('(800) 123-4567', '###.###.####')   # "800.123.4567"
-        format_number('12345', '###-##-####')             # "12345" (wrong length)
+        format_digits('8001234567', '(###) ###-####')     # "(800) 123-4567"
+        format_digits('012345678', '###-##-####')         # "012-34-5678"
+        format_digits('(800) 123-4567', '###.###.####')   # "800.123.4567"
+        format_digits('12345', '###-##-####')             # "12345" (wrong length)
     """
     if not val:
         return ''
@@ -335,58 +335,6 @@ def format_number(val: Any, pattern: str) -> str:
             result.append(char)
 
     return ''.join(result)
-
-
-def parse_list(val: Any, delimiter: Optional[str] = None) -> List[str]:
-    """
-    Parse a delimited string into a list of items.
-
-    Args:
-        val: Delimited string to parse
-        delimiter: Delimiter to use. If None, auto-detects comma, tab, or pipe.
-                  Raises error if multiple delimiter types found.
-
-    Returns:
-        List of stripped items
-
-    Raises:
-        ValueError: If auto-detection finds multiple delimiter types
-
-    Example:
-        parse_list("a,b,c")           # ["a", "b", "c"]
-        parse_list("a|b|c", "|")      # ["a", "b", "c"]
-        parse_list("a\\tb\\tc")       # ["a", "b", "c"]
-        parse_list("a, b, c")         # ["a", "b", "c"] (strips spaces)
-    """
-    if not val:
-        return []
-
-    val_str = str(val)
-
-    # Auto-detect delimiter if not specified
-    if delimiter is None:
-        delimiters_found = []
-        if ',' in val_str:
-            delimiters_found.append(',')
-        if '\t' in val_str:
-            delimiters_found.append('\t')
-        if '|' in val_str:
-            delimiters_found.append('|')
-
-        if len(delimiters_found) > 1:
-            raise ValueError(
-                f"Multiple delimiters found: {delimiters_found}. "
-                "Please specify delimiter explicitly."
-            )
-        elif len(delimiters_found) == 1:
-            delimiter = delimiters_found[0]
-        else:
-            # No delimiter found, return single-item list
-            return [val_str.strip()]
-
-    # Split and strip each item
-    items = val_str.split(delimiter)
-    return [item.strip() for item in items]
 
 
 def split_and_get(val: str, index: int, delimiter: str = ',') -> Optional[str]:
@@ -476,10 +424,10 @@ def fn_resolver(shorthand: str) -> Callable:
         ``str.rjust:+9:0``              right-justify to width 9, padded with ``'0'``
         ``str.ljust:+10: ``             left-justify to width 10, padded with space
         ``datetime.strftime:%Y-%m-%d``  format a parsed datetime
-        ``int.to_bytes``                ``int(val).to_bytes()``   (Python 3.11+)
+        ``int.to_bytes:+4:big``         ``int(val).to_bytes(4, 'big')``
         ``float.hex``                   ``float(val).hex()``
 
-        Supported cast types: ``int``, ``float``, ``str``, ``bytes``, ``datetime``.
+        Supported cast types: ``int``, ``float``, ``str``, ``datetime``.
 
     Database:
         ``lookup:table:key_col:val_col``    look up val_col from table by key_col
@@ -518,7 +466,7 @@ def fn_resolver(shorthand: str) -> Callable:
     parts = shorthand.split(':')
     casts = {
         'int': int, 'float': float, 'str': str,
-        'bool': bool, 'bytes': bytes, 'datetime': parse_datetime,
+        'bool': bool, 'datetime': parse_datetime,
     }
     direct = {
         'int': get_int, 'float': get_float, 'bool': get_bool,

@@ -808,6 +808,9 @@ class ExcelWriter(BatchWriter):
                 elif value is None:
                     cell.value = ''
                     base_style = None
+                elif hasattr(value, 'read'):
+                    # handle LOBs
+                    cell.value = value.read()
                 else:
                     cell.value = value
                     if row_count < width_sample_size:

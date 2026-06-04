@@ -56,8 +56,8 @@ DataSurge and BulkSurge both support `pass_through` mode. Pass through mode uses
 ```python
 import dbtk
 
-source_cursor = dbtk.connect('prod_db')
-target_cursor = dbtk.connect('report_db')
+source_cursor = dbtk.connect('prod_db').cursor()
+target_cursor = dbtk.connect('report_db').cursor()
 
 source_cursor.execute('SELECT * FROM fire_nation_soldiers')
 

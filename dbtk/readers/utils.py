@@ -8,6 +8,54 @@ from pathlib import Path
 from ..defaults import settings
 
 
+def _detect_encoding(filename: str, sample_size: int = 32768) -> str:
+    """
+    Detect file encoding by sampling raw bytes using charset-normalizer.
+
+    Handles compressed files by reading through the decompressor.
+    Falls back to utf-8-sig if charset-normalizer is not installed or detection fails.
+    """
+    try:
+        from charset_normalizer import from_bytes
+    except ImportError:
+        import logging
+        logging.getLogger(__name__).warning(
+            "charset-normalizer not installed; falling back to utf-8-sig. "
+            "Install with: pip install charset-normalizer"
+        )
+        return 'utf-8-sig'
+
+    try:
+        if filename.endswith('.gz'):
+            import gzip
+            with gzip.open(filename, 'rb') as f:
+                sample = f.read(sample_size)
+        elif filename.endswith('.bz2'):
+            import bz2
+            with bz2.open(filename, 'rb') as f:
+                sample = f.read(sample_size)
+        elif filename.endswith('.xz'):
+            import lzma
+            with lzma.open(filename, 'rb') as f:
+                sample = f.read(sample_size)
+        elif filename.endswith('.zip'):
+            import zipfile
+            with zipfile.ZipFile(filename, 'r') as zf:
+                members = zf.namelist()
+                if not members:
+                    return 'utf-8-sig'
+                with zf.open(members[0]) as f:
+                    sample = f.read(sample_size)
+        else:
+            with open(filename, 'rb') as f:
+                sample = f.read(sample_size)
+    except (OSError, IOError):
+        return 'utf-8-sig'
+
+    result = from_bytes(sample).best()
+    return str(result.encoding) if result else 'utf-8-sig'
+
+
 def open_file(filename: Union[str, Path],
               mode: str = 'rt',
               encoding: Optional[str] = None,
@@ -50,6 +98,9 @@ def open_file(filename: Union[str, Path],
     """
     # Convert Path to string for compatibility with extension checks
     filename = str(filename) if isinstance(filename, Path) else filename
+
+    if encoding == 'detect':
+        encoding = _detect_encoding(filename)
 
     effective_encoding = encoding or 'utf-8-sig'
     buffer_size = settings.get('compressed_file_buffer_size', 1024 * 1024)
@@ -210,7 +261,9 @@ def get_reader(filename: Union[str, Path],
 
     Args:
         filename: Path to data file (e.g., 'data.csv', 'data.csv.gz', 'archive.zip', or Path object)
-        encoding: File encoding for text files
+        encoding: File encoding for text files. Use 'detect' to auto-detect via charset-normalizer
+            (requires ``pip install charset-normalizer``). Useful when sources inconsistently
+            export UTF-8 vs latin-1/Windows-1252.
         **kwargs: Additional arguments passed to specific readers:
             - null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA')
             - sheet_name, sheet_index: For Excel files

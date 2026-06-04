@@ -67,10 +67,11 @@ The architecture is intentionally layered — use what you need, skip what you d
 
 ```
 Configuration   → encrypted YAML, env vars, named connections, driver overrides, smart logging
-Connection      → consistent connection and parameter handling, clean reference hierarchy
-Record          → ergonomic row handling, memory-efficient at scale
-Table           → field mapping, transforms, validation, upserts
-DataSurge       → batched inserts with progress tracking and stats
+Connection      → consistent connection and parameter handling; `:named` and `%(pyformat)s` SQL works everywhere
+Record          → ergonomic row handling, memory-efficient at scale; returned by all cursors and readers
+Table           → field mapping, transforms, validation, row-wise CRUD operations
+Transformations → built-in functions for dates, phones, emails, lookups and validations; simple string shorthand 
+DataSurge       → batched CRUD + merge/upsert with progress tracking, logging and stats
 BulkSurge       → direct bulk loads (SQL*Loader, BCP, COPY) for maximum throughput
 Readers/Writers → consistent API across every file format and compression type
 ```
@@ -103,19 +104,6 @@ toy benchmarks — they include field mapping, type conversions, validation, and
 constraints. The same pipeline that takes seconds in DBTK can take hours in a drag-and-drop
 ETL platform.
 
-## Features
-
-- **Universal Database Connectivity** - Unified interface across PostgreSQL, Oracle, MySQL, SQL Server, and SQLite with intelligent driver auto-detection
-- **Portable SQL Queries** - Write SQL once with named parameters, runs on any database regardless of parameter style
-- **Smart Cursors** - All cursors and readers return Record objects with the speed and efficiency of tuples and the flexibility of dicts
-- **Flexible File Reading** - CSV, Excel (XLS/XLSX), JSON, NDJSON, XML, DataFrame and fixed-width text files with consistent API
-- **Transparent Compression** - Automatic decompression of .gz, .bz2, .xz, and .zip files with smart member selection
-- **Multiple Export Formats** - Write to CSV, Excel, JSON, NDJSON, XML, fixed-width text, or directly between databases
-- **Advanced ETL Framework** - Full-featured Table class for complex data transformations, validations, and upserts
-- **Data Transformations** - Built-in functions for dates, phones, emails, and custom data cleaning with international support
-- **High-Performance Bulk Operations** - DataSurge for blazing-fast batch operations; BulkSurge for even faster direct loading when supported
-- **Integrated Logging** - Timestamped log files with automatic cleanup, split error logs, and zero-config setup
-- **Encrypted Configuration** - YAML-based config with password encryption and environment variable support
 
 ## Installation
 
@@ -250,6 +238,8 @@ for row in cursor:
 ```
 
 **Normalized field names** let you write resilient code. Whether your source column is `Employee_ID`, `EMPLOYEE ID`, or `employee_id`, you can always access it as `row.employee_id`. This means your Table field mappings work regardless of how the source system names its columns.
+
+**Polars and pandas integrate seamlessly in both directions.** Records are dict-compatible, so `pl.from_dicts(cursor)` and `pd.DataFrame(cursor)` just work with no conversion needed — giving you access to every output format polars and pandas support (parquet, avro, Arrow IPC, and more). Going the other way, `DataFrameReader` wraps any polars or pandas DataFrame as a DBTK reader, so you can use polars to read and transform parquet, avro, or any other format and feed the result straight into a `Table` or `DataSurge`.
 
 See [Record Objects](docs/04-record.md) for complete documentation.
 

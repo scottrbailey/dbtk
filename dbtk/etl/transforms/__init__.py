@@ -38,7 +38,7 @@ from .core import (
     capitalize,
     coalesce,
     fn_resolver,
-    format_number,
+    format_digits,
     get_bool,
     get_digits,
     get_float,
@@ -48,8 +48,7 @@ from .core import (
     intsOnlyPattern,
     normalize_whitespace,
     numbersOnlyPattern,
-    parse_list,
-    to_number,
+    to_number
 )
 
 from .phone import phone_validate, phone_clean
@@ -77,8 +76,7 @@ __all__ = [
 
     # List/string utilities
     'split_and_get',
-    'parse_list',
-    'format_number',
+    'format_digits',
 
     # Patterns
     'intsOnlyPattern',

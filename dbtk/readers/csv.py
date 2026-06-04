@@ -24,7 +24,9 @@ class CSVReader(Reader):
     Parameters
     ----------
     fp : file-like object
-        Open file pointer to CSV file (from open() or similar)
+        Open file pointer to CSV file (from open() or similar). For encoding
+        detection, use ``get_reader('file.csv', encoding='detect')`` instead
+        of opening the file directly.
     dialect : csv.Dialect, default csv.excel
         CSV dialect defining formatting rules. Common options:
 
