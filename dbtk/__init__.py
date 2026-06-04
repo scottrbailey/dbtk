@@ -28,7 +28,7 @@ Direct connections:
     cursor = db.cursor()  # Returns Record objects
 """
 
-__version__ = '0.8.6'
+__version__ = '0.8.7'
 __author__ = 'Scott Bailey <scottrbailey@gmail.com>'
 
 from .database import Database
