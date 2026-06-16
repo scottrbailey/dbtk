@@ -716,6 +716,7 @@ def generate_encryption_key() -> str:
     Returns:
         str: A randomly generated encryption key."""
     key = _generate_encryption_key()
+    print(key)
     if HAS_KEYRING:
         msg = "Key generated.  Store in system keyring with `dbtk store-key [your key]`"
     else:
