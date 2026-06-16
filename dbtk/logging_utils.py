@@ -7,6 +7,7 @@ the pattern of creating timestamped log files like script_name_YYYYMMDD_HHMMSS.l
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -108,6 +109,7 @@ def setup_logging(
 
     # Get settings with fallbacks
     log_dir = log_dir or logging_config.get('directory', './logs')
+    log_dir = os.path.expandvars(log_dir)
     level = level or logging_config.get('level', 'INFO')
     split_errors = split_errors if split_errors is not None else logging_config.get('split_errors', True)
     console = console if console is not None else logging_config.get('console', True)
@@ -278,6 +280,7 @@ def cleanup_old_logs(
 
     # Get settings with fallbacks
     log_dir = log_dir or logging_config.get('directory', './logs')
+    log_dir = os.path.expandvars(log_dir)
     retention_days = retention_days or logging_config.get('retention_days', 30)
 
     log_dir_path = Path(log_dir).expanduser()
