@@ -61,6 +61,15 @@ def _expand_env_var(value: str) -> str:
         return result
 
 
+def _expand_env_vars(value: Any) -> Any:
+    """Recursively expand env var references in strings and dicts."""
+    if isinstance(value, str):
+        return _expand_env_var(value)
+    if isinstance(value, dict):
+        return {k: _expand_env_vars(v) for k, v in value.items()}
+    return value
+
+
 def _ensure_sample_config():
     """Copy sample config to ~/.config if no config exists and sample doesn't exist there."""
     import shutil
@@ -416,7 +425,7 @@ class ConfigManager:
             else:
                 return settings.get(k)
 
-        return value
+        return _expand_env_vars(value)
 
     def set_setting(self, key: str, value: Any) -> None:
         """
