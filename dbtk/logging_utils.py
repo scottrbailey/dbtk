@@ -117,7 +117,7 @@ def setup_logging(
     filename_format = logging_config.get('filename_format', '%Y%m%d_%H%M%S')
 
     # Create log directory
-    log_dir_path = Path(log_dir)
+    log_dir_path = Path(log_dir).expanduser()
     log_dir_path.mkdir(parents=True, exist_ok=True)
 
     # Generate filename with optional timestamp
@@ -280,7 +280,7 @@ def cleanup_old_logs(
     log_dir = log_dir or logging_config.get('directory', './logs')
     retention_days = retention_days or logging_config.get('retention_days', 30)
 
-    log_dir_path = Path(log_dir)
+    log_dir_path = Path(log_dir).expanduser()
     if not log_dir_path.exists():
         logger.warning(f"Log directory does not exist: {log_dir_path}")
         return []
