@@ -101,7 +101,12 @@ def setup_logging(
 
     # Get script name from command line if not provided
     if script_name is None:
-        script_name = Path(sys.argv[0]).stem
+        argv0 = Path(sys.argv[0]).stem
+        # Interactive shells (python -c, ipython, jupyter, etc.) produce
+        # unhelpful names — fall back to 'interactive'
+        if not argv0 or argv0 in ('-c', '-m', '__main__') or argv0.startswith('ipykernel'):
+            argv0 = 'interactive'
+        script_name = argv0
 
     # Load logging config dict
     logging_config = get_setting('logging', {})
