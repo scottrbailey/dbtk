@@ -1051,16 +1051,14 @@ def setup_config() -> None:
         if choice == '1':
             # Keyring option
             if not HAS_KEYRING:
-                print(dedent("""\
+                raise RuntimeError(dedent("""\
                 ⚠ The 'keyring' library is not installed.
-                
-                To use keyring for encryption keys:
-                  1. Install keyring: pip install keyring
-                  2. Re-run: dbtk config-setup
-                  
-                Exiting setup. Please install keyring and restart.
+
+                To store your encryption key, choose one of:
+                  1. Install keyring: pip install keyring, then re-run dbtk config-setup
+                  2. Set DBTK_ENCRYPTION_KEY environment variable: run dbtk config-setup and choose option 2
+                  3. Run dbtk generate-key and export the key manually
                 """))
-                return
             else:
                 # Generate and store in keyring
                 key = generate_encryption_key()
@@ -1080,7 +1078,7 @@ def setup_config() -> None:
             else:
                 print(dedent(f"""\
                 Add this to your shell profile (~/.bashrc, ~/zshrc, etc.):
-                  export DBTK_ENCRYPTION_KEY='key'"""))
+                  export DBTK_ENCRYPTION_KEY='{key}'"""))
             # Store in current session so we can continue
             os.environ['DBTK_ENCRYPTION_KEY'] = key
             print("\n✓ Key set for this session (you can add connections below)")
