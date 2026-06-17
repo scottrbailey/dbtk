@@ -19,7 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   object columns have zero per-row overhead. Postgres arrays and JSON columns (which
   already arrive as native Python types) are unaffected.
 
+- **`cursor.native_cursor` and `connection.native_connection`** — read-only properties
+  that expose the underlying driver cursor and connection objects for driver-specific
+  operations that dbtk doesn't wrap.
+
 ### Fixed
+
+- **Empty Excel header cells produced `None` in `record._fields`** — `cell.value` is
+  `None` for blank header cells; `set_fields` now replaces `None` and empty strings with
+  `'col'` before deduplication, so multiple unnamed columns become `col`, `col_2`,
+  `col_3`, etc. and `_fields` never contains `None`.
+
 
 - **`dbtk generate-key` did not print the key** — the key was returned but never printed
   to stdout, leaving users with only the instructional message and no key to copy.
