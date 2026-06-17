@@ -180,7 +180,9 @@ def main():
     elif args.command == 'config-setup':
         return config.setup_config()
     elif args.command == 'generate-key':
-        config.generate_encryption_key()
+        key = config.generate_encryption_key()
+        print(key)
+        return
     elif args.command == 'store-key':
         return config.store_key(args.key, force=args.force)
     elif args.command == 'encrypt-config':

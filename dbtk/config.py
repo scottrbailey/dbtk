@@ -725,7 +725,6 @@ def generate_encryption_key() -> str:
     Returns:
         str: A randomly generated encryption key."""
     key = _generate_encryption_key()
-    print(key)
     if HAS_KEYRING:
         msg = "Key generated.  Store in system keyring with `dbtk store-key [your key]`"
     else:
@@ -1070,14 +1069,14 @@ def setup_config() -> None:
                 """))
             else:
                 # Generate and store in keyring
-                key = generate_encryption_key()
+                key = _generate_encryption_key()
                 store_key(key)
                 has_keyring_key = True
                 print(f"\n✓ Generated encryption key and stored in system keyring")
 
         elif choice == '2':
             # Environment variable option
-            key = generate_encryption_key()
+            key = _generate_encryption_key()
             print(f"\n✓ Generated encryption key:")
             print(f"\n  {key}")
             if os.name == 'nt':
