@@ -287,16 +287,20 @@ This means the converted value works immediately with writers, JSON serializatio
 normal Python code — no manual unpacking required.
 
 ```python
-# Given an Oracle OBJECT type:
-# CREATE TYPE fast_levels_obj AS OBJECT (crn NUMBER, level1 VARCHAR2(100), ...)
+# Given Oracle types:
+# CREATE TYPE address_obj AS OBJECT (street VARCHAR2(100), city VARCHAR2(50), zip VARCHAR2(10));
+# CREATE TYPE phone_list AS TABLE OF VARCHAR2(20);
 
-cursor.execute("SELECT crn, get_fast_levels(crn) AS fast_id FROM sections")
+cursor.execute("SELECT id, name, get_address(id) AS address, get_phones(id) AS phones FROM contacts")
 
 for row in cursor:
-    print(row.fast_id)
-    # {'CRN': 10020, 'LEVEL1': 'UG', 'LEVEL2': 'GRAD', ...}
+    print(row.address)
+    # {'STREET': '123 Main St', 'CITY': 'Springfield', 'ZIP': '12345'}
 
-# Works directly with writers
+    print(row.phones)
+    # ['555-1234', '555-5678']
+
+# Works directly with writers — address serialized as JSON string in CSV
 dbtk.writers.to_csv(cursor)
 ```
 
