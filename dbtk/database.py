@@ -558,6 +558,11 @@ class Database:
             self._cursor_settings = dict()
 
     @property
+    def native_connection(self):
+        """The underlying driver connection."""
+        return self._connection
+
+    @property
     def dialect(self):
         """Database dialect instance providing SQL generation and schema introspection."""
         return self._dialect

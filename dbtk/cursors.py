@@ -242,6 +242,11 @@ class Cursor:
         if not hasattr(self._cursor, 'arraysize'):
             self.__dict__['arraysize'] = 1000
 
+    @property
+    def native_cursor(self):
+        """The underlying driver cursor."""
+        return self._cursor
+
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying cursor."""
         if key == 'statement' and not hasattr(self._cursor, 'statement'):

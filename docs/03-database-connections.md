@@ -99,8 +99,8 @@ print(cursor.connection.connection_name) # imdb
 print(cursor.connection.driver.__name__)       # 'psycopg2', 'oracledb', etc.
 
 # Access the wrapped connection or cursor
-cursor.connection._connection
-cursor._cursor
+cursor.native_cursor
+cursor.connection.native_connection
 
 # Use driver exceptions
 try:
@@ -278,10 +278,10 @@ user = cursor.selectinto("SELECT * FROM users WHERE id = :id", {'id': 42})
 When a query returns an Oracle `OBJECT`, `VARRAY`, or nested `TABLE` column, dbtk
 automatically converts it to a native Python type at fetch time:
 
-| Oracle type | Python type |
-|-------------|-------------|
-| `OBJECT`    | `dict` — keyed by attribute name |
-| `VARRAY` / nested `TABLE` | `list` |
+| Oracle type               | Python type                      |
+|---------------------------|----------------------------------|
+| `OBJECT`                  | `dict` — keyed by attribute name |
+| `VARRAY` / nested `TABLE` | `list`                           |
 
 This means the converted value works immediately with writers, JSON serialization, and
 normal Python code — no manual unpacking required.
