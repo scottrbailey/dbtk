@@ -369,7 +369,7 @@ class Cursor:
             # which have neither attribute, so this stays empty and costs nothing).
             self._object_columns = tuple(
                 i for i, col in enumerate(self.description)
-                if hasattr(col[1], 'attributes') or hasattr(col[1], 'iscollection')
+                if str(col[1]) == 'DB_TYPE_OBJECT'
             )
 
         RecordClass = type('Record', (Record,), {})
