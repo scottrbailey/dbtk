@@ -155,10 +155,9 @@ class Cursor:
     """
     # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [
-        'connection', 'debug', 'return_cursor',
-        'placeholder', 'paramstyle', 'record_factory', 'batch_size',
-        '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method',
-        '_object_columns'
+        'connection', 'debug', 'return_cursor', 'placeholder', 'paramstyle', 'record_factory',
+        'batch_size', '_cursor', 'native_cursor', '_row_factory_invalid', '_statement',
+        '_bind_vars', '_bulk_method', '_object_columns'
     ]
     # Attributes that are allowed to be passed in from the connection/configuration layer
     WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor', 'fast_executemany')
