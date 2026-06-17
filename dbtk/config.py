@@ -712,7 +712,7 @@ def _generate_encryption_key() -> str:
     return Fernet.generate_key().decode()
 
 
-def generate_encryption_key() -> str:
+def generate_encryption_key() -> None:
     """
     Generate a random encryption key.
 
@@ -731,7 +731,6 @@ def generate_encryption_key() -> str:
     else:
         msg = "Key generated.  Store in DBTK_ENCRYPTION_KEY environment variable"
     print(msg)
-    return key
 
 
 def set_config_file(config_file: Union[str, Path]) -> None:
@@ -1070,14 +1069,14 @@ def setup_config() -> None:
                 """))
             else:
                 # Generate and store in keyring
-                key = generate_encryption_key()
+                key = _generate_encryption_key()
                 store_key(key)
                 has_keyring_key = True
                 print(f"\n✓ Generated encryption key and stored in system keyring")
 
         elif choice == '2':
             # Environment variable option
-            key = generate_encryption_key()
+            key = _generate_encryption_key()
             print(f"\n✓ Generated encryption key:")
             print(f"\n  {key}")
             if os.name == 'nt':
