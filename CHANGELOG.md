@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Oracle DB object/collection columns auto-converted at fetch time** — when a query
+  returns an Oracle `OBJECT` type column, the cursor now converts it to a Python `dict`
+  keyed by attribute name. `VARRAY` and nested `TABLE` collection columns are converted
+  to a Python `list`. Conversion is recursive, so nested objects are fully unwound.
+  Detection is done once per query by inspecting `cursor.description`; queries with no
+  object columns have zero per-row overhead. Postgres arrays and JSON columns (which
+  already arrive as native Python types) are unaffected.
+
+### Fixed
+
+- **`dbtk generate-key` did not print the key** — the key was returned but never printed
+  to stdout, leaving users with only the instructional message and no key to copy.
+
+- **`dbtk config-setup` raised an unhelpful error without keyring** — when `keyring` is
+  not installed and the user accepted the default option (store in keyring), the command
+  silently returned with a print message. It now raises a `RuntimeError` with clear
+  instructions on all three paths forward.
+
+- **`export DBTK_ENCRYPTION_KEY='key'` printed literally** — the f-string interpolation
+  was missing, so the env var export instruction showed the word `key` instead of the
+  actual generated key value.
+
+- **`~` not expanded in logging directory path** — `Path(log_dir)` does not resolve `~`;
+  `expanduser()` is now called in both `setup_logging` and `cleanup_old_logs`.
+
+- **Env vars not expanded in `get_setting()`** — `${VAR}` syntax worked in connection
+  configs but not in other settings (e.g. `logging.directory`). `get_setting()` now
+  recursively expands env var references in all string values and dicts it returns.
+
+- **`dbtk checkup` showed duplicate `usaddress` and listed `polars` on Python < 3.8** —
+  `python_version` markers in optional dependency metadata were ignored, so both the
+  `< 3.7` and `>= 3.7` variants of `usaddress` appeared and `polars` (which requires
+  Python 3.8+) was shown as missing on older Pythons. Markers are now evaluated against
+  the running Python version.
+
+- **`setup_logging` produced unhelpful log filenames in interactive sessions** —
+  `sys.argv[0]` in `python -c`, ipython, and Jupyter kernels produces an empty or
+  meaningless stem (e.g. `ipykernel_12345`), resulting in filenames like
+  `_20260616_143022.log`. These are now detected and replaced with `interactive`.
+
+- **`to_csv(cursor)` to stdout printed entire result set** — the 20-row preview cap was
+  applied in `BaseWriter.__init__` but `CSVWriter` (and all `BatchWriter` subclasses)
+  go through `BatchWriter.__init__` → `_lazy_init()` instead, bypassing the limit. The
+  cap is now applied in `_lazy_init` so it works for all input types.
+
+---
+
 ## [0.8.7] - 2026-06-04
 
 ### Added

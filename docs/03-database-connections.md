@@ -273,6 +273,40 @@ for user in cursor:
 user = cursor.selectinto("SELECT * FROM users WHERE id = :id", {'id': 42})
 ```
 
+### Oracle Object and Collection Types
+
+When a query returns an Oracle `OBJECT`, `VARRAY`, or nested `TABLE` column, dbtk
+automatically converts it to a native Python type at fetch time:
+
+| Oracle type | Python type |
+|-------------|-------------|
+| `OBJECT`    | `dict` — keyed by attribute name |
+| `VARRAY` / nested `TABLE` | `list` |
+
+This means the converted value works immediately with writers, JSON serialization, and
+normal Python code — no manual unpacking required.
+
+```python
+# Given an Oracle OBJECT type:
+# CREATE TYPE fast_levels_obj AS OBJECT (crn NUMBER, level1 VARCHAR2(100), ...)
+
+cursor.execute("SELECT crn, get_fast_levels(crn) AS fast_id FROM sections")
+
+for row in cursor:
+    print(row.fast_id)
+    # {'CRN': 10020, 'LEVEL1': 'UG', 'LEVEL2': 'GRAD', ...}
+
+# Works directly with writers
+dbtk.writers.to_csv(cursor)
+```
+
+Nested objects (an `OBJECT` attribute that is itself an `OBJECT` or collection) are
+recursively converted. Detection happens once per query by inspecting
+`cursor.description`; queries with no object columns have zero per-row overhead.
+
+Postgres arrays and JSON columns already arrive as native Python `list`/`dict` from
+the driver and are unaffected.
+
 ### Cursor Properties
 
 ```python
