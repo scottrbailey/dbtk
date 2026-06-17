@@ -300,6 +300,10 @@ class Record(list):
             >>> rec._fields_normalized
             ['start_year', 'end_date']
         """
+        # Replace None/empty field names with 'col' before deduplication so
+        # _fields never contains None and unnamed columns get col, col_2, etc.
+        fields = [f if f else 'col' for f in fields]
+
         # Deduplicate original field names before normalization.
         # When a name appears more than once, rename later occurrences by
         # appending _2, _3, … — skipping any candidate already taken by an
