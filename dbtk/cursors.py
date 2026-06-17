@@ -157,7 +157,8 @@ class Cursor:
     _local_attrs = [
         'connection', 'debug', 'return_cursor',
         'placeholder', 'paramstyle', 'record_factory', 'batch_size',
-        '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
+        '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method',
+        '_object_columns'
     ]
     # Attributes that are allowed to be passed in from the connection/configuration layer
     WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor', 'fast_executemany')
@@ -202,6 +203,7 @@ class Cursor:
         self.debug = debug
         self.record_factory = None
         self._row_factory_invalid = True
+        self._object_columns = ()
         self.return_cursor = return_cursor
         if batch_size is None:
             batch_size = settings.get('default_batch_size', 1000)
@@ -357,17 +359,47 @@ class Cursor:
         """Create Record subclass with original column names from description."""
         self._row_factory_invalid = False
 
-        # Get original column names from description (no transformation)
         if not self.description:
             original_columns = []
+            self._object_columns = ()
         else:
             original_columns = [col[0] for col in self.description]
+            # Detect columns whose driver type metadata looks like a DB object or
+            # collection (oracledb exposes this; other drivers use plain Python types
+            # which have neither attribute, so this stays empty and costs nothing).
+            self._object_columns = tuple(
+                i for i, col in enumerate(self.description)
+                if hasattr(col[1], 'attributes') or hasattr(col[1], 'iscollection')
+            )
 
-        # Create dynamic Record subclass and set fields
-        # set_fields() will handle normalization automatically
         RecordClass = type('Record', (Record,), {})
         RecordClass.set_fields(original_columns)
         self.record_factory = RecordClass
+
+    @staticmethod
+    def _convert_db_object(val: Any) -> Any:
+        """Recursively convert a DB object or collection to a dict or list."""
+        typ = getattr(val, 'type', None)
+        if typ is None:
+            return val
+        if getattr(typ, 'iscollection', False):
+            return [Cursor._convert_db_object(item) for item in val]
+        if hasattr(typ, 'attributes'):
+            return {
+                attr.name: Cursor._convert_db_object(getattr(val, attr.name))
+                for attr in typ.attributes
+            }
+        return val
+
+    def _convert_row(self, row: tuple) -> tuple:
+        """Convert DB object/collection columns in a raw driver row to dicts/lists."""
+        if not self._object_columns:
+            return row
+        row = list(row)
+        for i in self._object_columns:
+            if row[i] is not None:
+                row[i] = self._convert_db_object(row[i])
+        return tuple(row)
 
     def columns(self, normalized: bool = False) -> List[str]:
         """
@@ -615,7 +647,7 @@ class Cursor:
         if self._is_ready():
             row = self._cursor.fetchone()
             if row:
-                return self.record_factory(*row)
+                return self.record_factory(*self._convert_row(row))
         return None
 
     def fetchmany(self, size: Optional[int] = None) -> List[Any]:
@@ -625,7 +657,7 @@ class Cursor:
 
         if self._is_ready():
             return [
-                self.record_factory(*row)
+                self.record_factory(*self._convert_row(row))
                 for row in self._cursor.fetchmany(size)
             ]
         return []
@@ -634,7 +666,7 @@ class Cursor:
         """Fetch all remaining rows."""
         if self._is_ready():
             return [
-                self.record_factory(*row)
+                self.record_factory(*self._convert_row(row))
                 for row in self._cursor.fetchall()
             ]
         return []
