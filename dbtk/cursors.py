@@ -398,7 +398,7 @@ class Cursor:
         row = list(row)
         for i in self._object_columns:
             if row[i] is not None:
-                row[i] = self._convert_db_object(row[i])
+                row[i] = Cursor._convert_db_object(row[i])
         return tuple(row)
 
     def columns(self, normalized: bool = False) -> List[str]:
@@ -541,7 +541,7 @@ class Cursor:
             if bind_vars:
                 params = self.prepare_params(param_names, bind_vars)
             else:
-                params = None
+                params = ()
 
             return self.execute(transformed_sql, params)
 
