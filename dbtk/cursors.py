@@ -369,7 +369,7 @@ class Cursor:
             # which have neither attribute, so this stays empty and costs nothing).
             self._object_columns = tuple(
                 i for i, col in enumerate(self.description)
-                if str(col[1]) == 'DB_TYPE_OBJECT'
+                if 'DB_TYPE_OBJECT' in str(col[1])
             )
 
         RecordClass = type('Record', (Record,), {})
