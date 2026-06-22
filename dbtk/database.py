@@ -64,7 +64,7 @@ DRIVERS = {
         'database_type': 'oracle',
         'priority': 11,
         'param_map': {'database': 'service_name'},
-        'required_params': [{'dsn', 'user'}, {'dsn', 'extra_auth_params'}, {'host', 'port', 'database', 'user'}],
+        'required_params': [{'dsn', 'user'}, {'dsn', 'extra_auth_params'}, {'host', 'port', 'service_name', 'user'}],
         'optional_params': {'password', 'mode', 'events', 'purity', 'cclass', 'tag', 'matchanytag',
                            'config_dir', 'wallet_location', 'wallet_password', 'extra_auth_params'},
         'connection_method': 'dsn',
@@ -74,7 +74,7 @@ DRIVERS = {
         'database_type': 'oracle',
         'priority': 12,
         'param_map': {'database': 'service_name'},
-        'required_params': [{'dsn'}, {'host', 'port', 'database', 'user'}],
+        'required_params': [{'dsn'}, {'host', 'port', 'service_name', 'user'}],
         'optional_params': {'password', 'mode', 'events', 'purity', 'cclass', 'tag', 'matchanytag',
                            'encoding', 'nencoding', 'edition', 'appcontext'},
         'connection_method': 'dsn',
@@ -327,6 +327,13 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     # optional arguments with defaults don't falsely satisfy required_params sets.
     params = {k.lower(): v for k, v in params.items() if v is not None}
 
+    # Apply parameter mapping early so required_params sets can use mapped names.
+    # e.g. Oracle maps 'database' -> 'service_name', so the required set
+    # {'host', 'port', 'service_name', 'user'} matches regardless of which
+    # key the caller used.
+    param_map = driver_info.get('param_map', {})
+    params = {param_map.get(k, k): v for k, v in params.items()}
+
     # Initialize with config-only parameters if needed
     validated_params = {}
     if config_only and 'encrypted_password' in params:
@@ -358,8 +365,8 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
         logger.error(f"Current params: {params}")
         raise ValueError(msg)
 
-    # Apply parameter mapping and filter valid params
-    param_map = driver_info.get('param_map', {})
+    # Filter valid params (mapping already applied above)
+    param_map = {}  # mapping already applied; clear so the loop below is a no-op
 
     all_valid_params = set()
     for req_set in driver_info['required_params']:
