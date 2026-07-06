@@ -873,7 +873,6 @@ def encrypt_password(password: str = None, encryption_key: str = None) -> str:
         temp_config._fernet = None
         encrypted = temp_config.encrypt_password(password)
 
-    print(encrypted)
     return encrypted
 
 

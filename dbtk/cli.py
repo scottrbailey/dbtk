@@ -188,7 +188,9 @@ def main():
     elif args.command == 'encrypt-config':
         return config.encrypt_config_file(args.config_file)
     elif args.command == 'encrypt-password':
-        return config.encrypt_password(args.password)
+        key = config.encrypt_password(args.password)
+        print(key)
+        return
     elif args.command == 'migrate-config':
         return config.migrate_config(args.old_file, args.new_file, args.new_key)
 
