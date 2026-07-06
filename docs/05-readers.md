@@ -261,6 +261,64 @@ with EDIReader(open('data.txt'), custom_layouts) as reader:
 
 The type-code key can be any length — `EDIReader` slices the beginning of each line to match the longest key in your dict.
 
+## JSON Files
+
+`JSONReader` and friends exist to **iterate** over a dataset, record by record. If your JSON is a single object with no array to iterate — just metadata, or a one-off config blob — reach for `json.load()` directly instead; that's not what this reader is for.
+
+By default, `JSONReader` expects the document root to be an array of objects:
+
+```python
+# [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+with readers.JSONReader(open('users.json')) as reader:
+    for user in reader:
+        print(user.id, user.name)
+```
+
+### Nested Arrays — `record_path`
+
+APIs commonly wrap the array you actually want inside a response envelope alongside metadata:
+
+```json
+{
+  "page": 1,
+  "total_results": 2,
+  "results": [
+    {"id": 1, "name": "Alice"},
+    {"id": 2, "name": "Bob"}
+  ]
+}
+```
+
+Use `record_path` (a dot-notation path, resolved from the document root) to tell `JSONReader` where the array lives:
+
+```python
+with readers.JSONReader(open('response.json'), record_path='results') as reader:
+    for user in reader:
+        print(user.id, user.name)
+
+# Works for deeper nesting too, e.g. {"data": {"results": [...]}}
+with readers.JSONReader(open('response.json'), record_path='data.results') as reader:
+    for user in reader:
+        print(user.id, user.name)
+```
+
+The metadata alongside the array (`page`, `total_results`, etc.) is not read — only the array at `record_path` is iterated.
+
+### Flattening Nested Objects
+
+Nested objects are flattened to dot notation by default; pass `flatten=False` to keep them as dicts:
+
+```python
+# [{"id": 1, "user": {"name": "Alice", "email": "a@example.com"}}]
+with readers.JSONReader(open('nested.json')) as reader:
+    for record in reader:
+        print(record.id, record['user.name'], record['user.email'])
+
+with readers.JSONReader(open('nested.json'), flatten=False) as reader:
+    for record in reader:
+        print(record.user)  # {'name': 'Alice', 'email': 'a@example.com'}
+```
+
 ## XML Files
 
 `XMLReader` needs a `record_xpath` to locate the repeating record elements.

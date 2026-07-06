@@ -405,6 +405,39 @@ class TestCSVReader:
             assert 'trainee_id' in reader.fieldnames
 
 
+class TestJSONReader:
+    """Tests specific to JSON reader, including record_path handling."""
+
+    @pytest.fixture
+    def wrapped_json_file(self, fixtures_dir):
+        """Path to JSON test file with the record array nested under metadata."""
+        return fixtures_dir / 'sample_data_wrapped.json'
+
+    def test_record_path_nested_array(self, wrapped_json_file):
+        """record_path navigates to a nested array wrapped in metadata."""
+        with JSONReader(open(wrapped_json_file, encoding='utf-8'),
+                        record_path='data.results') as reader:
+            records = list(reader)
+            assert len(records) == 3
+            assert records[0]['monk_name'] == 'Master Aang'
+            assert records[2]['trainee_id'] == 3
+
+    def test_record_path_default_requires_root_array(self, wrapped_json_file):
+        """Without record_path, a non-array root raises ValueError."""
+        with pytest.raises(ValueError, match="Expected an array"):
+            JSONReader(open(wrapped_json_file, encoding='utf-8'))
+
+    def test_record_path_missing_key(self, wrapped_json_file):
+        """An unresolvable record_path raises a descriptive ValueError."""
+        with pytest.raises(ValueError, match="no key 'missing'"):
+            JSONReader(open(wrapped_json_file, encoding='utf-8'), record_path='data.missing')
+
+    def test_record_path_through_non_object(self, json_file):
+        """record_path fails clearly when the document root isn't an object to traverse."""
+        with pytest.raises(ValueError, match="not an object"):
+            JSONReader(open(json_file, encoding='utf-8'), record_path='trainee_id.nested')
+
+
 class TestGetReader:
     """Tests for the get_reader utility function."""
 
