@@ -376,7 +376,7 @@ Details: [Fixed-Width Files](06-writers.md#fixed-width-files-with-fixedwidthwrit
 ```python
 select_columns(rows, col_names, action='include', source_columns=None)
 ```
-Lazily projects/reorders/drops columns from a row stream before it reaches a writer. Details: [Dropping or Reordering Columns with select_columns](06-writers.md#dropping-or-reordering-columns-with-select_columns).
+Lazily projects/reorders/drops/renames columns from a row stream before it reaches a writer. `col_names` is a list for `action='include'`/`'exclude'`, or a dict (source name -> new name, `action='include'` only) to rename in the same pass. Details: [Dropping, Reordering, or Renaming Columns with select_columns](06-writers.md#dropping-reordering-or-renaming-columns-with-select_columns).
 
 ### XMLStreamer
 

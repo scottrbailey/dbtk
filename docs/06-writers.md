@@ -11,7 +11,7 @@ For the complete parameter/method reference, see the [API Reference](11-api-refe
 **General**
 - [Basic Usage](#basic-usage)
 - [Export Once, Write Everywhere](#export-once-write-everywhere)
-- [Dropping or Reordering Columns with select_columns](#dropping-or-reordering-columns-with-select_columns)
+- [Dropping, Reordering, or Renaming Columns with select_columns](#dropping-reordering-or-renaming-columns-with-select_columns)
 - [Quick Preview to Stdout](#quick-preview-to-stdout)
 - [Common Writer Parameters](#common-writer-parameters)
 - [Compressed Output](#compressed-output)
@@ -81,7 +81,7 @@ cursor.execute("SELECT * FROM large_table")
 writers.to_csv(cursor, 'output.csv')  # Cursor consumed once, no list in memory
 ```
 
-## Dropping or Reordering Columns with `select_columns`
+## Dropping, Reordering, or Renaming Columns with `select_columns`
 
 Writers export whatever columns are on the source data — there's no `exclude=` or `columns=`
 filter on the writers themselves. Instead, `select_columns()` reshapes the row stream *before*
@@ -102,6 +102,19 @@ writers.to_excel(select_columns(records, ['name', 'email', 'signup_date']), 'rep
 column order — handy for reordering as well as selecting. `action='exclude'` treats it as a
 block-list and preserves the source column order. Each row that comes out is a `Record`, so it
 plugs straight into any writer with no `columns=` needed.
+
+For `action='include'`, `col_names` can also be a dict mapping source name → new output name,
+selecting, reordering, *and* renaming headers in one pass — no separate `headers=` override
+needed on the writer:
+
+```python
+# Rename as part of the same call; '' (or None) keeps the original name
+writers.to_csv(select_columns(cursor, {'name': 'Customer', 'email': '', 'signup_date': 'Joined On'}),
+                'customers.csv')
+```
+
+A dict isn't accepted with `action='exclude'` — renaming a column that isn't in the output
+wouldn't do anything, so it's rejected outright rather than silently ignored.
 
 `select_columns()` works lazily on any iterable of self-describing rows — cursors, `Record`
 objects, dicts, namedtuples — inferring column names from the first row. Plain list/tuple rows
@@ -333,7 +346,7 @@ count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
 print(f"Transferred {count} strategic records")
 ```
 
-The INSERT statement's column list is built from the source data's columns — use [`select_columns()`](#dropping-or-reordering-columns-with-select_columns) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
+The INSERT statement's column list is built from the source data's columns — use [`select_columns()`](#dropping-reordering-or-renaming-columns-with-select_columns) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
 
 ---
 

@@ -26,11 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`dbtk.writers.select_columns()`** — lazily project a row stream down to a subset of
   columns before writing, without materializing the source. `action='include'` (default)
   selects and reorders per an explicit column list; `action='exclude'` drops the named
-  columns and preserves source order. Works on any self-describing rows (cursors, `Record`,
-  dict, namedtuple), inferring column names from the first row; plain list/tuple rows need
-  `source_columns=[...]` passed explicitly. Yields `Record` objects built directly from a
-  precomputed `itemgetter`, so per-row cost stays low. Solves the common "my query/table has
-  columns I don't want in the export" case without adding an `exclude=` param to every writer.
+  columns and preserves source order. For `action='include'`, `col_names` can also be a
+  dict mapping source name -> new name to select, reorder, and rename headers in one pass
+  (a falsy value keeps the original name); dicts aren't accepted with `action='exclude'`,
+  since renaming a dropped column has no effect. Works on any self-describing rows (cursors,
+  `Record`, dict, namedtuple), inferring column names from the first row; plain list/tuple
+  rows need `source_columns=[...]` passed explicitly. Yields `Record` objects built directly
+  from a precomputed `itemgetter`, so per-row cost stays low regardless of whether renaming
+  is involved. Solves the common "my query/table has columns I don't want in the export, or
+  the source names aren't what I want in the header row" case without adding `exclude=`/
+  `headers=` params to every writer.
 
 ### Fixed
 

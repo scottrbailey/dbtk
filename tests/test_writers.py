@@ -1201,6 +1201,52 @@ class TestSelectColumns:
         out = list(select_columns(sample_records, ['monk_name']))
         assert out[0].keys() == ['monk_name']
 
+    def test_include_dict_renames_and_reorders(self, sample_records):
+        """A dict col_names selects, reorders, and renames in one pass."""
+        out = list(select_columns(sample_records, {'monk_name': 'Name', 'trainee_id': 'ID'}))
+
+        assert out[0].keys() == ['Name', 'ID']
+        assert out[0]['Name'] == sample_records[0]['monk_name']
+        assert out[0]['ID'] == sample_records[0]['trainee_id']
+
+    def test_include_dict_falsy_value_keeps_original_name(self, sample_records):
+        """Empty string or None as a dict value means 'keep the source name'."""
+        out = list(select_columns(sample_records, {'monk_name': '', 'trainee_id': None}))
+
+        assert out[0].keys() == ['monk_name', 'trainee_id']
+        assert out[0]['monk_name'] == sample_records[0]['monk_name']
+
+    def test_include_dict_duplicate_rename_target_deduped(self, sample_records):
+        """Renaming two columns to the same name relies on Record's own dedup."""
+        out = list(select_columns(sample_records, {'monk_name': 'x', 'home_temple': 'x'}))
+
+        assert out[0].keys() == ['x', 'x_2']
+        assert out[0]['x'] == sample_records[0]['monk_name']
+        assert out[0]['x_2'] == sample_records[0]['home_temple']
+
+    def test_include_dict_unknown_source_column_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            list(select_columns(sample_records, {'not_a_real_column': 'X'}))
+
+    def test_exclude_with_dict_raises_type_error(self, sample_records):
+        """Renaming has no effect when excluding; reject the ambiguous input outright."""
+        with pytest.raises(TypeError):
+            select_columns(sample_records, {'bison_companion': 'Bison'}, action='exclude')
+
+    def test_include_dict_works_with_dicts_and_namedtuples(self, sample_dicts, sample_namedtuples):
+        """Dict-rename form works for any self-describing row type, not just Record."""
+        out_dict = list(select_columns(sample_dicts, {'monk_name': 'Name'}))
+        assert out_dict[0].keys() == ['Name']
+
+        out_nt = list(select_columns(sample_namedtuples, {'monk_name': 'Name'}))
+        assert out_nt[0].keys() == ['Name']
+
+    def test_include_dict_works_with_source_columns(self, sample_lists, sample_columns):
+        """Dict-rename form also works for positional rows given source_columns."""
+        out = list(select_columns(sample_lists, {'monk_name': 'Name', 'trainee_id': 'ID'},
+                                   source_columns=sample_columns))
+        assert out[0].keys() == ['Name', 'ID']
+
     def test_works_with_dicts(self, sample_dicts):
         """dict rows are self-describing; no source_columns needed."""
         out = list(select_columns(sample_dicts, ['trainee_id', 'monk_name'], action='include'))
