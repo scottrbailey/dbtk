@@ -1575,10 +1575,15 @@ class LinkedExcelWriter(ExcelWriter):
         If this is the first write to this sheet in the current session, the sheet
         is cleared first. Subsequent writes to the same sheet append data.
 
-        headers: display names for this batch, overriding the writer-level default
-        links: dict column_name → "source_name" or "source_name:internal"
-        formatting: per-call formatting override; None uses writer-level formatting,
-            {} writes with no formatting
+        Parameters
+        ----------
+        headers : list of str, optional
+            Display names for this batch, overriding the writer-level default.
+        links : dict, optional
+            Maps column_name to "source_name" or "source_name:internal".
+        formatting : dict, optional
+            Per-call formatting override; None uses writer-level formatting,
+            {} writes with no formatting.
         """
         if isinstance(formatting, ExcelFormat):
             formatting = formatting.to_dict()
