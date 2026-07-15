@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that expose the underlying driver cursor and connection objects for driver-specific
   operations that dbtk doesn't wrap.
 
+- **`dbtk.writers.select_columns()`** — lazily project a row stream down to a subset of
+  columns before writing, without materializing the source. `action='include'` (default)
+  selects and reorders per an explicit column list; `action='exclude'` drops the named
+  columns and preserves source order. Works on any self-describing rows (cursors, `Record`,
+  dict, namedtuple), inferring column names from the first row; plain list/tuple rows need
+  `source_columns=[...]` passed explicitly. Yields `Record` objects built directly from a
+  precomputed `itemgetter`, so per-row cost stays low. Solves the common "my query/table has
+  columns I don't want in the export" case without adding an `exclude=` param to every writer.
+
 ### Fixed
 
 - **Empty Excel header cells produced `None` in `record._fields`** — `cell.value` is

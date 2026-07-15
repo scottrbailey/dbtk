@@ -53,6 +53,33 @@ For large result sets, skip the `fetchall()` entirely and pass the cursor direct
 cursor.execute("SELECT * FROM large_table")
 writers.to_csv(cursor, 'output.csv')  # Cursor consumed once, no list in memory
 ```
+
+## Dropping or Reordering Columns with `select_columns`
+
+Writers export whatever columns are on the source data — there's no `exclude=` or `columns=`
+filter on the writers themselves. Instead, `select_columns()` reshapes the row stream *before*
+it reaches the writer, without materializing anything in memory:
+
+```python
+from dbtk.writers import select_columns
+
+# Drop sensitive columns from cursor results before writing
+cursor.execute("SELECT * FROM users")
+writers.to_csv(select_columns(cursor, ['ssn', 'password_hash'], action='exclude'), 'users.csv')
+
+# Select and reorder a subset for a report
+writers.to_excel(select_columns(records, ['name', 'email', 'signup_date']), 'report.xlsx')
+```
+
+`action='include'` (the default) treats `col_names` as an allow-list and also sets the output
+column order — handy for reordering as well as selecting. `action='exclude'` treats it as a
+block-list and preserves the source column order. Each row that comes out is a `Record`, so it
+plugs straight into any writer with no `columns=` needed.
+
+`select_columns()` works lazily on any iterable of self-describing rows — cursors, `Record`
+objects, dicts, namedtuples — inferring column names from the first row. Plain list/tuple rows
+carry no column names of their own, so pass `source_columns=[...]` explicitly for those.
+
 ## Quick Preview to Stdout
 
 Pass `None` as the filename to preview data to stdout — perfect for debugging or quick checks:

@@ -15,8 +15,10 @@ from dbtk.utils import FixedColumn
 from dbtk.writers import (
     CSVWriter, ExcelWriter, FixedWidthWriter,
     JSONWriter, NDJSONWriter, XMLWriter,
-    to_csv, to_excel, to_fixed_width, to_json, to_ndjson, to_xml
+    to_csv, to_excel, to_fixed_width, to_json, to_ndjson, to_xml,
+    select_columns,
 )
+from dbtk.record import Record
 
 # FixedColumn schema matching the sample_data fixtures (8 fields, 122 chars/line)
 SAMPLE_COLUMNS = [
@@ -1172,3 +1174,82 @@ class TestCompression:
         with gzip.open(output_file, 'rt', encoding='utf-8') as f:
             lines = f.readlines()
         assert len(lines) == 4  # 1 header + 3 data
+
+
+class TestSelectColumns:
+    """Tests for the select_columns() row-shaping generator."""
+
+    def test_exclude_records(self, sample_records, sample_columns):
+        """action='exclude' drops the named columns and preserves source order."""
+        out = list(select_columns(sample_records, ['bison_companion', 'last_training'], action='exclude'))
+
+        assert len(out) == len(sample_records)
+        assert all(isinstance(r, Record) for r in out)
+        expected = [c for c in sample_columns if c not in ('bison_companion', 'last_training')]
+        assert out[0].keys() == expected
+        assert out[0]['monk_name'] == sample_records[0]['monk_name']
+
+    def test_include_records_reorders(self, sample_records):
+        """action='include' selects and reorders columns per col_names."""
+        out = list(select_columns(sample_records, ['monk_name', 'trainee_id'], action='include'))
+
+        assert out[0].keys() == ['monk_name', 'trainee_id']
+        assert out[0]['trainee_id'] == sample_records[0]['trainee_id']
+
+    def test_include_is_default_action(self, sample_records):
+        """action defaults to 'include'."""
+        out = list(select_columns(sample_records, ['monk_name']))
+        assert out[0].keys() == ['monk_name']
+
+    def test_works_with_dicts(self, sample_dicts):
+        """dict rows are self-describing; no source_columns needed."""
+        out = list(select_columns(sample_dicts, ['trainee_id', 'monk_name'], action='include'))
+        assert out[0].to_dict() == {
+            'trainee_id': sample_dicts[0]['trainee_id'],
+            'monk_name': sample_dicts[0]['monk_name'],
+        }
+
+    def test_works_with_namedtuples(self, sample_namedtuples):
+        """namedtuple rows are self-describing via _fields."""
+        out = list(select_columns(sample_namedtuples, ['bison_companion'], action='exclude'))
+        assert 'bison_companion' not in out[0].keys()
+        assert out[0]['monk_name'] == sample_namedtuples[0].monk_name
+
+    def test_plain_lists_require_source_columns(self, sample_lists, sample_columns):
+        """Plain list/tuple rows carry no column names; source_columns is required."""
+        with pytest.raises(TypeError):
+            list(select_columns(sample_lists, ['monk_name']))
+
+        out = list(select_columns(sample_lists, ['monk_name', 'trainee_id'],
+                                   action='include', source_columns=sample_columns))
+        assert out[0].keys() == ['monk_name', 'trainee_id']
+
+    def test_pipes_directly_into_writer(self, tmp_path, sample_records, sample_columns):
+        """Result feeds straight into to_csv() with no columns= needed."""
+        output_file = tmp_path / "output.csv"
+        to_csv(select_columns(sample_records, ['bison_companion'], action='exclude'), output_file)
+
+        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
+            records = list(reader)
+        assert len(records) == len(sample_records)
+        assert 'bison_companion' not in reader.headers
+        assert 'monk_name' in reader.headers
+
+    def test_invalid_action_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            select_columns(sample_records, ['monk_name'], action='bogus')
+
+    def test_empty_col_names_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            select_columns(sample_records, [])
+
+    def test_unknown_column_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            list(select_columns(sample_records, ['not_a_real_column'], action='include'))
+
+    def test_exclude_everything_raises(self, sample_records, sample_columns):
+        with pytest.raises(ValueError):
+            list(select_columns(sample_records, sample_columns, action='exclude'))
+
+    def test_empty_input_yields_nothing(self):
+        assert list(select_columns([], ['a'])) == []
