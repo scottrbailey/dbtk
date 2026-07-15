@@ -19,17 +19,13 @@ For the complete parameter/method reference, see the [API Reference](11-api-refe
 - [Filtering Records](#filtering-records)
 - [Dual Field Name Access](#dual-field-name-access)
 
-**Most Common Formats**
+**Formats**
 - [CSV Files](#csv-files)
 - [Excel Files](#excel-files)
-
-**Other Formats**
 - [JSON Files](#json-files)
 - [NDJSON Files](#ndjson-files)
 - [XML Files](#xml-files)
 - [DataFrame Reader](#dataframe-reader)
-
-**Less Common Formats**
 - [Fixed-Width Files](#fixed-width-files)
 - [EDI / Multi-Record-Type Fixed-Width Files](#edi--multi-record-type-fixed-width-files)
 

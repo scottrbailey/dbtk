@@ -17,17 +17,13 @@ For the complete parameter/method reference, see the [API Reference](11-api-refe
 - [Compressed Output](#compressed-output)
 - [Writing in Batches](#writing-in-batches)
 
-**Most Common Formats**
+**Formats**
 - [CSV Files](#csv-files)
 - [Excel Files](#excel-files)
-
-**Other Formats**
 - [JSON and NDJSON](#json-and-ndjson)
 - [XML Files](#xml-files)
 - [Streaming XML with XMLStreamer](#streaming-xml-with-xmlstreamer)
 - [Database Writer](#database-writer)
-
-**Less Common Formats**
 - [Fixed-Width Files with FixedWidthWriter](#fixed-width-files-with-fixedwidthwriter)
 - [EDI (Electronic Data Interchange) Fixed-Width with EDIWriter](#edi-electronic-data-interchange-fixed-width-with-ediwriter)
 
