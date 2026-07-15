@@ -340,7 +340,7 @@ ExcelReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
 
 **JSONReader**
 ```python
-JSONReader(file, skip_rows=0, n_rows=None)
+JSONReader(file, record_path=None, flatten=True, skip_rows=0, n_rows=None)
 ```
 
 **NDJSONReader**
