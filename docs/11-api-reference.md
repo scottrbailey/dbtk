@@ -314,7 +314,6 @@ See [Common Reader Parameters](05-readers.md#common-reader-parameters) for what 
 
 ### Reader Signatures
 
-Most common:
 ```python
 CSVReader(fp, dialect=csv.excel, headers=None, add_row_num=True, skip_rows=0, n_rows=None, null_values=None, **kwargs)
 ExcelReader(worksheet, headers=None, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
@@ -322,7 +321,6 @@ XLSReader(worksheet, headers=None, add_row_num=True, skip_rows=0, n_rows=None, n
 ```
 Details: [CSV Files](05-readers.md#csv-files), [Excel Files](05-readers.md#excel-files)
 
-Other formats:
 ```python
 JSONReader(fp, record_path=None, flatten=True, add_row_num=True, skip_rows=0, n_rows=None, null_values=None, **kwargs)
 NDJSONReader(fp, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
@@ -331,7 +329,6 @@ DataFrameReader(df, add_row_num=True, skip_rows=0, n_rows=None, null_values=None
 ```
 Details: [JSON Files](05-readers.md#json-files), [NDJSON Files](05-readers.md#ndjson-files), [XML Files](05-readers.md#xml-files), [DataFrame Reader](05-readers.md#dataframe-reader)
 
-Less common:
 ```python
 FixedReader(fp, columns, auto_trim=True, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 EDIReader(fp, columns, type_name_map=None, strict=False, **kwargs)  # kwargs pass through to FixedReader
@@ -354,14 +351,12 @@ See [Common Writer Parameters](06-writers.md#common-writer-parameters) for the f
 
 ### Writer Functions
 
-Most common:
 ```python
 to_csv(data, file=None, headers=None, write_headers=True, null_string=None, compression='infer', **csv_kwargs)
 to_excel(data, file, sheet='Data', headers=None, write_headers=True)
 ```
 Details: [CSV Files](06-writers.md#csv-files), [Excel Files](06-writers.md#excel-files), [Excel Reports](06b-excel.md)
 
-Other formats:
 ```python
 to_json(data, file=None, indent=2, compression='infer', **json_kwargs)
 to_ndjson(data, file=None, compression='infer', **json_kwargs)
@@ -370,7 +365,6 @@ cursor_to_cursor(source_data, target_cursor, target_table, batch_size=1000, comm
 ```
 Details: [JSON and NDJSON](06-writers.md#json-and-ndjson), [XML Files](06-writers.md#xml-files), [Database Writer](06-writers.md#database-writer)
 
-Less common:
 ```python
 to_fixed_width(data, columns, file=None, encoding='utf-8', truncate_overflow=True)
 to_edi(data, columns, file=None, encoding='utf-8', truncate_overflow=False)
