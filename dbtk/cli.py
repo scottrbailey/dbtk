@@ -19,16 +19,40 @@ def _name_cleanup(name):
     return name.lower().replace('-', '_')
 
 
+def _version_tuple(v):
+    return tuple(int(x) for x in v.split('.'))
+
+
+def _marker_passes(marker_str: str) -> bool:
+    """Evaluate python_version constraints in a PEP 508 marker string."""
+    import re
+    py = _version_tuple(f"{sys.version_info.major}.{sys.version_info.minor}")
+    ops = {'>=': py.__ge__, '>': py.__gt__, '<=': py.__le__,
+           '<': py.__lt__, '==': py.__eq__, '!=': py.__ne__}
+    for m in re.finditer(r'python_version\s*([><=!]+)\s*"([^"]+)"', marker_str):
+        op, ver = m.group(1), m.group(2)
+        if op in ops and not ops[op](_version_tuple(ver)):
+            return False
+    return True
+
+
 def _get_optional_deps(extra_name='recommended'):
-    """ Get optional dependencies for dbtk """
+    """Get optional dependencies for dbtk that apply to the current Python version."""
+    import re
     reqs = requires('dbtk') or []
     deps = []
-    # Parse requirements like: 'psycopg2-binary>=2.8; extra == "recommended"'
+    seen = set()
     for req in reqs:
-        req = req.replace("'", '"') # quoting changed between versions
-        if f'extra == "{extra_name}"' in req:
-            # Extract just the package name and version spec
-            pkg = req.split(';')[0].strip()
+        req = req.replace("'", '"')
+        if f'extra == "{extra_name}"' not in req:
+            continue
+        marker_str = req.split(';', 1)[1].strip() if ';' in req else ''
+        if marker_str and not _marker_passes(marker_str):
+            continue
+        pkg = req.split(';')[0].strip()
+        base = re.split(r'[><=!]', pkg)[0].strip().lower()
+        if base not in seen:
+            seen.add(base)
             deps.append(pkg)
     return deps
 
@@ -46,8 +70,6 @@ def checkup():
     """ Check which optional dependencies are installed."""
     deps = []
     for dep in _get_optional_deps('recommended'):
-        if ';' in dep:
-            dep = dep.split(';')[0].strip()
         if dep and not dep.startswith('#'):
             deps.append(dep.split('>=')[0].split('==')[0].split('<')[0].strip())
 
@@ -158,13 +180,17 @@ def main():
     elif args.command == 'config-setup':
         return config.setup_config()
     elif args.command == 'generate-key':
-        return config.generate_encryption_key()
+        key = config.generate_encryption_key()
+        print(key)
+        return
     elif args.command == 'store-key':
         return config.store_key(args.key, force=args.force)
     elif args.command == 'encrypt-config':
         return config.encrypt_config_file(args.config_file)
     elif args.command == 'encrypt-password':
-        return config.encrypt_password(args.password)
+        key = config.encrypt_password(args.password)
+        print(key)
+        return
     elif args.command == 'migrate-config':
         return config.migrate_config(args.old_file, args.new_file, args.new_key)
 

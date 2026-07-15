@@ -99,8 +99,8 @@ print(cursor.connection.connection_name) # imdb
 print(cursor.connection.driver.__name__)       # 'psycopg2', 'oracledb', etc.
 
 # Access the wrapped connection or cursor
-cursor.connection._connection
-cursor._cursor
+cursor.native_cursor
+cursor.connection.native_connection
 
 # Use driver exceptions
 try:
@@ -272,6 +272,44 @@ for user in cursor:
 # Fetch exactly one (raises error if 0 or >1 rows)
 user = cursor.selectinto("SELECT * FROM users WHERE id = :id", {'id': 42})
 ```
+
+### Oracle Object and Collection Types
+
+When a query returns an Oracle `OBJECT`, `VARRAY`, or nested `TABLE` column, dbtk
+automatically converts it to a native Python type at fetch time:
+
+| Oracle type               | Python type                      |
+|---------------------------|----------------------------------|
+| `OBJECT`                  | `dict` — keyed by attribute name |
+| `VARRAY` / nested `TABLE` | `list`                           |
+
+This means the converted value works immediately with writers, JSON serialization, and
+normal Python code — no manual unpacking required.
+
+```python
+# Given Oracle types:
+# CREATE TYPE address_obj AS OBJECT (street VARCHAR2(100), city VARCHAR2(50), zip VARCHAR2(10));
+# CREATE TYPE phone_list AS TABLE OF VARCHAR2(20);
+
+cursor.execute("SELECT id, name, get_address(id) AS address, get_phones(id) AS phones FROM contacts")
+
+for row in cursor:
+    print(row.address)
+    # {'STREET': '123 Main St', 'CITY': 'Springfield', 'ZIP': '12345'}
+
+    print(row.phones)
+    # ['555-1234', '555-5678']
+
+# Works directly with writers — address serialized as JSON string in CSV
+dbtk.writers.to_csv(cursor)
+```
+
+Nested objects (an `OBJECT` attribute that is itself an `OBJECT` or collection) are
+recursively converted. Detection happens once per query by inspecting
+`cursor.description`; queries with no object columns have zero per-row overhead.
+
+Postgres arrays and JSON columns already arrive as native Python `list`/`dict` from
+the driver and are unaffected.
 
 ### Cursor Properties
 

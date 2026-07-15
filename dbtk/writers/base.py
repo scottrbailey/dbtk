@@ -637,6 +637,12 @@ class BatchWriter(BaseWriter):
         if not self.columns:
             raise ValueError("Could not determine columns from data")
 
+        # Limit stdout output to 20 rows for quick previews.
+        # Store the original source so _get_headers can still read cursor.description.
+        if self.file is None:
+            self._header_source = self.data_iterator
+            self.data_iterator = itertools.islice(self.data_iterator, 20)
+
         self._initialized = True
 
     def _get_headers(self, data: Optional[Iterable[RecordLike]] = None) -> List[str]:
@@ -667,8 +673,8 @@ class BatchWriter(BaseWriter):
         if self.headers:
             return self.headers
 
-        # Check provided data first, then fall back to self.data_iterator
-        source = data if data is not None else self.data_iterator
+        # Check provided data first, then fall back to original source (before any islice wrapping)
+        source = data if data is not None else getattr(self, '_header_source', self.data_iterator)
 
         # Try cursor.description (live cursor)
         if hasattr(source, 'description') and source.description:

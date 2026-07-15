@@ -32,7 +32,7 @@ DRIVERS = {
         'database_type': 'postgres',
         'priority': 11,
         'param_map': {'database': 'dbname'},
-        'required_params': [{'host', 'database', 'user'}],
+        'required_params': [{'host', 'dbname', 'user'}],
         'optional_params': {'port', 'password', 'sslmode', 'connect_timeout', 'application_name',
                            'client_encoding', 'options', 'sslcert', 'sslkey', 'sslrootcert'},
         'connection_method': 'connection_string',
@@ -42,7 +42,7 @@ DRIVERS = {
         'database_type': 'postgres',
         'priority': 12,
         'param_map': {'database': 'dbname'},
-        'required_params': [{'host', 'database', 'user'}],
+        'required_params': [{'host', 'dbname', 'user'}],
         'optional_params': {'port', 'password', 'sslmode', 'connect_timeout', 'application_name',
                            'client_encoding', 'options', 'sslcert', 'sslkey', 'sslrootcert'},
         'connection_method': 'connection_string',
@@ -64,7 +64,7 @@ DRIVERS = {
         'database_type': 'oracle',
         'priority': 11,
         'param_map': {'database': 'service_name'},
-        'required_params': [{'dsn', 'user'}, {'dsn', 'extra_auth_params'}, {'host', 'port', 'database', 'user'}],
+        'required_params': [{'dsn', 'user'}, {'dsn', 'extra_auth_params'}, {'host', 'port', 'service_name', 'user'}],
         'optional_params': {'password', 'mode', 'events', 'purity', 'cclass', 'tag', 'matchanytag',
                            'config_dir', 'wallet_location', 'wallet_password', 'extra_auth_params'},
         'connection_method': 'dsn',
@@ -74,7 +74,7 @@ DRIVERS = {
         'database_type': 'oracle',
         'priority': 12,
         'param_map': {'database': 'service_name'},
-        'required_params': [{'dsn'}, {'host', 'port', 'database', 'user'}],
+        'required_params': [{'dsn'}, {'host', 'port', 'service_name', 'user'}],
         'optional_params': {'password', 'mode', 'events', 'purity', 'cclass', 'tag', 'matchanytag',
                            'encoding', 'nencoding', 'edition', 'appcontext'},
         'connection_method': 'dsn',
@@ -86,10 +86,10 @@ DRIVERS = {
         'database_type': 'mysql',
         'priority': 11,
         'param_map': {'database': 'db', 'password': 'passwd'},
-        'required_params': [{'host', 'database', 'user'}],
-        'optional_params': {'port', 'password', 'charset', 'use_unicode', 'sql_mode', 'read_default_file',
+        'required_params': [{'host', 'db', 'user'}],
+        'optional_params': {'port', 'passwd', 'charset', 'use_unicode', 'sql_mode', 'read_default_file',
                            'conv', 'connect_timeout', 'compress', 'named_pipe', 'init_command',
-                           'read_default_group', 'unix_socket', 'port'},
+                           'read_default_group', 'unix_socket'},
         'connection_method': 'kwargs',
         'default_port': 3306,
         'note': 'pip install mysqlclient',
@@ -120,8 +120,8 @@ DRIVERS = {
         'database_type': 'mysql',
         'priority': 14,
         'param_map': {'database': 'db', 'password': 'passwd'},
-        'required_params': [{'host', 'database', 'user'}],
-        'optional_params': {'port', 'password', 'charset', 'sql_mode', 'read_default_file',
+        'required_params': [{'host', 'db', 'user'}],
+        'optional_params': {'port', 'passwd', 'charset', 'sql_mode', 'read_default_file',
                            'conv', 'use_unicode', 'connect_timeout', 'read_timeout', 'write_timeout',
                            'bind_address', 'unix_socket', 'autocommit'},
         'connection_method': 'kwargs',
@@ -134,8 +134,8 @@ DRIVERS = {
         'module': 'pyodbc',
         'priority': 11,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
-        'required_params': [{'host', 'database', 'user'}, {'host', 'database', 'trusted_connection'}, {'dsn'}],
-        'optional_params': {'password', 'port', 'driver', 'encrypt', 'trustservercertificate'},
+        'required_params': [{'server', 'database', 'uid'}, {'server', 'database', 'trusted_connection'}, {'dsn'}],
+        'optional_params': {'pwd', 'port', 'driver', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 18 for SQL Server',
         'default_port': 1433
@@ -145,8 +145,8 @@ DRIVERS = {
         'module': 'pyodbc',
         'priority': 12,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
-        'required_params': [{'host', 'database', 'user'}, {'host', 'database', 'trusted_connection'}, {'dsn'}],
-        'optional_params': {'password', 'port', 'driver', 'encrypt', 'trustservercertificate'},
+        'required_params': [{'server', 'database', 'uid'}, {'server', 'database', 'trusted_connection'}, {'dsn'}],
+        'optional_params': {'pwd', 'port', 'driver', 'encrypt', 'trustservercertificate'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'ODBC Driver 17 for SQL Server',
         'default_port': 1433
@@ -167,8 +167,8 @@ DRIVERS = {
         'module': 'pyodbc',
         'priority': 14,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
-        'required_params': [{'host', 'database', 'user'}, {'dsn'}],
-        'optional_params': {'password', 'port'},
+        'required_params': [{'server', 'database', 'uid'}, {'dsn'}],
+        'optional_params': {'pwd', 'port'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'PostgreSQL Unicode',
         'default_port': 5432
@@ -178,8 +178,8 @@ DRIVERS = {
         'module': 'pyodbc',
         'priority': 16,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
-        'required_params': [{'host', 'database', 'user'}],
-        'optional_params': {'password', 'port'},
+        'required_params': [{'server', 'database', 'uid'}],
+        'optional_params': {'pwd', 'port'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'MySQL ODBC 8.0 Unicode Driver',
         'default_port': 3306
@@ -189,8 +189,8 @@ DRIVERS = {
         'module': 'pyodbc',
         'priority': 13,
         'param_map': {'host': 'server', 'user': 'uid', 'password': 'pwd'},
-        'required_params': [{'host', 'database', 'user'}],
-        'optional_params': {'password', 'port'},
+        'required_params': [{'server', 'database', 'uid'}],
+        'optional_params': {'pwd', 'port'},
         'connection_method': 'odbc_string',
         'odbc_driver_name': 'Oracle in OraClient19Home1',
         'default_port': 1521
@@ -327,6 +327,10 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     # optional arguments with defaults don't falsely satisfy required_params sets.
     params = {k.lower(): v for k, v in params.items() if v is not None}
 
+    # Apply parameter mapping so all downstream checks use driver-native names.
+    param_map = driver_info.get('param_map', {})
+    params = {param_map.get(k, k): v for k, v in params.items()}
+
     # Initialize with config-only parameters if needed
     validated_params = {}
     if config_only and 'encrypted_password' in params:
@@ -358,9 +362,7 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
         logger.error(f"Current params: {params}")
         raise ValueError(msg)
 
-    # Apply parameter mapping and filter valid params
-    param_map = driver_info.get('param_map', {})
-
+    # Filter valid params
     all_valid_params = set()
     for req_set in driver_info['required_params']:
         all_valid_params.update(req_set)
@@ -368,8 +370,7 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
 
     for key, value in params.items():
         if key in all_valid_params or (config_only and key == 'encrypted_password'):
-            mapped_key = param_map.get(key, key)
-            validated_params[mapped_key] = value
+            validated_params[key] = value
         else:
             logger.warning(f"Unknown parameter '{key}' for driver '{driver_name}' — ignoring")
 
@@ -556,6 +557,11 @@ class Database:
                                      if key in Cursor.WRAPPER_SETTINGS}
         else:
             self._cursor_settings = dict()
+
+    @property
+    def native_connection(self):
+        """The underlying driver connection."""
+        return self._connection
 
     @property
     def dialect(self):
