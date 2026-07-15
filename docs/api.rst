@@ -69,8 +69,7 @@ Readers
 -------
 
 .. automodule:: dbtk.readers.utils
-   :members:
-   :undoc-members:
+   :members: get_reader
    :show-inheritance:
 
 .. automodule:: dbtk.readers.base
@@ -154,7 +153,7 @@ Utilities
 ---------
 
 .. automodule:: dbtk.utils
-   :members: ErrorDetail, FixedColumn, ParamStyle, process_sql_parameters
+   :members: ErrorDetail, FixedColumn, ParamStyle
    :undoc-members:
    :show-inheritance:
 
@@ -162,11 +161,6 @@ ETL
 -----------
 
 .. automodule:: dbtk.etl.table
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. automodule:: dbtk.etl.base_surge
    :members:
    :undoc-members:
    :show-inheritance:
