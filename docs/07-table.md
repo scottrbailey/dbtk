@@ -653,7 +653,7 @@ if not table.is_ready('insert'):
     logger.warning(f"Cannot insert record {record.id}: missing {missing}")
     # Output: Cannot insert record 123: missing {'email', 'status'}
 
-# Debug incomplete records
+# Debug incomplete records (reader constructed with add_row_num=True for _row_num)
 for record in reader:
     table.set_values(record)
     missing = table.reqs_missing('insert')
@@ -785,7 +785,7 @@ for record in reader:
         entity['_status'] = EntityStatus.ERROR
         im.add_error(record['student_id'], table.last_error)
 
-# Pattern 3: Collect errors for reporting
+# Pattern 3: Collect errors for reporting (reader constructed with add_row_num=True)
 errors = []
 for record in reader:
     table.set_values(record)

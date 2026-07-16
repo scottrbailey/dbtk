@@ -66,7 +66,7 @@ Every reader (`CSVReader`, `ExcelReader`, `XLSReader`, `JSONReader`, `NDJSONRead
 
 | Parameter     | Default | Description                                                          |
 |---------------|---------|------------------------------------------------------------------------|
-| `add_row_num` | `True`  | Add a `_row_num` field to each record (1-based, tracks source position) |
+| `add_row_num` | `False` | Add a `_row_num` field to each record (1-based, tracks source position) |
 | `skip_rows`   | `0`     | Number of data rows to skip after the header row                      |
 | `n_rows`      | `None`  | Maximum number of rows to read, or `None` for all rows                |
 | `headers`     | `None`  | Explicit header names to use instead of reading row 0                 |
@@ -81,8 +81,8 @@ reader = readers.CSVReader(
     null_values=['NULL', 'NA', ''],
 )
 
-# Row numbers track position in source file
-with readers.get_reader('data.csv', skip_rows=5) as reader:
+# Row numbers track position in source file (off by default — opt in explicitly)
+with readers.get_reader('data.csv', skip_rows=5, add_row_num=True) as reader:
     for record in reader:
         print(f"Row {record._row_num}: {record.name}")  # _row_num starts at 6 (after skip)
 ```
@@ -250,7 +250,7 @@ This is particularly useful when processing files from multiple vendors — use 
 `CSVReader` reads comma- (or otherwise-) delimited text. It's the most common reader and needs the least configuration — pass an open file, iterate.
 
 ```python
-CSVReader(fp, dialect=csv.excel, headers=None, add_row_num=True, skip_rows=0, n_rows=None, null_values=None, **kwargs)
+CSVReader(fp, dialect=csv.excel, headers=None, add_row_num=False, skip_rows=0, n_rows=None, null_values=None, **kwargs)
 ```
 
 `**kwargs` pass straight through to `csv.reader()` (`delimiter`, `quotechar`, `quoting`, etc.). A `delimiter='\t'` shortcut is recognized without needing a custom dialect.
@@ -302,7 +302,7 @@ with ExcelReader(ws, skip_rows=0, n_rows=None) as reader:
 `JSONReader` and friends exist to **iterate** over a dataset, record by record. If your JSON is a single object with no array to iterate — just metadata, or a one-off config blob — reach for `json.load()` directly instead; that's not what this reader is for.
 
 ```python
-JSONReader(fp, record_path=None, flatten=True, add_row_num=True, skip_rows=0, n_rows=None, null_values=None, **kwargs)
+JSONReader(fp, record_path=None, flatten=True, add_row_num=False, skip_rows=0, n_rows=None, null_values=None, **kwargs)
 ```
 
 By default, `JSONReader` expects the document root to be an array of objects:
@@ -364,7 +364,7 @@ with readers.JSONReader(open('nested.json'), flatten=False) as reader:
 `NDJSONReader` reads newline-delimited JSON — one JSON object per line, common for streaming APIs and log formats. There's no `record_path` or `flatten` option; each line is its own record.
 
 ```python
-NDJSONReader(fp, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
+NDJSONReader(fp, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 ```
 
 ```python
@@ -379,7 +379,7 @@ with readers.NDJSONReader(open('api_events.ndjson')) as reader:
 `XMLReader` needs a `record_xpath` to locate the repeating record elements.
 
 ```python
-XMLReader(fp, record_xpath='//record', columns=None, sample_size=10, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
+XMLReader(fp, record_xpath='//record', columns=None, sample_size=10, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 ```
 
 ### Auto-Discovered Columns
@@ -443,7 +443,7 @@ with readers.XMLReader(open('avatar_chronicles.xml'),
 For maximum throughput, use [polars](https://pola.rs) to read files and `DataFrameReader` to stream rows into DBTK pipelines. This works with both polars and Pandas and can use any file format that either library supports. Tip: use the Lazy API and streaming to prevent loading massive files into memory.
 
 ```python
-DataFrameReader(df, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
+DataFrameReader(df, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 ```
 
 ```python

@@ -37,11 +37,11 @@ class CSVReader(Reader):
     headers : List[str], optional
         Custom header names to use instead of reading from first row. Useful when
         CSV has no header row or you want to rename columns.
-    add_rownum : bool, default True
+    add_row_num : bool, default False
         Add '_row_num' field to each record with 1-based row number
-    skip_records : int, default 0
+    skip_rows : int, default 0
         Number of data rows to skip after headers
-    max_records : int, optional
+    n_rows : int, optional
         Maximum records to read, None for all
     **kwargs
         Additional arguments passed to csv.reader() like delimiter, quotechar, etc.
@@ -98,7 +98,7 @@ class CSVReader(Reader):
                  fp: TextIO,
                  dialect=csv.excel,
                  headers: Optional[List[str]] = None,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None,
@@ -114,7 +114,7 @@ class CSVReader(Reader):
             CSV dialect (excel, excel_tab, unix_dialect, etc.)
         headers : List[str], optional
             Custom headers to use instead of reading from file
-        add_row_num : bool, default True
+        add_row_num : bool, default False
             Add _row_num field to records
         skip_rows : int, default 0
             Data rows to skip after headers

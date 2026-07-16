@@ -10,7 +10,7 @@ class DataFrameReader(Reader):
 
     This reader accepts a pre-loaded DataFrame (from pandas or polars) and streams
     rows as Record objects. It supports all standard Reader features
-    (add_rownum, skip_records, max_records) while providing accurate
+    (add_row_num, skip_rows, n_rows) while providing accurate
     progress tracking based on known row count.
 
     No pandas or polars are imported in this module — the user has already imported
@@ -20,11 +20,11 @@ class DataFrameReader(Reader):
     ----------
     df : DataFrame
         pandas.DataFrame or polars.DataFrame containing the data
-    add_rownum : bool, default True
+    add_row_num : bool, default False
         Add '_row_num' field with 1-based row number
-    skip_records : int, default 0
+    skip_rows : int, default 0
         Number of rows to skip from the beginning
-    max_records : int, optional
+    n_rows : int, optional
         Maximum number of records to yield
 
     Examples
@@ -37,14 +37,14 @@ class DataFrameReader(Reader):
 
     >>> import polars as pl
     >>> df = pl.read_parquet("data.parquet")
-    >>> with DataFrameReader(df, add_rownum=False) as reader:
+    >>> with DataFrameReader(df) as reader:
     >>>     BulkSurge(table).load(reader)
     """
 
     def __init__(
         self,
         df,
-        add_row_num: bool = True,
+        add_row_num: bool = False,
         skip_rows: int = 0,
         n_rows: Optional[int] = None,
         null_values=None

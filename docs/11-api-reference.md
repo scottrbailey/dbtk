@@ -303,7 +303,7 @@ Located in `dbtk.readers`. Full guide: [File Readers](05-readers.md).
 ### Common Parameters
 
 All readers (`CSVReader`, `ExcelReader`, `XLSReader`, `JSONReader`, `NDJSONReader`, `XMLReader`, `FixedReader`, `DataFrameReader`) accept:
-`add_row_num=True`, `skip_rows=0`, `n_rows=None`, `headers=None`, `null_values=None`.
+`add_row_num=False`, `skip_rows=0`, `n_rows=None`, `headers=None`, `null_values=None`.
 See [Common Reader Parameters](05-readers.md#common-reader-parameters) for what each does.
 
 ### Common Methods and Properties
@@ -315,17 +315,17 @@ See [Common Reader Parameters](05-readers.md#common-reader-parameters) for what 
 ### Reader Signatures
 
 ```python
-CSVReader(fp, dialect=csv.excel, headers=None, add_row_num=True, skip_rows=0, n_rows=None, null_values=None, **kwargs)
-ExcelReader(worksheet, headers=None, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
-XLSReader(worksheet, headers=None, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
+CSVReader(fp, dialect=csv.excel, headers=None, add_row_num=False, skip_rows=0, n_rows=None, null_values=None, **kwargs)
+ExcelReader(worksheet, headers=None, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
+XLSReader(worksheet, headers=None, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 ```
 Details: [CSV Files](05-readers.md#csv-files), [Excel Files](05-readers.md#excel-files)
 
 ```python
-JSONReader(fp, record_path=None, flatten=True, add_row_num=True, skip_rows=0, n_rows=None, null_values=None, **kwargs)
-NDJSONReader(fp, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
-XMLReader(fp, record_xpath='//record', columns=None, sample_size=10, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
-DataFrameReader(df, add_row_num=True, skip_rows=0, n_rows=None, null_values=None)
+JSONReader(fp, record_path=None, flatten=True, add_row_num=False, skip_rows=0, n_rows=None, null_values=None, **kwargs)
+NDJSONReader(fp, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
+XMLReader(fp, record_xpath='//record', columns=None, sample_size=10, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
+DataFrameReader(df, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 ```
 Details: [JSON Files](05-readers.md#json-files), [NDJSON Files](05-readers.md#ndjson-files), [XML Files](05-readers.md#xml-files), [DataFrame Reader](05-readers.md#dataframe-reader)
 

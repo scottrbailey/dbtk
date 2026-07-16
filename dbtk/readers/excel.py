@@ -33,7 +33,7 @@ class ExcelReader(Reader):
     def __init__(self,
                  worksheet,
                  headers: Optional[List[str]] = None,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -42,7 +42,7 @@ class ExcelReader(Reader):
         Args:
             worksheet: openpyxl.Worksheet object to read from.
             headers: Optional list of header names to use instead of reading from row 1.
-            add_row_num: If True, adds a _row_num field to each record (default: True).
+            add_row_num: If True, adds a _row_num field to each record (default: False).
             skip_rows: Number of data rows to skip after headers (default: 0).
             n_rows: Maximum number of rows to read, or None for all (default: None).
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').
@@ -103,7 +103,7 @@ class XLSReader(Reader):
     def __init__(self,
                  worksheet,
                  headers: Optional[List[str]] = None,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):
@@ -112,7 +112,7 @@ class XLSReader(Reader):
         Args:
             worksheet: xlrd.Sheet object to read from.
             headers: Optional list of header names to use instead of reading from row 0.
-            add_row_num: If True, adds a _row_num field to each record (default: True).
+            add_row_num: If True, adds a _row_num field to each record (default: False).
             skip_rows: Number of data rows to skip after headers (default: 0).
             n_rows: Maximum number of rows to read, or None for all (default: None).
             null_values: Values to convert to None (e.g., '\\N', 'NULL', 'NA').

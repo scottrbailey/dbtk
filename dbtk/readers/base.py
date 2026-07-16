@@ -93,7 +93,7 @@ class Reader(ABC):
 
     Parameters
     ----------
-    add_row_num : bool, default True
+    add_row_num : bool, default False
         Add a '_row_num' field to each record containing the 1-based row number
     skip_rows : int, default 0
         Number of data rows to skip after headers (useful for skipping footer rows
@@ -168,7 +168,7 @@ class Reader(ABC):
     BIG_BYTE_THRESHOLD = 5 * 1024 * 1024  # Show progress for >5MB files
 
     def __init__(self,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  headers: Optional[List[str]] = None,
@@ -179,7 +179,7 @@ class Reader(ABC):
 
         Parameters
         ----------
-        add_row_num : bool, default True
+        add_row_num : bool, default False
             Add a '_row_num' field to each record containing the 1-based row number
         skip_rows : int, default 0
             Number of data rows to skip after headers

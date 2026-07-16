@@ -39,6 +39,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yield `Record` objects built via a shared `itemgetter`-based fast path, so per-row cost stays
   low.
 
+### Changed
+
+- **BREAKING: `add_row_num` now defaults to `False` on every reader** (`CSVReader`,
+  `ExcelReader`, `XLSReader`, `JSONReader`, `NDJSONReader`, `XMLReader`, `DataFrameReader`) —
+  previously only `FixedReader`/`EDIReader` defaulted to `False` (fixed-width files have
+  explicit column specs, making row numbers less useful there); the rest defaulted to `True`.
+  `_row_num` is a real field, not cosmetic — it flows into `.keys()`/`.to_dict()`/iteration
+  like any other column, and since writers derive their output columns from the first
+  record when no explicit `columns=` is given, it previously leaked into default CSV
+  headers, JSON/XML/Excel output, and `DatabaseWriter`/`cursor_to_cursor`'s generated
+  `INSERT` column list (already called out as a footgun in the writers docs). `Table`/
+  `DataSurge`/`BulkSurge` are unaffected — they only pull explicitly mapped fields, so this
+  doesn't change generated SQL through that path. If you relied on the previous default,
+  pass `add_row_num=True` explicitly.
+
 ### Fixed
 
 - **Empty Excel header cells produced `None` in `record._fields`** — `cell.value` is
