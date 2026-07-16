@@ -131,10 +131,6 @@ records = tuples_to_records(rows, ['id', 'name', None, 'email'])  # 3rd position
 writers.to_csv(select_columns(records, ['name', 'email']), 'users.csv')
 ```
 
-`select_columns()` works lazily on any iterable of self-describing rows — cursors, `Record`
-objects, dicts, namedtuples — inferring column names from the first row. Plain list/tuple rows
-carry no column names of their own, so pass `source_columns=[...]` explicitly for those.
-
 ## Quick Preview to Stdout
 
 Pass `None` as the filename to preview data to stdout — perfect for debugging or quick checks:
