@@ -16,7 +16,7 @@ from dbtk.writers import (
     CSVWriter, ExcelWriter, FixedWidthWriter,
     JSONWriter, NDJSONWriter, XMLWriter,
     to_csv, to_excel, to_fixed_width, to_json, to_ndjson, to_xml,
-    select_columns,
+    select_columns, exclude_columns, rename_columns, tuples_to_records,
 )
 from dbtk.record import Record
 
@@ -1177,113 +1177,41 @@ class TestCompression:
 
 
 class TestSelectColumns:
-    """Tests for the select_columns() row-shaping generator."""
+    """Tests for the select_columns() row-shaping generator (select + reorder)."""
 
-    def test_exclude_records(self, sample_records, sample_columns):
-        """action='exclude' drops the named columns and preserves source order."""
-        out = list(select_columns(sample_records, ['bison_companion', 'last_training'], action='exclude'))
+    def test_selects_and_reorders(self, sample_records):
+        out = list(select_columns(sample_records, ['monk_name', 'trainee_id']))
 
         assert len(out) == len(sample_records)
         assert all(isinstance(r, Record) for r in out)
-        expected = [c for c in sample_columns if c not in ('bison_companion', 'last_training')]
-        assert out[0].keys() == expected
-        assert out[0]['monk_name'] == sample_records[0]['monk_name']
-
-    def test_include_records_reorders(self, sample_records):
-        """action='include' selects and reorders columns per col_names."""
-        out = list(select_columns(sample_records, ['monk_name', 'trainee_id'], action='include'))
-
         assert out[0].keys() == ['monk_name', 'trainee_id']
         assert out[0]['trainee_id'] == sample_records[0]['trainee_id']
 
-    def test_include_is_default_action(self, sample_records):
-        """action defaults to 'include'."""
-        out = list(select_columns(sample_records, ['monk_name']))
-        assert out[0].keys() == ['monk_name']
-
-    def test_include_dict_renames_and_reorders(self, sample_records):
-        """A dict col_names selects, reorders, and renames in one pass."""
-        out = list(select_columns(sample_records, {'monk_name': 'Name', 'trainee_id': 'ID'}))
-
-        assert out[0].keys() == ['Name', 'ID']
-        assert out[0]['Name'] == sample_records[0]['monk_name']
-        assert out[0]['ID'] == sample_records[0]['trainee_id']
-
-    def test_include_dict_falsy_value_keeps_original_name(self, sample_records):
-        """Empty string or None as a dict value means 'keep the source name'."""
-        out = list(select_columns(sample_records, {'monk_name': '', 'trainee_id': None}))
-
-        assert out[0].keys() == ['monk_name', 'trainee_id']
-        assert out[0]['monk_name'] == sample_records[0]['monk_name']
-
-    def test_include_dict_duplicate_rename_target_deduped(self, sample_records):
-        """Renaming two columns to the same name relies on Record's own dedup."""
-        out = list(select_columns(sample_records, {'monk_name': 'x', 'home_temple': 'x'}))
-
-        assert out[0].keys() == ['x', 'x_2']
-        assert out[0]['x'] == sample_records[0]['monk_name']
-        assert out[0]['x_2'] == sample_records[0]['home_temple']
-
-    def test_include_dict_unknown_source_column_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            list(select_columns(sample_records, {'not_a_real_column': 'X'}))
-
-    def test_exclude_with_dict_raises_type_error(self, sample_records):
-        """Renaming has no effect when excluding; reject the ambiguous input outright."""
-        with pytest.raises(TypeError):
-            select_columns(sample_records, {'bison_companion': 'Bison'}, action='exclude')
-
-    def test_include_dict_works_with_dicts_and_namedtuples(self, sample_dicts, sample_namedtuples):
-        """Dict-rename form works for any self-describing row type, not just Record."""
-        out_dict = list(select_columns(sample_dicts, {'monk_name': 'Name'}))
-        assert out_dict[0].keys() == ['Name']
-
-        out_nt = list(select_columns(sample_namedtuples, {'monk_name': 'Name'}))
-        assert out_nt[0].keys() == ['Name']
-
-    def test_include_dict_works_with_source_columns(self, sample_lists, sample_columns):
-        """Dict-rename form also works for positional rows given source_columns."""
-        out = list(select_columns(sample_lists, {'monk_name': 'Name', 'trainee_id': 'ID'},
-                                   source_columns=sample_columns))
-        assert out[0].keys() == ['Name', 'ID']
-
     def test_works_with_dicts(self, sample_dicts):
-        """dict rows are self-describing; no source_columns needed."""
-        out = list(select_columns(sample_dicts, ['trainee_id', 'monk_name'], action='include'))
+        out = list(select_columns(sample_dicts, ['trainee_id', 'monk_name']))
         assert out[0].to_dict() == {
             'trainee_id': sample_dicts[0]['trainee_id'],
             'monk_name': sample_dicts[0]['monk_name'],
         }
 
     def test_works_with_namedtuples(self, sample_namedtuples):
-        """namedtuple rows are self-describing via _fields."""
-        out = list(select_columns(sample_namedtuples, ['bison_companion'], action='exclude'))
-        assert 'bison_companion' not in out[0].keys()
+        out = list(select_columns(sample_namedtuples, ['monk_name']))
+        assert out[0].keys() == ['monk_name']
         assert out[0]['monk_name'] == sample_namedtuples[0].monk_name
 
-    def test_plain_lists_require_source_columns(self, sample_lists, sample_columns):
-        """Plain list/tuple rows carry no column names; source_columns is required."""
+    def test_plain_tuples_raise_type_error(self, sample_lists):
+        """Positional rows carry no column names; use tuples_to_records() first."""
         with pytest.raises(TypeError):
             list(select_columns(sample_lists, ['monk_name']))
 
-        out = list(select_columns(sample_lists, ['monk_name', 'trainee_id'],
-                                   action='include', source_columns=sample_columns))
-        assert out[0].keys() == ['monk_name', 'trainee_id']
-
-    def test_pipes_directly_into_writer(self, tmp_path, sample_records, sample_columns):
-        """Result feeds straight into to_csv() with no columns= needed."""
+    def test_pipes_directly_into_writer(self, tmp_path, sample_records):
         output_file = tmp_path / "output.csv"
-        to_csv(select_columns(sample_records, ['bison_companion'], action='exclude'), output_file)
+        to_csv(select_columns(sample_records, ['monk_name', 'trainee_id']), output_file)
 
         with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
             records = list(reader)
         assert len(records) == len(sample_records)
-        assert 'bison_companion' not in reader.headers
-        assert 'monk_name' in reader.headers
-
-    def test_invalid_action_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            select_columns(sample_records, ['monk_name'], action='bogus')
+        assert reader.headers == ['monk_name', 'trainee_id']
 
     def test_empty_col_names_raises(self, sample_records):
         with pytest.raises(ValueError):
@@ -1291,11 +1219,145 @@ class TestSelectColumns:
 
     def test_unknown_column_raises(self, sample_records):
         with pytest.raises(ValueError):
-            list(select_columns(sample_records, ['not_a_real_column'], action='include'))
-
-    def test_exclude_everything_raises(self, sample_records, sample_columns):
-        with pytest.raises(ValueError):
-            list(select_columns(sample_records, sample_columns, action='exclude'))
+            list(select_columns(sample_records, ['not_a_real_column']))
 
     def test_empty_input_yields_nothing(self):
         assert list(select_columns([], ['a'])) == []
+
+
+class TestExcludeColumns:
+    """Tests for the exclude_columns() row-shaping generator (block-list)."""
+
+    def test_excludes_and_preserves_order(self, sample_records, sample_columns):
+        out = list(exclude_columns(sample_records, ['bison_companion', 'last_training']))
+
+        assert len(out) == len(sample_records)
+        assert all(isinstance(r, Record) for r in out)
+        expected = [c for c in sample_columns if c not in ('bison_companion', 'last_training')]
+        assert out[0].keys() == expected
+        assert out[0]['monk_name'] == sample_records[0]['monk_name']
+
+    def test_accepts_a_set(self, sample_records, sample_columns):
+        """Order doesn't matter for exclude, so a set works as well as a list."""
+        out = list(exclude_columns(sample_records, {'bison_companion'}))
+        assert 'bison_companion' not in out[0].keys()
+
+    def test_works_with_namedtuples(self, sample_namedtuples):
+        out = list(exclude_columns(sample_namedtuples, ['bison_companion']))
+        assert 'bison_companion' not in out[0].keys()
+        assert out[0]['monk_name'] == sample_namedtuples[0].monk_name
+
+    def test_plain_tuples_raise_type_error(self, sample_lists):
+        with pytest.raises(TypeError):
+            list(exclude_columns(sample_lists, ['monk_name']))
+
+    def test_pipes_directly_into_writer(self, tmp_path, sample_records):
+        output_file = tmp_path / "output.csv"
+        to_csv(exclude_columns(sample_records, ['bison_companion']), output_file)
+
+        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
+            records = list(reader)
+        assert len(records) == len(sample_records)
+        assert 'bison_companion' not in reader.headers
+        assert 'monk_name' in reader.headers
+
+    def test_empty_col_names_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            exclude_columns(sample_records, [])
+
+    def test_unknown_column_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            list(exclude_columns(sample_records, ['not_a_real_column']))
+
+    def test_exclude_everything_raises(self, sample_records, sample_columns):
+        with pytest.raises(ValueError):
+            list(exclude_columns(sample_records, sample_columns))
+
+    def test_empty_input_yields_nothing(self):
+        assert list(exclude_columns([], ['a'])) == []
+
+
+class TestRenameColumns:
+    """Tests for the rename_columns() row-shaping generator (partial rename, pass-through)."""
+
+    def test_renames_only_listed_columns(self, sample_records, sample_columns):
+        out = list(rename_columns(sample_records, {'monk_name': 'Name'}))
+
+        assert len(out) == len(sample_records)
+        assert all(isinstance(r, Record) for r in out)
+        expected = ['Name' if c == 'monk_name' else c for c in sample_columns]
+        assert out[0].keys() == expected
+        assert out[0]['Name'] == sample_records[0]['monk_name']
+        assert out[0]['trainee_id'] == sample_records[0]['trainee_id']
+
+    def test_falsy_value_keeps_original_name(self, sample_records, sample_columns):
+        out = list(rename_columns(sample_records, {'monk_name': '', 'trainee_id': None}))
+        assert out[0].keys() == sample_columns
+
+    def test_works_with_dicts_and_namedtuples(self, sample_dicts, sample_namedtuples):
+        out_dict = list(rename_columns(sample_dicts, {'monk_name': 'Name'}))
+        assert 'Name' in out_dict[0].keys()
+
+        out_nt = list(rename_columns(sample_namedtuples, {'monk_name': 'Name'}))
+        assert 'Name' in out_nt[0].keys()
+
+    def test_plain_tuples_raise_type_error(self, sample_lists):
+        with pytest.raises(TypeError):
+            list(rename_columns(sample_lists, {'monk_name': 'Name'}))
+
+    def test_pipes_directly_into_writer(self, tmp_path, sample_records):
+        output_file = tmp_path / "output.csv"
+        to_csv(rename_columns(sample_records, {'monk_name': 'Name'}), output_file)
+
+        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
+            records = list(reader)
+        assert len(records) == len(sample_records)
+        assert 'Name' in reader.headers
+        assert 'monk_name' not in reader.headers
+
+    def test_empty_mapping_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            rename_columns(sample_records, {})
+
+    def test_unknown_column_raises(self, sample_records):
+        with pytest.raises(ValueError):
+            list(rename_columns(sample_records, {'not_a_real_column': 'X'}))
+
+    def test_empty_input_yields_nothing(self):
+        assert list(rename_columns([], {'a': 'b'})) == []
+
+
+class TestTuplesToRecords:
+    """Tests for the tuples_to_records() positional-to-Record converter."""
+
+    def test_names_positions(self, sample_lists, sample_columns):
+        out = list(tuples_to_records(sample_lists, sample_columns))
+
+        assert len(out) == len(sample_lists)
+        assert all(isinstance(r, Record) for r in out)
+        assert out[0].keys() == sample_columns
+        assert list(out[0].values()) == sample_lists[0]
+
+    def test_falsy_column_drops_position(self, sample_lists, sample_columns):
+        columns = list(sample_columns)
+        columns[1] = None  # drop the second column entirely
+        out = list(tuples_to_records(sample_lists, columns))
+
+        expected = [c for c in sample_columns if c != sample_columns[1]]
+        assert out[0].keys() == expected
+
+    def test_composes_with_select_columns(self, sample_lists, sample_columns):
+        from dbtk.writers import select_columns
+        out = list(select_columns(tuples_to_records(sample_lists, sample_columns), ['monk_name']))
+        assert out[0].keys() == ['monk_name']
+
+    def test_row_length_mismatch_raises(self):
+        with pytest.raises(ValueError):
+            list(tuples_to_records([(1, 2)], ['a', 'b', 'c']))
+
+    def test_all_falsy_columns_raises(self):
+        with pytest.raises(ValueError):
+            list(tuples_to_records([(1, 2)], [None, None]))
+
+    def test_empty_input_yields_nothing(self):
+        assert list(tuples_to_records([], ['a', 'b'])) == []

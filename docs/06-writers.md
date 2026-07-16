@@ -11,7 +11,7 @@ For the complete parameter/method reference, see the [API Reference](11-api-refe
 **General**
 - [Basic Usage](#basic-usage)
 - [Export Once, Write Everywhere](#export-once-write-everywhere)
-- [Dropping, Reordering, or Renaming Columns with select_columns](#dropping-reordering-or-renaming-columns-with-select_columns)
+- [Dropping, Reordering, or Renaming Columns](#dropping-reordering-or-renaming-columns)
 - [Quick Preview to Stdout](#quick-preview-to-stdout)
 - [Common Writer Parameters](#common-writer-parameters)
 - [Compressed Output](#compressed-output)
@@ -81,40 +81,55 @@ cursor.execute("SELECT * FROM large_table")
 writers.to_csv(cursor, 'output.csv')  # Cursor consumed once, no list in memory
 ```
 
-## Dropping, Reordering, or Renaming Columns with `select_columns`
+## Dropping, Reordering, or Renaming Columns
 
 Writers export whatever columns are on the source data — there's no `exclude=` or `columns=`
-filter on the writers themselves. Instead, `select_columns()` reshapes the row stream *before*
-it reaches the writer, without materializing anything in memory:
+filter on the writers themselves. Instead, three small generators reshape the row stream
+*before* it reaches the writer, without materializing anything in memory. Each does one job:
 
 ```python
-from dbtk.writers import select_columns
+from dbtk.writers import select_columns, exclude_columns, rename_columns
 
-# Drop sensitive columns from cursor results before writing
+# select_columns: allow-list, also sets output order
 cursor.execute("SELECT * FROM users")
-writers.to_csv(select_columns(cursor, ['ssn', 'password_hash'], action='exclude'), 'users.csv')
+writers.to_excel(select_columns(cursor, ['name', 'email', 'signup_date']), 'report.xlsx')
 
-# Select and reorder a subset for a report
-writers.to_excel(select_columns(records, ['name', 'email', 'signup_date']), 'report.xlsx')
+# exclude_columns: block-list, source order is preserved
+writers.to_csv(exclude_columns(cursor, ['ssn', 'password_hash']), 'users.csv')
+
+# rename_columns: relabel some columns, everything else passes through unchanged
+writers.to_csv(rename_columns(cursor, {'signup_date': 'Joined On'}), 'customers.csv')
 ```
 
-`action='include'` (the default) treats `col_names` as an allow-list and also sets the output
-column order — handy for reordering as well as selecting. `action='exclude'` treats it as a
-block-list and preserves the source column order. Each row that comes out is a `Record`, so it
-plugs straight into any writer with no `columns=` needed.
+`select_columns()` and `exclude_columns()` both take a plain collection of column names —
+`exclude_columns()` accepts a list, tuple, or set, since order never matters for a block-list.
+`rename_columns()` takes a dict of source name → new name; only the columns you list are
+relabeled, everything else keeps its original name and position. A falsy value (`''` or `None`)
+in that mapping is a no-op for that column rather than an error, so you can build the mapping
+programmatically without filtering out unchanged entries.
 
-For `action='include'`, `col_names` can also be a dict mapping source name → new output name,
-selecting, reordering, *and* renaming headers in one pass — no separate `headers=` override
-needed on the writer:
+All three are lazy and expect self-describing rows — cursors, `Record`, dict, or namedtuple —
+inferring column names from the first row. Each row that comes out is a `Record`, so results
+plug straight into any writer with no `columns=` needed, and the three compose freely:
 
 ```python
-# Rename as part of the same call; '' (or None) keeps the original name
-writers.to_csv(select_columns(cursor, {'name': 'Customer', 'email': '', 'signup_date': 'Joined On'}),
-                'customers.csv')
+# Drop a column and rename another in the same pipeline
+writers.to_csv(
+    rename_columns(exclude_columns(cursor, ['ssn']), {'signup_date': 'Joined On'}),
+    'customers.csv',
+)
 ```
 
-A dict isn't accepted with `action='exclude'` — renaming a column that isn't in the output
-wouldn't do anything, so it's rejected outright rather than silently ignored.
+For raw list/tuple rows with no column names of their own, convert them to `Record`s first with
+`tuples_to_records()` (in `dbtk.record`, re-exported from `dbtk.writers`) — pass a falsy entry
+in `columns` to drop a position entirely instead of naming it (handy for filler/padding data):
+
+```python
+from dbtk.writers import tuples_to_records, select_columns
+
+records = tuples_to_records(rows, ['id', 'name', None, 'email'])  # 3rd position dropped
+writers.to_csv(select_columns(records, ['name', 'email']), 'users.csv')
+```
 
 `select_columns()` works lazily on any iterable of self-describing rows — cursors, `Record`
 objects, dicts, namedtuples — inferring column names from the first row. Plain list/tuple rows
@@ -346,7 +361,7 @@ count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
 print(f"Transferred {count} strategic records")
 ```
 
-The INSERT statement's column list is built from the source data's columns — use [`select_columns()`](#dropping-reordering-or-renaming-columns-with-select_columns) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
+The INSERT statement's column list is built from the source data's columns — use [`select_columns()` or `exclude_columns()`](#dropping-reordering-or-renaming-columns) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
 
 ---
 

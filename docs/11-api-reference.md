@@ -371,12 +371,14 @@ to_edi(data, columns, file=None, encoding='utf-8', truncate_overflow=False)
 ```
 Details: [Fixed-Width Files](06-writers.md#fixed-width-files-with-fixedwidthwriter), [EDI](06-writers.md#edi-electronic-data-interchange-fixed-width-with-ediwriter)
 
-### select_columns
+### select_columns / exclude_columns / rename_columns
 
 ```python
-select_columns(rows, col_names, action='include', source_columns=None)
+select_columns(rows, col_names)     # allow-list (list), also sets output order
+exclude_columns(rows, col_names)    # block-list (list/tuple/set), source order preserved
+rename_columns(rows, mapping)       # dict source->new name; unlisted columns pass through unchanged
 ```
-Lazily projects/reorders/drops/renames columns from a row stream before it reaches a writer. `col_names` is a list for `action='include'`/`'exclude'`, or a dict (source name -> new name, `action='include'` only) to rename in the same pass. Details: [Dropping, Reordering, or Renaming Columns with select_columns](06-writers.md#dropping-reordering-or-renaming-columns-with-select_columns).
+Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. Details: [Dropping, Reordering, or Renaming Columns](06-writers.md#dropping-reordering-or-renaming-columns).
 
 ### XMLStreamer
 

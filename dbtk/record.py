@@ -3,7 +3,8 @@
 Record classes for database result sets.
 """
 import logging
-from typing import List, Any, Iterator, Tuple, Union
+import operator
+from typing import Iterable, List, Any, Iterator, Optional, Sequence, Tuple, Union
 from .utils import to_string, normalize_field_name, FixedColumn
 
 logger = logging.getLogger(__name__)
@@ -906,3 +907,79 @@ def fixed_record_factory(columns, name='FixedRecord'):
     cls = type(name, (FixedWidthRecord,), {})
     cls.set_fields(fixed_cols)
     return cls
+
+
+def _make_getter(keys: Sequence[Any]):
+    """
+    Build a callable that pulls `keys` worth of values from an object via
+    __getitem__, in order. Keys may be strings (dict/Record lookup) or ints
+    (positional lookup) — __getitem__ doesn't care which.
+
+    Handles the single-key case explicitly since operator.itemgetter returns
+    a bare value (not a 1-tuple) when given only one argument.
+
+    Shared with dbtk.writers.utils' select_columns/exclude_columns/rename_columns.
+    """
+    if len(keys) == 1:
+        key = keys[0]
+        return lambda obj: (obj[key],)
+    return operator.itemgetter(*keys)
+
+
+def tuples_to_records(rows: Iterable[Sequence[Any]], columns: Sequence[Optional[str]]) -> Iterator[Record]:
+    """
+    Convert a stream of positional rows (tuples/lists) into Record objects.
+
+    Positional data carries no column names of its own, so `columns` must be
+    supplied explicitly, one entry per position. This is the counterpart to
+    dbtk.writers.select_columns/exclude_columns/rename_columns, which all
+    expect self-describing rows (dict, Record, namedtuple) — pipe positional
+    data through this first: ``select_columns(tuples_to_records(rows, columns), [...])``.
+
+    Parameters
+    ----------
+    rows : Iterable[Sequence[Any]]
+        Source rows - tuples, lists, or anything else positionally indexable.
+    columns : Sequence[str or None]
+        Column name for each position in a row. A falsy entry (``None`` or
+        ``''``) drops that position from the output Record entirely, rather
+        than naming it — handy for filler/padding columns you never want.
+
+    Yields
+    ------
+    Record
+        One Record per input row, holding only the named positions.
+
+    Raises
+    ------
+    ValueError
+        If `columns` has no non-empty names, or a row's length doesn't match
+        `columns`' length.
+
+    Examples
+    --------
+    ::
+
+        # Straightforward positional naming
+        list(tuples_to_records(rows, ['id', 'name', 'email']))
+
+        # Skip a filler column entirely (position 2 is dropped, not named)
+        list(tuples_to_records(rows, ['id', 'name', None, 'email']))
+    """
+    columns = list(columns)
+    kept_indices = [i for i, c in enumerate(columns) if c]
+    kept_names = [columns[i] for i in kept_indices]
+    if not kept_names:
+        raise ValueError("columns must include at least one non-empty name")
+
+    output_cls = type('TupleRecord', (Record,), {})
+    output_cls.set_fields(kept_names)
+
+    n = len(columns)
+    all_kept = len(kept_indices) == n
+    get = None if all_kept else _make_getter(kept_indices)
+
+    for row in rows:
+        if len(row) != n:
+            raise ValueError(f"Row length ({len(row)}) doesn't match columns length ({n})")
+        yield output_cls(*row) if all_kept else output_cls(*get(row))

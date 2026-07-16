@@ -23,19 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that expose the underlying driver cursor and connection objects for driver-specific
   operations that dbtk doesn't wrap.
 
-- **`dbtk.writers.select_columns()`** — lazily project a row stream down to a subset of
-  columns before writing, without materializing the source. `action='include'` (default)
-  selects and reorders per an explicit column list; `action='exclude'` drops the named
-  columns and preserves source order. For `action='include'`, `col_names` can also be a
-  dict mapping source name -> new name to select, reorder, and rename headers in one pass
-  (a falsy value keeps the original name); dicts aren't accepted with `action='exclude'`,
-  since renaming a dropped column has no effect. Works on any self-describing rows (cursors,
-  `Record`, dict, namedtuple), inferring column names from the first row; plain list/tuple
-  rows need `source_columns=[...]` passed explicitly. Yields `Record` objects built directly
-  from a precomputed `itemgetter`, so per-row cost stays low regardless of whether renaming
-  is involved. Solves the common "my query/table has columns I don't want in the export, or
-  the source names aren't what I want in the header row" case without adding `exclude=`/
-  `headers=` params to every writer.
+- **`dbtk.writers.select_columns()` / `exclude_columns()` / `rename_columns()`** — lazily
+  reshape a row stream before it reaches a writer, without materializing the source or adding
+  `exclude=`/`headers=` params to every writer. Each does one job: `select_columns(rows,
+  col_names)` is an allow-list that also sets output order; `exclude_columns(rows, col_names)`
+  is a block-list (list/tuple/set — order doesn't matter) that preserves source order;
+  `rename_columns(rows, mapping)` relabels only the columns in `mapping` and passes everything
+  else through unchanged, in place (a falsy mapping value is a no-op for that column). All
+  three work on self-describing rows (cursors, `Record`, dict, namedtuple), inferring column
+  names from the first row, and compose freely — e.g.
+  `rename_columns(exclude_columns(rows, [...]), {...})`. For raw list/tuple rows with no
+  column names of their own, convert first with the new **`dbtk.record.tuples_to_records()`**
+  (also re-exported from `dbtk.writers`); a falsy entry in its `columns` list drops that
+  position from the output entirely instead of naming it, for filler/padding data. All four
+  yield `Record` objects built via a shared `itemgetter`-based fast path, so per-row cost stays
+  low.
 
 ### Fixed
 

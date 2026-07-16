@@ -39,10 +39,11 @@ from .fixed_width import to_fixed_width, FixedWidthWriter, to_edi, EDIWriter
 from .json import to_json, to_ndjson, JSONWriter, NDJSONWriter
 from .xml import to_xml, XMLWriter, XMLStreamer
 from .database import cursor_to_cursor, DatabaseWriter
-from .utils import select_columns
+from .utils import select_columns, exclude_columns, rename_columns
+from ..record import tuples_to_records
 
 __all__ = ['to_csv', 'CSVWriter', 'to_excel', 'ExcelWriter', 'LinkedExcelWriter', 'LinkSource',
            'ExcelFormat', 'ColumnRule', 'to_fixed_width', 'FixedWidthWriter', 'to_edi', 'EDIWriter',
            'to_json', 'to_ndjson', 'JSONWriter', 'NDJSONWriter',
            'to_xml', 'XMLWriter', 'XMLStreamer', 'DatabaseWriter', 'cursor_to_cursor',
-           'select_columns']
+           'select_columns', 'exclude_columns', 'rename_columns', 'tuples_to_records']
