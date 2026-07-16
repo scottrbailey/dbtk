@@ -8,6 +8,16 @@
 
 **The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
 
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Column Configuration Schema](#column-configuration-schema)
+- [String Shorthand for Transformations](#string-shorthand-for-transformations)
+- [Data Transformations](#data-transformations)
+- [Database Lookups and Validation](#database-lookups-and-validation)
+- [Value Resolution Process](#value-resolution-process)
+- [Handling Incomplete Records](#handling-incomplete-records)
+
 ## Quick Start
 
 Define a `Table`, map your source fields to database columns, and start loading data:

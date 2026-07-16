@@ -378,7 +378,7 @@ select_columns(rows, col_names)     # allow-list (list), also sets output order
 exclude_columns(rows, col_names)    # block-list (list/tuple/set), source order preserved
 rename_columns(rows, mapping)       # dict source->new name; unlisted columns pass through unchanged
 ```
-Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. Details: [Dropping, Reordering, or Renaming Columns](06-writers.md#dropping-reordering-or-renaming-columns).
+Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
 
 ### XMLStreamer
 

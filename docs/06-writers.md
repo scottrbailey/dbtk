@@ -10,12 +10,12 @@ For the complete parameter/method reference, see the [API Reference](11-api-refe
 
 **General**
 - [Basic Usage](#basic-usage)
-- [Export Once, Write Everywhere](#export-once-write-everywhere)
-- [Dropping, Reordering, or Renaming Columns](#dropping-reordering-or-renaming-columns)
-- [Quick Preview to Stdout](#quick-preview-to-stdout)
 - [Common Writer Parameters](#common-writer-parameters)
+- [Export Once, Write Everywhere](#export-once-write-everywhere)
+- [Quick Preview to Stdout](#quick-preview-to-stdout)
 - [Compressed Output](#compressed-output)
 - [Writing in Batches](#writing-in-batches)
+- [Reshaping the Row Stream](#reshaping-the-row-stream)
 
 **Formats**
 - [CSV Files](#csv-files)
@@ -62,89 +62,6 @@ count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
 print(f"Transferred {count} strategic records")
 ```
 
-## Export Once, Write Everywhere
-
-If your result set fits comfortably in memory you can fetch it once and export to multiple formats:
-
-```python
-# Fetch once, write many times
-data = cursor.fetchall()
-writers.to_csv(data, 'output.csv')
-writers.to_excel(data, 'output.xlsx')
-writers.to_json(data, 'output.json')
-```
-
-For large result sets, skip the `fetchall()` entirely and pass the cursor directly to a writer — it streams row-by-row without materializing anything:
-
-```python
-cursor.execute("SELECT * FROM large_table")
-writers.to_csv(cursor, 'output.csv')  # Cursor consumed once, no list in memory
-```
-
-## Dropping, Reordering, or Renaming Columns
-
-Writers export whatever columns are on the source data — there's no `exclude=` or `columns=`
-filter on the writers themselves. Instead, three small generators reshape the row stream
-*before* it reaches the writer, without materializing anything in memory. Each does one job:
-
-```python
-from dbtk.writers import select_columns, exclude_columns, rename_columns
-
-# select_columns: allow-list, also sets output order
-cursor.execute("SELECT * FROM users")
-writers.to_excel(select_columns(cursor, ['name', 'email', 'signup_date']), 'report.xlsx')
-
-# exclude_columns: block-list, source order is preserved
-writers.to_csv(exclude_columns(cursor, ['ssn', 'password_hash']), 'users.csv')
-
-# rename_columns: relabel some columns, everything else passes through unchanged
-writers.to_csv(rename_columns(cursor, {'signup_date': 'Joined On'}), 'customers.csv')
-```
-
-`select_columns()` and `exclude_columns()` both take a plain collection of column names —
-`exclude_columns()` accepts a list, tuple, or set, since order never matters for a block-list.
-`rename_columns()` takes a dict of source name → new name; only the columns you list are
-relabeled, everything else keeps its original name and position. A falsy value (`''` or `None`)
-in that mapping is a no-op for that column rather than an error, so you can build the mapping
-programmatically without filtering out unchanged entries.
-
-All three are lazy and expect self-describing rows — cursors, `Record`, dict, or namedtuple —
-inferring column names from the first row. Each row that comes out is a `Record`, so results
-plug straight into any writer with no `columns=` needed, and the three compose freely:
-
-```python
-# Drop a column and rename another in the same pipeline
-writers.to_csv(
-    rename_columns(exclude_columns(cursor, ['ssn']), {'signup_date': 'Joined On'}),
-    'customers.csv',
-)
-```
-
-For raw list/tuple rows with no column names of their own, convert them to `Record`s first with
-`tuples_to_records()` (in `dbtk.record`, re-exported from `dbtk.writers`) — pass a falsy entry
-in `columns` to drop a position entirely instead of naming it (handy for filler/padding data):
-
-```python
-from dbtk.writers import tuples_to_records, select_columns
-
-records = tuples_to_records(rows, ['id', 'name', None, 'email'])  # 3rd position dropped
-writers.to_csv(select_columns(records, ['name', 'email']), 'users.csv')
-```
-
-## Quick Preview to Stdout
-
-Pass `None` as the filename to preview data to stdout — perfect for debugging or quick checks:
-
-```python
-# Preview first 20 records to console before writing to file
-cursor.execute("SELECT * FROM soldiers")
-writers.to_csv(cursor, None)  # Prints to stdout
-
-# Then export the full dataset
-cursor.execute("SELECT * FROM soldiers")
-writers.to_csv(cursor, 'soldiers.csv')
-```
-
 ## Common Writer Parameters
 
 Every file-based writer (`CSVWriter`, `JSONWriter`, `NDJSONWriter`, `XMLWriter`, `ExcelWriter`, `FixedWidthWriter`, `EDIWriter`) shares this shape:
@@ -165,6 +82,39 @@ A second tier of parameters is common to the writers that produce a header row �
 | `compression`   | `'infer'`  | See [Compressed Output](#compressed-output) — `CSVWriter`/`JSONWriter`/`NDJSONWriter` expose this explicitly; others inherit `'infer'` |
 
 Each writer also takes format-specific arguments (`delimiter` for CSV, `indent` for JSON, `root_element` for XML, `truncate_overflow` for fixed-width, etc.) — see that writer's own section below.
+
+## Export Once, Write Everywhere
+
+If your result set fits comfortably in memory you can fetch it once and export to multiple formats:
+
+```python
+# Fetch once, write many times
+data = cursor.fetchall()
+writers.to_csv(data, 'output.csv')
+writers.to_excel(data, 'output.xlsx')
+writers.to_json(data, 'output.json')
+```
+
+For large result sets, skip the `fetchall()` entirely and pass the cursor directly to a writer — it streams row-by-row without materializing anything:
+
+```python
+cursor.execute("SELECT * FROM large_table")
+writers.to_csv(cursor, 'output.csv')  # Cursor consumed once, no list in memory
+```
+
+## Quick Preview to Stdout
+
+Pass `None` as the filename to preview data to stdout — perfect for debugging or quick checks:
+
+```python
+# Preview first 20 records to console before writing to file
+cursor.execute("SELECT * FROM soldiers")
+writers.to_csv(cursor, None)  # Prints to stdout
+
+# Then export the full dataset
+cursor.execute("SELECT * FROM soldiers")
+writers.to_csv(cursor, 'soldiers.csv')
+```
 
 ## Compressed Output
 
@@ -232,6 +182,15 @@ with ExcelWriter(file='combined.xlsx') as writer:
         cursor.execute("SELECT * FROM sales WHERE region = :r", {'r': region})
         writer.write_batch(cursor, sheet_name=region)
 ```
+
+## Reshaping the Row Stream
+
+Need to drop columns, keep only some, reorder them, or rename headers before writing? Don't
+materialize the whole result set to do it — DBTK provides small generator functions
+(`select_columns`, `exclude_columns`, `rename_columns`, `tuples_to_records`) that reshape a row
+stream one record at a time, so any writer below can consume the result directly. See
+[Working with Streaming Records](04-record.md#working-with-streaming-records) in the Record
+documentation for the full rundown.
 
 ---
 
@@ -357,7 +316,7 @@ count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
 print(f"Transferred {count} strategic records")
 ```
 
-The INSERT statement's column list is built from the source data's columns — use [`select_columns()` or `exclude_columns()`](#dropping-reordering-or-renaming-columns) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
+The INSERT statement's column list is built from the source data's columns — use [`select_columns()` or `exclude_columns()`](04-record.md#working-with-streaming-records) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
 
 ---
 

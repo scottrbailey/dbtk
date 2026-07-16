@@ -2,6 +2,19 @@
 
 Common issues and solutions when using DBTK.
 
+## Quick Navigation
+
+- [Installation Issues](#installation-issues)
+- [Database Connection Issues](#database-connection-issues)
+- [SQL and Query Issues](#sql-and-query-issues)
+- [File I/O Issues](#file-io-issues)
+- [ETL and Table Issues](#etl-and-table-issues)
+- [Performance Issues](#performance-issues)
+- [BulkSurge Specific Issues](#bulksurge-specific-issues)
+- [IdentityManager Issues](#identitymanager-issues)
+- [Logging Issues](#logging-issues)
+- [Getting Help](#getting-help)
+
 ## Installation Issues
 
 ### `dbtk` Command Not Found (Windows)

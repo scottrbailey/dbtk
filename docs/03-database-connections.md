@@ -3,6 +3,19 @@
 DBTK provides a unified interface for connecting to multiple database types 
 with consistent APIs and smart cursor handling.
 
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Supported Databases](#supported-databases)
+- [The Database Object](#the-database-object)
+- [Access the Full Stack](#access-the-full-stack)
+- [Cursors and Records](#cursors-and-records)
+- [Parameter Styles](#parameter-styles)
+- [Cursor Methods](#cursor-methods)
+- [Transaction Management](#transaction-management)
+- [Error Handling](#error-handling)
+- [Best Practices](#best-practices)
+
 ## Quick Start
 
 ```python

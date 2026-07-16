@@ -7,6 +7,16 @@
 DBTK uses YAML configuration files to manage database connections and keep credentials secure with encryption. Running `dbtk checkup` will copy a well commented sample config file to _~/.config/dbtk_sample.yml_. 
 DBTK also has several [command line tools](#command-line-tools) to assist with configuration and encryption.
 
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Configuration File Locations](#configuration-file-locations)
+- [Configuration File Structure](#configuration-file-structure)
+- [Password Encryption](#password-encryption)
+- [Standalone Passwords](#standalone-passwords)
+- [Custom Driver Registration](#custom-driver-registration)
+- [Security Best Practices](#security-best-practices)
+
 ## Quick Start
 
 Create a `dbtk.yml` file in your project folder or in ~/.config folder:
