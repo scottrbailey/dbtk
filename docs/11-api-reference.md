@@ -2,6 +2,11 @@
 
 Complete reference for all public methods, properties, and functions in DBTK.
 
+This page is a quick-lookup index. For narrative usage guides and worked examples, see
+[File Readers](05-readers.md) / [Data Writers](06-writers.md) / [Excel Reports](06b-excel.md).
+For exhaustive, always-current signatures and docstrings, see the
+[Sphinx API docs](https://dbtk.readthedocs.io/en/latest/api.html).
+
 ## Quick Navigation
 
 - [Database & Connections](#database--connections)
@@ -52,7 +57,7 @@ db = sqlite(database, **kwargs)
 
 #### Methods
 
-**`cursor(batch_size=None, debug=False, return_cursor=False, **kwargs)`**
+**`cursor(batch_size=None, debug=False, return_cursor=False, add_row_num=False, **kwargs)`**
 - Creates a new cursor with specified settings
 - Returns: `Cursor` object
 
@@ -291,143 +296,103 @@ BulkSurge(table, batch_size=None)
 
 ## Readers
 
-### Base Reader
+Located in `dbtk.readers`. Full guide: [File Readers](05-readers.md).
 
-Located in `dbtk.readers`
-
-**`get_reader(file_path, **kwargs)`**
-- Auto-detects format from extension
-- Returns: appropriate Reader object
+**`get_reader(file_path, **kwargs)`** — auto-detects format from extension (and handles compression/ZIP); returns the appropriate Reader object.
 
 ### Common Parameters
 
-All readers support:
-- `skip_rows` - Skip N rows after headers
-- `n_rows` - Only read N rows
-- `add_row_num` - Add `_row_num` field (default True)
+All readers (`CSVReader`, `ExcelReader`, `XLSReader`, `JSONReader`, `NDJSONReader`, `XMLReader`, `FixedReader`, `DataFrameReader`) accept:
+`add_row_num=False`, `skip_rows=0`, `n_rows=None`, `headers=None`, `null_values=None`.
+See [Common Reader Parameters](05-readers.md#common-reader-parameters) for what each does.
 
-### Common Methods
+### Common Methods and Properties
 
-**`add_filter(func)`**
-- Adds filter function to pipeline
-- Multiple calls accumulate (AND logic)
-- Returns: self (for chaining)
+- `add_filter(func)` → self — adds a predicate to the filter pipeline (AND logic across calls)
+- `__iter__()`, `__enter__()`/`__exit__()` — iteration and context manager support
+- `source`, `row_count`, `headers`, `fieldnames` — see [Common Methods and Properties](05-readers.md#common-methods-and-properties)
 
-**`__iter__()`**
-- Iterates over records
+### Reader Signatures
 
-**`__enter__()`, `__exit__()`**
-- Context manager support
-
-### Properties
-
-- `source` → str/Path - Source file path
-- `row_count` → int - Records read
-- `headers` → list - Column headers
-- `fieldnames` → list - Normalized field names
-
-### Specific Readers
-
-**CSVReader**
 ```python
-CSVReader(file, delimiter=',', skip_rows=0, n_rows=None, **csv_args)
+CSVReader(fp, dialect=csv.excel, headers=None, add_row_num=False, skip_rows=0, n_rows=None, null_values=None, **kwargs)
+ExcelReader(worksheet, headers=None, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
+XLSReader(worksheet, headers=None, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 ```
+Details: [CSV Files](05-readers.md#csv-files), [Excel Files](05-readers.md#excel-files)
 
-**ExcelReader**
 ```python
-ExcelReader(file, sheet_name=0, sheet_index=None, skip_rows=0, n_rows=None)
+JSONReader(fp, record_path=None, flatten=True, add_row_num=False, skip_rows=0, n_rows=None, null_values=None, **kwargs)
+NDJSONReader(fp, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
+XMLReader(fp, record_xpath='//record', columns=None, sample_size=10, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
+DataFrameReader(df, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
 ```
+Details: [JSON Files](05-readers.md#json-files), [NDJSON Files](05-readers.md#ndjson-files), [XML Files](05-readers.md#xml-files), [DataFrame Reader](05-readers.md#dataframe-reader)
 
-**JSONReader**
 ```python
-JSONReader(file, record_path=None, flatten=True, skip_rows=0, n_rows=None)
+FixedReader(fp, columns, auto_trim=True, add_row_num=False, skip_rows=0, n_rows=None, null_values=None)
+EDIReader(fp, columns, type_name_map=None, strict=False, **kwargs)  # kwargs pass through to FixedReader
+FixedColumn(name, start_pos, end_pos, column_type='text', align=None, pad_char=None, comment=None)
 ```
+Details: [Fixed-Width Files](05-readers.md#fixed-width-files), [EDI](05-readers.md#edi--multi-record-type-fixed-width-files)
 
-**NDJSONReader**
-```python
-NDJSONReader(file, skip_rows=0, n_rows=None)
-```
-
-**XMLReader**
-```python
-XMLReader(file, record_xpath, columns=None, skip_rows=0, n_rows=None)
-```
-
-**FixedReader**
-```python
-FixedReader(file, columns, skip_rows=0, n_rows=None)
-```
-
-**DataFrameReader**
-```python
-DataFrameReader(dataframe, skip_rows=0, n_rows=None)
-```
-
-### FixedReader Utilities
-
-**`FixedColumn(name, start, end, dtype='str')`**
-- Defines column for fixed-width files
-
-**`FixedReader.infer_columns(sample_lines, **kwargs)`** *(classmethod)*
-- Infers column positions from sample data
-
-**`FixedReader.visualize_columns(sample_lines, columns)`** *(classmethod)*
-- Visualizes column boundaries
+`FixedReader.visualize()` prints a character-ruler diagnostic of column boundaries over sample lines — see [Verifying Column Layout](05-readers.md#verifying-column-layout).
 
 ---
 
 ## Writers
 
-All writers accept cursor or materialized results (list of Records/dicts/tuples).
+Located in `dbtk.writers`. Full guide: [Data Writers](06-writers.md). All writers accept a cursor or materialized results (Records/dicts/namedtuples/lists).
+
+### Common Parameters
+
+File-based writers share `data=None`, `file=None`, `columns=None`, `encoding='utf-8'`; `CSVWriter`/`ExcelWriter` add `headers=None`, `write_headers=True`; most add `compression='infer'`.
+See [Common Writer Parameters](06-writers.md#common-writer-parameters) for the full breakdown.
 
 ### Writer Functions
 
-**`to_csv(data, file, delimiter=',', **kwargs)`**
-- Writes to CSV file
-- Pass `None` for file to print to stdout
+```python
+to_csv(data, file=None, headers=None, write_headers=True, null_string=None, compression='infer', **csv_kwargs)
+to_excel(data, file, sheet='Data', headers=None, write_headers=True)
+```
+Details: [CSV Files](06-writers.md#csv-files), [Excel Files](06-writers.md#excel-files), [Excel Reports](06b-excel.md)
 
-**`to_excel(data, file, sheet='Sheet1', append=False, **kwargs)`**
-- Writes to Excel file (.xlsx)
+```python
+to_json(data, file=None, indent=2, compression='infer', **json_kwargs)
+to_ndjson(data, file=None, compression='infer', **json_kwargs)
+to_xml(data, file=None, root_element='data', record_element='record', pretty=True)
+cursor_to_cursor(source_data, target_cursor, target_table, batch_size=1000, commit_frequency=10000)
+```
+Details: [JSON and NDJSON](06-writers.md#json-and-ndjson), [XML Files](06-writers.md#xml-files), [Database Writer](06-writers.md#database-writer)
 
-**`to_json(data, file, indent=2, **kwargs)`**
-- Writes to JSON file (array of objects)
+```python
+to_fixed_width(data, columns, file=None, encoding='utf-8', truncate_overflow=True)
+to_edi(data, columns, file=None, encoding='utf-8', truncate_overflow=False)
+```
+Details: [Fixed-Width Files](06-writers.md#fixed-width-files-with-fixedwidthwriter), [EDI](06-writers.md#edi-electronic-data-interchange-fixed-width-with-ediwriter)
 
-**`to_ndjson(data, file, **kwargs)`**
-- Writes to NDJSON file (one object per line)
+### select_columns / exclude_columns / rename_columns
 
-**`to_xml(data, file, root_element='root', record_element='record', **kwargs)`**
-- Writes to XML file
-
-**`to_fixed_width(data, column_widths, file, **kwargs)`**
-- Writes to fixed-width text file
-
-**`cursor_to_cursor(source_cursor, dest_cursor, table_name, batch_size=None)`**
-- Direct database-to-database transfer
-- Returns: number of records transferred
+```python
+select_columns(rows, col_names)     # allow-list (list), also sets output order
+exclude_columns(rows, col_names)    # block-list (list/tuple/set), source order preserved
+rename_columns(rows, mapping)       # dict source->new name; unlisted columns pass through unchanged
+```
+Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
 
 ### XMLStreamer
 
-For large XML exports:
+For large XML exports — writes incrementally, constant memory:
 
 ```python
-XMLStreamer(file, root_element='root', record_element='record', encoding='utf-8')
-
-# Methods
-write_batch(records)  # Write batch of records
-close()               # Finalize XML
+XMLStreamer(data=None, file=None, columns=None, encoding='utf-8', root_element='data', record_element='record')
+# write_batch(records), close()
 ```
+Details: [Streaming XML with XMLStreamer](06-writers.md#streaming-xml-with-xmlstreamer).
 
 ### LinkedExcelWriter
 
-For multiple sheets in same workbook:
-
-```python
-LinkedExcelWriter(file)
-
-# Methods
-write_sheet(data, sheet_name)  # Add sheet
-save()                          # Save workbook
-```
+`ExcelWriter` subclass with internal/external hyperlink management. Same `write_batch(data, sheet_name=...)` / context-manager interface as `ExcelWriter`, plus `register_link_source()`. Full reference: [Hyperlinked Reports with LinkedExcelWriter](06b-excel.md#hyperlinked-reports-with-linkedexcelwriter).
 
 ---
 

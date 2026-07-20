@@ -30,11 +30,11 @@ class JSONReader(Reader):
     flatten : bool, default True
         Flatten nested objects with dot notation. For example, ``{"user": {"name": "Bob"}}``
         becomes ``{"user.name": "Bob"}``. Arrays are preserved as-is.
-    add_rownum : bool, default True
+    add_row_num : bool, default False
         Add _row_num field to each record
-    skip_records : int, default 0
+    skip_rows : int, default 0
         Number of records to skip
-    max_records : int, optional
+    n_rows : int, optional
         Maximum records to read
     **kwargs
         Reserved for future use
@@ -89,7 +89,7 @@ class JSONReader(Reader):
                  fp: TextIO,
                  record_path: Optional[str] = None,
                  flatten: bool = True,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None,
@@ -240,7 +240,7 @@ class NDJSONReader(Reader):
 
     def __init__(self,
                  fp: TextIO,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):

@@ -2,6 +2,19 @@
 
 Welcome to DBTK! This guide will get you up and running in 5 minutes.
 
+## Quick Navigation
+
+- [What is DBTK?](#what-is-dbtk)
+- [Installation](#installation)
+- [Configuration Setup](#configuration-setup)
+- [Your First ETL Pipeline (5 Minutes)](#your-first-etl-pipeline-5-minutes)
+- [Complete Example: CSV to Database](#complete-example-csv-to-database)
+- [Core Concepts](#core-concepts)
+- [Configuration](#configuration)
+- [Common Patterns](#common-patterns)
+- [Next Steps](#next-steps)
+- [Quick Command Reference](#quick-command-reference)
+
 ## What is DBTK?
 
 DBTK (Data Benders Toolkit) is a Python library for ETL (Extract, Transform, Load) operations. It provides:

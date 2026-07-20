@@ -3,6 +3,19 @@
 DBTK provides a unified interface for connecting to multiple database types 
 with consistent APIs and smart cursor handling.
 
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Supported Databases](#supported-databases)
+- [The Database Object](#the-database-object)
+- [Access the Full Stack](#access-the-full-stack)
+- [Cursors and Records](#cursors-and-records)
+- [Parameter Styles](#parameter-styles)
+- [Cursor Methods](#cursor-methods)
+- [Transaction Management](#transaction-management)
+- [Error Handling](#error-handling)
+- [Best Practices](#best-practices)
+
 ## Quick Start
 
 ```python
@@ -139,11 +152,20 @@ cursor = db.cursor(
     batch_size=5000,           # Rows per batch in bulk operations
     debug=True,                # Print SQL queries and bind variables
     return_cursor=True,        # execute() returns cursor for chaining
+    add_row_num=True,          # Add a '_row_num' field to each record
 )
 
 # With return_cursor=True, you can chain calls
 user = cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
 ```
+
+`add_row_num` (default `False`) adds a `_row_num` field holding the 1-based position of
+each record within the current result set — the counter is shared across `fetchone()`,
+`fetchmany()`, and `fetchall()` regardless of how you mix them, and resets to 0 on every
+`execute()`/`executemany()`. It's off by default because `BulkSurge`'s `pass_through=True`
+mode forwards Record values positionally into the target's bind parameters — an extra
+trailing `_row_num` field will mismatch the parameter count there unless you also turn off
+`pass_through` or leave `add_row_num` off for that cursor.
 
 Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`.
 See [Configuration](02-configuration.md#database-connections) for detailed connection configuration documentation.
@@ -159,6 +181,7 @@ connections:
       batch_size: 4000
       debug: false
       return_cursor: true
+      add_row_num: false
 ```
 
 ## Parameter Styles

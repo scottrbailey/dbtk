@@ -9,6 +9,15 @@ DBTK provides two Excel writers built on [openpyxl](https://openpyxl.readthedocs
 
 Both writers keep the workbook open across `write_batch()` calls and save only on context exit, making them efficient for multi-sheet reports.
 
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Automatic Behaviors](#automatic-behaviors)
+- [Worksheet Formatting](#worksheet-formatting)
+- [Per-sheet Formatting](#per-sheet-formatting)
+- [Hyperlinked Reports with LinkedExcelWriter](#hyperlinked-reports-with-linkedexcelwriter)
+- [Formatting Quick Reference](#formatting-quick-reference)
+
 ---
 
 ## Quick Start

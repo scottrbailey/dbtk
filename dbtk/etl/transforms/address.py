@@ -198,6 +198,7 @@ class Address:
     Example
     -------
     ::
+
         addr = Address("123 Main St, Springfield, IL 62701")
         print(addr.street_number)  # "123"
         print(addr.street_name)    # "Main"
@@ -398,6 +399,7 @@ class USAddress(Address):
     Example
     -------
     ::
+
         addr = USAddress("123 Main St, Springfield, IL 62701")
         print(addr.is_valid)  # True
 

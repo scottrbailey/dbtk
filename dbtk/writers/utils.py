@@ -4,9 +4,10 @@
 
 import datetime as dt
 
-from typing import Any, Iterator, List, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from ..database import ParamStyle
+from ..record import Record, _make_getter
 from ..utils import wrap_at_comma
 
 MIDNIGHT = dt.time(0, 0, 0)
@@ -39,3 +40,190 @@ def create_insert_statement(table: str, columns: List[str], paramstyle: str = Pa
     column_list = wrap_at_comma(', '.join(columns))
     params = wrap_at_comma(params)
     return f'INSERT INTO {table} ({column_list}) VALUES ({params})'
+
+
+def _peek_columns(rows: Iterator[Any]) -> Tuple[Optional[Any], Optional[List[str]], bool]:
+    """
+    Peek at the first row of a self-describing row stream to determine its columns.
+
+    Returns (first_row, source_columns, by_name). by_name is True for dict/Record
+    rows (string-key __getitem__ works directly) and False for namedtuples (which
+    only support positional/attribute access, so names must be translated to
+    indices before building a getter — see `_getter_keys`).
+
+    Returns (None, None, False) for an empty stream. Raises TypeError if the row
+    type is self-describing (e.g. plain tuples/lists) — use `tuples_to_records()`
+    first to attach column names to positional data.
+    """
+    try:
+        first = next(rows)
+    except StopIteration:
+        return None, None, False
+    if hasattr(first, 'keys'):
+        return first, list(first.keys()), True
+    if hasattr(first, '_fields'):
+        return first, list(first._fields), False
+    raise TypeError(
+        f"can't determine column names from {type(first).__name__} rows; "
+        "use tuples_to_records() first to attach column names to positional data."
+    )
+
+
+def _getter_keys(names: List[str], by_name: bool, source_columns: List[str]) -> List[Any]:
+    """Translate `names` into whatever `_make_getter` needs: the names themselves
+    for by_name rows (dict/Record), or their positional index for namedtuples."""
+    return names if by_name else [source_columns.index(c) for c in names]
+
+
+def select_columns(rows: Iterable[Any], col_names: List[str]) -> Iterator[Record]:
+    """
+    Select and reorder columns from a stream of self-describing rows.
+
+    `col_names` is an allow-list that also sets the output column order. Works
+    lazily on any iterable of dict-like rows (dict, Record, namedtuple, cursor)
+    without materializing the source. For plain list/tuple rows, which carry no
+    column names of their own, use `tuples_to_records()` first.
+
+    Args:
+        rows: Source rows - dicts, Records, namedtuples, or cursors.
+        col_names: Column names to keep, in the desired output order.
+
+    Yields:
+        Record: one Record per input row, holding only the selected columns.
+
+    Raises:
+        ValueError: If col_names is empty, or a requested column isn't present
+            in the source.
+        TypeError: If column names can't be determined from the row type.
+
+    Examples:
+        # Select and reorder a subset for a report
+        to_excel(select_columns(records, ['name', 'email', 'signup_date']), 'report.xlsx')
+    """
+    if not col_names:
+        raise ValueError("col_names must not be empty")
+    return _select_columns_gen(iter(rows), list(col_names))
+
+
+def _select_columns_gen(rows: Iterator[Any], col_names: List[str]) -> Iterator[Record]:
+    first, src_cols, by_name = _peek_columns(rows)
+    if first is None:
+        return
+
+    missing = [c for c in col_names if c not in src_cols]
+    if missing:
+        raise ValueError(f"Column(s) not found in source data: {missing}")
+
+    output_cls = type('SelectedRecord', (Record,), {})
+    output_cls.set_fields(col_names)
+    get = _make_getter(_getter_keys(col_names, by_name, src_cols))
+
+    yield output_cls(*get(first))
+    for row in rows:
+        yield output_cls(*get(row))
+
+
+def exclude_columns(rows: Iterable[Any], col_names: Iterable[str]) -> Iterator[Record]:
+    """
+    Drop columns from a stream of self-describing rows; source order is preserved.
+
+    Works lazily on any iterable of dict-like rows (dict, Record, namedtuple, cursor)
+    without materializing the source. For plain list/tuple rows, which carry no
+    column names of their own, use `tuples_to_records()` first.
+
+    Args:
+        rows: Source rows - dicts, Records, namedtuples, or cursors.
+        col_names: Column names to drop. Order doesn't matter; a list, tuple, or
+            set all work.
+
+    Yields:
+        Record: one Record per input row, with the named columns dropped.
+
+    Raises:
+        ValueError: If col_names is empty, a named column isn't present in the
+            source, or dropping them would remove every column.
+        TypeError: If column names can't be determined from the row type.
+
+    Examples:
+        # Drop sensitive columns from cursor results before writing
+        to_csv(exclude_columns(cursor, ['ssn', 'password']), 'users.csv')
+    """
+    if not col_names:
+        raise ValueError("col_names must not be empty")
+    return _exclude_columns_gen(iter(rows), col_names)
+
+
+def _exclude_columns_gen(rows: Iterator[Any], col_names: Iterable[str]) -> Iterator[Record]:
+    first, src_cols, by_name = _peek_columns(rows)
+    if first is None:
+        return
+
+    exclude_set = set(col_names)
+    missing = [c for c in exclude_set if c not in src_cols]
+    if missing:
+        raise ValueError(f"Column(s) not found in source data: {sorted(missing)}")
+    keep = [c for c in src_cols if c not in exclude_set]
+    if not keep:
+        raise ValueError("excluding these columns would remove every column")
+
+    output_cls = type('SelectedRecord', (Record,), {})
+    output_cls.set_fields(keep)
+    get = _make_getter(_getter_keys(keep, by_name, src_cols))
+
+    yield output_cls(*get(first))
+    for row in rows:
+        yield output_cls(*get(row))
+
+
+def rename_columns(rows: Iterable[Any], mapping: Dict[str, str]) -> Iterator[Record]:
+    """
+    Rename some columns in a stream of self-describing rows.
+
+    Only the columns named in `mapping` are relabeled; everything else passes
+    through unchanged, in its original position — this is a pure rename, not a
+    select (use `select_columns()`/`exclude_columns()` to also narrow the
+    columns). Works lazily on any iterable of dict-like rows (dict, Record,
+    namedtuple, cursor) without materializing the source. For plain list/tuple
+    rows, which carry no column names of their own, use `tuples_to_records()`
+    first.
+
+    Args:
+        rows: Source rows - dicts, Records, namedtuples, or cursors.
+        mapping: Source name -> new name. A falsy value ('' or None) is a no-op
+            for that column (keeps its original name) rather than an error.
+
+    Yields:
+        Record: one Record per input row, with the named columns relabeled.
+
+    Raises:
+        ValueError: If mapping is empty, or a named column isn't present in the
+            source.
+        TypeError: If column names can't be determined from the row type.
+
+    Examples:
+        # Nicer headers for a report; every other column is untouched
+        to_csv(rename_columns(cursor, {'signup_date': 'Joined On'}), 'customers.csv')
+    """
+    if not mapping:
+        raise ValueError("mapping must not be empty")
+    return _rename_columns_gen(iter(rows), mapping)
+
+
+def _rename_columns_gen(rows: Iterator[Any], mapping: Dict[str, str]) -> Iterator[Record]:
+    first, src_cols, by_name = _peek_columns(rows)
+    if first is None:
+        return
+
+    missing = [c for c in mapping if c not in src_cols]
+    if missing:
+        raise ValueError(f"Column(s) not found in source data: {missing}")
+
+    output_names = [mapping.get(c) or c for c in src_cols]
+
+    output_cls = type('RenamedRecord', (Record,), {})
+    output_cls.set_fields(output_names)
+    get = _make_getter(_getter_keys(src_cols, by_name, src_cols))
+
+    yield output_cls(*get(first))
+    for row in rows:
+        yield output_cls(*get(row))

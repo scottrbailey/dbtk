@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.8.8] - 2026-07-20
 
 ### Added
 
@@ -22,6 +22,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`cursor.native_cursor` and `connection.native_connection`** — read-only properties
   that expose the underlying driver cursor and connection objects for driver-specific
   operations that dbtk doesn't wrap.
+
+- **`db.cursor(add_row_num=True)`** — brings the reader family's `add_row_num` field to
+  database cursors too. Adds a `_row_num` field (1-based position within the current
+  result set) to each record; the counter is shared across `fetchone()`/`fetchmany()`/
+  `fetchall()` regardless of how they're mixed, and resets on every `execute()`/
+  `executemany()`. Settable per-call (`db.cursor(add_row_num=True)`) or per-connection via
+  `cursor_settings`/YAML config, same as `batch_size`/`debug`/`return_cursor`. Off by
+  default: `BulkSurge`'s `pass_through=True` mode forwards Record values positionally into
+  the target's bind parameters, so an extra trailing field there would mismatch the
+  parameter count.
+
+- **`dbtk.writers.select_columns()` / `exclude_columns()` / `rename_columns()`** — lazily
+  reshape a row stream before it reaches a writer, without materializing the source or adding
+  `exclude=`/`headers=` params to every writer. Each does one job: `select_columns(rows,
+  col_names)` is an allow-list that also sets output order; `exclude_columns(rows, col_names)`
+  is a block-list (list/tuple/set — order doesn't matter) that preserves source order;
+  `rename_columns(rows, mapping)` relabels only the columns in `mapping` and passes everything
+  else through unchanged, in place (a falsy mapping value is a no-op for that column). All
+  three work on self-describing rows (cursors, `Record`, dict, namedtuple), inferring column
+  names from the first row, and compose freely — e.g.
+  `rename_columns(exclude_columns(rows, [...]), {...})`. For raw list/tuple rows with no
+  column names of their own, convert first with the new **`dbtk.record.tuples_to_records()`**
+  (also re-exported from `dbtk.writers`); a falsy entry in its `columns` list drops that
+  position from the output entirely instead of naming it, for filler/padding data. All four
+  yield `Record` objects built via a shared `itemgetter`-based fast path, so per-row cost stays
+  low.
+
+### Changed
+
+- **BREAKING: `add_row_num` now defaults to `False` on every reader** (`CSVReader`,
+  `ExcelReader`, `XLSReader`, `JSONReader`, `NDJSONReader`, `XMLReader`, `DataFrameReader`) —
+  previously only `FixedReader`/`EDIReader` defaulted to `False` (fixed-width files have
+  explicit column specs, making row numbers less useful there); the rest defaulted to `True`.
+  `_row_num` is a real field, not cosmetic — it flows into `.keys()`/`.to_dict()`/iteration
+  like any other column, and since writers derive their output columns from the first
+  record when no explicit `columns=` is given, it previously leaked into default CSV
+  headers, JSON/XML/Excel output, and `DatabaseWriter`/`cursor_to_cursor`'s generated
+  `INSERT` column list (already called out as a footgun in the writers docs). `Table`/
+  `DataSurge`/`BulkSurge` are unaffected — they only pull explicitly mapped fields, so this
+  doesn't change generated SQL through that path. If you relied on the previous default,
+  pass `add_row_num=True` explicitly.
 
 ### Fixed
 

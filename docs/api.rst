@@ -17,6 +17,38 @@ Database Connections
    :undoc-members:
    :show-inheritance:
 
+Database Dialects
+------------------
+
+Per-database SQL generation used internally by ``Table``, ``DataSurge``, and
+``BulkSurge`` (upsert/merge syntax, type mapping, etc.). Subclass
+``DatabaseDialect`` to add support for a new database engine.
+
+.. automodule:: dbtk.dialects.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.dialects.postgres
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.dialects.oracle
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.dialects.mysql
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.dialects.sqlserver
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Cursors
 -------
 
@@ -35,6 +67,10 @@ Record
 
 Readers
 -------
+
+.. automodule:: dbtk.readers.utils
+   :members: get_reader
+   :show-inheritance:
 
 .. automodule:: dbtk.readers.base
    :members:
@@ -79,6 +115,10 @@ Writers
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: dbtk.writers.utils
+   :members: select_columns, exclude_columns, rename_columns
+   :show-inheritance:
+
 .. automodule:: dbtk.writers.csv
    :members:
    :undoc-members:
@@ -120,11 +160,25 @@ Utilities
 ETL
 -----------
 
-.. automodule:: dbtk.etl
+.. automodule:: dbtk.etl.table
    :members:
    :undoc-members:
    :show-inheritance:
-   :exclude-members: EntityStatus, IdentityManager, ValidationCollector
+
+.. automodule:: dbtk.etl.data_surge
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.bulk_surge
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.config_generators
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 ETL Managers
 ------------
@@ -137,7 +191,38 @@ ETL Managers
 ETL Transforms
 --------------
 
-.. automodule:: dbtk.etl.transforms
+Located across ``dbtk.etl.transforms.*``. ``dbtk.etl.transforms`` (the package)
+re-exports a curated subset for convenience (``from dbtk.etl.transforms import
+get_int, coalesce, ...``); the sections below document each submodule's full
+surface, including members only reachable via a direct submodule import
+(e.g. ``from dbtk.etl.transforms.phone import Phone, PhoneFormat``).
+
+.. automodule:: dbtk.etl.transforms.core
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.transforms.phone
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.transforms.email
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.transforms.address
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.transforms.datetime
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.transforms.database
    :members:
    :undoc-members:
    :show-inheritance:
@@ -150,7 +235,6 @@ Integration script logging with timestamped files and error tracking:
 .. automodule:: dbtk.logging_utils
    :members:
    :undoc-members:
-   :exclude-members: TableLookup
    :show-inheritance:
 
 Command Line Interface

@@ -76,12 +76,6 @@ class ParamStyle:
     - FORMAT: Printf-style (%s, %s) - MySQL (MySQLdb)
     - PYFORMAT: Python format (%(name)s) - psycopg2, pymysql
 
-    Methods:
-        values(): Get all available parameter styles
-        positional_styles(): Get styles that require tuples
-        named_styles(): Get styles that require dicts
-        get_placeholder(paramstyle): Get placeholder string for a style
-
     Example
     -------
     ::
@@ -99,6 +93,7 @@ class ParamStyle:
 
     @classmethod
     def values(cls):
+        """ Return all available parameter placeholder styles. """
         return [getattr(cls, attr) for attr in dir(cls) if not attr.startswith('_')]
 
     @classmethod
@@ -123,6 +118,7 @@ class ParamStyle:
 
     @classmethod
     def get_placeholder(cls, paramstyle: str) -> str:
+        """ Return the placeholder string used for a single bind variable in this style. """
         if paramstyle == cls.QMARK:
             return '?'
         elif paramstyle == cls.FORMAT:

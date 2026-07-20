@@ -115,7 +115,13 @@ def expected_last_record():
 # Helper function to create reader based on type
 def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
                     xml_file, fixed_file, fixed_columns, **kwargs):
-    """Factory function to create appropriate reader for testing."""
+    """Factory function to create appropriate reader for testing.
+
+    add_row_num defaults to True here (opposite of the reader classes' own
+    default of False) since most of these tests exercise/assert _row_num
+    behavior; pass add_row_num=False explicitly to test the off case.
+    """
+    kwargs.setdefault('add_row_num', True)
     if reader_type == 'csv':
         return CSVReader(open(csv_file, encoding='utf-8'), **kwargs)
     elif reader_type == 'excel':
@@ -133,7 +139,6 @@ def get_test_reader(reader_type, csv_file, excel_file, json_file, ndjson_file,
     elif reader_type == 'xml':
         return XMLReader(open(xml_file, 'rb'), record_xpath='//record', **kwargs)
     elif reader_type == 'fixed':
-        kwargs.setdefault('add_row_num', True)
         return FixedReader(open(fixed_file, encoding='utf-8'), fixed_columns, **kwargs)
     else:
         raise ValueError(f"Unknown reader type: {reader_type}")
@@ -563,7 +568,7 @@ Frank,35,US""")
 
     def test_filter_row_num_field(self, csv_data):
         """Test that _row_num field is sequential for filtered records."""
-        with CSVReader(open(csv_data)) as reader:
+        with CSVReader(open(csv_data), add_row_num=True) as reader:
             reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             row_nums = [r._row_num for r in results]

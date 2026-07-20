@@ -2,6 +2,18 @@
 
 The **Record** class is DBTK's universal data structure. Every cursor query and file reader returns Records, and every `*Surge` class expects them as input. Understanding Record unlocks the full power of DBTK's pipeline architecture.
 
+## Quick Navigation
+
+- [Why Record?](#why-record)
+- [Access Patterns](#access-patterns)
+- [Normalized Field Names](#normalized-field-names)
+- [Modifying Records](#modifying-records)
+- [Conversion Methods](#conversion-methods)
+- [Debugging](#debugging)
+- [Performance Note](#performance-note)
+- [Working with Streaming Records](#working-with-streaming-records)
+- [FixedWidthRecord](#fixedwidthrecord)
+
 ## Why Record?
 
 ETL pipelines process hundreds of thousands or millions of rows, all with the same columns. This creates a design tension:
@@ -292,6 +304,91 @@ cursor.execute("SELECT order_id, total, status FROM orders")
 ```
 
 This is why Record can offer dict-like convenience without dict-like memory overhead when processing millions of rows. The same pattern applies to file readers - each reader creates a Record subclass based on the file's header row.
+
+## Working with Streaming Records
+
+Cursors and file readers hand you records one at a time, and every DBTK writer accepts that
+same stream directly — most data never needs to live in a list at all. If you need to drop a
+column, keep only a few, or rename headers before writing, materializing the whole result set
+into a list just to reshape it throws away that advantage. For a result set with a few thousand
+rows it won't matter; for a multi-million-row export, it's the difference between constant
+memory usage and a program that runs out of it. `dbtk.writers` provides four small generator
+functions that reshape a record stream one row at a time, so filtering, reordering, or renaming
+columns costs nothing beyond what you're already paying to read and write the data.
+
+Each does one job, and they compose freely.
+
+### select_columns — keep some columns, in a given order
+
+```python
+from dbtk.writers import select_columns
+
+cursor.execute("SELECT * FROM users")
+writers.to_excel(select_columns(cursor, ['name', 'email', 'signup_date']), 'report.xlsx')
+```
+
+`col_names` is an allow-list; only those columns appear in the output, in the order given.
+
+### exclude_columns — drop some columns, keep the rest
+
+```python
+from dbtk.writers import exclude_columns
+
+writers.to_csv(exclude_columns(cursor, ['ssn', 'password_hash']), 'users.csv')
+```
+
+`col_names` is a block-list — a list, tuple, or set all work, since order never matters for
+exclusion. Everything else passes through in its original order.
+
+### rename_columns — relabel some columns, leave the rest alone
+
+```python
+from dbtk.writers import rename_columns
+
+writers.to_csv(rename_columns(cursor, {'signup_date': 'Joined On'}), 'customers.csv')
+```
+
+`mapping` is a dict of source name -> new name. Only the columns you list are relabeled;
+everything else keeps its original name and position — this is a pure rename, not a select.
+A falsy value (`''` or `None`) is a no-op for that column, so you can build the mapping
+programmatically without filtering out unchanged entries.
+
+### Composing them
+
+`select_columns`, `exclude_columns`, and `rename_columns` all accept and return the same kind
+of self-describing rows, so you can chain them:
+
+```python
+writers.to_csv(
+    rename_columns(exclude_columns(cursor, ['ssn']), {'signup_date': 'Joined On'}),
+    'customers.csv',
+)
+```
+
+### tuples_to_records — attach column names to positional data
+
+`select_columns`, `exclude_columns`, and `rename_columns` all expect self-describing rows —
+cursor results, `Record`, dict, or namedtuple — and infer column names from the first row.
+Plain tuples/lists carry no names of their own, so attach them first:
+
+```python
+from dbtk.record import tuples_to_records
+# also available as: from dbtk.writers import tuples_to_records
+
+records = tuples_to_records(rows, ['id', 'name', 'email'])
+```
+
+Pass a falsy entry (`None` or `''`) at any position to drop that column entirely instead of
+naming it — handy for filler/padding data you never want to carry forward:
+
+```python
+records = tuples_to_records(rows, ['id', 'name', None, 'email'])  # 3rd position dropped
+writers.to_csv(select_columns(records, ['name', 'email']), 'users.csv')
+```
+
+All four functions build one Record subclass up front, using the same shared-class pattern
+described in [Performance Note](#performance-note) above, and reuse it for every row — so
+reshaping a stream stays cheap no matter how many rows pass through it.
 
 ## FixedWidthRecord
 
