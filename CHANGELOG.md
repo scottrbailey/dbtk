@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that expose the underlying driver cursor and connection objects for driver-specific
   operations that dbtk doesn't wrap.
 
+- **`db.cursor(add_row_num=True)`** — brings the reader family's `add_row_num` field to
+  database cursors too. Adds a `_row_num` field (1-based position within the current
+  result set) to each record; the counter is shared across `fetchone()`/`fetchmany()`/
+  `fetchall()` regardless of how they're mixed, and resets on every `execute()`/
+  `executemany()`. Settable per-call (`db.cursor(add_row_num=True)`) or per-connection via
+  `cursor_settings`/YAML config, same as `batch_size`/`debug`/`return_cursor`. Off by
+  default: `BulkSurge`'s `pass_through=True` mode forwards Record values positionally into
+  the target's bind parameters, so an extra trailing field there would mismatch the
+  parameter count.
+
 - **`dbtk.writers.select_columns()` / `exclude_columns()` / `rename_columns()`** — lazily
   reshape a row stream before it reaches a writer, without materializing the source or adding
   `exclude=`/`headers=` params to every writer. Each does one job: `select_columns(rows,

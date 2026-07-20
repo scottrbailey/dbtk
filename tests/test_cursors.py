@@ -424,6 +424,107 @@ class TestRecordFactory:
 
 
 # ---------------------------------------------------------------------------
+# Cursor — add_row_num
+# ---------------------------------------------------------------------------
+
+class TestCursorRowNum:
+
+    def test_default_off(self, cur):
+        cur.execute("SELECT id, name FROM warriors")
+        row = cur.fetchone()
+        assert '_row_num' not in row.keys()
+
+    def test_adds_field_when_enabled(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        row = cur.fetchone()
+        assert '_row_num' in row.keys()
+        assert row._row_num == 1
+
+    def test_sequential_across_fetchone_calls(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        row_nums = [cur.fetchone()._row_num for _ in range(4)]
+        assert row_nums == [1, 2, 3, 4]
+
+    def test_sequential_across_fetchmany_and_fetchone(self, sqlite_db):
+        """The counter is shared across fetch methods, not reset between them."""
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        first = cur.fetchone()
+        rest = cur.fetchmany(2)
+        last = cur.fetchone()
+        assert [first._row_num] + [r._row_num for r in rest] + [last._row_num] == [1, 2, 3, 4]
+
+    def test_sequential_across_fetchall(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        rows = cur.fetchall()
+        assert [r._row_num for r in rows] == [1, 2, 3, 4]
+
+    def test_sequential_during_iteration(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        assert [r._row_num for r in cur] == [1, 2, 3, 4]
+
+    def test_resets_on_reexecute(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        cur.fetchall()
+
+        cur.execute("SELECT id, name FROM warriors")
+        rows = cur.fetchall()
+        assert [r._row_num for r in rows] == [1, 2, 3, 4]
+
+    def test_resets_on_executemany(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        cur.fetchone()
+        assert cur._row_num == 1
+
+        cur.executemany("INSERT INTO warriors (id, name) VALUES (?, ?)", [(100, 'Sokka')])
+        assert cur._row_num == 0
+        sqlite_db.rollback()
+
+    def test_record_factory_reused_across_same_shape_reexecute(self, sqlite_db):
+        """The same-shape record-factory-reuse optimization still applies with add_row_num on."""
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id, name FROM warriors")
+        cur.fetchall()
+        first_factory = cur.record_factory
+
+        cur.execute("SELECT id, name FROM warriors")
+        cur.fetchall()
+        assert cur.record_factory is first_factory
+
+    def test_record_factory_rebuilt_on_column_change(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id FROM warriors")
+        cur.fetchall()
+        first_factory = cur.record_factory
+
+        cur.execute("SELECT id, name FROM warriors")
+        cur.fetchall()
+        assert cur.record_factory is not first_factory
+
+    def test_collision_with_real_column_raises(self, sqlite_db):
+        cur = sqlite_db.cursor(add_row_num=True)
+        cur.execute("SELECT id AS _row_num FROM warriors")
+        with pytest.raises(ValueError, match="_row_num"):
+            cur.fetchone()
+
+    def test_connection_level_cursor_settings(self, sqlite_db):
+        """add_row_num can be set once at the connection level via cursor_settings."""
+        sqlite_db._cursor_settings['add_row_num'] = True
+        try:
+            cur = sqlite_db.cursor()
+            cur.execute("SELECT id, name FROM warriors")
+            assert cur.fetchone()._row_num == 1
+        finally:
+            del sqlite_db._cursor_settings['add_row_num']
+
+
+# ---------------------------------------------------------------------------
 # Cursor — DB object conversion (duck-typed mocks, no Oracle required)
 # ---------------------------------------------------------------------------
 

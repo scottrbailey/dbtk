@@ -628,6 +628,7 @@ class Database:
             * ``batch_size`` (int) - Rows to process at once in bulk operations
             * ``debug`` (bool) - Enable debug output showing queries and bind variables
             * ``return_cursor`` (bool) - If True, execute() returns cursor for method chaining
+            * ``add_row_num`` (bool) - Add a '_row_num' field to each record (default False)
 
         Returns
         -------

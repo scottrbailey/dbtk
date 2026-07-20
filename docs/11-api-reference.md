@@ -57,7 +57,7 @@ db = sqlite(database, **kwargs)
 
 #### Methods
 
-**`cursor(batch_size=None, debug=False, return_cursor=False, **kwargs)`**
+**`cursor(batch_size=None, debug=False, return_cursor=False, add_row_num=False, **kwargs)`**
 - Creates a new cursor with specified settings
 - Returns: `Cursor` object
 
