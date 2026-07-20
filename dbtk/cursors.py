@@ -155,18 +155,19 @@ class Cursor:
     """
     # Attributes that live on this class and are not delegated to the underlying cursor
     _local_attrs = [
-        'connection', 'debug', 'return_cursor',
-        'placeholder', 'paramstyle', 'record_factory', 'batch_size',
-        '_cursor', '_row_factory_invalid', '_statement', '_bind_vars', '_bulk_method'
+        'connection', 'debug', 'return_cursor', 'placeholder', 'paramstyle', 'record_factory',
+        'batch_size', '_cursor', 'native_cursor', '_row_factory_invalid', '_statement',
+        '_bind_vars', '_bulk_method', '_object_columns', 'add_row_num', '_row_num'
     ]
     # Attributes that are allowed to be passed in from the connection/configuration layer
-    WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor', 'fast_executemany')
+    WRAPPER_SETTINGS = ('batch_size', 'debug', 'return_cursor', 'fast_executemany', 'add_row_num')
 
     def __init__(self,
                  connection,
                  batch_size: Optional[int] = None,
                  debug: Optional[bool] = False,
                  return_cursor: Optional[bool] = False,
+                 add_row_num: bool = False,
                  **kwargs):
         """
         Initialize a cursor for database operations.
@@ -181,6 +182,12 @@ class Cursor:
             Enable debug output showing queries and bind variables
         return_cursor : bool, default False
             If True, execute() returns the cursor for method chaining
+        add_row_num : bool, default False
+            Add a '_row_num' field to each record with the 1-based position of that row
+            within the current result set. Resets to 0 on every execute()/executemany().
+            Off by default — BulkSurge's pass_through mode forwards Record values
+            positionally, so an extra trailing field will mismatch the target's bind
+            parameters unless you also disable pass_through or add_row_num.
         **kwargs
             Additional arguments passed to the underlying database cursor
 
@@ -202,7 +209,10 @@ class Cursor:
         self.debug = debug
         self.record_factory = None
         self._row_factory_invalid = True
+        self._object_columns = ()
         self.return_cursor = return_cursor
+        self.add_row_num = add_row_num
+        self._row_num = 0
         if batch_size is None:
             batch_size = settings.get('default_batch_size', 1000)
         self.batch_size = batch_size
@@ -239,6 +249,11 @@ class Cursor:
         # Ensure arraysize exists (some adapters don't have it)
         if not hasattr(self._cursor, 'arraysize'):
             self.__dict__['arraysize'] = 1000
+
+    @property
+    def native_cursor(self):
+        """The underlying driver cursor."""
+        return self._cursor
 
     def __getattr__(self, key: str) -> Any:
         """Delegate attribute access to underlying cursor."""
@@ -353,21 +368,69 @@ class Cursor:
         # Fallback for everything else (SQLite, MySQL, etc.)
         return lambda cur, sql, argslist: cur.executemany(sql, argslist)
 
+    def _expected_columns(self) -> List[str]:
+        """Column names the record factory should have: raw description columns,
+        plus '_row_num' appended when add_row_num is enabled."""
+        if not self.description:
+            return []
+        columns = [col[0] for col in self.description]
+        if self.add_row_num:
+            if '_row_num' in columns:
+                raise ValueError("Column '_row_num' already exists. Remove it or set add_row_num=False.")
+            columns = columns + ['_row_num']
+        return columns
+
     def _create_record_factory(self) -> None:
         """Create Record subclass with original column names from description."""
         self._row_factory_invalid = False
 
-        # Get original column names from description (no transformation)
         if not self.description:
-            original_columns = []
+            self._object_columns = ()
         else:
-            original_columns = [col[0] for col in self.description]
+            # Detect columns whose driver type metadata looks like a DB object or
+            # collection (oracledb exposes this; other drivers use plain Python types
+            # which have neither attribute, so this stays empty and costs nothing).
+            self._object_columns = tuple(
+                i for i, col in enumerate(self.description)
+                if 'DB_TYPE_OBJECT' in str(col[1])
+            )
 
-        # Create dynamic Record subclass and set fields
-        # set_fields() will handle normalization automatically
         RecordClass = type('Record', (Record,), {})
-        RecordClass.set_fields(original_columns)
+        RecordClass.set_fields(self._expected_columns())
         self.record_factory = RecordClass
+
+    @staticmethod
+    def _convert_db_object(val: Any) -> Any:
+        """Recursively convert a DB object or collection to a dict or list."""
+        typ = getattr(val, 'type', None)
+        if typ is None:
+            return val
+        if getattr(typ, 'iscollection', False):
+            return [Cursor._convert_db_object(item) for item in val]
+        if hasattr(typ, 'attributes'):
+            return {
+                attr.name: Cursor._convert_db_object(getattr(val, attr.name))
+                for attr in typ.attributes
+            }
+        return val
+
+    def _convert_row(self, row: tuple) -> tuple:
+        """Convert DB object/collection columns in a raw driver row to dicts/lists."""
+        if not self._object_columns:
+            return row
+        row = list(row)
+        for i in self._object_columns:
+            if row[i] is not None:
+                row[i] = Cursor._convert_db_object(row[i])
+        return tuple(row)
+
+    def _build_record(self, row: tuple) -> Any:
+        """Construct one Record from a raw driver row, appending _row_num when enabled."""
+        values = self._convert_row(row)
+        if self.add_row_num:
+            self._row_num += 1
+            values = tuple(values) + (self._row_num,)
+        return self.record_factory(*values)
 
     def columns(self, normalized: bool = False) -> List[str]:
         """
@@ -411,9 +474,7 @@ class Cursor:
         elif self._row_factory_invalid:
             # Check if columns have changed since last query
             if hasattr(self.record_factory, '_fields'):
-                # Get current original column names from description
-                current_columns = [col[0] for col in self.description] if self.description else []
-                if self.record_factory._fields != current_columns:
+                if self.record_factory._fields != self._expected_columns():
                     self._create_record_factory()
                 else:
                     self._row_factory_invalid = False
@@ -448,6 +509,7 @@ class Cursor:
         """
 
         self._row_factory_invalid = True
+        self._row_num = 0
         if convert_params:
             if not hasattr(bind_vars, 'items'):
                 if bind_vars:
@@ -509,7 +571,7 @@ class Cursor:
             if bind_vars:
                 params = self.prepare_params(param_names, bind_vars)
             else:
-                params = None
+                params = ()
 
             return self.execute(transformed_sql, params)
 
@@ -575,6 +637,7 @@ class Cursor:
     def executemany(self, query: str, bind_vars: List[tuple]) -> None:
         """Execute a query against multiple parameter sets."""
         self._row_factory_invalid = True
+        self._row_num = 0
 
         if self.debug:
             logger.debug(f'Executemany - Query:\n{query}')
@@ -615,7 +678,7 @@ class Cursor:
         if self._is_ready():
             row = self._cursor.fetchone()
             if row:
-                return self.record_factory(*row)
+                return self._build_record(row)
         return None
 
     def fetchmany(self, size: Optional[int] = None) -> List[Any]:
@@ -624,19 +687,13 @@ class Cursor:
             size = self._cursor.arraysize
 
         if self._is_ready():
-            return [
-                self.record_factory(*row)
-                for row in self._cursor.fetchmany(size)
-            ]
+            return [self._build_record(row) for row in self._cursor.fetchmany(size)]
         return []
 
     def fetchall(self) -> List[Any]:
         """Fetch all remaining rows."""
         if self._is_ready():
-            return [
-                self.record_factory(*row)
-                for row in self._cursor.fetchall()
-            ]
+            return [self._build_record(row) for row in self._cursor.fetchall()]
         return []
 
 

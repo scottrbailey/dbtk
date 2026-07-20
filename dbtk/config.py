@@ -61,6 +61,15 @@ def _expand_env_var(value: str) -> str:
         return result
 
 
+def _expand_env_vars(value: Any) -> Any:
+    """Recursively expand env var references in strings and dicts."""
+    if isinstance(value, str):
+        return _expand_env_var(value)
+    if isinstance(value, dict):
+        return {k: _expand_env_vars(v) for k, v in value.items()}
+    return value
+
+
 def _ensure_sample_config():
     """Copy sample config to ~/.config if no config exists and sample doesn't exist there."""
     import shutil
@@ -416,7 +425,7 @@ class ConfigManager:
             else:
                 return settings.get(k)
 
-        return value
+        return _expand_env_vars(value)
 
     def set_setting(self, key: str, value: Any) -> None:
         """
@@ -864,7 +873,6 @@ def encrypt_password(password: str = None, encryption_key: str = None) -> str:
         temp_config._fernet = None
         encrypted = temp_config.encrypt_password(password)
 
-    print(encrypted)
     return encrypted
 
 
@@ -1050,26 +1058,24 @@ def setup_config() -> None:
         if choice == '1':
             # Keyring option
             if not HAS_KEYRING:
-                print(dedent("""\
+                raise RuntimeError(dedent("""\
                 ⚠ The 'keyring' library is not installed.
-                
-                To use keyring for encryption keys:
-                  1. Install keyring: pip install keyring
-                  2. Re-run: dbtk config-setup
-                  
-                Exiting setup. Please install keyring and restart.
+
+                To store your encryption key, choose one of:
+                  1. Install keyring: pip install keyring, then re-run dbtk config-setup
+                  2. Set DBTK_ENCRYPTION_KEY environment variable: run dbtk config-setup and choose option 2
+                  3. Run dbtk generate-key and export the key manually
                 """))
-                return
             else:
                 # Generate and store in keyring
-                key = generate_encryption_key()
+                key = _generate_encryption_key()
                 store_key(key)
                 has_keyring_key = True
                 print(f"\n✓ Generated encryption key and stored in system keyring")
 
         elif choice == '2':
             # Environment variable option
-            key = generate_encryption_key()
+            key = _generate_encryption_key()
             print(f"\n✓ Generated encryption key:")
             print(f"\n  {key}")
             if os.name == 'nt':
@@ -1079,7 +1085,7 @@ def setup_config() -> None:
             else:
                 print(dedent(f"""\
                 Add this to your shell profile (~/.bashrc, ~/zshrc, etc.):
-                  export DBTK_ENCRYPTION_KEY='key'"""))
+                  export DBTK_ENCRYPTION_KEY='{key}'"""))
             # Store in current session so we can continue
             os.environ['DBTK_ENCRYPTION_KEY'] = key
             print("\n✓ Key set for this session (you can add connections below)")

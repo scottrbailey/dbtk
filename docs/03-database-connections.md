@@ -3,6 +3,19 @@
 DBTK provides a unified interface for connecting to multiple database types 
 with consistent APIs and smart cursor handling.
 
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Supported Databases](#supported-databases)
+- [The Database Object](#the-database-object)
+- [Access the Full Stack](#access-the-full-stack)
+- [Cursors and Records](#cursors-and-records)
+- [Parameter Styles](#parameter-styles)
+- [Cursor Methods](#cursor-methods)
+- [Transaction Management](#transaction-management)
+- [Error Handling](#error-handling)
+- [Best Practices](#best-practices)
+
 ## Quick Start
 
 ```python
@@ -99,8 +112,8 @@ print(cursor.connection.connection_name) # imdb
 print(cursor.connection.driver.__name__)       # 'psycopg2', 'oracledb', etc.
 
 # Access the wrapped connection or cursor
-cursor.connection._connection
-cursor._cursor
+cursor.native_cursor
+cursor.connection.native_connection
 
 # Use driver exceptions
 try:
@@ -139,11 +152,20 @@ cursor = db.cursor(
     batch_size=5000,           # Rows per batch in bulk operations
     debug=True,                # Print SQL queries and bind variables
     return_cursor=True,        # execute() returns cursor for chaining
+    add_row_num=True,          # Add a '_row_num' field to each record
 )
 
 # With return_cursor=True, you can chain calls
 user = cursor.execute("SELECT * FROM users WHERE status = 'active'").fetchone()
 ```
+
+`add_row_num` (default `False`) adds a `_row_num` field holding the 1-based position of
+each record within the current result set — the counter is shared across `fetchone()`,
+`fetchmany()`, and `fetchall()` regardless of how you mix them, and resets to 0 on every
+`execute()`/`executemany()`. It's off by default because `BulkSurge`'s `pass_through=True`
+mode forwards Record values positionally into the target's bind parameters — an extra
+trailing `_row_num` field will mismatch the parameter count there unless you also turn off
+`pass_through` or leave `add_row_num` off for that cursor.
 
 Default cursor settings can be configured per-connection in the YAML config file or passed to `dbtk.connect()`.
 See [Configuration](02-configuration.md#database-connections) for detailed connection configuration documentation.
@@ -159,6 +181,7 @@ connections:
       batch_size: 4000
       debug: false
       return_cursor: true
+      add_row_num: false
 ```
 
 ## Parameter Styles
@@ -272,6 +295,44 @@ for user in cursor:
 # Fetch exactly one (raises error if 0 or >1 rows)
 user = cursor.selectinto("SELECT * FROM users WHERE id = :id", {'id': 42})
 ```
+
+### Oracle Object and Collection Types
+
+When a query returns an Oracle `OBJECT`, `VARRAY`, or nested `TABLE` column, dbtk
+automatically converts it to a native Python type at fetch time:
+
+| Oracle type               | Python type                      |
+|---------------------------|----------------------------------|
+| `OBJECT`                  | `dict` — keyed by attribute name |
+| `VARRAY` / nested `TABLE` | `list`                           |
+
+This means the converted value works immediately with writers, JSON serialization, and
+normal Python code — no manual unpacking required.
+
+```python
+# Given Oracle types:
+# CREATE TYPE address_obj AS OBJECT (street VARCHAR2(100), city VARCHAR2(50), zip VARCHAR2(10));
+# CREATE TYPE phone_list AS TABLE OF VARCHAR2(20);
+
+cursor.execute("SELECT id, name, get_address(id) AS address, get_phones(id) AS phones FROM contacts")
+
+for row in cursor:
+    print(row.address)
+    # {'STREET': '123 Main St', 'CITY': 'Springfield', 'ZIP': '12345'}
+
+    print(row.phones)
+    # ['555-1234', '555-5678']
+
+# Works directly with writers — address serialized as JSON string in CSV
+dbtk.writers.to_csv(cursor)
+```
+
+Nested objects (an `OBJECT` attribute that is itself an `OBJECT` or collection) are
+recursively converted. Detection happens once per query by inspecting
+`cursor.description`; queries with no object columns have zero per-row overhead.
+
+Postgres arrays and JSON columns already arrive as native Python `list`/`dict` from
+the driver and are unaffected.
 
 ### Cursor Properties
 

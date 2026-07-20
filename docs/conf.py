@@ -29,6 +29,13 @@ extensions = [
     'myst_parser',             # Parse Markdown (.md) files
 ]
 
+# Render numpydoc "Attributes" sections as :ivar: fields on the class docstring
+# itself instead of standalone `.. py:attribute::` directives. Without this,
+# classes that document plain (undocumented-in-code) class attributes via an
+# "Attributes" docstring section collide with autodoc's own attribute
+# discovery, producing "duplicate object description" warnings.
+napoleon_use_ivar = True
+
 # MyST configuration
 myst_enable_extensions = [
     'colon_fence',     # Allow ::: fences as alternative to ```

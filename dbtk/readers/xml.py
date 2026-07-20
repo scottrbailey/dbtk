@@ -62,7 +62,7 @@ class XMLReader(Reader):
                  record_xpath: str = "//record",
                  columns: Optional[List[XMLColumn]] = None,
                  sample_size: int = 10,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):

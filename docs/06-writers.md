@@ -4,6 +4,33 @@
 
 **The solution:** DBTK writers provide a unified interface for exporting to any format. All writers accept either a cursor or materialized results (lists of Records/namedtuples/dicts), making it trivial to export the same data to multiple formats.
 
+For the complete parameter/method reference, see the [API Reference](11-api-reference.md#writers) or the full [Sphinx API docs](https://dbtk.readthedocs.io/en/latest/api.html).
+
+## Quick Navigation
+
+**General**
+- [Basic Usage](#basic-usage)
+- [Common Writer Parameters](#common-writer-parameters)
+- [Export Once, Write Everywhere](#export-once-write-everywhere)
+- [Quick Preview to Stdout](#quick-preview-to-stdout)
+- [Compressed Output](#compressed-output)
+- [Writing in Batches](#writing-in-batches)
+- [Reshaping the Row Stream](#reshaping-the-row-stream)
+
+**Formats**
+- [CSV Files](#csv-files)
+- [Excel Files](#excel-files)
+- [JSON and NDJSON](#json-and-ndjson)
+- [XML Files](#xml-files)
+- [Streaming XML with XMLStreamer](#streaming-xml-with-xmlstreamer)
+- [Database Writer](#database-writer)
+- [Fixed-Width Files with FixedWidthWriter](#fixed-width-files-with-fixedwidthwriter)
+- [EDI (Electronic Data Interchange) Fixed-Width with EDIWriter](#edi-electronic-data-interchange-fixed-width-with-ediwriter)
+
+**Reference**
+- [Performance Comparison](#performance-comparison)
+- [Writing Additional Formats](#writing-additional-formats)
+
 ## Basic Usage
 
 ```python
@@ -35,6 +62,27 @@ count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
 print(f"Transferred {count} strategic records")
 ```
 
+## Common Writer Parameters
+
+Every file-based writer (`CSVWriter`, `JSONWriter`, `NDJSONWriter`, `XMLWriter`, `ExcelWriter`, `FixedWidthWriter`, `EDIWriter`) shares this shape:
+
+| Parameter       | Default    | Description                                                                 |
+|-----------------|------------|-------------------------------------------------------------------------------|
+| `data`          | `None`     | Cursor, or iterable of Records/dicts/namedtuples/lists. `None` for streaming-only (`write_batch()`) |
+| `file`          | `None`     | Output path or open file handle. `None` writes to stdout (20-row preview)     |
+| `columns`       | `None`     | Column names, only needed for list-of-lists data with no header of its own    |
+| `encoding`      | `'utf-8'`  | Output encoding for text formats                                              |
+
+A second tier of parameters is common to the writers that produce a header row — `CSVWriter` and `ExcelWriter`:
+
+| Parameter       | Default    | Description                                                                 |
+|-----------------|------------|-------------------------------------------------------------------------------|
+| `headers`       | `None`     | Header row text override. Falls back to `cursor.description` / detected column names |
+| `write_headers` | `True`     | Whether to write the header row at all                                        |
+| `compression`   | `'infer'`  | See [Compressed Output](#compressed-output) — `CSVWriter`/`JSONWriter`/`NDJSONWriter` expose this explicitly; others inherit `'infer'` |
+
+Each writer also takes format-specific arguments (`delimiter` for CSV, `indent` for JSON, `root_element` for XML, `truncate_overflow` for fixed-width, etc.) — see that writer's own section below.
+
 ## Export Once, Write Everywhere
 
 If your result set fits comfortably in memory you can fetch it once and export to multiple formats:
@@ -53,6 +101,7 @@ For large result sets, skip the `fetchall()` entirely and pass the cursor direct
 cursor.execute("SELECT * FROM large_table")
 writers.to_csv(cursor, 'output.csv')  # Cursor consumed once, no list in memory
 ```
+
 ## Quick Preview to Stdout
 
 Pass `None` as the filename to preview data to stdout — perfect for debugging or quick checks:
@@ -66,7 +115,6 @@ writers.to_csv(cursor, None)  # Prints to stdout
 cursor.execute("SELECT * FROM soldiers")
 writers.to_csv(cursor, 'soldiers.csv')
 ```
-
 
 ## Compressed Output
 
@@ -102,7 +150,6 @@ with CSVWriter(file='large_archive.csv.gz') as writer:
         writer.write_batch(batch)
 ```
 
-
 ## Writing in Batches
 
 The `to_*` helper functions are single-shot: they create a writer, write all data, then close and discard the writer. 
@@ -135,9 +182,46 @@ with ExcelWriter(file='combined.xlsx') as writer:
         cursor.execute("SELECT * FROM sales WHERE region = :r", {'r': region})
         writer.write_batch(cursor, sheet_name=region)
 ```
-## Multiple Sheets and Excel Formatting
 
-`ExcelWriter` keeps the workbook open across `write_batch()` calls and saves on context exit, making it the right tool for multi-sheet reports. By default it auto-sizes columns by sampling the first 15 rows, bolds and freezes the header row, and applies date formatting automatically — no configuration needed. For column styles, auto-rotating headers, hyperlinked reports, and the full `formatting` dict reference, see **[Excel Reports](06b-excel.md)**.
+## Reshaping the Row Stream
+
+Need to drop columns, keep only some, reorder them, or rename headers before writing? Don't
+materialize the whole result set to do it — DBTK provides small generator functions
+(`select_columns`, `exclude_columns`, `rename_columns`, `tuples_to_records`) that reshape a row
+stream one record at a time, so any writer below can consume the result directly. See
+[Working with Streaming Records](04-record.md#working-with-streaming-records) in the Record
+documentation for the full rundown.
+
+---
+
+## CSV Files
+
+`CSVWriter` / `to_csv()` is the default choice for most exports — fastest for large datasets, universally readable.
+
+```python
+to_csv(data, file=None, headers=None, write_headers=True, null_string=None, compression='infer', **csv_kwargs)
+```
+
+`**csv_kwargs` pass straight through to `csv.writer()` (`delimiter`, `quotechar`, `quoting`, etc.). `null_string` controls how `None` values render (default `''`; set `settings['null_string_csv']` to change the global default).
+
+```python
+# Custom delimiter and null representation
+writers.to_csv(cursor, 'output.tsv', delimiter='\t', null_string='NULL')
+```
+
+## Excel Files
+
+`ExcelWriter` / `to_excel()` writes `.xlsx` workbooks. By default it auto-sizes columns by sampling the first 15 rows, bolds and freezes the header row, and applies date formatting automatically — no configuration needed.
+
+```python
+to_excel(data, file, sheet='Data', headers=None, write_headers=True)
+```
+
+```python
+writers.to_excel(cursor, 'report.xlsx', sheet='Q1 Intelligence')
+```
+
+`ExcelWriter` (the batch-capable class) additionally takes a `formatting` dict/`ExcelFormat` for column styles, and is the right tool for multi-sheet reports — it keeps the workbook open across `write_batch()` calls and saves on context exit:
 
 ```python
 from dbtk.writers import ExcelWriter
@@ -151,7 +235,41 @@ with ExcelWriter(file='monthly_report.xlsx') as wb:
 # Workbook saved and closed automatically
 ```
 
-For hyperlinked reports with internal navigation or external URLs, see [`LinkedExcelWriter`](06b-excel.md#hyperlinked-reports-with-linkedexcelwriter).
+For column styles, auto-rotating headers, hyperlinked reports (`LinkedExcelWriter`), and the full `formatting` dict reference, see **[Excel Reports](06b-excel.md)**.
+
+## JSON and NDJSON
+
+`JSONWriter` / `to_json()` writes a single JSON array; `NDJSONWriter` / `to_ndjson()` writes one JSON object per line (streaming/log-friendly, and batchable).
+
+```python
+to_json(data, file=None, indent=2, compression='infer', **json_kwargs)
+to_ndjson(data, file=None, compression='infer', **json_kwargs)
+```
+
+`indent` (JSON only) controls pretty-printing — `2` by default, `None`/`0` for compact output. `**json_kwargs` pass through to `json.dump()`. Both preserve native types (numbers, bools, `None`) and stringify only `date`/`datetime`/`time` values.
+
+```python
+# Compact JSON
+writers.to_json(cursor, 'data.json', indent=None)
+
+# NDJSON is batchable — one line per write_batch() call's worth of rows
+from dbtk.writers import NDJSONWriter
+with NDJSONWriter(file='events.ndjson') as writer:
+    while batch := cursor.fetchmany(10_000):
+        writer.write_batch(batch)
+```
+
+## XML Files
+
+`XMLWriter` / `to_xml()` builds the full XML tree in memory — best for small-to-medium datasets. Column names are sanitized into valid XML element names automatically.
+
+```python
+to_xml(data, file=None, root_element='data', record_element='record', pretty=True)
+```
+
+```python
+writers.to_xml(cursor, 'citizens.xml', root_element='citizens', record_element='earth_kingdom_citizen')
+```
 
 ## Streaming XML with XMLStreamer
 
@@ -184,9 +302,31 @@ This is memory-efficient for large datasets where `to_xml()` would consume too m
 - Long-running exports that need progress tracking
 - Need to process multiple cursors into one XML file
 
+## Database Writer
+
+`DatabaseWriter` / `cursor_to_cursor()` copies records directly from a source cursor (or any iterable of Records/dicts) into a target table via batched `INSERT`s — no intermediate file.
+
+```python
+cursor_to_cursor(source_data, target_cursor, target_table, batch_size=1000, commit_frequency=10000)
+```
+
+```python
+source_cursor.execute("SELECT * FROM water_tribe_defenses")
+count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
+print(f"Transferred {count} strategic records")
+```
+
+The INSERT statement's column list is built from the source data's columns — use [`select_columns()` or `exclude_columns()`](04-record.md#working-with-streaming-records) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
+
+---
+
 ## Fixed-Width Files with FixedWidthWriter
 
 `FixedWidthWriter` writes fixed-width text files driven by a `List[FixedColumn]` schema — the same schema used by `FixedReader` on the read side. Each column definition specifies position, width, alignment, and padding, so the writer handles all formatting automatically.
+
+```python
+FixedWidthWriter(data=None, file=None, columns=None, encoding='utf-8', truncate_overflow=True)
+```
 
 ```python
 from dbtk.utils import FixedColumn
@@ -252,6 +392,10 @@ The returned class is a full `FixedWidthRecord` subclass — you can pass its in
 
 `EDIWriter` is the write-side counterpart to `EDIReader`. It handles Electronic Data Interchange files where different record types have different layouts — NACHA ACH, COBOL bank extracts, X12 835 remittances, and similar formats.
 
+```python
+EDIWriter(data=None, file=None, columns=None, encoding='utf-8', truncate_overflow=False)
+```
+
 The schema is a `Dict[str, List[FixedColumn]]` mapping type codes to column definitions. The type code is always the first field of each record; `EDIWriter` reads it to select the right layout for each row.
 
 **Read-modify-write EDI Files:**
@@ -288,6 +432,7 @@ from dbtk.formats.edi import ACH_COLUMNS, COBOL_BANK_EXTRACT_COLUMNS, X12_835_CO
 
 By default `truncate_overflow=False` — EDI files are length-strict and silent truncation could result in data loss. Pass `truncate_overflow=True` only if you know what you're doing.
 
+---
 
 ## Performance Comparison
 

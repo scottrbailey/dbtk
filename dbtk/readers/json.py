@@ -23,14 +23,18 @@ class JSONReader(Reader):
     ----------
     fp : file-like object
         Open file pointer to JSON file
+    record_path : str, optional
+        Dot-notation path to the array to iterate over, for JSON documents that wrap
+        the record array in metadata (e.g. ``{"meta": {...}, "results": [...]}`` uses
+        ``record_path="results"``). If omitted, the root of the document must be the array.
     flatten : bool, default True
         Flatten nested objects with dot notation. For example, ``{"user": {"name": "Bob"}}``
         becomes ``{"user.name": "Bob"}``. Arrays are preserved as-is.
-    add_rownum : bool, default True
+    add_row_num : bool, default False
         Add _row_num field to each record
-    skip_records : int, default 0
+    skip_rows : int, default 0
         Number of records to skip
-    max_records : int, optional
+    n_rows : int, optional
         Maximum records to read
     **kwargs
         Reserved for future use
@@ -58,6 +62,12 @@ class JSONReader(Reader):
             for record in reader:
                 print(record.user)  # {'name': 'Alice', 'email': 'a@example.com'}
 
+        # Array wrapped in metadata
+        # {"page": 1, "total": 2, "results": [{"id": 1}, {"id": 2}]}
+        with readers.JSONReader(open('response.json'), record_path='results') as reader:
+            for record in reader:
+                print(record.id)
+
     See Also
     --------
     NDJSONReader : Read newline-delimited JSON files
@@ -66,7 +76,9 @@ class JSONReader(Reader):
 
     Notes
     -----
-    * JSON file must contain an array at the root level
+    * Without ``record_path``, the JSON document's root must be an array
+    * With ``record_path``, the dot-notation path is resolved from the root and must
+      point to an array
     * All objects in array are scanned to discover complete schema
     * Empty arrays raise ValueError
     * Nested objects are flattened with dot notation by default
@@ -75,8 +87,9 @@ class JSONReader(Reader):
 
     def __init__(self,
                  fp: TextIO,
+                 record_path: Optional[str] = None,
                  flatten: bool = True,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None,
@@ -85,6 +98,7 @@ class JSONReader(Reader):
                          skip_rows=skip_rows, n_rows=n_rows,
                          null_values=null_values)
         self.fp = fp
+        self.record_path = record_path
 
         # Set trackable for progress tracking
         if hasattr(fp, '_uncompressed_size'):
@@ -115,15 +129,42 @@ class JSONReader(Reader):
     def _parse_json(self):
         """Parse the JSON file and validate it's an array."""
         try:
-            self._data = json.load(self.fp)
+            data = json.load(self.fp)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}")
 
-        if not isinstance(self._data, list):
-            raise ValueError(f"JSON file must contain an array, got {type(self._data).__name__}")
+        if self.record_path:
+            data = self._resolve_record_path(data)
 
-        if not self._data:
+        if not isinstance(data, list):
+            location = f"at record_path '{self.record_path}'" if self.record_path else "at document root"
+            raise ValueError(f"Expected an array {location}, got {type(data).__name__}")
+
+        if not data:
             raise ValueError("JSON array is empty")
+
+        self._data = data
+
+    def _resolve_record_path(self, data: Any) -> Any:
+        """Navigate a dot-notation path from the document root to the record array."""
+        current = data
+        traversed = []
+
+        for key in self.record_path.split('.'):
+            if not isinstance(current, dict):
+                where = '.'.join(traversed) if traversed else 'document root'
+                raise ValueError(
+                    f"Invalid record_path '{self.record_path}': {where} is not an object"
+                )
+            if key not in current:
+                where = '.'.join(traversed) if traversed else 'document root'
+                raise ValueError(
+                    f"Invalid record_path '{self.record_path}': no key '{key}' in {where}"
+                )
+            current = current[key]
+            traversed.append(key)
+
+        return current
 
     def _flatten_object(self, obj: Dict, prefix: str = '') -> Dict[str, Any]:
         """
@@ -199,7 +240,7 @@ class NDJSONReader(Reader):
 
     def __init__(self,
                  fp: TextIO,
-                 add_row_num: bool = True,
+                 add_row_num: bool = False,
                  skip_rows: int = 0,
                  n_rows: Optional[int] = None,
                  null_values=None):

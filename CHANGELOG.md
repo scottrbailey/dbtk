@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.8] - 2026-07-20
+
+### Added
+
+- **Oracle DB object/collection columns auto-converted at fetch time** — when a query
+  returns an Oracle `OBJECT` type column, the cursor now converts it to a Python `dict`
+  keyed by attribute name. `VARRAY` and nested `TABLE` collection columns are converted
+  to a Python `list`. Conversion is recursive, so nested objects are fully unwound.
+  Detection is done once per query by inspecting `cursor.description`; queries with no
+  object columns have zero per-row overhead. Postgres arrays and JSON columns (which
+  already arrive as native Python types) are unaffected.
+
+- **`cursor.native_cursor` and `connection.native_connection`** — read-only properties
+  that expose the underlying driver cursor and connection objects for driver-specific
+  operations that dbtk doesn't wrap.
+
+- **`db.cursor(add_row_num=True)`** — brings the reader family's `add_row_num` field to
+  database cursors too. Adds a `_row_num` field (1-based position within the current
+  result set) to each record; the counter is shared across `fetchone()`/`fetchmany()`/
+  `fetchall()` regardless of how they're mixed, and resets on every `execute()`/
+  `executemany()`. Settable per-call (`db.cursor(add_row_num=True)`) or per-connection via
+  `cursor_settings`/YAML config, same as `batch_size`/`debug`/`return_cursor`. Off by
+  default: `BulkSurge`'s `pass_through=True` mode forwards Record values positionally into
+  the target's bind parameters, so an extra trailing field there would mismatch the
+  parameter count.
+
+- **`dbtk.writers.select_columns()` / `exclude_columns()` / `rename_columns()`** — lazily
+  reshape a row stream before it reaches a writer, without materializing the source or adding
+  `exclude=`/`headers=` params to every writer. Each does one job: `select_columns(rows,
+  col_names)` is an allow-list that also sets output order; `exclude_columns(rows, col_names)`
+  is a block-list (list/tuple/set — order doesn't matter) that preserves source order;
+  `rename_columns(rows, mapping)` relabels only the columns in `mapping` and passes everything
+  else through unchanged, in place (a falsy mapping value is a no-op for that column). All
+  three work on self-describing rows (cursors, `Record`, dict, namedtuple), inferring column
+  names from the first row, and compose freely — e.g.
+  `rename_columns(exclude_columns(rows, [...]), {...})`. For raw list/tuple rows with no
+  column names of their own, convert first with the new **`dbtk.record.tuples_to_records()`**
+  (also re-exported from `dbtk.writers`); a falsy entry in its `columns` list drops that
+  position from the output entirely instead of naming it, for filler/padding data. All four
+  yield `Record` objects built via a shared `itemgetter`-based fast path, so per-row cost stays
+  low.
+
+### Changed
+
+- **BREAKING: `add_row_num` now defaults to `False` on every reader** (`CSVReader`,
+  `ExcelReader`, `XLSReader`, `JSONReader`, `NDJSONReader`, `XMLReader`, `DataFrameReader`) —
+  previously only `FixedReader`/`EDIReader` defaulted to `False` (fixed-width files have
+  explicit column specs, making row numbers less useful there); the rest defaulted to `True`.
+  `_row_num` is a real field, not cosmetic — it flows into `.keys()`/`.to_dict()`/iteration
+  like any other column, and since writers derive their output columns from the first
+  record when no explicit `columns=` is given, it previously leaked into default CSV
+  headers, JSON/XML/Excel output, and `DatabaseWriter`/`cursor_to_cursor`'s generated
+  `INSERT` column list (already called out as a footgun in the writers docs). `Table`/
+  `DataSurge`/`BulkSurge` are unaffected — they only pull explicitly mapped fields, so this
+  doesn't change generated SQL through that path. If you relied on the previous default,
+  pass `add_row_num=True` explicitly.
+
+### Fixed
+
+- **Empty Excel header cells produced `None` in `record._fields`** — `cell.value` is
+  `None` for blank header cells; `set_fields` now replaces `None` and empty strings with
+  `'col'` before deduplication, so multiple unnamed columns become `col`, `col_2`,
+  `col_3`, etc. and `_fields` never contains `None`.
+
+
+- **`dbtk generate-key` did not print the key** — the key was returned but never printed
+  to stdout, leaving users with only the instructional message and no key to copy.
+
+- **`dbtk config-setup` raised an unhelpful error without keyring** — when `keyring` is
+  not installed and the user accepted the default option (store in keyring), the command
+  silently returned with a print message. It now raises a `RuntimeError` with clear
+  instructions on all three paths forward.
+
+- **`export DBTK_ENCRYPTION_KEY='key'` printed literally** — the f-string interpolation
+  was missing, so the env var export instruction showed the word `key` instead of the
+  actual generated key value.
+
+- **`~` not expanded in logging directory path** — `Path(log_dir)` does not resolve `~`;
+  `expanduser()` is now called in both `setup_logging` and `cleanup_old_logs`.
+
+- **Env vars not expanded in `get_setting()`** — `${VAR}` syntax worked in connection
+  configs but not in other settings (e.g. `logging.directory`). `get_setting()` now
+  recursively expands env var references in all string values and dicts it returns.
+
+- **`dbtk checkup` showed duplicate `usaddress` and listed `polars` on Python < 3.8** —
+  `python_version` markers in optional dependency metadata were ignored, so both the
+  `< 3.7` and `>= 3.7` variants of `usaddress` appeared and `polars` (which requires
+  Python 3.8+) was shown as missing on older Pythons. Markers are now evaluated against
+  the running Python version.
+
+- **`setup_logging` produced unhelpful log filenames in interactive sessions** —
+  `sys.argv[0]` in `python -c`, ipython, and Jupyter kernels produces an empty or
+  meaningless stem (e.g. `ipykernel_12345`), resulting in filenames like
+  `_20260616_143022.log`. These are now detected and replaced with `interactive`.
+
+- **`to_csv(cursor)` to stdout printed entire result set** — the 20-row preview cap was
+  applied in `BaseWriter.__init__` but `CSVWriter` (and all `BatchWriter` subclasses)
+  go through `BatchWriter.__init__` → `_lazy_init()` instead, bypassing the limit. The
+  cap is now applied in `_lazy_init` so it works for all input types.
+
+---
+
 ## [0.8.7] - 2026-06-04
 
 ### Added

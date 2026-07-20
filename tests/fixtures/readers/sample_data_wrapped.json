@@ -1,0 +1,23 @@
+{
+  "page": 1,
+  "total_results": 3,
+  "data": {
+    "results": [
+      {
+        "trainee_id": 1,
+        "monk_name": "Master Aang",
+        "home_temple": "Northern Air Temple"
+      },
+      {
+        "trainee_id": 2,
+        "monk_name": "Acolyte Xai Bau Airheart",
+        "home_temple": "Western Air Temple"
+      },
+      {
+        "trainee_id": 3,
+        "monk_name": "Master Kelsang the Swift",
+        "home_temple": "Southern Air Temple"
+      }
+    ]
+  }
+}

@@ -8,6 +8,16 @@
 
 **The solution:** DBTK's `Table` class provides everything you need for production data pipelines, from simple inserts to complex merge operations with validation and transformation.
 
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Column Configuration Schema](#column-configuration-schema)
+- [String Shorthand for Transformations](#string-shorthand-for-transformations)
+- [Data Transformations](#data-transformations)
+- [Database Lookups and Validation](#database-lookups-and-validation)
+- [Value Resolution Process](#value-resolution-process)
+- [Handling Incomplete Records](#handling-incomplete-records)
+
 ## Quick Start
 
 Define a `Table`, map your source fields to database columns, and start loading data:
@@ -643,7 +653,7 @@ if not table.is_ready('insert'):
     logger.warning(f"Cannot insert record {record.id}: missing {missing}")
     # Output: Cannot insert record 123: missing {'email', 'status'}
 
-# Debug incomplete records
+# Debug incomplete records (reader constructed with add_row_num=True for _row_num)
 for record in reader:
     table.set_values(record)
     missing = table.reqs_missing('insert')
@@ -775,7 +785,7 @@ for record in reader:
         entity['_status'] = EntityStatus.ERROR
         im.add_error(record['student_id'], table.last_error)
 
-# Pattern 3: Collect errors for reporting
+# Pattern 3: Collect errors for reporting (reader constructed with add_row_num=True)
 errors = []
 for record in reader:
     table.set_values(record)

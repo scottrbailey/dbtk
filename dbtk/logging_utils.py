@@ -101,7 +101,12 @@ def setup_logging(
 
     # Get script name from command line if not provided
     if script_name is None:
-        script_name = Path(sys.argv[0]).stem
+        argv0 = Path(sys.argv[0]).stem
+        # Interactive shells (python -c, ipython, jupyter, etc.) produce
+        # unhelpful names — fall back to 'interactive'
+        if not argv0 or argv0 in ('-c', '-m', '__main__') or argv0.startswith('ipykernel'):
+            argv0 = 'interactive'
+        script_name = argv0
 
     # Load logging config dict
     logging_config = get_setting('logging', {})
@@ -117,7 +122,7 @@ def setup_logging(
     filename_format = logging_config.get('filename_format', '%Y%m%d_%H%M%S')
 
     # Create log directory
-    log_dir_path = Path(log_dir)
+    log_dir_path = Path(log_dir).expanduser()
     log_dir_path.mkdir(parents=True, exist_ok=True)
 
     # Generate filename with optional timestamp
@@ -280,7 +285,7 @@ def cleanup_old_logs(
     log_dir = log_dir or logging_config.get('directory', './logs')
     retention_days = retention_days or logging_config.get('retention_days', 30)
 
-    log_dir_path = Path(log_dir)
+    log_dir_path = Path(log_dir).expanduser()
     if not log_dir_path.exists():
         logger.warning(f"Log directory does not exist: {log_dir_path}")
         return []
