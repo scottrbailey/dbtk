@@ -317,12 +317,35 @@ def wrap_at_comma(text: str) -> str:
     return ''.join(wrapped_parts)
 
 
+# Matches single-quoted string literals (with '' as an escaped quote), line
+# comments, and block comments, so bind-parameter scanning can skip over
+# them - e.g. the ':FMMIAM' inside to_char(dt, 'FMHH:FMMIAM') is text, not a
+# bind placeholder.
+_SQL_LITERAL_RE = re.compile(r"'(?:[^']|'')*'|--[^\n]*|/\*.*?\*/", re.DOTALL)
+
+
+def _split_sql_segments(sql: str) -> List[Tuple[str, bool]]:
+    """Split SQL into (text, is_code) segments, isolating string literals and comments."""
+    segments = []
+    pos = 0
+    for m in _SQL_LITERAL_RE.finditer(sql):
+        if m.start() > pos:
+            segments.append((sql[pos:m.start()], True))
+        segments.append((m.group(), False))
+        pos = m.end()
+    if pos < len(sql):
+        segments.append((sql[pos:], True))
+    return segments
+
+
 def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, ...]]:
     """
     Process SQL parameters according to the specified paramstyle.
 
     Supports SQL input in either 'named' (:param) or 'pyformat' (%(param)s) format.
     Auto-detects the input format and converts to the target paramstyle.
+    String literals and comments are ignored when detecting and substituting
+    parameters, so text such as ``to_char(dt, 'FMHH:FMMIAM')`` is left untouched.
 
     Parameters:
         sql: SQL query with named (:name) or pyformat (%(name)s) parameters
@@ -344,10 +367,13 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
         >>> process_sql_parameters("SELECT * FROM users WHERE id = %(user_id)s", "qmark")
         ("SELECT * FROM users WHERE id = ?", ('user_id',))
     """
+    segments = _split_sql_segments(sql)
+    code = ''.join(text for text, is_code in segments if is_code)
+
     # Detect input format
     # Use negative lookbehind (?<!:) to exclude PostgreSQL :: cast syntax
-    has_named = bool(re.search(r'(?<!:):(\w+)', sql))
-    has_pyformat = bool(re.search(r'%\((\w+)\)s', sql))
+    has_named = bool(re.search(r'(?<!:):(\w+)', code))
+    has_pyformat = bool(re.search(r'%\((\w+)\)s', code))
 
     if has_named and has_pyformat:
         raise ValueError(
@@ -365,22 +391,27 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
         return sql, tuple()
 
     # Extract parameter names using detected pattern
-    param_names = tuple(re.findall(source_pattern, sql))
+    param_names = tuple(re.findall(source_pattern, code))
 
     # Convert to target paramstyle
     if paramstyle == ParamStyle.NAMED:
-        sql = re.sub(source_pattern, r':\1', sql)
+        replacement = r':\1'
     elif paramstyle == ParamStyle.PYFORMAT:
-        sql = re.sub(source_pattern, r'%(\1)s', sql)
+        replacement = r'%(\1)s'
     elif paramstyle == ParamStyle.QMARK:
-        sql = re.sub(source_pattern, r'?', sql)
+        replacement = r'?'
     elif paramstyle == ParamStyle.FORMAT:
-        sql = re.sub(source_pattern, r'%s', sql)
+        replacement = r'%s'
     elif paramstyle == ParamStyle.NUMERIC:
         counter = iter(range(1, len(param_names) + 1))
-        sql = re.sub(source_pattern, lambda m: f':{next(counter)}', sql)
+        replacement = lambda m: f':{next(counter)}'
     else:
         raise ValueError(f"Unsupported paramstyle: {paramstyle}")
+
+    sql = ''.join(
+        re.sub(source_pattern, replacement, text) if is_code else text
+        for text, is_code in segments
+    )
 
     return sql, param_names
 
