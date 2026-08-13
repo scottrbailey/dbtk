@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`process_sql_parameters()` mistook colons inside string literals/comments for bind
+  placeholders** — e.g. `to_char(act.start_date, 'FMHH:FMMIAM')` made dbtk treat
+  `:FMMIAM` as a bind parameter, and oracledb raised `DPY-4008: no bind placeholder
+  named ":FMMIAM" was found`. Parameter detection and substitution now skip over
+  single-quoted string literals and `--`/`/* */` comments. As a second layer of
+  protection, the `:name` pattern also now requires the colon not be glued to a
+  preceding identifier/digit (`(?<![:\w]):(\w+)` instead of `(?<!:):(\w+)`), so a
+  format mask like `'FMHH:FMMIAM'` is never mistaken for a placeholder even outside a
+  literal, while unspaced binds (`id=:id`, `VALUES(:a,:b)`) and the PostgreSQL `::`
+  cast operator continue to work correctly.
+
 ## [0.8.8] - 2026-07-20
 
 ### Added
