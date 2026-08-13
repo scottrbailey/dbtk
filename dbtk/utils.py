@@ -371,8 +371,10 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
     code = ''.join(text for text, is_code in segments if is_code)
 
     # Detect input format
-    # Use negative lookbehind (?<!:) to exclude PostgreSQL :: cast syntax
-    has_named = bool(re.search(r'(?<!:):(\w+)', code))
+    # Use negative lookbehind (?<![:\w]) to exclude PostgreSQL :: cast syntax
+    # and colons glued to a preceding identifier/number (e.g. a stray format
+    # mask like 'FMHH:FMMIAM' that wasn't already stripped as a literal).
+    has_named = bool(re.search(r'(?<![:\w]):(\w+)', code))
     has_pyformat = bool(re.search(r'%\((\w+)\)s', code))
 
     if has_named and has_pyformat:
@@ -385,7 +387,7 @@ def process_sql_parameters(sql: str, paramstyle: str) -> Tuple[str, Tuple[str, .
     if has_pyformat:
         source_pattern = r'%\((\w+)\)s'
     elif has_named:
-        source_pattern = r'(?<!:):(\w+)'
+        source_pattern = r'(?<![:\w]):(\w+)'
     else:
         # No parameters found - return as-is
         return sql, tuple()
