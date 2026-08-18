@@ -567,11 +567,10 @@ class Cursor:
             from .database import ParamStyle
             transformed_sql, param_names = process_sql_parameters(sql, self.paramstyle)
 
-            # Prepare parameters
-            if bind_vars:
-                params = self.prepare_params(param_names, bind_vars)
-            else:
-                params = ()
+            # Prepare parameters - always route through prepare_params so the
+            # empty case matches the cursor's paramstyle (e.g. {} for named
+            # styles, () for positional styles) instead of hardcoding a tuple.
+            params = self.prepare_params(param_names, bind_vars or {})
 
             return self.execute(transformed_sql, params)
 
