@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literal, while unspaced binds (`id=:id`, `VALUES(:a,:b)`) and the PostgreSQL `::`
   cast operator continue to work correctly.
 
+- **`cursor.execute_file()` passed an empty tuple `()` instead of an empty dict `{}`
+  when called with no `bind_vars`** — for named-paramstyle cursors (Oracle, psycopg)
+  this bypassed `prepare_params()`, which normally returns the empty container shape
+  matching the cursor's paramstyle. A query with zero real bind placeholders would
+  then be executed with a tuple against a driver cursor configured for named/dict
+  binding, which some driver builds reject with `TypeError: expecting a dictionary,
+  sequence or keyword args`. `prepare_file()`/`PreparedStatement.execute()` were
+  unaffected since they already built `{}` in this case. `execute_file()` now always
+  routes through `prepare_params()` so the two agree.
+
 ## [0.8.8] - 2026-07-20
 
 ### Added

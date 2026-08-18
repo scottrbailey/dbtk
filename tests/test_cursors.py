@@ -357,6 +357,39 @@ class TestExecuteFile:
         with pytest.raises(FileNotFoundError):
             cur.execute_file('/nonexistent/path/query.sql')
 
+    def test_execute_file_no_params_uses_dict_for_named_paramstyle(self, tmp_path):
+        # Regression test: execute_file() used to hardcode an empty tuple ()
+        # when no bind_vars were passed, regardless of paramstyle. For a
+        # named-style cursor (Oracle, psycopg) with zero real bind
+        # placeholders, prepare_params() would build {} - the two disagreed,
+        # and some driver builds reject a tuple where a dict is expected.
+        mock_cursor = MagicMock()
+        connection = MagicMock(spec=['cursor', 'driver', 'placeholder'])
+        connection.driver.paramstyle = 'named'
+        connection.placeholder = ':1'
+        connection.cursor.return_value = mock_cursor
+
+        named_cur = Cursor(connection)
+        sql_file = tmp_path / 'no_params.sql'
+        sql_file.write_text("SELECT 1 FROM dual")
+        named_cur.execute_file(sql_file)
+
+        mock_cursor.execute.assert_called_once_with("SELECT 1 FROM dual", {})
+
+    def test_execute_file_no_params_uses_tuple_for_positional_paramstyle(self, tmp_path):
+        mock_cursor = MagicMock()
+        connection = MagicMock(spec=['cursor', 'driver', 'placeholder'])
+        connection.driver.paramstyle = 'qmark'
+        connection.placeholder = '?'
+        connection.cursor.return_value = mock_cursor
+
+        qmark_cur = Cursor(connection)
+        sql_file = tmp_path / 'no_params.sql'
+        sql_file.write_text("SELECT 1")
+        qmark_cur.execute_file(sql_file)
+
+        mock_cursor.execute.assert_called_once_with("SELECT 1", ())
+
 
 # ---------------------------------------------------------------------------
 # Cursor — attribute routing
