@@ -340,6 +340,15 @@ writers.to_csv(exclude_columns(cursor, ['ssn', 'password_hash']), 'users.csv')
 `col_names` is a block-list — a list, tuple, or set all work, since order never matters for
 exclusion. Everything else passes through in its original order.
 
+By default, naming a column that isn't in the source raises `ValueError`. Pass
+`ignore_missing=True` to skip absent names instead — useful when the same drop-list needs
+to work against sources that may or may not carry a given column:
+
+```python
+# Works whether or not this particular extract includes the ssn column
+writers.to_csv(exclude_columns(cursor, ['ssn'], ignore_missing=True), 'users.csv')
+```
+
 ### rename_columns — relabel some columns, leave the rest alone
 
 ```python
@@ -352,6 +361,16 @@ writers.to_csv(rename_columns(cursor, {'signup_date': 'Joined On'}), 'customers.
 everything else keeps its original name and position — this is a pure rename, not a select.
 A falsy value (`''` or `None`) is a no-op for that column, so you can build the mapping
 programmatically without filtering out unchanged entries.
+
+By default, a mapping key that isn't in the source raises `ValueError`. Pass
+`ignore_missing=True` to skip absent keys instead — handy when one mapping needs to work
+whether or not a source carries a given column, such as a Banner extract that may or may
+not have its table-name prefix stripped:
+
+```python
+mapping = {'spriden_pidm': 'pidm', 'spriden_id': 'id'}
+writers.to_csv(rename_columns(cursor, mapping, ignore_missing=True), 'ids.csv')
+```
 
 ### Composing them
 

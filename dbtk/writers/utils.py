@@ -123,7 +123,7 @@ def _select_columns_gen(rows: Iterator[Any], col_names: List[str]) -> Iterator[R
         yield output_cls(*get(row))
 
 
-def exclude_columns(rows: Iterable[Any], col_names: Iterable[str]) -> Iterator[Record]:
+def exclude_columns(rows: Iterable[Any], col_names: Iterable[str], ignore_missing: bool = False) -> Iterator[Record]:
     """
     Drop columns from a stream of self-describing rows; source order is preserved.
 
@@ -135,25 +135,33 @@ def exclude_columns(rows: Iterable[Any], col_names: Iterable[str]) -> Iterator[R
         rows: Source rows - dicts, Records, namedtuples, or cursors.
         col_names: Column names to drop. Order doesn't matter; a list, tuple, or
             set all work.
+        ignore_missing: If True, names in `col_names` that aren't present in the
+            source are silently ignored instead of raising. Useful when the same
+            drop-list needs to work against sources that may or may not carry a
+            given column (e.g. a Banner extract with/without its table-name prefix).
 
     Yields:
         Record: one Record per input row, with the named columns dropped.
 
     Raises:
         ValueError: If col_names is empty, a named column isn't present in the
-            source, or dropping them would remove every column.
+            source (unless `ignore_missing`), or dropping them would remove
+            every column.
         TypeError: If column names can't be determined from the row type.
 
     Examples:
         # Drop sensitive columns from cursor results before writing
         to_csv(exclude_columns(cursor, ['ssn', 'password']), 'users.csv')
+
+        # Drop a column that may or may not be present, depending on source
+        to_csv(exclude_columns(cursor, ['spriden_ssn'], ignore_missing=True), 'users.csv')
     """
     if not col_names:
         raise ValueError("col_names must not be empty")
-    return _exclude_columns_gen(iter(rows), col_names)
+    return _exclude_columns_gen(iter(rows), col_names, ignore_missing)
 
 
-def _exclude_columns_gen(rows: Iterator[Any], col_names: Iterable[str]) -> Iterator[Record]:
+def _exclude_columns_gen(rows: Iterator[Any], col_names: Iterable[str], ignore_missing: bool = False) -> Iterator[Record]:
     first, src_cols, by_name = _peek_columns(rows)
     if first is None:
         return
@@ -161,7 +169,9 @@ def _exclude_columns_gen(rows: Iterator[Any], col_names: Iterable[str]) -> Itera
     exclude_set = set(col_names)
     missing = [c for c in exclude_set if c not in src_cols]
     if missing:
-        raise ValueError(f"Column(s) not found in source data: {sorted(missing)}")
+        if not ignore_missing:
+            raise ValueError(f"Column(s) not found in source data: {sorted(missing)}")
+        exclude_set -= set(missing)
     keep = [c for c in src_cols if c not in exclude_set]
     if not keep:
         raise ValueError("excluding these columns would remove every column")
@@ -175,7 +185,7 @@ def _exclude_columns_gen(rows: Iterator[Any], col_names: Iterable[str]) -> Itera
         yield output_cls(*get(row))
 
 
-def rename_columns(rows: Iterable[Any], mapping: Dict[str, str]) -> Iterator[Record]:
+def rename_columns(rows: Iterable[Any], mapping: Dict[str, str], ignore_missing: bool = False) -> Iterator[Record]:
     """
     Rename some columns in a stream of self-describing rows.
 
@@ -191,31 +201,40 @@ def rename_columns(rows: Iterable[Any], mapping: Dict[str, str]) -> Iterator[Rec
         rows: Source rows - dicts, Records, namedtuples, or cursors.
         mapping: Source name -> new name. A falsy value ('' or None) is a no-op
             for that column (keeps its original name) rather than an error.
+        ignore_missing: If True, keys in `mapping` that aren't present in the
+            source are silently ignored instead of raising. Useful when one
+            mapping needs to work whether or not a source carries a given
+            column (e.g. a Banner extract with/without its table-name prefix).
 
     Yields:
         Record: one Record per input row, with the named columns relabeled.
 
     Raises:
         ValueError: If mapping is empty, or a named column isn't present in the
-            source.
+            source (unless `ignore_missing`).
         TypeError: If column names can't be determined from the row type.
 
     Examples:
         # Nicer headers for a report; every other column is untouched
         to_csv(rename_columns(cursor, {'signup_date': 'Joined On'}), 'customers.csv')
+
+        # One mapping that works whether or not Banner prepended the table name
+        # (a file without the prefix already has 'pidm', so that key is just skipped)
+        mapping = {'spriden_pidm': 'pidm', 'spriden_id': 'id'}
+        to_csv(rename_columns(cursor, mapping, ignore_missing=True), 'ids.csv')
     """
     if not mapping:
         raise ValueError("mapping must not be empty")
-    return _rename_columns_gen(iter(rows), mapping)
+    return _rename_columns_gen(iter(rows), mapping, ignore_missing)
 
 
-def _rename_columns_gen(rows: Iterator[Any], mapping: Dict[str, str]) -> Iterator[Record]:
+def _rename_columns_gen(rows: Iterator[Any], mapping: Dict[str, str], ignore_missing: bool = False) -> Iterator[Record]:
     first, src_cols, by_name = _peek_columns(rows)
     if first is None:
         return
 
     missing = [c for c in mapping if c not in src_cols]
-    if missing:
+    if missing and not ignore_missing:
         raise ValueError(f"Column(s) not found in source data: {missing}")
 
     output_names = [mapping.get(c) or c for c in src_cols]

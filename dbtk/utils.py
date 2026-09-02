@@ -5,13 +5,17 @@ Utility functions for dbtk.
 
 import logging
 import re
+import shutil
 import datetime as dt
+from pathlib import Path
 from typing import Tuple, List, Any, Union, Dict, Iterable, Optional
 from .defaults import settings
 try:
     from typing import Mapping
 except ImportError:
     from collections.abc import Mapping
+
+logger = logging.getLogger(__name__)
 
 MIDNIGHT = dt.time(0, 0, 0)
 # cache format strings for performance
@@ -573,6 +577,100 @@ def batch_iterable(iterable: Iterable[Any], batch_size: int) -> Iterable[List[An
         if not batch:
             break
         yield batch
+
+
+def expire_files(
+    src_dir: str,
+    days_old: int,
+    archive_dir: Optional[str] = None,
+    pattern: str = '*',
+    dry_run: bool = False
+) -> List[str]:
+    """
+    Delete or archive files older than a given age.
+
+    Common interface pattern: inbound/processed files need to be cleared out
+    (or moved to an archive location) after they've aged past some retention
+    window. Only regular files matching `pattern` are considered; matching
+    subdirectories are left alone.
+
+    Args:
+        src_dir: Directory to scan for aged files.
+        days_old: Files with an mtime older than this many days are affected.
+        archive_dir: If given, matching files are moved here instead of
+            deleted. Created if it doesn't exist. If a file of the same name
+            already exists there, the source file is left in place (skipped).
+        pattern: Glob pattern to select files within `src_dir` (default `'*'`,
+            i.e. all files).
+        dry_run: If True, only report what would be moved/deleted without
+            actually doing it.
+
+    Returns:
+        Paths (as they were in `src_dir`) of files that were deleted or
+        moved (or would be, if dry_run).
+
+    Example
+    -------
+    ::
+
+        import dbtk
+
+        # Delete files untouched for 90+ days
+        dbtk.utils.expire_files('/data/inbound', days_old=90)
+
+        # Archive CSVs older than 30 days instead of deleting them
+        dbtk.utils.expire_files('/data/inbound', days_old=30,
+                                 archive_dir='/data/archive', pattern='*.csv')
+
+        # See what would happen first
+        dbtk.utils.expire_files('/data/inbound', days_old=30, dry_run=True)
+    """
+    src_path = Path(src_dir).expanduser()
+    if not src_path.exists():
+        logger.warning(f"Source directory does not exist: {src_path}")
+        return []
+
+    cutoff = dt.datetime.now() - dt.timedelta(days=days_old)
+    archive_path = Path(archive_dir).expanduser() if archive_dir else None
+    affected = []
+
+    for file in src_path.glob(pattern):
+        if not file.is_file():
+            continue
+
+        file_mtime = dt.datetime.fromtimestamp(file.stat().st_mtime)
+        if file_mtime >= cutoff:
+            continue
+
+        if archive_path:
+            dest = archive_path / file.name
+            if dest.exists():
+                logger.warning(f"Skipping {file}: {dest} already exists in archive")
+                continue
+            if dry_run:
+                logger.info(f"Would move: {file} -> {dest}")
+            else:
+                archive_path.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.move(str(file), str(dest))
+                    logger.info(f"Archived: {file} -> {dest}")
+                except OSError as e:
+                    logger.warning(f"Failed to archive {file}: {e}")
+                    continue
+        else:
+            if dry_run:
+                logger.info(f"Would delete: {file}")
+            else:
+                try:
+                    file.unlink()
+                    logger.info(f"Deleted: {file}")
+                except OSError as e:
+                    logger.warning(f"Failed to delete {file}: {e}")
+                    continue
+
+        affected.append(str(file))
+
+    return affected
 
 
 # For Python 3.6 compatibility, define type aliases

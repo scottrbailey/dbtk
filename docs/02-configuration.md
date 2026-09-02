@@ -91,7 +91,7 @@ settings:
     filename_format: '%Y%m%d_%H%M%S'
     split_errors: true  # If True, separate error log will be created (only if critical or errors are encountered
     console: true
-    retention_days: 30
+    retention_days: 30  # Config-only - no setup_logging()/cleanup_old_logs() override
 
   # File I/O settings
   compressed_file_buffer_size: 1048576  # 1MB buffer for reading compressed files (.gz, .bz2, .xz)

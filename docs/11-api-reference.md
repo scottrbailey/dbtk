@@ -374,11 +374,11 @@ Details: [Fixed-Width Files](06-writers.md#fixed-width-files-with-fixedwidthwrit
 ### select_columns / exclude_columns / rename_columns
 
 ```python
-select_columns(rows, col_names)     # allow-list (list), also sets output order
-exclude_columns(rows, col_names)    # block-list (list/tuple/set), source order preserved
-rename_columns(rows, mapping)       # dict source->new name; unlisted columns pass through unchanged
+select_columns(rows, col_names)                          # allow-list (list), also sets output order
+exclude_columns(rows, col_names, ignore_missing=False)    # block-list (list/tuple/set), source order preserved
+rename_columns(rows, mapping, ignore_missing=False)       # dict source->new name; unlisted columns pass through unchanged
 ```
-Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
+Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. `exclude_columns`/`rename_columns` normally raise if a named column isn't in the source; pass `ignore_missing=True` to skip absent names instead — handy when one mapping/drop-list needs to work against sources that may or may not carry a given column (e.g. a Banner extract with/without its table-name prefix). `select_columns` has no such option — an allow-list naming a column that isn't there is treated as a real error. Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
 
 ### XMLStreamer
 
@@ -638,10 +638,21 @@ encrypt_config_file(path)           # Encrypt passwords in config
 ```python
 from dbtk import setup_logging, cleanup_old_logs, errors_logged
 
-setup_logging(name=None, log_dir='./logs', level='INFO', **kwargs)
-cleanup_old_logs(log_dir='./logs', retention_days=30, dry_run=False)
+setup_logging(script_name=None, log_dir=None, level=None, split_errors=None,
+               console=None, format=None, timestamp_format=None, filename_format=None)
+cleanup_old_logs(log_dir=None, pattern='*.log', dry_run=False)  # retention_days is config-only
 errors_logged()  # Returns error log path or None
 ```
+
+### File Expiry
+
+```python
+from dbtk.utils import expire_files
+
+expire_files(src_dir, days_old, archive_dir=None, pattern='*', dry_run=False)
+# archive_dir=None -> delete matching files older than days_old; given -> move them there instead
+```
+Details: [Expiring Old Files](10-advanced.md#expiring-old-files).
 
 ### Column Definition Generator
 

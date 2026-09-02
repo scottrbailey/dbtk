@@ -1,10 +1,12 @@
 # tests/test_logging_utils.py
+import os
+import time
 import pytest
 import logging
 import tempfile
 from pathlib import Path
 
-from dbtk.logging_utils import setup_logging, errors_logged, ErrorCountHandler
+from dbtk.logging_utils import setup_logging, cleanup_old_logs, errors_logged, ErrorCountHandler
 
 
 @pytest.fixture
@@ -171,3 +173,81 @@ class TestErrorsLogged:
             content = f.read()
             assert 'ERROR' in content
             assert 'Data validation failed' in content
+
+
+class TestSetupLoggingOverrides:
+    """setup_logging() must let a script override every logging.* config setting,
+    not just the five it originally exposed."""
+
+    def test_filename_format_override(self, temp_log_dir):
+        """Overriding filename_format='' should produce a rolling log with no timestamp."""
+        main_log, error_log = setup_logging(
+            'rolling_job', log_dir=temp_log_dir, console=False, filename_format=''
+        )
+        assert Path(main_log).name == 'rolling_job.log'
+
+    def test_format_and_timestamp_format_override(self, temp_log_dir):
+        main_log, error_log = setup_logging(
+            'test_script',
+            log_dir=temp_log_dir,
+            console=False,
+            format='%(levelname)s|%(message)s',
+            timestamp_format='%Y',
+        )
+        logging.info("custom format check")
+
+        with open(main_log, 'r') as f:
+            content = f.read()
+        assert 'INFO|custom format check' in content
+        # asctime isn't referenced by this format string, so nothing to assert
+        # about timestamp_format's rendering beyond it not raising.
+
+
+class TestCleanupOldLogs:
+    """Tests for cleanup_old_logs() - retention is config-only (tests/test.yml sets 30 days)."""
+
+    def _age_file(self, path, days):
+        aged = time.time() - (days * 86400 + 3600)
+        os.utime(path, (aged, aged))
+
+    def test_deletes_logs_older_than_configured_retention(self, temp_log_dir):
+        old_log = Path(temp_log_dir) / 'old.log'
+        new_log = Path(temp_log_dir) / 'new.log'
+        old_log.write_text('old')
+        new_log.write_text('new')
+        self._age_file(old_log, days=40)  # past test.yml's retention_days: 30
+        self._age_file(new_log, days=5)
+
+        deleted = cleanup_old_logs(log_dir=temp_log_dir)
+
+        assert deleted == [str(old_log)]
+        assert not old_log.exists()
+        assert new_log.exists()
+
+    def test_pattern_narrows_which_files_are_considered(self, temp_log_dir):
+        old_log = Path(temp_log_dir) / 'old.log'
+        old_txt = Path(temp_log_dir) / 'old.txt'
+        old_log.write_text('old')
+        old_txt.write_text('old')
+        self._age_file(old_log, days=40)
+        self._age_file(old_txt, days=40)
+
+        deleted = cleanup_old_logs(log_dir=temp_log_dir, pattern='*.log')
+
+        assert deleted == [str(old_log)]
+        assert old_txt.exists()
+
+    def test_dry_run_does_not_delete(self, temp_log_dir):
+        old_log = Path(temp_log_dir) / 'old.log'
+        old_log.write_text('old')
+        self._age_file(old_log, days=40)
+
+        would_delete = cleanup_old_logs(log_dir=temp_log_dir, dry_run=True)
+
+        assert would_delete == [str(old_log)]
+        assert old_log.exists()
+
+    def test_no_retention_days_kwarg_accepted(self, temp_log_dir):
+        """retention_days is config-only - passing it is a TypeError, not a silent override."""
+        with pytest.raises(TypeError):
+            cleanup_old_logs(log_dir=temp_log_dir, retention_days=1)

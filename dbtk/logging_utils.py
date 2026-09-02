@@ -9,7 +9,7 @@ the pattern of creating timestamped log files like script_name_YYYYMMDD_HHMMSS.l
 import logging
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Tuple, List
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,10 @@ def setup_logging(
     log_dir: Optional[str] = None,
     level: Optional[str] = None,
     split_errors: Optional[bool] = None,
-    console: Optional[bool] = None
+    console: Optional[bool] = None,
+    format: Optional[str] = None,
+    timestamp_format: Optional[str] = None,
+    filename_format: Optional[str] = None
 ) -> Tuple[str, Optional[str]]:
     """
     Configure logging for integration scripts.
@@ -69,6 +72,9 @@ def setup_logging(
         level: Logging level string - DEBUG, INFO, WARNING, ERROR (defaults to config or 'INFO')
         split_errors: Create separate error log file (defaults to config or True)
         console: Also log to console/stdout (defaults to config or True)
+        format: Log message format string (defaults to config or a sensible default)
+        timestamp_format: Format for timestamps within log messages (defaults to config or a sensible default)
+        filename_format: strftime format used in log filenames - see Note below (defaults to config or '%Y%m%d_%H%M%S')
 
     Returns:
         Tuple of (log_file_path, error_log_path or None)
@@ -117,9 +123,9 @@ def setup_logging(
     split_errors = split_errors if split_errors is not None else logging_config.get('split_errors', True)
     console = console if console is not None else logging_config.get('console', True)
 
-    log_format = logging_config.get('format', '%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-    timestamp_format = logging_config.get('timestamp_format', '%Y-%m-%d %H:%M:%S')
-    filename_format = logging_config.get('filename_format', '%Y%m%d_%H%M%S')
+    log_format = format or logging_config.get('format', '%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    timestamp_format = timestamp_format or logging_config.get('timestamp_format', '%Y-%m-%d %H:%M:%S')
+    filename_format = filename_format if filename_format is not None else logging_config.get('filename_format', '%Y%m%d_%H%M%S')
 
     # Create log directory
     log_dir_path = Path(log_dir).expanduser()
@@ -240,16 +246,18 @@ def errors_logged() -> Optional[str]:
 
 def cleanup_old_logs(
     log_dir: Optional[str] = None,
-    retention_days: Optional[int] = None,
     pattern: str = "*.log",
     dry_run: bool = False
 ) -> List[str]:
     """
-    Remove log files older than retention period.
+    Remove log files older than the configured retention period.
+
+    Retention is intentionally config-only (``logging.retention_days`` in
+    dbtk.yml, default 30) rather than a per-call override, so a one-off
+    ``retention_days=1`` in a script can't quietly nuke everyone else's logs.
 
     Args:
         log_dir: Directory to clean (defaults to config setting or './logs')
-        retention_days: Keep logs newer than this many days (defaults to config or 30)
         pattern: Glob pattern for log files (default: ``'*.log'``)
         dry_run: If True, only report what would be deleted without actually deleting
 
@@ -262,12 +270,9 @@ def cleanup_old_logs(
 
         import dbtk
 
-        # Clean logs older than 30 days (from config)
+        # Clean logs older than the configured retention_days
         deleted = dbtk.cleanup_old_logs()
         print(f"Deleted {len(deleted)} old log files")
-
-        # Custom retention
-        deleted = dbtk.cleanup_old_logs(retention_days=7)
 
         # Dry run to see what would be deleted
         would_delete = dbtk.cleanup_old_logs(dry_run=True)
@@ -277,38 +282,16 @@ def cleanup_old_logs(
         deleted = dbtk.cleanup_old_logs(pattern="error_*.log")
     """
     from dbtk.config import get_setting
+    from .utils import expire_files
 
     # Load logging config dict
     logging_config = get_setting('logging', {})
 
     # Get settings with fallbacks
     log_dir = log_dir or logging_config.get('directory', './logs')
-    retention_days = retention_days or logging_config.get('retention_days', 30)
+    retention_days = logging_config.get('retention_days', 30)
 
-    log_dir_path = Path(log_dir).expanduser()
-    if not log_dir_path.exists():
-        logger.warning(f"Log directory does not exist: {log_dir_path}")
-        return []
-
-    cutoff = datetime.now() - timedelta(days=retention_days)
-    deleted = []
-
-    for log_file in log_dir_path.glob(pattern):
-        if not log_file.is_file():
-            continue
-
-        file_mtime = datetime.fromtimestamp(log_file.stat().st_mtime)
-        if file_mtime < cutoff:
-            if dry_run:
-                logger.info(f"Would delete: {log_file}")
-            else:
-                try:
-                    log_file.unlink()
-                    logger.info(f"Deleted old log: {log_file}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete {log_file}: {e}")
-                    continue
-            deleted.append(str(log_file))
+    deleted = expire_files(log_dir, retention_days, pattern=pattern, dry_run=dry_run)
 
     if not dry_run and deleted:
         logger.info(f"Cleaned up {len(deleted)} old log files")

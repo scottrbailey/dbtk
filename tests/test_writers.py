@@ -1276,6 +1276,21 @@ class TestExcludeColumns:
     def test_empty_input_yields_nothing(self):
         assert list(exclude_columns([], ['a'])) == []
 
+    def test_ignore_missing_skips_unknown_column(self, sample_records, sample_columns):
+        out = list(exclude_columns(sample_records, ['not_a_real_column'], ignore_missing=True))
+        assert out[0].keys() == sample_columns
+
+    def test_ignore_missing_still_drops_known_columns(self, sample_records, sample_columns):
+        out = list(exclude_columns(
+            sample_records, ['bison_companion', 'not_a_real_column'], ignore_missing=True
+        ))
+        expected = [c for c in sample_columns if c != 'bison_companion']
+        assert out[0].keys() == expected
+
+    def test_ignore_missing_still_raises_if_all_columns_dropped(self, sample_records, sample_columns):
+        with pytest.raises(ValueError):
+            list(exclude_columns(sample_records, list(sample_columns) + ['not_a_real_column'], ignore_missing=True))
+
 
 class TestRenameColumns:
     """Tests for the rename_columns() row-shaping generator (partial rename, pass-through)."""
@@ -1325,6 +1340,19 @@ class TestRenameColumns:
 
     def test_empty_input_yields_nothing(self):
         assert list(rename_columns([], {'a': 'b'})) == []
+
+    def test_ignore_missing_skips_unknown_key(self, sample_records, sample_columns):
+        out = list(rename_columns(sample_records, {'not_a_real_column': 'X'}, ignore_missing=True))
+        assert out[0].keys() == sample_columns
+
+    def test_ignore_missing_still_renames_known_column(self, sample_records, sample_columns):
+        # A mapping that works whether or not a source carries the Banner-style prefix
+        out = list(rename_columns(
+            sample_records, {'spriden_monk_name': 'monk_name', 'monk_name': 'Name'}, ignore_missing=True
+        ))
+        expected = ['Name' if c == 'monk_name' else c for c in sample_columns]
+        assert out[0].keys() == expected
+        assert out[0]['Name'] == sample_records[0]['monk_name']
 
 
 class TestTuplesToRecords:

@@ -28,7 +28,7 @@ Direct connections:
     cursor = db.cursor()  # Returns Record objects
 """
 
-__version__ = '0.8.9'
+__version__ = '0.9.0'
 __author__ = 'Scott Bailey <scottrbailey@gmail.com>'
 
 from .database import Database
@@ -36,7 +36,7 @@ from .config import connect, set_config_file
 from .cursors import Cursor, PreparedStatement
 from .logging_utils import setup_logging, cleanup_old_logs, errors_logged
 from .record import fixed_record_factory, FixedWidthRecord
-from .utils import FixedColumn
+from .utils import FixedColumn, expire_files
 from . import readers
 from . import writers
 from . import etl
@@ -55,5 +55,6 @@ __all__ = [
     'writers',
     'setup_logging',
     'cleanup_old_logs',
-    'errors_logged'
+    'errors_logged',
+    'expire_files'
 ]

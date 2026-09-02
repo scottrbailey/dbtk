@@ -1,6 +1,8 @@
+import os
+import time
 import pytest
 
-from dbtk.utils import process_sql_parameters, ParamStyle
+from dbtk.utils import process_sql_parameters, ParamStyle, expire_files
 
 
 class TestProcessSqlParametersLiterals:
@@ -96,3 +98,117 @@ class TestProcessSqlParametersWordBoundary:
         result_sql, param_names = process_sql_parameters(sql, ParamStyle.NAMED)
         assert param_names == ('id',)
         assert 'col::text' in result_sql
+
+
+def _age_file(path, days):
+    """Backdate a file's mtime/atime by `days` (plus a small buffer past midnight)."""
+    aged = time.time() - (days * 86400 + 3600)
+    os.utime(path, (aged, aged))
+
+
+class TestExpireFiles:
+    """Tests for expire_files() - the shared delete-or-archive-by-age utility."""
+
+    def test_deletes_files_older_than_cutoff(self, tmp_path):
+        old_file = tmp_path / 'old.txt'
+        new_file = tmp_path / 'new.txt'
+        old_file.write_text('old')
+        new_file.write_text('new')
+        _age_file(old_file, days=10)
+
+        result = expire_files(str(tmp_path), days_old=5)
+
+        assert result == [str(old_file)]
+        assert not old_file.exists()
+        assert new_file.exists()
+
+    def test_archives_instead_of_deleting_when_archive_dir_given(self, tmp_path):
+        src = tmp_path / 'src'
+        archive = tmp_path / 'archive'
+        src.mkdir()
+        old_file = src / 'old.txt'
+        old_file.write_text('old')
+        _age_file(old_file, days=10)
+
+        result = expire_files(str(src), days_old=5, archive_dir=str(archive))
+
+        assert result == [str(old_file)]
+        assert not old_file.exists()
+        assert (archive / 'old.txt').exists()
+        assert (archive / 'old.txt').read_text() == 'old'
+
+    def test_creates_archive_dir_if_missing(self, tmp_path):
+        src = tmp_path / 'src'
+        archive = tmp_path / 'does_not_exist_yet' / 'archive'
+        src.mkdir()
+        old_file = src / 'old.txt'
+        old_file.write_text('old')
+        _age_file(old_file, days=10)
+
+        expire_files(str(src), days_old=5, archive_dir=str(archive))
+
+        assert (archive / 'old.txt').exists()
+
+    def test_pattern_filters_which_files_are_affected(self, tmp_path):
+        old_txt = tmp_path / 'old.txt'
+        old_log = tmp_path / 'old.log'
+        old_txt.write_text('x')
+        old_log.write_text('x')
+        _age_file(old_txt, days=10)
+        _age_file(old_log, days=10)
+
+        result = expire_files(str(tmp_path), days_old=5, pattern='*.log')
+
+        assert result == [str(old_log)]
+        assert old_txt.exists()
+        assert not old_log.exists()
+
+    def test_dry_run_reports_without_acting(self, tmp_path):
+        old_file = tmp_path / 'old.txt'
+        old_file.write_text('old')
+        _age_file(old_file, days=10)
+
+        result = expire_files(str(tmp_path), days_old=5, dry_run=True)
+
+        assert result == [str(old_file)]
+        assert old_file.exists()
+
+    def test_collision_on_move_is_skipped(self, tmp_path):
+        src = tmp_path / 'src'
+        archive = tmp_path / 'archive'
+        src.mkdir()
+        archive.mkdir()
+        old_file = src / 'old.txt'
+        old_file.write_text('source version')
+        _age_file(old_file, days=10)
+        (archive / 'old.txt').write_text('already archived')
+
+        result = expire_files(str(src), days_old=5, archive_dir=str(archive))
+
+        assert result == []
+        assert old_file.exists()
+        assert old_file.read_text() == 'source version'
+        assert (archive / 'old.txt').read_text() == 'already archived'
+
+    def test_subdirectories_are_not_touched(self, tmp_path):
+        subdir = tmp_path / 'old_subdir'
+        subdir.mkdir()
+        _age_file(subdir, days=10)
+
+        result = expire_files(str(tmp_path), days_old=5)
+
+        assert result == []
+        assert subdir.exists()
+
+    def test_nonexistent_src_dir_returns_empty(self, tmp_path):
+        assert expire_files(str(tmp_path / 'nope'), days_old=5) == []
+
+    def test_files_within_retention_are_left_alone(self, tmp_path):
+        recent_file = tmp_path / 'recent.txt'
+        recent_file.write_text('recent')
+        _age_file(recent_file, days=2)
+
+        result = expire_files(str(tmp_path), days_old=5)
+
+        assert result == []
+        assert recent_file.exists()

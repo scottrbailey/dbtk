@@ -82,6 +82,38 @@ For detailed documentation on identity resolution, validation, and logging tools
 
 **ValidationCollector** - Collects and validates coded values during processing, with optional lookup enrichment.
 
+## Expiring Old Files
+
+**The problem:** Interface jobs pull in files - Banner extracts, vendor drops, generated
+exports - that need to be cleared out (or moved to an archive) once they've aged past
+some retention window. Every integration ends up hand-rolling the same "glob a directory,
+check mtimes, delete-or-move" loop.
+
+**The solution:** `dbtk.utils.expire_files()` handles the common pattern in one call. No
+`archive_dir` and matching files older than `days_old` are deleted; give it an
+`archive_dir` and they're moved there instead.
+
+```python
+from dbtk.utils import expire_files
+
+# Delete files untouched for 90+ days
+expire_files('/data/inbound', days_old=90)
+
+# Archive CSVs older than 30 days instead of deleting them
+expire_files('/data/inbound', days_old=30, archive_dir='/data/archive', pattern='*.csv')
+
+# See what would happen first
+expire_files('/data/inbound', days_old=30, dry_run=True)
+```
+
+Only regular files matching `pattern` are considered - subdirectories are left alone. If
+a file of the same name already exists at the destination when archiving, the source file
+is left in place rather than overwritten.
+
+`dbtk.cleanup_old_logs()` (see [ETL: Tools & Logging](09-etl-tools.md)) is built on top of
+this function, always deleting (never archiving) and reading its retention window from
+`logging.retention_days` in config.
+
 ## See Also
 
 - [ETL: Tools & Logging](09-etl-tools.md) - IdentityManager, ValidationCollector, and integration logging

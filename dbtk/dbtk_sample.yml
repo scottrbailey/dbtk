@@ -18,6 +18,8 @@ settings:
     split_errors: true                  # Create separate _error.log file for errors
     console: true                       # Also output to console
     retention_days: 30                  # Days to keep old log files (for cleanup_old_logs)
+                                        # Config-only - not overridable per-script, so a
+                                        # one-off script can't accidentally nuke everyone's logs
 
 connections:
   # Example connection configurations
