@@ -107,7 +107,7 @@ class DataFrameReader(Reader):
 
         # Create Record subclass with original field names
         # set_fields() will automatically normalize for attribute access
-        self._record_class = type('DataFrameRecord', (Record,), {})
+        self._record_class = type('DataFrameRecord', (Record,), {'__slots__': ()})
         self._record_class.set_fields(self._headers)
 
         self._headers_initialized = True

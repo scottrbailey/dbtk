@@ -118,7 +118,7 @@ class FixedWidthWriter(BatchWriter):
     def _get_record_class(self) -> type:
         """Lazy-create a FixedWidthRecord subclass from fixed_columns."""
         if self._fw_record_class is None:
-            cls = type('FWRecord', (FixedWidthRecord,), {})
+            cls = type('FWRecord', (FixedWidthRecord,), {'__slots__': ()})
             cls.set_fields(self.fixed_columns)
             self._fw_record_class = cls
         return self._fw_record_class
@@ -218,7 +218,7 @@ class EDIWriter(BatchWriter):
             cols = self.edi_columns.get(type_code)
             if cols is None:
                 raise ValueError(f"No column definition for record type '{type_code}'")
-            cls = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {})
+            cls = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {'__slots__': ()})
             cls.set_fields(cols)
             self._type_factories[type_code] = cls
         return self._type_factories[type_code]

@@ -195,7 +195,7 @@ class IdentityManager:
             if self.resolver and not self.resolver.cursor._row_factory_invalid:
                 temp_class = self.resolver.cursor.record_factory
             else:
-                temp_class = type('tempEntityRecord', (Record,), {})
+                temp_class = type('tempEntityRecord', (Record,), {'__slots__': ()})
                 keys = [self.source_key]
                 if self.target_key != self.source_key:
                     keys.append(self.target_key)
@@ -203,7 +203,7 @@ class IdentityManager:
             record = temp_class()
         alt_keys = [fld for fld in self.alternate_keys if fld not in record]
         fields = list(record.keys()) + alt_keys + ['_status', '_errors', '_messages']
-        RecordClass = type('EntityRecord', (Record,), {})
+        RecordClass = type('EntityRecord', (Record,), {'__slots__': ()})
         RecordClass.set_fields(fields)
         if self.target_key not in RecordClass._fields \
                 and self.target_key not in RecordClass._fields_normalized:
@@ -543,7 +543,7 @@ class IdentityManager:
         # Re-create factory from saved field_order
         field_order = data.get("field_order")
         if field_order:
-            RecordClass = type('EntityRecord', (Record,), {})
+            RecordClass = type('EntityRecord', (Record,), {'__slots__': ()})
             RecordClass.set_fields(field_order)
             instance._record_factory = RecordClass
         elif resolver:

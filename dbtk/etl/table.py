@@ -189,8 +189,11 @@ class Table:
     last_error : ErrorDetail or None
         The error detail from the most recent :meth:`execute` call.
         Set to ``None`` on success, or an :class:`dbtk.utils.ErrorDetail`
-        on ``DatabaseError`` (when ``raise_error=False``).  Cleared on
-        every successful execution and on :meth:`cursor` reassignment.
+        describing what went wrong on either a ``DatabaseError`` or a
+        "requirements not met" failure (when ``raise_error=False``).
+        Cleared on every successful execution and on :meth:`cursor`
+        reassignment - it never carries over a stale error from an
+        earlier call into a later, differently-failing one.
     """
 
     OPERATIONS = ('insert', 'select', 'update', 'delete', 'merge')
@@ -252,10 +255,19 @@ class Table:
         req_cols = []
         key_cols = []
         gen_cols = []
+        seen_bind_names: Dict[str, str] = {}
 
         for col, col_def in columns.items():
+            # Copy before mutating - col_def gets bind_name/key/auto_gen flags
+            # and a resolved `fn` written into it below. Without this, Table
+            # would mutate the caller's own column-definition dicts in place,
+            # which bites anyone reusing a `columns` spec as a template for
+            # more than one Table (this class included - see the temp table
+            # built in DataSurge._merge_with_temp_table).
+            col_def = dict(col_def)
+
             # Empty dict shorthand: default field to column name
-            if col_def == {}:
+            if not col_def:
                 col_def['field'] = col
 
             validate_identifier(col)
@@ -268,6 +280,12 @@ class Table:
                 col_def['key'] = True
 
             bind_name = sanitize_identifier(col)
+            if bind_name in seen_bind_names:
+                raise ValueError(
+                    f"Columns '{seen_bind_names[bind_name]}' and '{col}' both sanitize to "
+                    f"the same bind name '{bind_name}'. Rename one of them."
+                )
+            seen_bind_names[bind_name] = col
             col_def['bind_name'] = bind_name
 
             if col_def.get('key'):
@@ -288,7 +306,7 @@ class Table:
         self._key_cols = tuple(key_cols)
         self._gen_cols = tuple(gen_cols)
 
-        self._bind_name_map = {col_def['bind_name']: col for col, col_def in columns.items()}
+        self._bind_name_map = {col_def['bind_name']: col for col, col_def in validated_columns.items()}
 
         self._sql_statements: Dict[str, Optional[str]] = {op: None for op in self.OPERATIONS}
         self._param_config: Dict[str, Tuple[str, ...]] = {op: () for op in self.OPERATIONS}
@@ -963,8 +981,11 @@ class Table:
         ------------
         * ``counts[operation]`` incremented on success.
         * ``counts['incomplete']`` incremented when requirements are unmet.
-        * ``last_error`` set to ``None`` on success or an
-          :class:`dbtk.utils.ErrorDetail` on database error.
+        * ``last_error`` set to ``None`` on success, or an
+          :class:`dbtk.utils.ErrorDetail` describing either the missing
+          columns (requirements not met) or the database error - it is
+          always set on a non-zero return, never left stale from a
+          previous call.
 
         Raises
         ------
@@ -987,6 +1008,7 @@ class Table:
         if not self.is_ready(operation):
             missing = self.reqs_missing(operation)
             msg = f"{operation} requirements not met: columns {missing} are null"
+            self.last_error = ErrorDetail(message=msg)
             if raise_error:
                 logger.error(f"Cannot {operation} table {self._name}: {msg}")
                 raise ValueError(msg)

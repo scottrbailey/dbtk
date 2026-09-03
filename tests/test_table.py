@@ -214,6 +214,50 @@ class TestTableInitialization:
         assert 'air_nomad_training' in repr_str
         assert '8 columns' in repr_str
 
+    def test_duplicate_bind_names_raise(self, cursor):
+        """Two column names that sanitize to the same bind_name must raise, not
+        silently collide on the same SQL placeholder and self.values key."""
+        with pytest.raises(ValueError, match="both sanitize to"):
+            Table('some_table', {
+                'user-id': {'field': 'a'},
+                'user_id': {'field': 'b'},
+            }, cursor=cursor)
+
+    def test_does_not_mutate_caller_columns_dict(self, cursor, airbender_schema):
+        """Table.__init__ must not write bind_name/key/fn back into the caller's
+        own column-definition dicts - those get reused as templates elsewhere
+        (including by DataSurge's own temp-table merge path)."""
+        col_def = {
+            'nomad_id': {'field': 'trainee_id', 'primary_key': True},
+            'name': {'field': 'monk_name'},
+        }
+        original_nomad_id = dict(col_def['nomad_id'])
+        original_name = dict(col_def['name'])
+
+        Table('air_nomad_training', columns=col_def, cursor=cursor)
+
+        assert col_def['nomad_id'] == original_nomad_id
+        assert col_def['name'] == original_name
+        assert 'bind_name' not in col_def['nomad_id']
+        assert 'key' not in col_def['nomad_id']
+
+    def test_reusing_columns_dict_for_two_tables_is_safe(self, cursor, airbender_schema, fire_nation_schema):
+        """The same columns spec used as a template for two Tables shouldn't
+        let the second Table's construction see already-resolved state from
+        the first (e.g. a `fn` string already turned into a bound callable)."""
+        shared_columns = {
+            'nomad_id': {'field': 'trainee_id', 'primary_key': True},
+            'name': {'field': 'monk_name', 'fn': 'int'},
+        }
+        table1 = Table('air_nomad_training', columns=dict(shared_columns), cursor=cursor)
+        table2 = Table('fire_nation_army', columns=dict(shared_columns), cursor=cursor)
+
+        assert callable(table1.columns['name']['fn'])
+        assert callable(table2.columns['name']['fn'])
+        # Independent dicts - mutating one table's column metadata must not
+        # be visible on the other.
+        assert table1.columns['nomad_id'] is not table2.columns['nomad_id']
+
 
 class TestSQLGeneration:
     """Test SQL statement generation for different operations."""
@@ -518,6 +562,32 @@ class TestIncompleteTracking:
         assert result == 1
         assert airbender_table.counts['incomplete'] == 1
         assert airbender_table.counts['insert'] == 0
+
+    def test_last_error_not_stale_after_incomplete_record(self, airbender_table):
+        """last_error must reflect the most recent execute() call, even when
+        that call merely had missing requirements rather than a DatabaseError -
+        otherwise a real error from an earlier row looks like it caused a
+        later, unrelated "incomplete" skip."""
+        # Row 1: real DB error (duplicate primary key)
+        airbender_table.set_values({
+            'trainee_id': 'DUP001', 'monk_name': 'Aang', 'home_temple': 'Southern Air Temple',
+            'mastery_rank': 1, 'bison_companion': 'Appa', 'daily_meditation': 1.0
+        })
+        airbender_table.execute('insert', raise_error=False)
+        airbender_table.execute('insert', raise_error=False)  # duplicate PK -> DatabaseError
+        assert airbender_table.last_error is not None
+        stale_error = airbender_table.last_error
+
+        # Row 2: merely incomplete (missing required field), unrelated to row 1's error
+        airbender_table.set_values({
+            'trainee_id': 'INC099', 'monk_name': 'Incomplete Nomad', 'home_temple': None,
+            'mastery_rank': None, 'bison_companion': None, 'daily_meditation': None
+        })
+        result = airbender_table.execute('insert', raise_error=False)
+
+        assert result == 1
+        assert airbender_table.last_error is not stale_error
+        assert 'requirements not met' in airbender_table.last_error.message
 
     def test_update_incomplete_tracking(self, airbender_table):
         """Test incomplete tracking for update operations."""

@@ -395,7 +395,7 @@ class Cursor:
                 if 'DB_TYPE_OBJECT' in str(col[1])
             )
 
-        RecordClass = type('Record', (Record,), {})
+        RecordClass = type('Record', (Record,), {'__slots__': ()})
         RecordClass.set_fields(self._expected_columns())
         self.record_factory = RecordClass
 

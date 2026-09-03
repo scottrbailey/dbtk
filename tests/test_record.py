@@ -498,6 +498,56 @@ class TestGetReserved:
 
 
 # ---------------------------------------------------------------------------
+# __slots__ on dynamically created subclasses
+# ---------------------------------------------------------------------------
+
+class TestMemorySlots:
+    """
+    Record declares __slots__ for memory efficiency at scale, but a subclass
+    that doesn't repeat `__slots__ = ()` gets an instance __dict__ anyway -
+    silently defeating the point for every dynamically created Record
+    subclass (cursors, readers, writers, ETL). Guard the pattern here so a
+    future `type(name, (Record,), {})` without slots doesn't creep back in.
+    """
+
+    def test_bare_dynamic_subclass_without_slots_gets_a_dict(self):
+        # Documents *why* this matters: the naive pattern leaks a __dict__.
+        leaky = type('Leaky', (Record,), {})
+        leaky.set_fields(['a'])
+        assert hasattr(leaky(1), '__dict__')
+
+    def test_slotted_dynamic_subclass_has_no_dict(self):
+        cls = type('Slotted', (Record,), {'__slots__': ()})
+        cls.set_fields(['a', 'b'])
+        instance = cls(1, 2)
+        assert not hasattr(instance, '__dict__')
+
+    def test_slotted_fixed_width_subclass_has_no_dict(self):
+        cls = type('SlottedFW', (FixedWidthRecord,), {'__slots__': ()})
+        cls.set_fields([FixedColumn('a', 1, 3)])
+        instance = cls('xyz')
+        assert not hasattr(instance, '__dict__')
+
+    def test_fixed_record_factory_output_has_no_dict(self):
+        cls = fixed_record_factory([('a', 3), ('b', 5)])
+        instance = cls('xyz', 'abcde')
+        assert not hasattr(instance, '__dict__')
+
+    def test_cursor_record_factory_has_no_dict(self):
+        from dbtk.database import sqlite
+        db = sqlite(':memory:')
+        cursor = db.cursor()
+        cursor.execute("SELECT 1 AS a, 2 AS b")
+        row = cursor.fetchone()
+        assert not hasattr(row, '__dict__')
+
+    def test_tuples_to_records_output_has_no_dict(self):
+        from dbtk.record import tuples_to_records
+        row = next(tuples_to_records([(1, 2)], ['a', 'b']))
+        assert not hasattr(row, '__dict__')
+
+
+# ---------------------------------------------------------------------------
 # normalize_field_name
 # ---------------------------------------------------------------------------
 

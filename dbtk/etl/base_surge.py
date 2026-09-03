@@ -92,7 +92,7 @@ class BaseSurge(ABC):
             else:
                 cols = list(self.table.columns.keys())
 
-            self._RecordClass = type("Record", (Record,), {})
+            self._RecordClass = type("Record", (Record,), {'__slots__': ()})
             self._RecordClass.set_columns(cols)
         return self._RecordClass
 

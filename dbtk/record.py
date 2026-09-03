@@ -294,11 +294,21 @@ class Record(list):
         Args:
             fields: Original field names (e.g., ['Start Year', 'End Date'])
 
+        Note:
+            Call this on a private subclass, not on ``Record`` itself.
+            ``_fields``/``_fields_normalized`` are plain class attributes, so
+            calling ``Record.set_fields(...)`` directly mutates that shared,
+            process-wide state for every piece of code still holding a
+            reference to the bare ``Record`` class. Every reader, writer, and
+            cursor in dbtk creates its own subclass first for exactly this
+            reason - do the same in your own code.
+
         Examples:
-            >>> rec.set_fields(['Start Year', 'End Date'])
-            >>> rec._fields
+            >>> MyRecord = type('MyRecord', (Record,), {'__slots__': ()})
+            >>> MyRecord.set_fields(['Start Year', 'End Date'])
+            >>> MyRecord._fields
             ['Start Year', 'End Date']
-            >>> rec._fields_normalized
+            >>> MyRecord._fields_normalized
             ['start_year', 'end_date']
         """
         # Replace None/empty field names with 'col' before deduplication so
@@ -463,8 +473,9 @@ class Record(list):
             **kwargs: Additional key-value pairs to set.
 
         Examples:
-            >>> Record.set_fields(['id', 'name', 'email'])
-            >>> record = Record(1, 'Scott', 'old@example.com')
+            >>> MyRecord = type('MyRecord', (Record,), {'__slots__': ()})
+            >>> MyRecord.set_fields(['id', 'name', 'email'])
+            >>> record = MyRecord(1, 'Scott', 'old@example.com')
             >>> record.update({'email': 'new@example.com'}, name='Scott Bailey')
             >>> record  # [1, 'Scott Bailey', 'new@example.com']
         """
@@ -497,11 +508,12 @@ class Record(list):
                 self: The updated Record (for chaining).
 
             Examples:
-                >>> Record.set_fields(['id', 'name', 'email', 'phone', 'notes'])
-                >>> record = Record(None, "Scott", "", "scott@example.com", None)
+                >>> MyRecord = type('MyRecord', (Record,), {'__slots__': ()})
+                >>> MyRecord.set_fields(['id', 'name', 'email', 'phone', 'notes'])
+                >>> record = MyRecord(None, "Scott", "scott@example.com", "", None)
                 >>> resolved = {'id': 123, 'name': 'Scott Bailey', 'notes': 'VIP'}
                 >>> record.coalesce(resolved, phone="555-1234")
-                >>> record  # [123, "Scott", "", "555-1234", "VIP"]
+                >>> record  # [123, "Scott", "scott@example.com", "555-1234", "VIP"]
             """
         if other is not None:
             if hasattr(other, "items"):
@@ -525,8 +537,9 @@ class Record(list):
             Dictionary representation of the record
 
         Examples:
-            >>> rec = Record(2020, 2025)
-            >>> rec.set_fields(['Start Year', 'End Year'])
+            >>> MyRecord = type('MyRecord', (Record,), {'__slots__': ()})
+            >>> MyRecord.set_fields(['Start Year', 'End Year'])
+            >>> rec = MyRecord(2020, 2025)
             >>> rec.to_dict()
             {'Start Year': 2020, 'End Year': 2025}
             >>> rec.to_dict(normalized=True)
@@ -641,6 +654,7 @@ class FixedWidthRecord(Record):
         # Parse a raw fixed-width string directly
         record = RecordClass.from_line(raw_line)  # corollary to to_line()
     """
+    __slots__ = ()
     _columns: List[FixedColumn] = []
     _line_len: int = 0
     _mutable_schema: bool = False
@@ -904,7 +918,7 @@ def fixed_record_factory(columns, name='FixedRecord'):
             fixed_cols.append(FixedColumn(col_name, pos, width=width))
             pos += width
 
-    cls = type(name, (FixedWidthRecord,), {})
+    cls = type(name, (FixedWidthRecord,), {'__slots__': ()})
     cls.set_fields(fixed_cols)
     return cls
 
@@ -972,7 +986,7 @@ def tuples_to_records(rows: Iterable[Sequence[Any]], columns: Sequence[Optional[
     if not kept_names:
         raise ValueError("columns must include at least one non-empty name")
 
-    output_cls = type('TupleRecord', (Record,), {})
+    output_cls = type('TupleRecord', (Record,), {'__slots__': ()})
     output_cls.set_fields(kept_names)
 
     n = len(columns)
