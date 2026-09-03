@@ -310,7 +310,11 @@ class Reader(ABC):
         * Execution order: read → skip_rows → null_values → filter pipeline → n_rows
         * If both skip_rows and add_filter() are used, a warning is logged (skip_rows applies first)
         * The n_rows limit applies after filtering, so n_rows=100 returns 100 filtered records
-        * Record._row_num field reflects the count of returned (filtered) records, not raw file rows
+        * Record._row_num field reflects the row's true 1-based position in the source
+          file (including rows skipped by skip_rows and rows later dropped by filters),
+          so it can be used to find the row in the original file for debugging - it is
+          not a sequential count of returned records, and will show gaps where rows
+          were filtered out
         """
         if not callable(func):
             raise TypeError(f"add_filter() requires a callable, got {type(func).__name__}")
@@ -513,7 +517,15 @@ class Reader(ABC):
         if not self._null_values:
             return row_data
 
-        return [None if val in self._null_values else val for val in row_data]
+        result = []
+        for val in row_data:
+            try:
+                result.append(None if val in self._null_values else val)
+            except TypeError:
+                # Unhashable value (e.g. a list/dict from JSON/XML) - null_values
+                # are always strings, so it can't be a match anyway.
+                result.append(val)
+        return result
 
     def _create_record(self, row_data: List[Any]) -> Record:
         """
@@ -534,18 +546,22 @@ class Reader(ABC):
         # Convert null values to None
         row_data = self._convert_nulls(row_data)
 
-        # Pad with None if row is shorter than expected (excluding _row_num)
+        # Pad/truncate the data portion (excluding _row_num) to expected width
+        # *before* appending _row_num, so a ragged/overflowing row can never
+        # push _row_num past the end and have it discarded by the length
+        # check below - _row_num must always end up as the last element.
         expected_data_cols = len(self._headers) - (1 if self.add_row_num and '_row_num' in self._headers else 0)
+        if len(row_data) > expected_data_cols:
+            row_data = row_data[:expected_data_cols]
         while len(row_data) < expected_data_cols:
             row_data.append(None)
 
-        # Add _row_num if it's in headers (always goes at the end)
+        # Add _row_num if it's in headers (always goes at the end) - this is
+        # the row's 1-based position in the source file, including rows
+        # skipped by skip_rows and rows later dropped by add_filter(), so it
+        # can be used to find the row in the original file for debugging.
         if self.add_row_num and '_row_num' in self._headers:
-            row_data.append(self.skip_rows + self._row_num)
-
-        # Truncate if row is longer than headers
-        if len(row_data) > len(self._headers):
-            row_data = row_data[:len(self._headers)]
+            row_data.append(self.skip_rows + self._rows_read)
 
         # Return Record
         return self._record_class(*row_data)

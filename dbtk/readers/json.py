@@ -2,6 +2,7 @@
 
 """JSON and NDJSON (newline-delimited JSON) file readers."""
 
+import itertools
 import json
 import os
 from typing import List, Any, Dict, Optional, TextIO, Iterator
@@ -276,32 +277,32 @@ class NDJSONReader(Reader):
         self._column_cache = None
         self._original_keys = []  # Track original keys for value extraction
         self._schema_sample_size = 100
+        self._buffered_lines: List[str] = []  # Lines consumed while sampling, replayed before the live stream continues
 
     def _discover_schema(self) -> List[str]:
         """
         Discover schema by sampling the first N records.
-        Returns to original file position after sampling.
+
+        Buffers every line consumed while sampling instead of seeking, so
+        this works on genuinely non-seekable streams (stdin, an HTTP
+        response body) as well as regular files - _generate_rows() replays
+        the buffer before continuing the live iteration of self.fp.
         """
         if self._column_cache is not None:
             return self._column_cache
-
-        # Save current position
-        current_pos = self.fp.tell()
-
-        # Reset to beginning for schema discovery
-        self.fp.seek(0)
 
         all_keys = []
         sample_count = 0
 
         try:
             for line in self.fp:
-                line = line.strip()
-                if not line:
+                self._buffered_lines.append(line)
+                stripped = line.strip()
+                if not stripped:
                     continue
 
                 try:
-                    obj = json.loads(line)
+                    obj = json.loads(stripped)
                     if isinstance(obj, dict):
                         # Preserve order of first appearance
                         for key in obj.keys():
@@ -316,9 +317,6 @@ class NDJSONReader(Reader):
 
         except Exception:
             pass  # If anything goes wrong, use what we have
-
-        # Restore original position
-        self.fp.seek(current_pos)
 
         # Store original keys (normalization happens in Record.set_fields())
         if not all_keys:
@@ -340,15 +338,15 @@ class NDJSONReader(Reader):
         return self._discover_schema()
 
     def _generate_rows(self) -> Iterator[List[Any]]:
-        """Generate data rows from NDJSON file."""
-        self.fp.seek(0)  # Reset for data reading
-
-        # Ensure schema is discovered
+        """Generate data rows from NDJSON file - the lines buffered during
+        schema discovery, then whatever's left of the live stream."""
         if not self._original_keys:
             self._discover_schema()
-            self.fp.seek(0)  # Reset again after schema discovery
 
-        for line in self.fp:
+        lines = itertools.chain(self._buffered_lines, self.fp)
+        self._buffered_lines = []
+
+        for line in lines:
             line = line.strip()
             if not line:
                 continue
