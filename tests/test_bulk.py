@@ -339,6 +339,69 @@ class TestInsertOperation:
         assert cursor.fetchone()['cnt'] == 3
 
 
+class TestPassThrough:
+    """pass_through=True must skip Table.set_values()/transformation entirely
+    and hand rows straight to executemany() - the documented use cases are
+    raw positional tuples and rows from a source of an identical schema
+    (typically another cursor, which yields Record objects)."""
+
+    def test_accepts_raw_positional_tuples(self, airbender_table, cursor):
+        # Column order matches air_nomad_training's DDL / columns_config order
+        rows = [
+            ('AANG001', 'Aang', 'Southern Air Temple', 4, 'Appa', 8.5),
+            ('TENZIN001', 'Tenzin', 'Air Temple Island', 4, 'Oogi', 9.0),
+        ]
+        surge = DataSurge(airbender_table, pass_through=True)
+        errors = surge.insert(rows, raise_error=True)
+
+        assert errors == 0
+        assert surge.total_read == 2
+        assert surge.total_loaded == 2
+
+        cursor.connection.commit()
+        cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
+        assert cursor.fetchone()['cnt'] == 2
+
+    def test_accepts_records_from_a_source_cursor(self, cursor, sqlite_db):
+        """The identical-schema db-to-db copy scenario from the class docstring -
+        a source cursor yielding Record rows, passed straight through."""
+        cursor.execute("""
+                        CREATE TABLE air_nomad_training_archive
+                        (
+                            nomad_id TEXT PRIMARY KEY, name TEXT NOT NULL, temple TEXT NOT NULL,
+                            airbending_level INTEGER, sky_bison TEXT, meditation_score REAL
+                        )
+                        """)
+        cursor.execute("""
+                        CREATE TABLE air_nomad_training
+                        (
+                            nomad_id TEXT PRIMARY KEY, name TEXT NOT NULL, temple TEXT NOT NULL,
+                            airbending_level INTEGER, sky_bison TEXT, meditation_score REAL
+                        )
+                        """)
+        cursor.execute("INSERT INTO air_nomad_training_archive VALUES "
+                        "('KORRA001', 'Korra', 'Southern Water Tribe', 4, NULL, 6.0)")
+        cursor.connection.commit()
+
+        target_table = Table('air_nomad_training', {
+            'nomad_id': {}, 'name': {'fn': str.upper},  # would prove transforms ran if applied
+            'temple': {}, 'airbending_level': {}, 'sky_bison': {}, 'meditation_score': {},
+        }, cursor=cursor)
+        surge = DataSurge(target_table, pass_through=True)
+
+        source_cursor = sqlite_db.cursor()
+        source_cursor.execute("SELECT * FROM air_nomad_training_archive")
+        errors = surge.insert(source_cursor, raise_error=True)
+
+        assert errors == 0
+        assert surge.total_loaded == 1
+
+        cursor.connection.commit()
+        cursor.execute("SELECT name FROM air_nomad_training WHERE nomad_id = 'KORRA001'")
+        # 'Korra', not 'KORRA' - proves the fn transform never ran
+        assert cursor.fetchone()['name'] == 'Korra'
+
+
 class TestUpdateOperation:
     """Test bulk update operations."""
 
