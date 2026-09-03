@@ -10,7 +10,6 @@ from pathlib import Path
 from . import Table
 from ..config import get_setting
 from ..utils import RecordLike, batch_iterable, sanitize_identifier
-from ..record import Record
 
 logger = logging.getLogger(__name__)
 
@@ -73,28 +72,12 @@ class BaseSurge(ABC):
         self.log_dir = get_setting('logging.directory')
         self.skip_details = {}  # key: frozenset of missing fields, value: {'count': int, 'sample': [row_nums]}
 
-        self._RecordClass = None  # Built on first use
-
     def _log_summary(self):
         """Log uniform load statistics after each operation."""
         elapsed = time.monotonic() - self.start_time
         rate = int(self.total_loaded / elapsed) if elapsed > 0 else 0
         skipped = f', {self.skipped:,} skipped' if self.skipped else ''
         logger.info(f"Loaded {self.total_loaded:,} records into {self.table.name} in {elapsed:.2f}s ({rate:,} rec/s){skipped}")
-
-    def _get_record_class(self, operation: Optional[str] = None):
-        """Build or return the Record subclass for this operation's columns."""
-        if self._RecordClass is None:
-            if operation is not None:
-                # Force SQL generation to populate _param_config[operation]
-                _ = self.table.get_sql(operation)
-                cols = list(self.table.param_config[operation])
-            else:
-                cols = list(self.table.columns.keys())
-
-            self._RecordClass = type("Record", (Record,), {'__slots__': ()})
-            self._RecordClass.set_columns(cols)
-        return self._RecordClass
 
     def _get_columns(self, operation: Optional[str] = None):
         """ Get column names in the correct order for this operation. """
