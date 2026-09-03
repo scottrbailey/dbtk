@@ -582,8 +582,8 @@ def batch_iterable(iterable: Iterable[Any], batch_size: int) -> Iterable[List[An
 def expire_files(
     src_dir: str,
     days_old: int,
-    archive_dir: Optional[str] = None,
     pattern: str = '*',
+    archive_dir: Optional[str] = None,
     dry_run: bool = False
 ) -> List[str]:
     """
@@ -597,11 +597,11 @@ def expire_files(
     Args:
         src_dir: Directory to scan for aged files.
         days_old: Files with an mtime older than this many days are affected.
+        pattern: Glob pattern to select files within `src_dir` (default `'*'`,
+            i.e. all files).
         archive_dir: If given, matching files are moved here instead of
             deleted. Created if it doesn't exist. If a file of the same name
             already exists there, the source file is left in place (skipped).
-        pattern: Glob pattern to select files within `src_dir` (default `'*'`,
-            i.e. all files).
         dry_run: If True, only report what would be moved/deleted without
             actually doing it.
 
