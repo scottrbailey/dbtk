@@ -400,6 +400,18 @@ class TestDeletion:
         with pytest.raises(KeyError):
             del self.record['nonexistent']
 
+    def test_repr_matches_str_on_deleted_field(self):
+        """repr() must agree with str()/items()/to_dict() about what's 'in' the
+        record - it shouldn't show a value that every other view hides."""
+        del self.record['temp']
+        assert 'throwaway' not in repr(self.record)
+        assert 'throwaway' not in str(self.record)
+
+    def test_repr_includes_added_field(self):
+        """repr() should also pick up runtime-added fields, like str() does."""
+        self.record['extra'] = 'bonus'
+        assert 'bonus' in repr(self.record)
+
 
 # ---------------------------------------------------------------------------
 # Mutable schema enforcement

@@ -423,6 +423,26 @@ class Record(list):
             return default
 
     def pop(self, key: str, default: object = _MISSING) -> Any:
+        """
+        Remove `key` from dict-style/attribute access and return its value.
+
+        This hides the field from name-based access (``row[key]``, ``row.key``,
+        ``in``, ``keys()``/``items()``/``to_dict()``/``str()``) and from a
+        subsequent ``for v in row``. It does not free the value's slot in the
+        underlying list - field layout is a class-level property (shared by
+        every instance of this Record subclass), not something one instance
+        can resize on its own. Positional access (``row[3]``) is unaffected by
+        deletion and still returns the raw stored value.
+
+        Args:
+            key: Field name (original or normalized) to remove.
+            default: Returned instead of raising when `key` isn't present.
+
+        Raises:
+            TypeError: If `key` isn't a str, or the schema is fixed
+                (`_mutable_schema=False`, e.g. `FixedWidthRecord`).
+            KeyError: If `key` isn't found and no `default` was given.
+        """
         if not isinstance(key, str):
             raise TypeError("pop() key must be str")
         if not self.__class__._mutable_schema:
@@ -589,7 +609,11 @@ class Record(list):
         return f"{self.__class__.__name__}({items})"
 
     def __repr__(self) -> str:
-        values = ", ".join(repr(v) for v in super().__iter__())  # original order
+        # Deleted fields are skipped here too, matching __str__/items()/to_dict() -
+        # pop()/del only hide a field from name-based access, they don't remove
+        # its slot from the backing list, so raw list iteration would show a
+        # "deleted" value that every other view of this Record hides.
+        values = ", ".join(repr(self[k]) for k in self.keys())
         return f"{self.__class__.__name__}({values})"
 
     def __dir__(self) -> List[str]:
