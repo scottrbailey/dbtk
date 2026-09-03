@@ -331,7 +331,10 @@ class Cursor:
             query, params_names = process_sql_parameters(sql, ParamStyle.get_positional_style(cur.paramstyle))
 
             # missing parameter defaults to None, extra parameters are ignored
-            cur.prepare_params(params_names, {'nation': 'Fire Nation', 'nick_name': 'Sparky'})
+            # pass the same positional override used above, or the result follows
+            # the cursor's own paramstyle instead (a dict, for a named-style cursor)
+            cur.prepare_params(params_names, {'nation': 'Fire Nation', 'nick_name': 'Sparky'},
+                               paramstyle=ParamStyle.get_positional_style(cur.paramstyle))
             ('Fire Nation', None)
         """
         missing = set(param_names) - set(bind_vars.keys())
