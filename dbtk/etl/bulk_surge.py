@@ -348,6 +348,17 @@ class BulkSurge(BaseSurge):
                 logger.warning("Writer thread did not finish in time")
 
         if exception:
+            # A writer-thread failure between complete rows produces a clean
+            # early EOF, not malformed input - postgres has no way to tell
+            # that from "the file legitimately ended here," so copy_expert
+            # above returns without error and whatever rows it already
+            # accepted are sitting in this transaction, uncommitted but very
+            # committable. Roll back explicitly so a load that raised can't
+            # later be made to look like it partially succeeded by some
+            # unrelated commit() on this connection - psycopg3's copy()
+            # context manager does this same cancellation automatically,
+            # this raw copy_expert() usage doesn't.
+            self.cursor.connection.rollback()
             raise exception
 
         return self.total_loaded
