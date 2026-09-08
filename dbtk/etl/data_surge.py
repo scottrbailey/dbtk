@@ -138,6 +138,7 @@ class DataSurge(BaseSurge):
         for batch in batch_iterable(records, self.batch_size):
             batch_params = []
             for record in batch:
+                self.total_read += 1
                 params = self._transform_row(record)
                 if params is None:
                     skipped += 1
@@ -228,6 +229,18 @@ class DataSurge(BaseSurge):
         temp_surge = DataSurge(temp_table, batch_size=self.batch_size)
         errors = temp_surge.insert(records_list, raise_error=raise_error)
 
+        # Mirror the temp-table insert's stats onto this surge - it's the only
+        # place total_read/skipped/skip_details actually get tracked for the
+        # temp-table MERGE path, and they'd otherwise vanish with temp_surge
+        # when this method returns.
+        self.total_read += temp_surge.total_read
+        self.skipped += temp_surge.skipped
+        for reason, details in temp_surge.skip_details.items():
+            merged = self.skip_details.setdefault(reason, {'count': 0, 'sample': []})
+            merged['count'] += details['count']
+            room = max(0, 20 - len(merged['sample']))
+            merged['sample'].extend(details['sample'][:room])
+
         if errors:
             self.cursor.execute(dialect.cleanup_temp_table_sql(temp_name))
             if dialect.temp_table_cleanup_commit:
@@ -255,14 +268,21 @@ class DataSurge(BaseSurge):
             else:
                 self.cursor.execute(self.get_sql('merge'))
 
-            loaded = len(records_list) - errors
+            # Rows actually merged = rows that made it into the temp table -
+            # NOT len(records_list) - errors, which wrongly counts rows
+            # skipped for missing required fields (never reached the temp
+            # table at all) as if they'd been merged.
+            loaded = temp_surge.total_loaded
+            self.total_loaded += loaded
             self.table.counts['merge'] += loaded
             logger.info(f"MERGE via temp table → {loaded:,} records into {self.table.name}")
         except self.cursor.connection.driver.DatabaseError as e:
             logger.error(f"Merge failed: {e}")
             if raise_error:
                 raise
-            errors += len(records_list) - errors
+            # The single MERGE statement failed outright, so every row that
+            # made it into the temp table failed with it.
+            errors += temp_surge.total_loaded
         finally:
             try:
                 self.cursor.execute(dialect.cleanup_temp_table_sql(temp_name))

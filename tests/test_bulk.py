@@ -222,12 +222,33 @@ class TestInsertOperation:
         assert errors == 0
         assert airbender_table.counts['insert'] == 3
         assert surge.skipped == 0
+        assert surge.total_read == 3
 
         cursor.connection.commit()
 
         # Verify all records inserted
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 3
+
+    def test_total_read_tracks_every_row_seen(self, airbender_table, cursor):
+        """total_read must count both loaded and skipped rows - it's meant to
+        answer 'how many rows did the source hand us', not just successes."""
+        records = [
+            {
+                'trainee_id': 'AANG001', 'monk_name': 'Aang', 'home_temple': 'Southern Air Temple',
+                'mastery_rank': '4', 'bison_companion': 'Appa', 'daily_meditation': '8.5'
+            },
+            {
+                'trainee_id': 'MEELO001', 'monk_name': 'Meelo', 'home_temple': None,  # missing required field
+                'mastery_rank': None, 'bison_companion': None, 'daily_meditation': None
+            }
+        ]
+        surge = DataSurge(airbender_table)
+        surge.insert(records)
+
+        assert surge.total_read == 2
+        assert surge.total_loaded == 1
+        assert surge.skipped == 1
 
     def test_insert_multiple_batches(self, airbender_table, airbender_records, cursor):
         """Test inserting Air Nomad records across multiple batches."""
@@ -600,6 +621,73 @@ class TestMergeWithUpsert:
         # Verify only valid record merged
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 1
+
+
+class TestMergeWithTempTable:
+    """
+    Test the temp-table MERGE fallback (Oracle/SQL Server style dialects
+    without native upsert). SQLite always has native upsert, so there's no
+    real dialect to exercise this path against - install a fake one that
+    implements just enough of the temp-table protocol, and call
+    _merge_with_temp_table() directly rather than going through merge()'s
+    upsert/native-MERGE branch decision.
+    """
+
+    @pytest.fixture
+    def temp_merge_dialect(self, cursor):
+        from dbtk.dialects.base import DatabaseDialect
+
+        class FakeMergeDialect(DatabaseDialect):
+            use_upsert = False  # force Table._create_merge() down the real-MERGE path
+
+            def create_temp_table_ddl(self, table_name, col_info):
+                temp_name = f"{table_name}_temp_test"
+                cols_sql = ', '.join(f'{name} {sql_type}' for name, _, _, _, _, sql_type in col_info)
+                return temp_name, f"CREATE TEMP TABLE {temp_name} ({cols_sql})"
+
+            def cleanup_temp_table_sql(self, temp_name):
+                return f"DELETE FROM {temp_name}"
+
+            def merge_sql(self, table_name, all_cols, key_conditions, update_cols):
+                # Stats bookkeeping is what's under test here, not SQL
+                # correctness - any statement that succeeds will do.
+                return "SELECT 1"
+
+        cursor.connection._dialect = FakeMergeDialect()
+        return cursor.connection._dialect
+
+    def test_skipped_records_not_counted_as_merged(self, airbender_table, airbender_records, temp_merge_dialect):
+        """A row skipped for missing required fields never reaches the temp
+        table, so it must not be counted as merged (the len(records_list) -
+        errors formula used to count it anyway)."""
+        incomplete = {
+            'trainee_id': 'MEELO001', 'monk_name': 'Meelo', 'home_temple': None,
+            'mastery_rank': None, 'bison_companion': None, 'daily_meditation': None
+        }
+        records = [airbender_records[0], incomplete]
+
+        surge = DataSurge(airbender_table)
+        errors = surge._merge_with_temp_table(records, raise_error=False)
+
+        assert errors == 0
+        assert airbender_table.counts['merge'] == 1
+        assert surge.total_loaded == 1
+
+    def test_skip_stats_propagate_to_outer_surge(self, airbender_table, airbender_records, temp_merge_dialect):
+        """skipped/skip_details used to only exist on the throwaway inner
+        temp_surge and vanish when this method returned."""
+        incomplete = {
+            'trainee_id': 'MEELO001', 'monk_name': 'Meelo', 'home_temple': None,
+            'mastery_rank': None, 'bison_companion': None, 'daily_meditation': None
+        }
+        records = [airbender_records[0], incomplete]
+
+        surge = DataSurge(airbender_table)
+        surge._merge_with_temp_table(records, raise_error=False)
+
+        assert surge.skipped == 1
+        assert surge.total_read == 2
+        assert sum(d['count'] for d in surge.skip_details.values()) == 1
 
 
 class TestBatchProcessing:
