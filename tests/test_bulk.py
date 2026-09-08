@@ -1176,3 +1176,28 @@ class TestDequeBuffer:
 
         assert buf.read() == 'row1'
         assert buf.read() == ''  # EOF
+
+    def test_write_unblocks_once_closed_with_nothing_draining_it(self):
+        """A writer blocked on a full queue must notice close() and give up,
+        rather than blocking forever once nothing's calling read() anymore
+        (e.g. copy_expert already returned or raised). Runs the blocking
+        write() in a background thread and joins with a bounded timeout, so
+        a regression here fails the assertion instead of hanging the suite."""
+        from dbtk.etl.bulk_surge import DequeBuffer
+
+        buf = DequeBuffer(max_rows=1)
+        buf.write('first')  # fills the queue - nothing will ever drain it
+
+        def closer():
+            time.sleep(0.3)
+            buf.close()
+
+        threading.Thread(target=closer, daemon=True).start()
+
+        blocked_write = threading.Thread(target=buf.write, args=('second',), daemon=True)
+        start = time.monotonic()
+        blocked_write.start()
+        blocked_write.join(timeout=5)
+
+        assert not blocked_write.is_alive(), "write() did not unblock after close()"
+        assert time.monotonic() - start < 5

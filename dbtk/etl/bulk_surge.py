@@ -28,7 +28,17 @@ class DequeBuffer:
         self.closed = False
 
     def write(self, data):
-        self._queue.put(data)
+        # No-timeout put() would block forever once the reader's gone (queue
+        # full, nothing left draining it) - close() only flips a flag, so a
+        # thread already blocked in put() would never notice. Poll self.closed
+        # between attempts instead, so a writer can give up once nothing's
+        # reading anymore rather than getting stuck for the rest of its life.
+        while not self.closed:
+            try:
+                self._queue.put(data, timeout=0.1)
+                return
+            except queue.Full:
+                continue
 
     def read(self, size=-1):
         while True:
