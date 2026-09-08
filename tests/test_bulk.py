@@ -1201,3 +1201,79 @@ class TestDequeBuffer:
 
         assert not blocked_write.is_alive(), "write() did not unblock after close()"
         assert time.monotonic() - start < 5
+
+
+def _live_postgres_db():
+    """A real postgres connection for the rollback test below - this needs an
+    actual server (unlike the rest of the suite, which only ever needs
+    sqlite), so callers must skip cleanly when one isn't reachable."""
+    import psycopg2
+    from dbtk.database import postgres
+    return postgres(
+        user='postgres', password='postgres', database='dbtk_test',
+        host='localhost', driver='psycopg2',
+    )
+
+
+@pytest.fixture
+def postgres_db():
+    try:
+        db = _live_postgres_db()
+    except Exception as e:
+        pytest.skip(f"No live postgres reachable for this test: {e}")
+    yield db
+    db.close()
+
+
+class TestBulkSurgePostgresRollback:
+    """
+    _load_postgres_psycopg2's raw copy_expert() usage doesn't tell postgres
+    it should abort on a writer-thread failure the way _load_postgres_psycopg3's
+    copy() context manager does automatically - verified against a real
+    postgres, since the whole point is what postgres itself does with a COPY
+    that ends early without any parse error. Requires PGHOST/local postgres
+    with user=postgres/password=postgres reachable; skips otherwise.
+    """
+
+    def test_writer_failure_rolls_back_rather_than_partially_committing(self, postgres_db):
+        db = postgres_db
+        cur = db.cursor()
+        cur.execute("DROP TABLE IF EXISTS bulk_rollback_test")
+        cur.execute("CREATE TABLE bulk_rollback_test (id INT PRIMARY KEY, name TEXT)")
+        db.commit()
+
+        def boom_on_marker(val):
+            if val == 'BOOM':
+                raise ValueError('transform blew up mid-load')
+            return val
+
+        table = Table('bulk_rollback_test', {
+            'id': {'field': 'id', 'primary_key': True},
+            'name': {'field': 'name', 'fn': boom_on_marker},
+        }, cursor=cur)
+
+        # batch_size=1 so each good row is its own completed CSV row/batch
+        # before the boom - matching the real "clean early EOF" failure mode.
+        records = [
+            {'id': 1, 'name': 'Aang'},
+            {'id': 2, 'name': 'Katara'},
+            {'id': 3, 'name': 'BOOM'},
+            {'id': 4, 'name': 'Sokka'},
+        ]
+        surge = BulkSurge(table, batch_size=1)
+
+        with pytest.raises(ValueError, match='transform blew up'):
+            surge.load(records)
+
+        # Simulate unrelated later code on this same connection calling
+        # commit() - e.g. a wrapping try/finally, or the next statement in a
+        # longer script. Nothing from this load should be there to commit.
+        db.commit()
+
+        # Check from an independent connection, not just a second cursor on
+        # the same transaction, to rule out same-transaction visibility.
+        fresh_db = _live_postgres_db()
+        fresh_cur = fresh_db.cursor()
+        fresh_cur.execute("SELECT * FROM bulk_rollback_test")
+        assert fresh_cur.fetchall() == []
+        fresh_db.close()
