@@ -137,6 +137,25 @@ columns_config = {
 }
 ```
 
+### Automatic Exclusion for Missing Source Fields
+
+Beyond the explicit `no_update` flag, a column is also excluded from UPDATE/MERGE automatically
+when its source `field` isn't present in your data at all - useful when the same `columns_config`
+is reused against sources that don't all carry every field.
+
+**This check is done once, from the first record `set_values()` processes, and cached for the
+rest of the run** - not re-checked per record. That's fine for the common case: a source's shape
+(which keys/columns exist) is normally consistent across every record in a run, the same
+assumption dbtk's XML/JSON/NDJSON readers make when they auto-discover columns from a handful of
+sample records rather than scanning the whole file.
+
+It's the wrong assumption for a source with genuinely *sparse* fields - e.g. NDJSON where only
+some lines carry an optional key. If record #1 happens to lack that key, the column is excluded
+from UPDATE/MERGE for the **entire run**, even for later records that do have a value for it. If
+your source is shaped like that, call `table.calc_update_excludes(record_fields)` yourself with
+an explicit set of field names (e.g. the union of keys across a representative sample of records)
+before running your first update/merge, rather than relying on the automatic one-record sample.
+
 ## String Shorthand for Transformations
 
 **The problem:** Writing transformation functions for Table columns means imports, lambdas, and verbose syntax.

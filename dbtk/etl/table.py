@@ -725,6 +725,33 @@ class Table:
             return filtered_values
 
     def set_values(self, record: RecordLike):
+        """
+        Process one source record into ``self.values``, keyed by bind name.
+
+        Applies field mapping, ``null_values`` conversion, ``default``, and
+        ``fn`` transforms for every column, then calls :meth:`refresh_readiness`.
+
+        Note:
+            The set of field names on the *first* record processed is cached
+            as ``_record_fields`` and used by :meth:`calc_update_excludes` to
+            decide which columns are excluded from UPDATE/MERGE because the
+            source doesn't carry them. This assumes every record in a run has
+            the same shape - the same assumption dbtk's XML/JSON/NDJSON
+            readers make when auto-discovering columns from a handful of
+            sample records. A field that's genuinely absent on some records
+            but present on others (e.g. an optional key in sparse JSON) isn't
+            detected by this once-only sample: if record #1 happens to lack
+            it, it's excluded from UPDATE/MERGE for the entire run, even for
+            later records that do have it. If your source has that shape,
+            call :meth:`calc_update_excludes` yourself with an explicit,
+            pre-computed ``record_fields`` set (e.g. the union of keys across
+            a representative sample) before the first :meth:`execute` call,
+            rather than relying on this automatic one-record sample.
+
+        Args:
+            record: Source row - dict, Record, or anything supporting
+                ``.get()``/``.keys()``/``in``.
+        """
         self.counts['records'] += 1
 
         warn_missing = self.counts['records'] == 1
@@ -871,6 +898,22 @@ class Table:
         return self._bind_name_map.get(bind_name)
 
     def calc_update_excludes(self, record_fields: Optional[Set[str]] = None):
+        """
+        Recompute which columns are excluded from UPDATE/MERGE.
+
+        A column is excluded when its source ``field`` isn't in
+        `record_fields`, or when it's marked ``no_update``. Called
+        automatically by :meth:`execute` on the first update/merge, using
+        the field names cached from the first record :meth:`set_values`
+        processed - see the note on :meth:`set_values` about the uniform-shape
+        assumption that implies. Pass `record_fields` explicitly to override
+        that one-record sample, e.g. the union of keys across several
+        representative records for a source with optional/sparse fields.
+
+        Args:
+            record_fields: Field names to check columns against. Defaults to
+                the cached ``_record_fields`` from :meth:`set_values`.
+        """
         if record_fields is None:
             record_fields = self._record_fields
 
