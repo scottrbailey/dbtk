@@ -409,6 +409,18 @@ class TestCSVReader:
             assert reader.fieldnames == reader.headers
             assert 'trainee_id' in reader.fieldnames
 
+    def test_ragged_row_does_not_clobber_row_num(self, tmp_path):
+        """A row with more fields than the header must not push _row_num past
+        the truncation cutoff and lose it - _row_num should always be the
+        actual row number, never a stray data value."""
+        csv_file = tmp_path / "ragged.csv"
+        csv_file.write_text("a,b,c\n1,2,3\n4,5,6,EXTRA\n")
+
+        with CSVReader(open(csv_file, encoding='utf-8'), add_row_num=True) as reader:
+            records = list(reader)
+            assert [r['_row_num'] for r in records] == [1, 2]
+            assert all(isinstance(r['_row_num'], int) for r in records)
+
 
 class TestJSONReader:
     """Tests specific to JSON reader, including record_path handling."""
@@ -441,6 +453,100 @@ class TestJSONReader:
         """record_path fails clearly when the document root isn't an object to traverse."""
         with pytest.raises(ValueError, match="not an object"):
             JSONReader(open(json_file, encoding='utf-8'), record_path='trainee_id.nested')
+
+    def test_null_values_with_list_valued_field(self, tmp_path):
+        """A list/array value (e.g. an unflattened JSON array field) must not
+        crash null_values conversion - null_values are always strings, so an
+        unhashable value can never match one anyway."""
+        json_file = tmp_path / "arrays.json"
+        json_file.write_text('[{"id": 1, "tags": ["a", "b"]}, {"id": 2, "tags": null}]')
+
+        with JSONReader(open(json_file, encoding='utf-8'), null_values=['NULL']) as reader:
+            records = list(reader)
+            assert records[0]['tags'] == ['a', 'b']
+            assert records[1]['tags'] is None
+
+
+class _NonSeekableStream:
+    """Minimal line-iterable, non-seekable file-like object - stands in for a
+    piped stdin or an HTTP response body, which NDJSONReader is pitched as
+    supporting ('common for streaming APIs and log formats')."""
+
+    def __init__(self, text):
+        self._lines = iter(text.splitlines(keepends=True))
+
+    def readable(self):
+        return True
+
+    def seekable(self):
+        return False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self._lines)
+
+    def close(self):
+        pass
+
+
+class TestNDJSONReader:
+    """NDJSONReader must not require a seekable file - schema discovery used
+    to seek(0) to rewind past its sample, which fails outright on a genuine
+    stream."""
+
+    def test_reads_from_a_non_seekable_stream(self):
+        data = '{"id": 1, "name": "Aang"}\n{"id": 2, "name": "Katara"}\n'
+        stream = _NonSeekableStream(data)
+
+        with NDJSONReader(stream) as reader:
+            records = list(reader)
+
+        assert [r['id'] for r in records] == [1, 2]
+        assert records[0]['name'] == 'Aang'
+
+    def test_records_beyond_the_schema_sample_size_are_still_read(self):
+        """Schema discovery samples only the first 100 records - rows after
+        that must still come through once discovery hands off to the live
+        stream (or buffered replay) for the rest of the data."""
+        lines = '\n'.join(f'{{"id": {i}}}' for i in range(150))
+        stream = _NonSeekableStream(lines + '\n')
+
+        with NDJSONReader(stream) as reader:
+            records = list(reader)
+
+        assert len(records) == 150
+        assert records[0]['id'] == 0
+        assert records[-1]['id'] == 149
+
+
+class TestZipMemberEncodingDetection:
+    """encoding='detect' on a multi-file ZIP must inspect the member that
+    will actually be opened, not always the first one in the archive."""
+
+    @pytest.fixture
+    def multi_member_zip(self, tmp_path):
+        import zipfile
+        zip_path = tmp_path / "multi.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr('first.csv', 'id,name\n1,Aang\n')
+            zf.writestr('second.csv', 'id,name\n1,Fran\xe7ois\n'.encode('latin-1'))
+        return zip_path
+
+    def test_detect_encoding_samples_requested_member(self, multi_member_zip):
+        from dbtk.readers.utils import _detect_encoding
+
+        first = _detect_encoding(str(multi_member_zip), zip_member='first.csv')
+        second = _detect_encoding(str(multi_member_zip), zip_member='second.csv')
+        assert first != second
+
+    def test_open_file_decodes_requested_member_correctly(self, multi_member_zip):
+        from dbtk.readers.utils import open_file
+
+        with open_file(str(multi_member_zip), encoding='detect', zip_member='second.csv') as fp:
+            content = fp.read()
+        assert 'François' in content
 
 
 class TestGetReader:
@@ -567,12 +673,15 @@ Frank,35,US""")
             assert result is reader
 
     def test_filter_row_num_field(self, csv_data):
-        """Test that _row_num field is sequential for filtered records."""
+        """_row_num reflects true position in the source file (so a bad row
+        can be found there for debugging), not a sequential count of
+        survivors - Bob (row 2) and Eve (row 5) were filtered out, so the
+        gaps show up in the surviving records' _row_num values."""
         with CSVReader(open(csv_data), add_row_num=True) as reader:
             reader.add_filter(lambda r: int(r.age) >= 18)
             results = list(reader)
             row_nums = [r._row_num for r in results]
-            assert row_nums == [1, 2, 3, 4]  # Sequential, not file row numbers
+            assert row_nums == [1, 3, 4, 6]
 
     def test_filter_invalid_callable(self, csv_data):
         """Test that filter() rejects non-callable."""
