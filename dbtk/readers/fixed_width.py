@@ -7,8 +7,7 @@ import os
 from typing import TextIO, List, Dict, Optional, Iterator, Type
 
 from .base import Reader
-from ..record import Record, FixedWidthRecord
-from ..utils import FixedColumn
+from ..record import Record, FixedWidthRecord, FixedColumn
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ from datetime import date, datetime
 from collections import namedtuple
 
 from dbtk.readers import CSVReader
-from dbtk.utils import FixedColumn
+from dbtk.record import FixedColumn
 from dbtk.writers import (
     CSVWriter, ExcelWriter, FixedWidthWriter,
     JSONWriter, NDJSONWriter, XMLWriter,

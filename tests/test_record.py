@@ -4,8 +4,8 @@ Tests for the Record and FixedWidthRecord classes.
 """
 
 import pytest
-from dbtk.record import Record, FixedWidthRecord, fixed_record_factory
-from dbtk.utils import normalize_field_name, FixedColumn
+from dbtk.record import Record, FixedWidthRecord, fixed_record_factory, FixedColumn
+from dbtk.utils import normalize_field_name
 
 
 # ---------------------------------------------------------------------------

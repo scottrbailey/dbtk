@@ -4,7 +4,7 @@
 import pytest
 from pathlib import Path
 
-from dbtk.utils import FixedColumn
+from dbtk.record import FixedColumn
 from dbtk.record import FixedWidthRecord
 from dbtk.readers.fixed_width import EDIReader
 from dbtk.formats.edi import ACH_COLUMNS

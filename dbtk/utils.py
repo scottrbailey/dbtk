@@ -6,7 +6,7 @@ Utility functions for dbtk.
 import logging
 import re
 import datetime as dt
-from typing import Tuple, List, Any, Union, Dict, Iterable, Optional
+from typing import Tuple, List, Any, Union, Dict, Iterable
 from .defaults import settings
 try:
     from typing import Mapping
@@ -133,60 +133,6 @@ class ParamStyle:
             return '%s'
         return ''
 
-
-class FixedColumn(object):
-    """ Column definition for fixed width files """
-
-    def __init__(self, name:str, start_pos:int, end_pos:int=None,
-                 column_type:str='text',
-                 comment: Optional[str] = None,
-                 align: Optional[str] = None,
-                 pad_char: Optional[str] = None,
-                 width: int = None):
-        """
-        :param str name:  database column name
-        :param int start_pos: start position of field, first position is 1 not 0
-        :param int end_pos: end position of field (mutually exclusive with width)
-        :param str column_type: text, int, float, date
-        :param str comment: discription for column usage/options
-        :param str align: override alignment (left, right, center)
-        :param str pad_char: override pad character
-        :param int width: field width in characters (mutually exclusive with end_pos)
-
-        FixedColumn('birthdate', 25, 35, 'date')
-        FixedColumn('birthdate', 25, width=11, column_type='date')
-        """
-        if end_pos is not None and width is not None:
-            raise ValueError("Specify end_pos or width, not both")
-        if width is not None:
-            end_pos = start_pos + width - 1
-
-        align_map = {'left': 'left', 'l': 'left', '<': 'left',
-                     'right': 'right', 'r': 'right', '>': 'right',
-                     'center': 'center', 'c': 'center'}
-
-        self.name = name
-        self.start_pos = start_pos
-        self.end_pos = end_pos if end_pos else start_pos
-        self.column_type = column_type
-        self.start_idx = start_pos - 1
-        self.comment = comment
-        self.align = align_map.get(str(align).lower())
-        self.pad_char = pad_char[0] if pad_char else None
-
-    @property
-    def width(self) -> int:
-        return self.end_pos - self.start_pos + 1
-
-    def __repr__(self):
-        parts = [f"'{self.name}'", str(self.start_pos), str(self.end_pos), f"'{self.column_type}'"]
-        if self.comment:
-            parts.append(f"comment='{self.comment}'")
-        if self.align:
-            parts.append(f"align='{self.align}'")
-        if self.pad_char:
-            parts.append(f"pad_char='{self.pad_char}'")
-        return f"FixedColumn({', '.join(parts)})"
 
 class QueryLogger:
     """Simple query logger."""

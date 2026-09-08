@@ -14,8 +14,7 @@ from typing import Dict, Iterable, List, Optional, Union, BinaryIO, TextIO
 from pathlib import Path
 
 from .base import BatchWriter, RecordLike
-from ..record import FixedWidthRecord
-from ..utils import FixedColumn
+from ..record import FixedWidthRecord, FixedColumn
 
 logger = logging.getLogger(__name__)
 
