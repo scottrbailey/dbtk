@@ -7,6 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **`_row_num` on readers now reflects true source-file position** — previously
+  computed as `skip_rows + <count of records that passed filters>`, which only
+  matched a row's actual position in the source file when nothing along the way
+  was filtered out. It's now `skip_rows + <count of rows read from the post-skip
+  stream, filtered or not>`, so it stays useful for tracing a problem row back to
+  its place in the source file even when `add_filter()` is combined with
+  `skip_rows`. If code relied on `_row_num` as a count of records returned rather
+  than a file position, this changes its value once filters are involved.
+
+- **`Table` now raises `ValueError` on a duplicate `bind_name`** — two columns
+  whose names sanitize to the same SQL bind placeholder previously collided
+  silently, with one column's value overwriting the other's in the generated
+  statement. This is now caught at construction time.
+
+### Fixed
+
+- **Record subclasses were missing `__slots__`** — every dynamically generated
+  `Record`/`FixedWidthRecord` subclass (used by cursors, readers, writers, and
+  ETL) omitted `__slots__ = ()`, so each instance carried an unused `__dict__`
+  alongside the slotted storage `Record` is designed around. Fixed across all
+  dynamic subclass sites and on `FixedWidthRecord` itself.
+
+- **`Record.__repr__()` disagreed with `str()`/`to_dict()`** — a field removed
+  with `pop()` still appeared in `repr()` (`pop()` only hides it from name-based
+  access; the value stays in the backing list) while every other view of the
+  record hid it. `repr()` now agrees with the rest.
+
+- **`Table.__init__` mutated the caller's `columns` dict** — column definitions
+  passed in were modified in place and kept live via the `columns` property, so
+  reusing the same column spec for a second `Table` — including `DataSurge`'s own
+  temp-table merge step — could pick up state left over from the first. Each
+  column definition is now copied before use.
+
+- **`Table.last_error` could hold a stale value** — it was only set when a row
+  raised a real database error, so an error from an earlier row could still be
+  sitting there when a later row simply failed a "requirements met" check. It's
+  now set on every non-zero `execute()` return.
+
+- **`DataSurge.total_read` never incremented** — the insert/update/delete/merge
+  path (`_execute_batches`) reads its source directly rather than through the
+  counters `BulkSurge` uses, so the documented "rows read from source" total
+  stayed at zero for `DataSurge`. Now tracked correctly.
+
+- **`DataSurge`'s temp-table merge understated skip counts, and lost them
+  entirely** — rows skipped for missing required fields were counted as loaded,
+  and the run's skip statistics were computed on a throwaway internal object
+  instead of being carried back onto the `DataSurge` instance the caller holds.
+  Both are now accurate and visible on the outer instance.
+
+- **`DataSurge(pass_through=True)` still ran full transformation** — the flag
+  wasn't checked on the insert/update/delete/merge path, so raw tuples raised
+  `AttributeError` and same-shape source records went through the full
+  field-mapping pipeline regardless of the setting. `pass_through` now does what
+  it says.
+
+- **`BulkSurge` external loaders (Oracle SQL\*Loader, SQL Server BCP, MySQL
+  `LOAD DATA`) failed on every call** — each called an internal `dump()` helper
+  with a keyword argument (`file`) that doesn't match its actual parameter name
+  (`filename`); a catch-all `**kwargs` absorbed the typo instead of raising it
+  at the call site, so it only surfaced as a confusing "multiple values for
+  keyword argument" error at write time. All three call sites are corrected. A
+  related issue in the same path — `dump()` rejecting its `headers` argument
+  whenever the caller also passed `write_headers=False` — is fixed alongside it.
+
+- **`BulkSurge`'s COPY-based Postgres load could leave a partial batch that a
+  later, unrelated `commit()` would make permanent** — when the background
+  writer thread feeding `copy_expert()` failed partway through, the rows it had
+  already streamed were well-formed and remained in the open transaction;
+  Postgres has no way to distinguish that from a normal end of input. The load
+  path now rolls back explicitly before re-raising, matching what the psycopg3
+  COPY path already did via its context manager.
+
+- **`BulkSurge`'s internal queue buffer could recurse until `RecursionError`, or
+  hang indefinitely** — the read side retried on an empty queue via a recursive
+  call instead of a loop, and the write side had no way to notice the buffer had
+  been closed once nothing remained to drain it. Both are now plain loops that
+  respond to the buffer's closed state.
+
+- **Postgres/ODBC connection strings broke on passwords containing a space or
+  semicolon** — neither `_get_connection_string()` (libpq) nor
+  `_get_odbc_string()` (ODBC) quoted values, so a password with a space produced
+  a DSN parse error instead of a clean authentication failure, and a semicolon
+  in an ODBC value silently split into an extra, bogus parameter. Both now quote
+  values per their format's own rules.
+
+- **Ragged CSV/Excel rows could lose their `_row_num`** — a source row with more
+  columns than the header overflowed past where `_row_num` was appended, and the
+  subsequent truncate-to-header-width step cut the row number back off instead
+  of the extra data. Row padding/truncation now happens before `_row_num` is
+  appended.
+
+- **Readers could crash on `null_values` comparison against list-valued
+  fields** — an unflattened JSON/XML array value in a row raised
+  `TypeError: unhashable type: 'list'` when compared against `null_values`.
+  Since `null_values` are always strings, no such value could ever have matched
+  one anyway; the check is now wrapped defensively.
+
+- **`NDJSONReader` required a seekable file** — schema discovery rewound the
+  file with `seek(0)`, which fails on a genuine stream (piped stdin, an HTTP
+  response body) even though the reader's own documentation describes that as
+  supported. It now buffers the sample it reads instead of seeking, and replays
+  it before continuing the live stream.
+
+- **ZIP encoding detection could sample the wrong archive member** —
+  `encoding='detect'` on a multi-file ZIP always inspected the first member
+  regardless of which one was actually being opened. The requested member is
+  now the one sampled.
+
+---
+
 ## [0.8.9] - 2026-08-18
 
 ### Fixed
