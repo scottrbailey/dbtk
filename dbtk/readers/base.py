@@ -495,7 +495,7 @@ class Reader(ABC):
 
         # Create Record subclass and set fields
         # set_fields() will automatically normalize for attribute access
-        self._record_class = type('FileRecord', (Record,), {})
+        self._record_class = type('FileRecord', (Record,), {'__slots__': ()})
         self._record_class.set_fields(self._headers)
 
         self._headers_initialized = True

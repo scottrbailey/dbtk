@@ -114,7 +114,7 @@ def _select_columns_gen(rows: Iterator[Any], col_names: List[str]) -> Iterator[R
     if missing:
         raise ValueError(f"Column(s) not found in source data: {missing}")
 
-    output_cls = type('SelectedRecord', (Record,), {})
+    output_cls = type('SelectedRecord', (Record,), {'__slots__': ()})
     output_cls.set_fields(col_names)
     get = _make_getter(_getter_keys(col_names, by_name, src_cols))
 
@@ -166,7 +166,7 @@ def _exclude_columns_gen(rows: Iterator[Any], col_names: Iterable[str]) -> Itera
     if not keep:
         raise ValueError("excluding these columns would remove every column")
 
-    output_cls = type('SelectedRecord', (Record,), {})
+    output_cls = type('SelectedRecord', (Record,), {'__slots__': ()})
     output_cls.set_fields(keep)
     get = _make_getter(_getter_keys(keep, by_name, src_cols))
 
@@ -220,7 +220,7 @@ def _rename_columns_gen(rows: Iterator[Any], mapping: Dict[str, str]) -> Iterato
 
     output_names = [mapping.get(c) or c for c in src_cols]
 
-    output_cls = type('RenamedRecord', (Record,), {})
+    output_cls = type('RenamedRecord', (Record,), {'__slots__': ()})
     output_cls.set_fields(output_names)
     get = _make_getter(_getter_keys(src_cols, by_name, src_cols))
 
