@@ -139,7 +139,10 @@ class DataSurge(BaseSurge):
             batch_params = []
             for record in batch:
                 self.total_read += 1
-                params = self._transform_row(record)
+                if self.pass_through:
+                    params = record
+                else:
+                    params = self._transform_row(record)
                 if params is None:
                     skipped += 1
                     continue
