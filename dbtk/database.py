@@ -377,19 +377,49 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     return validated_params
 
 
+def _quote_libpq_value(value: Any) -> str:
+    """
+    Quote a libpq connection-string value per its escaping rules.
+
+    A value containing a space, single quote, or backslash (or that's empty)
+    must be wrapped in single quotes, with internal ``'`` and ``\\`` each
+    backslash-escaped. Anything else is passed through unquoted.
+    """
+    value = str(value)
+    if value == '' or any(c in value for c in (' ', "'", '\\')):
+        value = value.replace('\\', '\\\\').replace("'", "\\'")
+        return f"'{value}'"
+    return value
+
+
 def _get_connection_string(**kwargs) -> str:
     """ Get connection string from keyword arguments."""
-    return " ".join([f"{key}={value}" for key, value in kwargs.items()])
+    return " ".join(f"{key}={_quote_libpq_value(value)}" for key, value in kwargs.items())
+
+
+def _quote_odbc_value(value: Any) -> str:
+    """
+    Quote an ODBC connection-string value per its escaping rules.
+
+    A value containing a semicolon, brace, or leading/trailing whitespace
+    (or that's empty) must be wrapped in braces, with any internal ``}``
+    doubled. Anything else is passed through unquoted.
+    """
+    value = str(value)
+    if value == '' or value != value.strip() or any(c in value for c in (';', '{', '}')):
+        value = value.replace('}', '}}')
+        return f'{{{value}}}'
+    return value
 
 
 def _get_odbc_string(**kwargs) -> str:
     """ Get connection string for ODBC from keyword arguments."""
     if 'dsn' in kwargs and kwargs['dsn']:
         # DSN only send DSN and password if present
-        conn_str = f"DSN={kwargs['dsn']}"
+        conn_str = f"DSN={_quote_odbc_value(kwargs['dsn'])}"
         printable_conn_str = conn_str
         if 'pwd' in kwargs:
-            conn_str += f";PWD={kwargs['pwd']}"
+            conn_str += f";PWD={_quote_odbc_value(kwargs['pwd'])}"
             printable_conn_str += ";PWD=******"
     else:
         odbc_driver_name = kwargs.pop('odbc_driver_name', None)
@@ -397,8 +427,8 @@ def _get_odbc_string(**kwargs) -> str:
             kwargs['server'] += f',{kwargs.pop("port")}'
         params = {key.upper(): ('yes' if value is True else 'no' if value is False else value)
                   for key, value in kwargs.items()}
-        conn_str = ";".join([f"{key}={value}" for key, value in params.items()])
-        printable_conn_str = ";".join([f"{key}={value}" for key, value in _hide_password(params).items()])
+        conn_str = ";".join(f"{key}={_quote_odbc_value(value)}" for key, value in params.items())
+        printable_conn_str = ";".join(f"{key}={_quote_odbc_value(value)}" for key, value in _hide_password(params).items())
         if odbc_driver_name:
             conn_str = f"DRIVER={{{odbc_driver_name}}};" + conn_str
             printable_conn_str = f"DRIVER={{{odbc_driver_name}}};" + printable_conn_str
