@@ -1,8 +1,12 @@
 # tests/test_bulk.py
+import csv
+import threading
+import time
 import pytest
 from pathlib import Path
 
 from dbtk.etl.data_surge import DataSurge
+from dbtk.etl.bulk_surge import BulkSurge
 from dbtk.etl.table import Table
 from dbtk.database import ParamStyle, Database
 
@@ -1054,3 +1058,121 @@ class TestComplexScenarios:
         # Verify final state
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 4
+
+
+class TestBulkSurgeExternalLoad:
+    """
+    The 'external' load methods (_load_oracle_sqlldr, _load_mssql_bcp,
+    _load_mysql_external) can't be exercised end-to-end without a real
+    Oracle/SQL Server/MySQL install and its CLI tools (sqlldr/bcp) - exactly
+    why their dump()-call-site argument bugs went unnoticed. These call the
+    real private methods directly (not a hand-copied 'correct' call) and
+    stop only at the point that genuinely requires the missing external
+    tool/server, proving everything before that - the dump() call included -
+    actually works.
+    """
+
+    def test_load_oracle_sqlldr_reaches_the_subprocess_call(
+        self, airbender_table, airbender_records, monkeypatch, tmp_path
+    ):
+        surge = BulkSurge(airbender_table)
+        monkeypatch.setattr(
+            surge, '_get_connection_config',
+            lambda: {'user': 'u', 'password': 'p', 'database': 'db'}
+        )
+
+        # sqlldr isn't installed here - that's the *expected* failure. Anything
+        # else (TypeError on dump()'s 'file' kwarg, log_path join blowing up
+        # on a None log_dir) means a regression before we ever got that far.
+        with pytest.raises(FileNotFoundError):
+            surge._load_oracle_sqlldr(airbender_records, dump_path=tmp_path)
+
+        assert surge.dump_path is not None
+        assert surge.dump_path.exists()
+        assert 'Aang' in surge.dump_path.read_text()
+
+    def test_load_mssql_bcp_reaches_the_subprocess_call(
+        self, airbender_table, airbender_records, monkeypatch, tmp_path
+    ):
+        surge = BulkSurge(airbender_table)
+        monkeypatch.setattr(
+            surge, '_get_connection_config',
+            lambda: {'user': 'u', 'password': 'p', 'host': 'h', 'database': 'db'}
+        )
+
+        # bcp isn't installed here - see comment above.
+        with pytest.raises(FileNotFoundError):
+            surge._load_mssql_bcp(airbender_records, dump_path=tmp_path / 'export.csv')
+
+        assert surge.dump_path is not None
+        assert surge.dump_path.exists()
+        content = surge.dump_path.read_text()
+        assert '\x1f' in content
+        assert not content.startswith('nomad_id')  # write_headers=False
+
+    def test_load_mysql_external_reaches_the_cursor_execute_call(
+        self, airbender_table, airbender_records, tmp_path
+    ):
+        surge = BulkSurge(airbender_table)
+
+        # sqlite doesn't understand LOAD DATA LOCAL INFILE syntax - that's the
+        # *expected* failure. A TypeError instead means dump()'s call site
+        # regressed before ever reaching cursor.execute().
+        with pytest.raises(Exception) as exc_info:
+            surge._load_mysql_external(airbender_records, dump_path=tmp_path)
+        assert not isinstance(exc_info.value, TypeError)
+
+        assert surge.dump_path is not None
+        assert surge.dump_path.exists()
+        assert 'Aang' in surge.dump_path.read_text()
+
+    def test_log_dir_defaults_when_unconfigured(self, airbender_table, monkeypatch):
+        """log_dir backs _load_oracle_sqlldr's log_path join - it must never be
+        None, or that join blows up before sqlldr is even invoked."""
+        import dbtk.etl.base_surge as base_surge_module
+        # Simulate a config with no logging.directory key at all - get_setting()
+        # falls through to whatever default the caller supplied.
+        monkeypatch.setattr(base_surge_module, 'get_setting', lambda key, default=None: default)
+
+        surge = BulkSurge(airbender_table)
+
+        assert surge.log_dir == './logs'
+
+
+class TestDequeBuffer:
+    """DequeBuffer feeds psycopg2's copy_expert() as a file-like object while
+    a background thread writes into it. read() retries on an empty queue -
+    that retry must be a loop, not recursion, or a writer thread slower than
+    the 0.1s poll interval eventually blows the stack on an otherwise-healthy
+    load."""
+
+    def test_read_survives_many_empty_polls(self):
+        import sys
+        from dbtk.etl.bulk_surge import DequeBuffer
+
+        old_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(60)
+        try:
+            buf = DequeBuffer()
+
+            def delayed_write():
+                time.sleep(7)  # ~70 empty 0.1s polls - past the lowered limit
+                buf.write('done')
+                buf.close()
+
+            thread = threading.Thread(target=delayed_write, daemon=True)
+            thread.start()
+            assert buf.read() == 'done'
+            thread.join()
+        finally:
+            sys.setrecursionlimit(old_limit)
+
+    def test_read_returns_eof_after_close(self):
+        from dbtk.etl.bulk_surge import DequeBuffer
+
+        buf = DequeBuffer()
+        buf.write('row1')
+        buf.close()
+
+        assert buf.read() == 'row1'
+        assert buf.read() == ''  # EOF
