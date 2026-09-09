@@ -5,7 +5,7 @@ JSON writer for database results.
 import json
 import logging
 from datetime import datetime, date, time
-from typing import Union, List, Optional, Any
+from typing import Union, Optional, Any
 from pathlib import Path
 from .base import BaseWriter, BatchWriter
 from ..utils import to_string
@@ -19,7 +19,6 @@ class JSONWriter(BaseWriter):
     def __init__(self,
                  data=None,
                  file: Optional[Union[str, Path]] = None,
-                 columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  indent: Optional[int] = 2,
                  compression: str = 'infer',
@@ -28,9 +27,11 @@ class JSONWriter(BaseWriter):
         Initialize JSON writer.
 
         Args:
-            data: Cursor object or list of records
+            data: Cursor object or list of records. Plain positional data
+                (lists/tuples with no column names of their own) isn't
+                accepted directly - attach names first with
+                RecordShaper.from_tuples().
             file: Output file. If None, writes to stdout
-            columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             indent: JSON indentation - defaults to 2 (pretty-print), 0 or None for compact
             compression: Compression type. 'infer' detects from file extension (.gz, .bz2, .xz).
@@ -38,7 +39,7 @@ class JSONWriter(BaseWriter):
             **json_kwargs: Additional arguments passed to json.dump
         """
         # Preserve data types for JSON output
-        super().__init__(data, file, columns, encoding, compression=compression, indent=indent, **json_kwargs)
+        super().__init__(data, file, encoding=encoding, compression=compression, indent=indent, **json_kwargs)
 
     def to_string(self, obj: Any) -> Any:
         """Convert object to string. For JSON just convert dates and times. """
@@ -63,7 +64,6 @@ class NDJSONWriter(BatchWriter):
     def __init__(self,
                  data=None,
                  file: Optional[Union[str, Path]] = None,
-                 columns: Optional[List[str]] = None,
                  encoding: str = 'utf-8',
                  compression: str = 'infer',
                  **json_kwargs):
@@ -71,16 +71,18 @@ class NDJSONWriter(BatchWriter):
         Initialize NDJSON writer.
 
         Args:
-            data: Cursor object or list of records
+            data: Cursor object or list of records. Plain positional data
+                (lists/tuples with no column names of their own) isn't
+                accepted directly - attach names first with
+                RecordShaper.from_tuples().
             file: Output file. If None, writes to stdout
-            columns: Column names for list-of-lists data (optional for other types)
             encoding: File encoding
             compression: Compression type. 'infer' detects from file extension (.gz, .bz2, .xz).
                         Pass 'gzip', 'bz2', or 'lzma' to override, or None to disable.
             **json_kwargs: Additional arguments passed to json.dumps
         """
         # NDJSON doesn't use indentation
-        super().__init__(data, file, columns=columns, encoding=encoding, compression=compression,
+        super().__init__(data, file, encoding=encoding, compression=compression,
                          indent=None, **json_kwargs)
 
     def to_string(self, obj: Any) -> Any:

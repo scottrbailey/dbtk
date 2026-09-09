@@ -111,18 +111,20 @@ class TestRowToTupleColumnOrder:
     always matched it and read by raw position instead of by column name.
     That's invisible when self.columns happens to match the record's own
     field order, but silently scrambles values under the wrong header the
-    moment it doesn't - e.g. an explicit columns= override.
+    moment it doesn't - e.g. self.columns set to something other than the
+    record's own field order.
     """
 
-    def test_explicit_columns_override_reads_by_name_not_position(self, tmp_path):
+    def test_mismatched_columns_reads_by_name_not_position(self, tmp_path):
         RecordCls = type('R', (Record,), {'__slots__': ()})
         RecordCls.set_fields(['a', 'b'])
         record = RecordCls(1, 2)  # a=1, b=2 in the record's own native order
 
         output_file = tmp_path / "output.csv"
-        # Ask for the reverse order - self.columns ('b', 'a') no longer
-        # matches the record's real field order ('a', 'b').
-        with CSVWriter([record], output_file, columns=['b', 'a']) as writer:
+        with CSVWriter([record], output_file) as writer:
+            # Force a mismatch - self.columns ('b', 'a') no longer matches
+            # the record's real field order ('a', 'b').
+            writer.columns = ['b', 'a']
             writer.write()
 
         lines = output_file.read_text(encoding='utf-8-sig').splitlines()
@@ -172,10 +174,12 @@ class TestBaseWriter:
             assert len(records) == 10
 
     def test_write_from_lists(self, tmp_path, sample_lists, sample_columns):
-        """Test writing from list of lists with explicit columns."""
+        """Test writing from list of lists, named via RecordShaper.from_tuples()."""
+        from dbtk.record import RecordShaper
+
         output_file = tmp_path / "output.csv"
 
-        with CSVWriter(sample_lists, output_file, columns=sample_columns) as writer:
+        with CSVWriter(RecordShaper.from_tuples(sample_lists, sample_columns), output_file) as writer:
             writer.write()
 
         # Read back and verify
@@ -183,6 +187,54 @@ class TestBaseWriter:
             records = list(reader)
             assert len(records) == 10
             assert reader.headers == sample_columns
+
+    def test_write_from_plain_lists_with_headers_raises(self, tmp_path):
+        """Plain positional data with no names must not silently get col_00N headers."""
+        output_file = tmp_path / "output.csv"
+        rows = [(1, 'Aang', 'aang@avatar.com'), (2, 'Katara', 'katara@avatar.com')]
+
+        with pytest.raises(TypeError):
+            CSVWriter(rows, output_file)
+
+    def test_write_from_plain_lists_without_headers_uses_placeholder_columns(self, tmp_path):
+        """write_headers=False means names are never displayed, so no error is needed."""
+        output_file = tmp_path / "output.csv"
+        rows = [(1, 'Aang', 'aang@avatar.com'), (2, 'Katara', 'katara@avatar.com')]
+
+        with CSVWriter(rows, output_file, write_headers=False) as writer:
+            count = writer.write()
+
+        assert count == len(rows)
+        lines = output_file.read_text(encoding='utf-8-sig').splitlines()
+        assert lines[0] == '1,Aang,aang@avatar.com'
+
+    def test_explicit_headers_is_an_accepted_name_source_for_positional_data(self, tmp_path):
+        """An explicit headers= override is just as good a name source as
+        RecordShaper for positional data - there's no lookup to get wrong,
+        only display text, and headers= already provides that. Mirrors how
+        BulkSurge.dump() feeds real INSERT-statement columns as headers=
+        for otherwise-nameless SQL bind-param tuples."""
+        output_file = tmp_path / "output.csv"
+        rows = [(1, 'Aang'), (2, 'Katara')]
+
+        with CSVWriter(rows, output_file, headers=['id', 'name']) as writer:
+            writer.write()
+
+        lines = output_file.read_text(encoding='utf-8-sig').splitlines()
+        assert lines[0] == 'id,name'
+        assert lines[1] == '1,Aang'
+
+    def test_columns_kwarg_no_longer_accepted(self, tmp_path, sample_records):
+        """columns= was removed from the public writer API in favor of
+        RecordShaper.from_tuples() - superseded by RecordShaper, redundant,
+        and the source of the isinstance(Record, (list, tuple)) dispatch bug.
+        It's no longer a named parameter anywhere on the public path, so it
+        falls through to **csv_kwargs and on to csv.writer(), which rejects
+        it - confirming there's no way left to reach the old override."""
+        output_file = tmp_path / "output.csv"
+        with pytest.raises(TypeError):
+            with CSVWriter(sample_records, output_file, columns=['a', 'b']) as writer:
+                writer.write()
 
     def test_write_headers_true(self, tmp_path, sample_records):
         """Test write_headers=True writes header row."""
@@ -689,6 +741,16 @@ class TestFixedWidthWriter:
 
 class TestJSONWriter:
     """Tests specific to JSON writer."""
+
+    def test_positional_data_always_raises(self, tmp_path):
+        """JSON output is inherently name-keyed on every row - unlike CSV,
+        there's no write_headers=False escape hatch, since JSON never
+        exposes write_headers at all. Positional data always needs
+        RecordShaper.from_tuples() first."""
+        from dbtk.writers import JSONWriter
+
+        with pytest.raises(TypeError):
+            JSONWriter([(1, 'Aang'), (2, 'Katara')], tmp_path / "output.json")
 
     def test_write_json_array(self, tmp_path, sample_records):
         """Test writing JSON as array of objects."""

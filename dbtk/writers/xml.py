@@ -7,7 +7,7 @@ import io
 import logging
 import re
 import sys
-from typing import Any, BinaryIO, List, Optional, TextIO, Tuple, Union
+from typing import Any, BinaryIO, Optional, TextIO, Tuple, Union
 from pathlib import Path
 
 try:
@@ -59,11 +59,11 @@ class XMLWriter(BaseWriter):
     Parameters
     ----------
     data : Iterable[RecordLike]
-        Data to write
+        Data to write. Plain positional data (lists/tuples with no column
+        names of their own) isn't accepted directly - attach names first
+        with RecordShaper.from_tuples().
     file : str, Path, TextIO, or BinaryIO, optional
         Output file or file handle. If None, writes to stdout.
-    columns : List[str], optional
-        Column names for list-of-lists data
     encoding : str, default 'utf-8'
         XML encoding declaration
     root_element : str, default 'data'
@@ -85,7 +85,6 @@ class XMLWriter(BaseWriter):
             self,
             data=None,
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
-            columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
             record_element: str = 'record',
@@ -101,7 +100,7 @@ class XMLWriter(BaseWriter):
             encoding = encoding.replace('-sig', '')
             logger.warning(f'A BOM encoding ({encoding}-sig) is not supported by LXML and most parsers. Using {encoding} instead.')
 
-        super().__init__(data, file, columns, encoding)
+        super().__init__(data, file, encoding=encoding)
         self._xml_columns = {col: _sanitize_element_name(col) for col in self.columns}
 
     def _write_data(self, file_obj: Union[TextIO, BinaryIO]) -> None:
@@ -135,11 +134,11 @@ class XMLStreamer(BatchWriter):
     Parameters
     ----------
     data : Iterable[RecordLike], optional
-        Initial data. For streaming mode, use data=None.
+        Initial data. For streaming mode, use data=None. Plain positional
+        data (lists/tuples with no column names of their own) isn't
+        accepted directly - attach names first with RecordShaper.from_tuples().
     file : str, Path, or BinaryIO, optional
         Output file or binary file handle. Must be binary mode for streaming.
-    columns : List[str], optional
-        Column names for list-of-lists data
     encoding : str, default 'utf-8'
         XML encoding declaration
     root_element : str, default 'data'
@@ -172,7 +171,6 @@ class XMLStreamer(BatchWriter):
             self,
             data=None,
             file: Optional[Union[str, Path, BinaryIO]] = None,
-            columns: Optional[List[str]] = None,
             encoding: str = 'utf-8',
             root_element: str = 'data',
             record_element: str = 'record',
@@ -191,7 +189,6 @@ class XMLStreamer(BatchWriter):
         super().__init__(
             data=data,
             file=file,
-            columns=columns,
             encoding=encoding,
             preserve_types=True,  # We'll convert in _prepare_record_for_xml
         )

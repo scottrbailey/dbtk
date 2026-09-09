@@ -17,7 +17,6 @@ class CSVWriter(BatchWriter):
     def __init__(self,
                  data=None,
                  file: Optional[Union[str, Path, TextIO]] = None,
-                 columns: Optional[List[str]] = None,
                  headers: Optional[List[str]] = None,
                  write_headers: bool = True,
                  null_string: str = None,
@@ -27,9 +26,11 @@ class CSVWriter(BatchWriter):
         Initialize CSV writer.
 
         Args:
-            data: Cursor object or list of records
+            data: Cursor object or list of records. Plain positional data
+                (lists/tuples with no column names of their own) isn't
+                accepted directly - attach names first with
+                RecordShaper.from_tuples().
             file: Output file. If None, writes to stdout
-            columns: Column names for list-of-lists data (optional for other types)
             headers: Header row text. If None, checks data.description for original column names,
                     then falls back to detected column names. Useful when field names have been
                     normalized but you want original database column names in the CSV header.
@@ -39,7 +40,7 @@ class CSVWriter(BatchWriter):
             **csv_kwargs: Additional arguments passed to csv.writer
         """
         # Always convert to text for CSV output
-        super().__init__(data, file, columns, headers=headers, write_headers=write_headers,
+        super().__init__(data, file, headers=headers, write_headers=write_headers,
                          compression=compression, **csv_kwargs)
         self.null_string = null_string or settings.get('null_string_csv', '')
 

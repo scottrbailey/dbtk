@@ -109,7 +109,7 @@ class FixedWidthWriter(BatchWriter):
         super().__init__(
             data=data,
             file=file,
-            columns=[c.name for c in columns],  # string names for BatchWriter
+            _columns=[c.name for c in columns],  # string names for BatchWriter
             encoding=encoding,
             write_headers=False,
         )
@@ -206,7 +206,7 @@ class EDIWriter(BatchWriter):
         super().__init__(
             data=data,
             file=file,
-            columns=None,   # no single column list; detected per record by BatchWriter
+            # no single column list; detected per record by BatchWriter
             encoding=encoding,
             write_headers=False,
         )

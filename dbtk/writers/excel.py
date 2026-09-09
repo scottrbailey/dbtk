@@ -840,7 +840,6 @@ class ExcelWriter(BatchWriter):
         self,
         data: Iterable[RecordLike],
         worksheet: 'Worksheet',
-        columns: Optional[List[str]] = None,
         write_headers: bool = True,
         headers: Optional[List[str]] = None,
         effective_fmt: Optional[dict] = None,
@@ -848,7 +847,7 @@ class ExcelWriter(BatchWriter):
     ) -> int:
         """Write data to an already-selected worksheet. Returns number of rows written."""
         effective_fmt = effective_fmt if effective_fmt is not None else self.formatting
-        self.data_iterator, detected_columns = self._get_data_iterator(data, columns)
+        self.data_iterator, detected_columns = self._get_data_iterator(data)
         self.columns = detected_columns
 
         if not self.columns:
@@ -1653,7 +1652,6 @@ class LinkedExcelWriter(ExcelWriter):
         self,
         data: Iterable[RecordLike],
         worksheet: 'Worksheet',
-        columns: Optional[List[str]] = None,
         write_headers: bool = True,
         headers: Optional[List[str]] = None,
         link_mapping: Optional[Dict[str, tuple]] = None,
@@ -1665,7 +1663,7 @@ class LinkedExcelWriter(ExcelWriter):
         self._link_mapping = link_mapping or {}
         self._source_for_this_sheet = source_for_this_sheet or []
         self._target_sheet = target_sheet
-        return super()._write_to_worksheet(data, worksheet, columns, write_headers, headers,
+        return super()._write_to_worksheet(data, worksheet, write_headers, headers,
                                            effective_fmt=effective_fmt, col_rules=col_rules)
 
     def _apply_cell_overrides(self, cell, record, col_name, col_idx, row_idx, style_names):
