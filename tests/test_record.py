@@ -553,9 +553,9 @@ class TestMemorySlots:
         row = cursor.fetchone()
         assert not hasattr(row, '__dict__')
 
-    def test_tuples_to_records_output_has_no_dict(self):
-        from dbtk.record import tuples_to_records
-        row = next(tuples_to_records([(1, 2)], ['a', 'b']))
+    def test_record_shaper_from_tuples_output_has_no_dict(self):
+        from dbtk.record import RecordShaper
+        row = next(iter(RecordShaper.from_tuples([(1, 2)], ['a', 'b'])))
         assert not hasattr(row, '__dict__')
 
 
