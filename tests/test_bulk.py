@@ -1075,15 +1075,22 @@ class TestBulkSurgeExternalLoad:
     def test_load_oracle_sqlldr_reaches_the_subprocess_call(
         self, airbender_table, airbender_records, monkeypatch, tmp_path
     ):
+        import dbtk.etl.bulk_surge as bulk_surge_module
+
         surge = BulkSurge(airbender_table)
         monkeypatch.setattr(
             surge, '_get_connection_config',
             lambda: {'user': 'u', 'password': 'p', 'database': 'db'}
         )
+        # Force the "sqlldr isn't installed" outcome deterministically, rather
+        # than counting on it actually being absent from the machine running
+        # this test. Anything else (TypeError on dump()'s 'file' kwarg,
+        # log_path join blowing up on a None log_dir) means a regression
+        # before we ever got that far.
+        def fake_run(cmd, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory", cmd[0])
+        monkeypatch.setattr(bulk_surge_module.subprocess, 'run', fake_run)
 
-        # sqlldr isn't installed here - that's the *expected* failure. Anything
-        # else (TypeError on dump()'s 'file' kwarg, log_path join blowing up
-        # on a None log_dir) means a regression before we ever got that far.
         with pytest.raises(FileNotFoundError):
             surge._load_oracle_sqlldr(airbender_records, dump_path=tmp_path)
 
@@ -1094,13 +1101,19 @@ class TestBulkSurgeExternalLoad:
     def test_load_mssql_bcp_reaches_the_subprocess_call(
         self, airbender_table, airbender_records, monkeypatch, tmp_path
     ):
+        import dbtk.etl.bulk_surge as bulk_surge_module
+
         surge = BulkSurge(airbender_table)
         monkeypatch.setattr(
             surge, '_get_connection_config',
             lambda: {'user': 'u', 'password': 'p', 'host': 'h', 'database': 'db'}
         )
+        # Force the "bcp isn't installed" outcome deterministically - see
+        # comment above.
+        def fake_run(cmd, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory", cmd[0])
+        monkeypatch.setattr(bulk_surge_module.subprocess, 'run', fake_run)
 
-        # bcp isn't installed here - see comment above.
         with pytest.raises(FileNotFoundError):
             surge._load_mssql_bcp(airbender_records, dump_path=tmp_path / 'export.csv')
 
