@@ -103,6 +103,35 @@ def sample_columns(sample_records):
     return []
 
 
+class TestRowToTupleColumnOrder:
+    """
+    Regression test for _row_to_tuple()'s Record-vs-list dispatch bug.
+
+    Record is itself a list subclass, so isinstance(record, (list, tuple))
+    always matched it and read by raw position instead of by column name.
+    That's invisible when self.columns happens to match the record's own
+    field order, but silently scrambles values under the wrong header the
+    moment it doesn't - e.g. an explicit columns= override.
+    """
+
+    def test_explicit_columns_override_reads_by_name_not_position(self, tmp_path):
+        RecordCls = type('R', (Record,), {'__slots__': ()})
+        RecordCls.set_fields(['a', 'b'])
+        record = RecordCls(1, 2)  # a=1, b=2 in the record's own native order
+
+        output_file = tmp_path / "output.csv"
+        # Ask for the reverse order - self.columns ('b', 'a') no longer
+        # matches the record's real field order ('a', 'b').
+        with CSVWriter([record], output_file, columns=['b', 'a']) as writer:
+            writer.write()
+
+        lines = output_file.read_text(encoding='utf-8-sig').splitlines()
+        assert lines[0] == 'b,a'
+        # 'b' column must hold b's value (2), 'a' column must hold a's value (1) -
+        # not a raw positional copy of the record (which would print '1,2').
+        assert lines[1] == '2,1'
+
+
 # Base Writer Tests using CSV
 class TestBaseWriter:
     """Tests for base writer functionality using CSVWriter."""

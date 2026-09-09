@@ -450,6 +450,13 @@ class BaseWriter(ABC):
         """
         Extract values from record with optional text conversion.
 
+        Checks dict-like access (``.keys()``) before falling back to
+        position - Record is itself a list subclass, so an
+        ``isinstance(record, (list, tuple))`` check on its own would always
+        match it and read by raw position instead of by column name. That
+        matters whenever ``self.columns`` doesn't match the record's own
+        internal field order (e.g. an explicit ``columns=`` override).
+
         Parameters
         ----------
         record : RecordLike
@@ -460,18 +467,20 @@ class BaseWriter(ABC):
         List[Any]
             List of values in column order
         """
-        values = []
-        for i, col in enumerate(self.columns):
-            if hasattr(record, "__getitem__"):
-                # dict-like (Record, dict) or list-like (list, tuple, namedtuple)
-                value = record[i] if isinstance(record, (list, tuple)) else record[col]
-            else:
-                # Fallback for objects without __getitem__
-                value = getattr(record, col, None)
+        if hasattr(record, "keys") and callable(record.keys):
+            # dict-like (dict, Record) - always look up by name
+            values = [record[col] for col in self.columns]
+        elif hasattr(record, "_fields"):
+            # namedtuple - no string-key __getitem__, use attribute access
+            values = [getattr(record, col) for col in self.columns]
+        elif isinstance(record, (list, tuple)):
+            # genuinely positional data - self.columns' order IS the row's order
+            values = [record[i] for i in range(len(self.columns))]
+        else:
+            values = [getattr(record, col, None) for col in self.columns]
 
-            if not self.preserve_types:
-                value = self.to_string(value)
-            values.append(value)
+        if not self.preserve_types:
+            values = [self.to_string(v) for v in values]
 
         return tuple(values)
 
