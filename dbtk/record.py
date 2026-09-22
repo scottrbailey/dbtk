@@ -304,6 +304,15 @@ class Record(list):
             cursor in dbtk creates its own subclass first for exactly this
             reason - do the same in your own code.
 
+            That subclass must also redeclare ``__slots__ = ()``, as shown
+            below. ``__slots__`` is not inherited in the sense of "instances
+            of subclasses stay dict-free" - each class in the MRO decides for
+            itself whether its layer adds a ``__dict__``, and a subclass body
+            that omits ``__slots__`` gets one by default regardless of what
+            the parent declares. Skip it and ``MyRecord`` instances silently
+            grow a ``__dict__`` alongside ``Record``'s own slots, quietly
+            losing the memory savings ``Record`` exists for.
+
         Examples:
             >>> MyRecord = type('MyRecord', (Record,), {'__slots__': ()})
             >>> MyRecord.set_fields(['Start Year', 'End Date'])
