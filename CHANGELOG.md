@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.9.0] - 2026-10-13
 
 ### Added
 
@@ -124,8 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counters `BulkSurge` uses, so the documented "rows read from source" total
   stayed at zero for `DataSurge`. Now tracked correctly.
 
-- **`DataSurge`'s temp-table merge understated skip counts, and lost them
-  entirely** — rows skipped for missing required fields were counted as loaded,
+- **`DataSurge`'s temp-table merge understated skip counts** — rows skipped for 
+  missing required fields were counted as loaded,
   and the run's skip statistics were computed on a throwaway internal object
   instead of being carried back onto the `DataSurge` instance the caller holds.
   Both are now accurate and visible on the outer instance.
@@ -137,7 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it says.
 
 - **`BulkSurge` external loaders (Oracle SQL\*Loader, SQL Server BCP, MySQL
-  `LOAD DATA`) failed on every call** — each called an internal `dump()` helper
+  `LOAD DATA`) failed** — each called an internal `dump()` helper
   with a keyword argument (`file`) that doesn't match its actual parameter name
   (`filename`); a catch-all `**kwargs` absorbed the typo instead of raising it
   at the call site, so it only surfaced as a confusing "multiple values for
