@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dbtk.__init__` — it's a reach-for-it-when-needed tool, not a default-path
   one; import via `dbtk.record.RecordShaper`.
 
-### Changed
+## [0.9.0] - 2026-10-13
 
 - **`_row_num` on readers now reflects true source-file position** — previously
   computed as `skip_rows + <count of records that passed filters>`, which only
