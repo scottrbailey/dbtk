@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.9.0] - 2026-10-13
+
+### Added
+
+- **`dbtk.record.RecordShaper`** — chainable, single-pass column shaping for a
+  stream of dict/Record/namedtuple rows (or a cursor): `select()`, `exclude()`,
+  `rename()`, and the classmethod `from_tuples()` for naming positional data.
+  Each call returns a new instance rather than mutating in place, and
+  validates column names eagerly against the schema *at that point in the
+  chain* — a rename followed by a select against the new name works, but the
+  old name no longer does, since the point of the whole design is to catch
+  exactly that class of mistake instead of silently reading the wrong column.
+  A shared consumed-flag spanning an entire lineage (the root plus every
+  stage chained from it, including forks) raises `RuntimeError` on reuse
+  rather than silently returning partial or empty results. `select()`/
+  `exclude()`/`rename()` take `strict: bool = True`; pass `False` to tolerate
+  unknown column names instead of raising. Deliberately not exported from
+  `dbtk.__init__` — it's a reach-for-it-when-needed tool, not a default-path
+  one; import via `dbtk.record.RecordShaper`.
 
 ## [0.9.0] - 2026-10-13
 
@@ -25,6 +43,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently, with one column's value overwriting the other's in the generated
   statement. This is now caught at construction time.
 
+- **BREAKING: `dbtk.writers.select_columns()` / `exclude_columns()` /
+  `rename_columns()` / `dbtk.record.tuples_to_records()` removed** — added in
+  0.8.8, now fully superseded by `RecordShaper` (`.select()`/`.exclude()`/
+  `.rename()`/`.from_tuples()`), which closes a validation gap the free
+  functions had no way to address when chained: each one only ever saw the
+  original source's columns, never the output of an earlier step, so
+  `select_columns(rename_columns(rows, {...}), [...])` could validate against
+  a name that the rename had already replaced.
+  `RecordShaper(rows).rename({...}).select([...])` replaces that pattern and
+  additionally enforces single-pass consumption.
+
+- **BREAKING: `columns=` removed from `BaseWriter`, `CSVWriter`,
+  `JSONWriter`, `NDJSONWriter`, `XMLWriter`, and `XMLStreamer`** — previously
+  let positional (plain list/tuple) data be named directly at the writer;
+  replaced by `RecordShaper.from_tuples()`, so there's one way to attach
+  names to positional data instead of two. Positional data with no attached
+  names now raises `TypeError` pointing at `RecordShaper.from_tuples()`
+  instead of silently generating `col_001`/`col_002`/... headers — but only
+  when those names would actually be displayed (`write_headers=True`, or a
+  format like JSON/XML/NDJSON that's inherently name-keyed on every row and
+  so never exposes `write_headers` at all). `write_headers=False`, or an
+  explicit `headers=` override, both still work with unnamed positional
+  data, since neither case has anything to protect the user from.
+  `FixedWidthWriter`'s own `columns: List[FixedColumn]` (the column
+  *definition*, not a name override) is unaffected, and `ExcelWriter`/
+  `DatabaseWriter` never exposed `columns=` to begin with.
+
+- **`FixedColumn` moved from `dbtk.utils` to `dbtk.record`** — it was never a
+  general-purpose utility; it's a fixed-width column spec used only by
+  `FixedWidthRecord`/`fixed_record_factory` (already in `dbtk.record`) and the
+  fixed-width readers/writers, which already depended on `dbtk.record` for
+  those. Update `from dbtk.utils import FixedColumn` to
+  `from dbtk.record import FixedColumn`.
+
+- **`FixedColumn`, `FixedWidthRecord`, `fixed_record_factory` no longer
+  exported from `dbtk.__init__`** — specialized fixed-width/EDI tooling that
+  the package's own documented usage never reaches for at the root; still
+  available via `dbtk.record.*`.
+
 ### Fixed
 
 - **Record subclasses were missing `__slots__`** — every dynamically generated
@@ -37,6 +94,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `pop()` still appeared in `repr()` (`pop()` only hides it from name-based
   access; the value stays in the backing list) while every other view of the
   record hid it. `repr()` now agrees with the rest.
+
+- **`BaseWriter._row_to_tuple()` read `Record` values by position instead of
+  by name** — `Record` is itself a `list` subclass, so
+  `isinstance(record, (list, tuple))` always matched it, same as genuinely
+  positional data. Invisible whenever a writer's column list happened to
+  match the record's own field order (the common case), but any mismatch —
+  e.g. a manually reordered `self.columns`, or a later record whose field
+  order didn't match the one the writer detected its columns from — silently
+  wrote values under the wrong header instead of raising or correcting.
+  `_row_to_dict()` already handled this correctly (checks `.keys()` before
+  falling back to `isinstance(list, tuple)`); `_row_to_tuple()` now follows
+  the same dispatch order. Affects `CSVWriter` and `ExcelWriter`, the two
+  writers that call `_row_to_tuple()`.
 
 - **`Table.__init__` mutated the caller's `columns` dict** — column definitions
   passed in were modified in place and kept live via the `columns` property, so
