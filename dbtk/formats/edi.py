@@ -12,7 +12,7 @@ Use with EDIReader or EDIWriter:
         w.write_batch(EDIReader(fp, ACH_COLUMNS))
 """
 
-from ..utils import FixedColumn
+from ..record import FixedColumn
 
 # ───────────────────────────────────────────────
 # NACHA ACH (US Automated Clearing House)

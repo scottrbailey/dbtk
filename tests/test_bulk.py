@@ -1,8 +1,12 @@
 # tests/test_bulk.py
+import csv
+import threading
+import time
 import pytest
 from pathlib import Path
 
 from dbtk.etl.data_surge import DataSurge
+from dbtk.etl.bulk_surge import BulkSurge
 from dbtk.etl.table import Table
 from dbtk.database import ParamStyle, Database
 
@@ -222,12 +226,33 @@ class TestInsertOperation:
         assert errors == 0
         assert airbender_table.counts['insert'] == 3
         assert surge.skipped == 0
+        assert surge.total_read == 3
 
         cursor.connection.commit()
 
         # Verify all records inserted
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 3
+
+    def test_total_read_tracks_every_row_seen(self, airbender_table, cursor):
+        """total_read must count both loaded and skipped rows - it's meant to
+        answer 'how many rows did the source hand us', not just successes."""
+        records = [
+            {
+                'trainee_id': 'AANG001', 'monk_name': 'Aang', 'home_temple': 'Southern Air Temple',
+                'mastery_rank': '4', 'bison_companion': 'Appa', 'daily_meditation': '8.5'
+            },
+            {
+                'trainee_id': 'MEELO001', 'monk_name': 'Meelo', 'home_temple': None,  # missing required field
+                'mastery_rank': None, 'bison_companion': None, 'daily_meditation': None
+            }
+        ]
+        surge = DataSurge(airbender_table)
+        surge.insert(records)
+
+        assert surge.total_read == 2
+        assert surge.total_loaded == 1
+        assert surge.skipped == 1
 
     def test_insert_multiple_batches(self, airbender_table, airbender_records, cursor):
         """Test inserting Air Nomad records across multiple batches."""
@@ -316,6 +341,69 @@ class TestInsertOperation:
 
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 3
+
+
+class TestPassThrough:
+    """pass_through=True must skip Table.set_values()/transformation entirely
+    and hand rows straight to executemany() - the documented use cases are
+    raw positional tuples and rows from a source of an identical schema
+    (typically another cursor, which yields Record objects)."""
+
+    def test_accepts_raw_positional_tuples(self, airbender_table, cursor):
+        # Column order matches air_nomad_training's DDL / columns_config order
+        rows = [
+            ('AANG001', 'Aang', 'Southern Air Temple', 4, 'Appa', 8.5),
+            ('TENZIN001', 'Tenzin', 'Air Temple Island', 4, 'Oogi', 9.0),
+        ]
+        surge = DataSurge(airbender_table, pass_through=True)
+        errors = surge.insert(rows, raise_error=True)
+
+        assert errors == 0
+        assert surge.total_read == 2
+        assert surge.total_loaded == 2
+
+        cursor.connection.commit()
+        cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
+        assert cursor.fetchone()['cnt'] == 2
+
+    def test_accepts_records_from_a_source_cursor(self, cursor, sqlite_db):
+        """The identical-schema db-to-db copy scenario from the class docstring -
+        a source cursor yielding Record rows, passed straight through."""
+        cursor.execute("""
+                        CREATE TABLE air_nomad_training_archive
+                        (
+                            nomad_id TEXT PRIMARY KEY, name TEXT NOT NULL, temple TEXT NOT NULL,
+                            airbending_level INTEGER, sky_bison TEXT, meditation_score REAL
+                        )
+                        """)
+        cursor.execute("""
+                        CREATE TABLE air_nomad_training
+                        (
+                            nomad_id TEXT PRIMARY KEY, name TEXT NOT NULL, temple TEXT NOT NULL,
+                            airbending_level INTEGER, sky_bison TEXT, meditation_score REAL
+                        )
+                        """)
+        cursor.execute("INSERT INTO air_nomad_training_archive VALUES "
+                        "('KORRA001', 'Korra', 'Southern Water Tribe', 4, NULL, 6.0)")
+        cursor.connection.commit()
+
+        target_table = Table('air_nomad_training', {
+            'nomad_id': {}, 'name': {'fn': str.upper},  # would prove transforms ran if applied
+            'temple': {}, 'airbending_level': {}, 'sky_bison': {}, 'meditation_score': {},
+        }, cursor=cursor)
+        surge = DataSurge(target_table, pass_through=True)
+
+        source_cursor = sqlite_db.cursor()
+        source_cursor.execute("SELECT * FROM air_nomad_training_archive")
+        errors = surge.insert(source_cursor, raise_error=True)
+
+        assert errors == 0
+        assert surge.total_loaded == 1
+
+        cursor.connection.commit()
+        cursor.execute("SELECT name FROM air_nomad_training WHERE nomad_id = 'KORRA001'")
+        # 'Korra', not 'KORRA' - proves the fn transform never ran
+        assert cursor.fetchone()['name'] == 'Korra'
 
 
 class TestUpdateOperation:
@@ -600,6 +688,73 @@ class TestMergeWithUpsert:
         # Verify only valid record merged
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 1
+
+
+class TestMergeWithTempTable:
+    """
+    Test the temp-table MERGE fallback (Oracle/SQL Server style dialects
+    without native upsert). SQLite always has native upsert, so there's no
+    real dialect to exercise this path against - install a fake one that
+    implements just enough of the temp-table protocol, and call
+    _merge_with_temp_table() directly rather than going through merge()'s
+    upsert/native-MERGE branch decision.
+    """
+
+    @pytest.fixture
+    def temp_merge_dialect(self, cursor):
+        from dbtk.dialects.base import DatabaseDialect
+
+        class FakeMergeDialect(DatabaseDialect):
+            use_upsert = False  # force Table._create_merge() down the real-MERGE path
+
+            def create_temp_table_ddl(self, table_name, col_info):
+                temp_name = f"{table_name}_temp_test"
+                cols_sql = ', '.join(f'{name} {sql_type}' for name, _, _, _, _, sql_type in col_info)
+                return temp_name, f"CREATE TEMP TABLE {temp_name} ({cols_sql})"
+
+            def cleanup_temp_table_sql(self, temp_name):
+                return f"DELETE FROM {temp_name}"
+
+            def merge_sql(self, table_name, all_cols, key_conditions, update_cols):
+                # Stats bookkeeping is what's under test here, not SQL
+                # correctness - any statement that succeeds will do.
+                return "SELECT 1"
+
+        cursor.connection._dialect = FakeMergeDialect()
+        return cursor.connection._dialect
+
+    def test_skipped_records_not_counted_as_merged(self, airbender_table, airbender_records, temp_merge_dialect):
+        """A row skipped for missing required fields never reaches the temp
+        table, so it must not be counted as merged (the len(records_list) -
+        errors formula used to count it anyway)."""
+        incomplete = {
+            'trainee_id': 'MEELO001', 'monk_name': 'Meelo', 'home_temple': None,
+            'mastery_rank': None, 'bison_companion': None, 'daily_meditation': None
+        }
+        records = [airbender_records[0], incomplete]
+
+        surge = DataSurge(airbender_table)
+        errors = surge._merge_with_temp_table(records, raise_error=False)
+
+        assert errors == 0
+        assert airbender_table.counts['merge'] == 1
+        assert surge.total_loaded == 1
+
+    def test_skip_stats_propagate_to_outer_surge(self, airbender_table, airbender_records, temp_merge_dialect):
+        """skipped/skip_details used to only exist on the throwaway inner
+        temp_surge and vanish when this method returned."""
+        incomplete = {
+            'trainee_id': 'MEELO001', 'monk_name': 'Meelo', 'home_temple': None,
+            'mastery_rank': None, 'bison_companion': None, 'daily_meditation': None
+        }
+        records = [airbender_records[0], incomplete]
+
+        surge = DataSurge(airbender_table)
+        surge._merge_with_temp_table(records, raise_error=False)
+
+        assert surge.skipped == 1
+        assert surge.total_read == 2
+        assert sum(d['count'] for d in surge.skip_details.values()) == 1
 
 
 class TestBatchProcessing:
@@ -903,3 +1058,235 @@ class TestComplexScenarios:
         # Verify final state
         cursor.execute("SELECT COUNT(*) as cnt FROM air_nomad_training")
         assert cursor.fetchone()['cnt'] == 4
+
+
+class TestBulkSurgeExternalLoad:
+    """
+    The 'external' load methods (_load_oracle_sqlldr, _load_mssql_bcp,
+    _load_mysql_external) can't be exercised end-to-end without a real
+    Oracle/SQL Server/MySQL install and its CLI tools (sqlldr/bcp) - exactly
+    why their dump()-call-site argument bugs went unnoticed. These call the
+    real private methods directly (not a hand-copied 'correct' call) and
+    stop only at the point that genuinely requires the missing external
+    tool/server, proving everything before that - the dump() call included -
+    actually works.
+    """
+
+    def test_load_oracle_sqlldr_reaches_the_subprocess_call(
+        self, airbender_table, airbender_records, monkeypatch, tmp_path
+    ):
+        import dbtk.etl.bulk_surge as bulk_surge_module
+
+        surge = BulkSurge(airbender_table)
+        monkeypatch.setattr(
+            surge, '_get_connection_config',
+            lambda: {'user': 'u', 'password': 'p', 'database': 'db'}
+        )
+        # Force the "sqlldr isn't installed" outcome deterministically, rather
+        # than counting on it actually being absent from the machine running
+        # this test. Anything else (TypeError on dump()'s 'file' kwarg,
+        # log_path join blowing up on a None log_dir) means a regression
+        # before we ever got that far.
+        def fake_run(cmd, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory", cmd[0])
+        monkeypatch.setattr(bulk_surge_module.subprocess, 'run', fake_run)
+
+        with pytest.raises(FileNotFoundError):
+            surge._load_oracle_sqlldr(airbender_records, dump_path=tmp_path)
+
+        assert surge.dump_path is not None
+        assert surge.dump_path.exists()
+        assert 'Aang' in surge.dump_path.read_text()
+
+    def test_load_mssql_bcp_reaches_the_subprocess_call(
+        self, airbender_table, airbender_records, monkeypatch, tmp_path
+    ):
+        import dbtk.etl.bulk_surge as bulk_surge_module
+
+        surge = BulkSurge(airbender_table)
+        monkeypatch.setattr(
+            surge, '_get_connection_config',
+            lambda: {'user': 'u', 'password': 'p', 'host': 'h', 'database': 'db'}
+        )
+        # Force the "bcp isn't installed" outcome deterministically - see
+        # comment above.
+        def fake_run(cmd, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory", cmd[0])
+        monkeypatch.setattr(bulk_surge_module.subprocess, 'run', fake_run)
+
+        with pytest.raises(FileNotFoundError):
+            surge._load_mssql_bcp(airbender_records, dump_path=tmp_path / 'export.csv')
+
+        assert surge.dump_path is not None
+        assert surge.dump_path.exists()
+        content = surge.dump_path.read_text()
+        assert '\x1f' in content
+        assert not content.startswith('nomad_id')  # write_headers=False
+
+    def test_load_mysql_external_reaches_the_cursor_execute_call(
+        self, airbender_table, airbender_records, tmp_path
+    ):
+        surge = BulkSurge(airbender_table)
+
+        # sqlite doesn't understand LOAD DATA LOCAL INFILE syntax - that's the
+        # *expected* failure. A TypeError instead means dump()'s call site
+        # regressed before ever reaching cursor.execute().
+        with pytest.raises(Exception) as exc_info:
+            surge._load_mysql_external(airbender_records, dump_path=tmp_path)
+        assert not isinstance(exc_info.value, TypeError)
+
+        assert surge.dump_path is not None
+        assert surge.dump_path.exists()
+        assert 'Aang' in surge.dump_path.read_text()
+
+    def test_log_dir_defaults_when_unconfigured(self, airbender_table, monkeypatch):
+        """log_dir backs _load_oracle_sqlldr's log_path join - it must never be
+        None, or that join blows up before sqlldr is even invoked."""
+        import dbtk.etl.base_surge as base_surge_module
+        # Simulate a config with no logging.directory key at all - get_setting()
+        # falls through to whatever default the caller supplied.
+        monkeypatch.setattr(base_surge_module, 'get_setting', lambda key, default=None: default)
+
+        surge = BulkSurge(airbender_table)
+
+        assert surge.log_dir == './logs'
+
+
+class TestDequeBuffer:
+    """DequeBuffer feeds psycopg2's copy_expert() as a file-like object while
+    a background thread writes into it. read() retries on an empty queue -
+    that retry must be a loop, not recursion, or a writer thread slower than
+    the 0.1s poll interval eventually blows the stack on an otherwise-healthy
+    load."""
+
+    def test_read_survives_many_empty_polls(self):
+        import sys
+        from dbtk.etl.bulk_surge import DequeBuffer
+
+        old_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(60)
+        try:
+            buf = DequeBuffer()
+
+            def delayed_write():
+                time.sleep(7)  # ~70 empty 0.1s polls - past the lowered limit
+                buf.write('done')
+                buf.close()
+
+            thread = threading.Thread(target=delayed_write, daemon=True)
+            thread.start()
+            assert buf.read() == 'done'
+            thread.join()
+        finally:
+            sys.setrecursionlimit(old_limit)
+
+    def test_read_returns_eof_after_close(self):
+        from dbtk.etl.bulk_surge import DequeBuffer
+
+        buf = DequeBuffer()
+        buf.write('row1')
+        buf.close()
+
+        assert buf.read() == 'row1'
+        assert buf.read() == ''  # EOF
+
+    def test_write_unblocks_once_closed_with_nothing_draining_it(self):
+        """A writer blocked on a full queue must notice close() and give up,
+        rather than blocking forever once nothing's calling read() anymore
+        (e.g. copy_expert already returned or raised). Runs the blocking
+        write() in a background thread and joins with a bounded timeout, so
+        a regression here fails the assertion instead of hanging the suite."""
+        from dbtk.etl.bulk_surge import DequeBuffer
+
+        buf = DequeBuffer(max_rows=1)
+        buf.write('first')  # fills the queue - nothing will ever drain it
+
+        def closer():
+            time.sleep(0.3)
+            buf.close()
+
+        threading.Thread(target=closer, daemon=True).start()
+
+        blocked_write = threading.Thread(target=buf.write, args=('second',), daemon=True)
+        start = time.monotonic()
+        blocked_write.start()
+        blocked_write.join(timeout=5)
+
+        assert not blocked_write.is_alive(), "write() did not unblock after close()"
+        assert time.monotonic() - start < 5
+
+
+def _live_postgres_db():
+    """A real postgres connection for the rollback test below - this needs an
+    actual server (unlike the rest of the suite, which only ever needs
+    sqlite), so callers must skip cleanly when one isn't reachable."""
+    import psycopg2
+    from dbtk.database import postgres
+    return postgres(
+        user='postgres', password='postgres', database='dbtk_test',
+        host='localhost', driver='psycopg2',
+    )
+
+
+@pytest.fixture
+def postgres_db():
+    try:
+        db = _live_postgres_db()
+    except Exception as e:
+        pytest.skip(f"No live postgres reachable for this test: {e}")
+    yield db
+    db.close()
+
+
+class TestBulkSurgePostgresRollback:
+    """
+    _load_postgres_psycopg2's raw copy_expert() usage doesn't tell postgres
+    it should abort on a writer-thread failure the way _load_postgres_psycopg3's
+    copy() context manager does automatically - verified against a real
+    postgres, since the whole point is what postgres itself does with a COPY
+    that ends early without any parse error. Requires PGHOST/local postgres
+    with user=postgres/password=postgres reachable; skips otherwise.
+    """
+
+    def test_writer_failure_rolls_back_rather_than_partially_committing(self, postgres_db):
+        db = postgres_db
+        cur = db.cursor()
+        cur.execute("DROP TABLE IF EXISTS bulk_rollback_test")
+        cur.execute("CREATE TABLE bulk_rollback_test (id INT PRIMARY KEY, name TEXT)")
+        db.commit()
+
+        def boom_on_marker(val):
+            if val == 'BOOM':
+                raise ValueError('transform blew up mid-load')
+            return val
+
+        table = Table('bulk_rollback_test', {
+            'id': {'field': 'id', 'primary_key': True},
+            'name': {'field': 'name', 'fn': boom_on_marker},
+        }, cursor=cur)
+
+        # batch_size=1 so each good row is its own completed CSV row/batch
+        # before the boom - matching the real "clean early EOF" failure mode.
+        records = [
+            {'id': 1, 'name': 'Aang'},
+            {'id': 2, 'name': 'Katara'},
+            {'id': 3, 'name': 'BOOM'},
+            {'id': 4, 'name': 'Sokka'},
+        ]
+        surge = BulkSurge(table, batch_size=1)
+
+        with pytest.raises(ValueError, match='transform blew up'):
+            surge.load(records)
+
+        # Simulate unrelated later code on this same connection calling
+        # commit() - e.g. a wrapping try/finally, or the next statement in a
+        # longer script. Nothing from this load should be there to commit.
+        db.commit()
+
+        # Check from an independent connection, not just a second cursor on
+        # the same transaction, to rule out same-transaction visibility.
+        fresh_db = _live_postgres_db()
+        fresh_cur = fresh_db.cursor()
+        fresh_cur.execute("SELECT * FROM bulk_rollback_test")
+        assert fresh_cur.fetchall() == []
+        fresh_db.close()

@@ -59,13 +59,14 @@ class BaseWriter(ABC):
         * Cursor objects (from database queries)
         * List of Record objects (from readers)
         * List of dictionaries
-        * List of lists/tuples (requires columns parameter)
+        * Namedtuples
+
+        Plain positional data (lists/tuples with no column names of their
+        own) isn't accepted directly - attach names first with
+        :meth:`RecordShaper.from_tuples() <dbtk.record.RecordShaper.from_tuples>`.
 
     filename : str, Path, TextIO, or BinaryIO, optional
         Output filename or file handle. If None, writes to stdout (limited to 20 rows for preview).
-    columns : List[str], optional
-        Column names for list-of-lists data. Ignored for other data types which
-        have columns embedded.
     encoding : str, default 'utf-8'
         File encoding for text-based formats
     write_headers : bool, default True
@@ -133,7 +134,6 @@ class BaseWriter(ABC):
             self,
             data: Iterable[RecordLike],
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
-            columns: Optional[List[str]] = None,
             encoding: str = "utf-8",
             write_headers: bool = True,
             compression: str = 'infer',
@@ -148,8 +148,6 @@ class BaseWriter(ABC):
             Data source (cursor, list of records, etc.)
         file : str, Path, TextIO, or BinaryIO, optional
             Output file. None writes to stdout.
-        columns : List[str], optional
-            Column names for list-of-lists
         encoding : str, default 'utf-8'
             File encoding
         write_headers : bool, default True
@@ -166,7 +164,7 @@ class BaseWriter(ABC):
         self._row_num = 0
 
         # Setup data iterator and columns
-        self.data_iterator, self.columns = self._get_data_iterator(data, columns)
+        self.data_iterator, self.columns = self._get_data_iterator(data)
         if not self.data_iterator:
             raise ValueError("No data to export")
 
@@ -322,7 +320,18 @@ class BaseWriter(ABC):
         data : Iterable[RecordLike]
             Input data (cursor, list, etc.)
         columns : List[str], optional
-            Optional column names for list-of-lists data
+            Column names to force for positional (plain list/tuple) data,
+            bypassing detection entirely. Internal use only - for a subclass
+            that already knows its schema (e.g. FixedWidthWriter, which
+            derives this from its own required FixedColumn definitions).
+            Not exposed on any public writer constructor: end users with
+            genuinely positional data should attach names first via
+            ``RecordShaper.from_tuples()`` rather than passing this.
+            An explicit ``self.headers`` (set via the writer's own
+            ``headers=`` parameter) works just as well as this and is
+            checked as a fallback, since for positional data there's no
+            real distinction between "name used for lookup" and "name
+            used for display" - there's no lookup, only position.
 
         Returns
         -------
@@ -357,12 +366,22 @@ class BaseWriter(ABC):
                 data_columns = list(first_item._fields)
             # List of lists
             else:
-                if columns:
-                    if len(columns) != len(first_item):
+                # An explicit headers= override (e.g. BulkSurge.dump() supplying real
+                # INSERT-statement column names for otherwise-positional bind params)
+                # is just as good a name source as the internal columns hint.
+                names = columns or getattr(self, 'headers', None)
+                if names:
+                    if len(names) != len(first_item):
                         raise ValueError(
-                            f"Column count ({len(columns)}) must match data width ({len(first_item)})"
+                            f"Column count ({len(names)}) must match data width ({len(first_item)})"
                         )
-                    data_columns = columns
+                    data_columns = names
+                elif self.write_headers:
+                    raise TypeError(
+                        f"can't determine column names from {type(first_item).__name__} rows; "
+                        "use RecordShaper.from_tuples() to attach column names first, or pass "
+                        "write_headers=False if names are never displayed."
+                    )
                 else:
                     data_columns = [f"col_{x:03d}" for x in range(1, len(first_item) + 1)]
 
@@ -381,12 +400,22 @@ class BaseWriter(ABC):
                 data_columns = list(first_item._fields)
             # List of lists
             else:
-                if columns:
-                    if len(columns) != len(first_item):
+                # An explicit headers= override (e.g. BulkSurge.dump() supplying real
+                # INSERT-statement column names for otherwise-positional bind params)
+                # is just as good a name source as the internal columns hint.
+                names = columns or getattr(self, 'headers', None)
+                if names:
+                    if len(names) != len(first_item):
                         raise ValueError(
-                            f"Column count ({len(columns)}) must match data width ({len(first_item)})"
+                            f"Column count ({len(names)}) must match data width ({len(first_item)})"
                         )
-                    data_columns = columns
+                    data_columns = names
+                elif self.write_headers:
+                    raise TypeError(
+                        f"can't determine column names from {type(first_item).__name__} rows; "
+                        "use RecordShaper.from_tuples() to attach column names first, or pass "
+                        "write_headers=False if names are never displayed."
+                    )
                 else:
                     data_columns = [f"col_{x:03d}" for x in range(1, len(first_item) + 1)]
 
@@ -450,6 +479,13 @@ class BaseWriter(ABC):
         """
         Extract values from record with optional text conversion.
 
+        Checks dict-like access (``.keys()``) before falling back to
+        position - Record is itself a list subclass, so an
+        ``isinstance(record, (list, tuple))`` check on its own would always
+        match it and read by raw position instead of by column name. That
+        matters whenever ``self.columns`` doesn't match the record's own
+        internal field order (e.g. an explicit ``columns=`` override).
+
         Parameters
         ----------
         record : RecordLike
@@ -460,18 +496,20 @@ class BaseWriter(ABC):
         List[Any]
             List of values in column order
         """
-        values = []
-        for i, col in enumerate(self.columns):
-            if hasattr(record, "__getitem__"):
-                # dict-like (Record, dict) or list-like (list, tuple, namedtuple)
-                value = record[i] if isinstance(record, (list, tuple)) else record[col]
-            else:
-                # Fallback for objects without __getitem__
-                value = getattr(record, col, None)
+        if hasattr(record, "keys") and callable(record.keys):
+            # dict-like (dict, Record) - always look up by name
+            values = [record[col] for col in self.columns]
+        elif hasattr(record, "_fields"):
+            # namedtuple - no string-key __getitem__, use attribute access
+            values = [getattr(record, col) for col in self.columns]
+        elif isinstance(record, (list, tuple)):
+            # genuinely positional data - self.columns' order IS the row's order
+            values = [record[i] for i in range(len(self.columns))]
+        else:
+            values = [getattr(record, col, None) for col in self.columns]
 
-            if not self.preserve_types:
-                value = self.to_string(value)
-            values.append(value)
+        if not self.preserve_types:
+            values = [self.to_string(v) for v in values]
 
         return tuple(values)
 
@@ -516,8 +554,6 @@ class BatchWriter(BaseWriter):
         This enables streaming use cases where data arrives in batches.
     file : str, Path, TextIO, or BinaryIO, optional
         Output destination. For streaming, pass an open file handle.
-    columns : List[str], optional
-        Explicit column names. If not provided, inferred from first batch.
     encoding : str, default 'utf-8'
         File encoding for text-based formats
     write_headers : bool, default True
@@ -547,7 +583,7 @@ class BatchWriter(BaseWriter):
             self,
             data: Optional[Iterable[RecordLike]] = None,
             file: Optional[Union[str, Path, TextIO, BinaryIO]] = None,
-            columns: Optional[List[str]] = None,
+            _columns: Optional[List[str]] = None,
             headers: Optional[List[str]] = None,
             encoding: Optional[str] = 'utf-8',
             write_headers: bool = True,
@@ -563,8 +599,13 @@ class BatchWriter(BaseWriter):
             Initial data. If None, setup is deferred until first write_batch().
         file : str, Path, TextIO, or BinaryIO, optional
             Output destination.
-        columns : List[str], optional
-            Explicit column names. If not provided, inferred from data.
+        _columns : List[str], optional
+            Force column names for positional (plain list/tuple) data,
+            bypassing detection. Internal use only, for a subclass that
+            already knows its schema (e.g. FixedWidthWriter) - deliberately
+            not named ``columns`` so it can't be reached by accident through
+            a public writer's ``**kwargs`` passthrough. If not provided,
+            inferred from data.
         headers : List[str], optional
             Header row text for CSV/Excel writers. If None, checks data.description
             for original column names, then falls back to detected column names.
@@ -597,7 +638,7 @@ class BatchWriter(BaseWriter):
         self._headers_written = False
         self._initialized = False
 
-        self.columns = columns
+        self.columns = _columns
         self.headers = headers
         self.data_iterator: Optional[Iterator] = None
 

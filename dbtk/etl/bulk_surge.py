@@ -28,20 +28,31 @@ class DequeBuffer:
         self.closed = False
 
     def write(self, data):
-        self._queue.put(data)
+        # No-timeout put() would block forever once the reader's gone (queue
+        # full, nothing left draining it) - close() only flips a flag, so a
+        # thread already blocked in put() would never notice. Poll self.closed
+        # between attempts instead, so a writer can give up once nothing's
+        # reading anymore rather than getting stuck for the rest of its life.
+        while not self.closed:
+            try:
+                self._queue.put(data, timeout=0.1)
+                return
+            except queue.Full:
+                continue
 
     def read(self, size=-1):
-        if self.closed and self._queue.empty():
-            return ''  # EOF
+        while True:
+            if self.closed and self._queue.empty():
+                return ''  # EOF
 
-        try:
-            # Block for up to 0.1 seconds waiting for data
-            return self._queue.get(timeout=0.1)
-        except queue.Empty:
-            # If closed and empty, EOF. Otherwise keep trying
-            if self.closed:
-                return ''
-            return self.read(size)  # Retry
+            try:
+                # Block for up to 0.1 seconds waiting for data
+                return self._queue.get(timeout=0.1)
+            except queue.Empty:
+                # If closed and empty, EOF. Otherwise keep trying
+                if self.closed:
+                    return ''
+                continue  # Retry
 
     def close(self):
         self.closed = True
@@ -337,6 +348,17 @@ class BulkSurge(BaseSurge):
                 logger.warning("Writer thread did not finish in time")
 
         if exception:
+            # A writer-thread failure between complete rows produces a clean
+            # early EOF, not malformed input - postgres has no way to tell
+            # that from "the file legitimately ended here," so copy_expert
+            # above returns without error and whatever rows it already
+            # accepted are sitting in this transaction, uncommitted but very
+            # committable. Roll back explicitly so a load that raised can't
+            # later be made to look like it partially succeeded by some
+            # unrelated commit() on this connection - psycopg3's copy()
+            # context manager does this same cancellation automatically,
+            # this raw copy_expert() usage doesn't.
+            self.cursor.connection.rollback()
             raise exception
 
         return self.total_loaded
@@ -471,10 +493,10 @@ class BulkSurge(BaseSurge):
 
         # Dump CSV
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, file=csv_path, delimiter=',', quotechar='"')
+        self.dump(records, filename=csv_path, delimiter=',', quotechar='"')
         # dump automatically creates .ctl file if connected to Oracle
         ctl_path = self.control_path
-        log_path = self.log_dir +  self.dump_path.stem + '.log'
+        log_path = Path(self.log_dir) / (self.dump_path.stem + '.log')
         cmd = ['sqlldr', f'userid={user}/{password}@{db}', f'control={ctl_path}', f'log={log_path}']
         logger.debug(f'sqlldr userid={user}/<PASSWORD>@{db} control={ctl_path} log={log_path}')
 
@@ -564,7 +586,7 @@ class BulkSurge(BaseSurge):
 
         self.dump(
             records,
-            file=dump_path,
+            filename=dump_path,
             write_headers=False,
             delimiter='\x1f',  # Unit Separator — super safe
             quotechar=None,    # No quoting needed
@@ -626,7 +648,7 @@ class BulkSurge(BaseSurge):
         """
         # Dump to CSV file
         csv_path = self._resolve_file_path(dump_path, 'csv')
-        self.dump(records, file=csv_path, lineterminator='\n')
+        self.dump(records, filename=csv_path, lineterminator='\n')
 
         # Execute LOAD DATA LOCAL INFILE from the temp file
         # Use forward slashes for MySQL (works on Windows too, avoids escape issues)
@@ -769,7 +791,7 @@ class BulkSurge(BaseSurge):
             writer = CSVWriter(data=None,
                                file=fp,
                                write_headers=write_headers,
-                               headers=headers,
+                               headers=headers if write_headers else None,
                                delimiter=delimiter, **csv_args)
             for batch in self.batched(records):
                 writer.write_batch(batch)
