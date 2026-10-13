@@ -8,11 +8,14 @@ from pathlib import Path
 from ..defaults import settings
 
 
-def _detect_encoding(filename: str, sample_size: int = 32768) -> str:
+def _detect_encoding(filename: str, sample_size: int = 32768, zip_member: Optional[str] = None) -> str:
     """
     Detect file encoding by sampling raw bytes using charset-normalizer.
 
-    Handles compressed files by reading through the decompressor.
+    Handles compressed files by reading through the decompressor. For ZIP
+    archives, samples `zip_member` if given (falling back to the first
+    member otherwise) - detection must inspect the same member that will
+    actually be opened and read.
     Falls back to utf-8-sig if charset-normalizer is not installed or detection fails.
     """
     try:
@@ -44,7 +47,8 @@ def _detect_encoding(filename: str, sample_size: int = 32768) -> str:
                 members = zf.namelist()
                 if not members:
                     return 'utf-8-sig'
-                with zf.open(members[0]) as f:
+                selected = zip_member if zip_member in members else members[0]
+                with zf.open(selected) as f:
                     sample = f.read(sample_size)
         else:
             with open(filename, 'rb') as f:
@@ -100,7 +104,7 @@ def open_file(filename: Union[str, Path],
     filename = str(filename) if isinstance(filename, Path) else filename
 
     if encoding == 'detect':
-        encoding = _detect_encoding(filename)
+        encoding = _detect_encoding(filename, zip_member=zip_member)
 
     effective_encoding = encoding or 'utf-8-sig'
     buffer_size = settings.get('compressed_file_buffer_size', 1024 * 1024)

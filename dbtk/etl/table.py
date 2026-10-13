@@ -189,8 +189,11 @@ class Table:
     last_error : ErrorDetail or None
         The error detail from the most recent :meth:`execute` call.
         Set to ``None`` on success, or an :class:`dbtk.utils.ErrorDetail`
-        on ``DatabaseError`` (when ``raise_error=False``).  Cleared on
-        every successful execution and on :meth:`cursor` reassignment.
+        describing what went wrong on either a ``DatabaseError`` or a
+        "requirements not met" failure (when ``raise_error=False``).
+        Cleared on every successful execution and on :meth:`cursor`
+        reassignment - it never carries over a stale error from an
+        earlier call into a later, differently-failing one.
     """
 
     OPERATIONS = ('insert', 'select', 'update', 'delete', 'merge')
@@ -252,10 +255,19 @@ class Table:
         req_cols = []
         key_cols = []
         gen_cols = []
+        seen_bind_names: Dict[str, str] = {}
 
         for col, col_def in columns.items():
+            # Copy before mutating - col_def gets bind_name/key/auto_gen flags
+            # and a resolved `fn` written into it below. Without this, Table
+            # would mutate the caller's own column-definition dicts in place,
+            # which bites anyone reusing a `columns` spec as a template for
+            # more than one Table (this class included - see the temp table
+            # built in DataSurge._merge_with_temp_table).
+            col_def = dict(col_def)
+
             # Empty dict shorthand: default field to column name
-            if col_def == {}:
+            if not col_def:
                 col_def['field'] = col
 
             validate_identifier(col)
@@ -268,6 +280,12 @@ class Table:
                 col_def['key'] = True
 
             bind_name = sanitize_identifier(col)
+            if bind_name in seen_bind_names:
+                raise ValueError(
+                    f"Columns '{seen_bind_names[bind_name]}' and '{col}' both sanitize to "
+                    f"the same bind name '{bind_name}'. Rename one of them."
+                )
+            seen_bind_names[bind_name] = col
             col_def['bind_name'] = bind_name
 
             if col_def.get('key'):
@@ -288,7 +306,7 @@ class Table:
         self._key_cols = tuple(key_cols)
         self._gen_cols = tuple(gen_cols)
 
-        self._bind_name_map = {col_def['bind_name']: col for col, col_def in columns.items()}
+        self._bind_name_map = {col_def['bind_name']: col for col, col_def in validated_columns.items()}
 
         self._sql_statements: Dict[str, Optional[str]] = {op: None for op in self.OPERATIONS}
         self._param_config: Dict[str, Tuple[str, ...]] = {op: () for op in self.OPERATIONS}
@@ -707,6 +725,33 @@ class Table:
             return filtered_values
 
     def set_values(self, record: RecordLike):
+        """
+        Process one source record into ``self.values``, keyed by bind name.
+
+        Applies field mapping, ``null_values`` conversion, ``default``, and
+        ``fn`` transforms for every column, then calls :meth:`refresh_readiness`.
+
+        Note:
+            The set of field names on the *first* record processed is cached
+            as ``_record_fields`` and used by :meth:`calc_update_excludes` to
+            decide which columns are excluded from UPDATE/MERGE because the
+            source doesn't carry them. This assumes every record in a run has
+            the same shape - the same assumption dbtk's XML/JSON/NDJSON
+            readers make when auto-discovering columns from a handful of
+            sample records. A field that's genuinely absent on some records
+            but present on others (e.g. an optional key in sparse JSON) isn't
+            detected by this once-only sample: if record #1 happens to lack
+            it, it's excluded from UPDATE/MERGE for the entire run, even for
+            later records that do have it. If your source has that shape,
+            call :meth:`calc_update_excludes` yourself with an explicit,
+            pre-computed ``record_fields`` set (e.g. the union of keys across
+            a representative sample) before the first :meth:`execute` call,
+            rather than relying on this automatic one-record sample.
+
+        Args:
+            record: Source row - dict, Record, or anything supporting
+                ``.get()``/``.keys()``/``in``.
+        """
         self.counts['records'] += 1
 
         warn_missing = self.counts['records'] == 1
@@ -853,6 +898,22 @@ class Table:
         return self._bind_name_map.get(bind_name)
 
     def calc_update_excludes(self, record_fields: Optional[Set[str]] = None):
+        """
+        Recompute which columns are excluded from UPDATE/MERGE.
+
+        A column is excluded when its source ``field`` isn't in
+        `record_fields`, or when it's marked ``no_update``. Called
+        automatically by :meth:`execute` on the first update/merge, using
+        the field names cached from the first record :meth:`set_values`
+        processed - see the note on :meth:`set_values` about the uniform-shape
+        assumption that implies. Pass `record_fields` explicitly to override
+        that one-record sample, e.g. the union of keys across several
+        representative records for a source with optional/sparse fields.
+
+        Args:
+            record_fields: Field names to check columns against. Defaults to
+                the cached ``_record_fields`` from :meth:`set_values`.
+        """
         if record_fields is None:
             record_fields = self._record_fields
 
@@ -963,8 +1024,11 @@ class Table:
         ------------
         * ``counts[operation]`` incremented on success.
         * ``counts['incomplete']`` incremented when requirements are unmet.
-        * ``last_error`` set to ``None`` on success or an
-          :class:`dbtk.utils.ErrorDetail` on database error.
+        * ``last_error`` set to ``None`` on success, or an
+          :class:`dbtk.utils.ErrorDetail` describing either the missing
+          columns (requirements not met) or the database error - it is
+          always set on a non-zero return, never left stale from a
+          previous call.
 
         Raises
         ------
@@ -987,6 +1051,7 @@ class Table:
         if not self.is_ready(operation):
             missing = self.reqs_missing(operation)
             msg = f"{operation} requirements not met: columns {missing} are null"
+            self.last_error = ErrorDetail(message=msg)
             if raise_error:
                 logger.error(f"Cannot {operation} table {self._name}: {msg}")
                 raise ValueError(msg)

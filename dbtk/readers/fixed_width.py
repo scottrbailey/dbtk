@@ -7,8 +7,7 @@ import os
 from typing import TextIO, List, Dict, Optional, Iterator, Type
 
 from .base import Reader
-from ..record import Record, FixedWidthRecord
-from ..utils import FixedColumn
+from ..record import Record, FixedWidthRecord, FixedColumn
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +108,7 @@ class FixedReader(Reader):
         Returns:
             String representation of column layout with sample data.
         """
-        temp_cls = type('_VizRecord', (FixedWidthRecord,), {})
+        temp_cls = type('_VizRecord', (FixedWidthRecord,), {'__slots__': ()})
         temp_cls.set_fields(self.columns)
 
         pos = self.fp.tell()
@@ -158,7 +157,7 @@ class FixedReader(Reader):
 
         # Create Record subclass: set_fields(columns) captures widths/alignment/padding,
         # then re-call Record.set_fields with full _headers so _row_num is registered.
-        self._record_class = type('FileFWRecord', (FixedWidthRecord,), {})
+        self._record_class = type('FileFWRecord', (FixedWidthRecord,), {'__slots__': ()})
         self._record_class.set_fields(self.columns)
         Record.set_fields.__func__(self._record_class, self._headers)
 
@@ -265,7 +264,7 @@ class EDIReader(FixedReader):
             if cols is None:
                 raise ValueError(f"No column definition for record type '{type_code}'")
 
-            RecordClass = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {})
+            RecordClass = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {'__slots__': ()})
             RecordClass.set_fields(cols)
             self._type_factories[type_code] = RecordClass
         return self._type_factories[type_code]

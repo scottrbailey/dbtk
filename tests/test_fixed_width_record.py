@@ -13,7 +13,7 @@ import pytest
 from pathlib import Path
 
 from dbtk.record import FixedWidthRecord
-from dbtk.utils import FixedColumn
+from dbtk.record import FixedColumn
 
 
 # ---------------------------------------------------------------------------

@@ -14,8 +14,7 @@ from typing import Dict, Iterable, List, Optional, Union, BinaryIO, TextIO
 from pathlib import Path
 
 from .base import BatchWriter, RecordLike
-from ..record import FixedWidthRecord
-from ..utils import FixedColumn
+from ..record import FixedWidthRecord, FixedColumn
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +109,7 @@ class FixedWidthWriter(BatchWriter):
         super().__init__(
             data=data,
             file=file,
-            columns=[c.name for c in columns],  # string names for BatchWriter
+            _columns=[c.name for c in columns],  # string names for BatchWriter
             encoding=encoding,
             write_headers=False,
         )
@@ -118,7 +117,7 @@ class FixedWidthWriter(BatchWriter):
     def _get_record_class(self) -> type:
         """Lazy-create a FixedWidthRecord subclass from fixed_columns."""
         if self._fw_record_class is None:
-            cls = type('FWRecord', (FixedWidthRecord,), {})
+            cls = type('FWRecord', (FixedWidthRecord,), {'__slots__': ()})
             cls.set_fields(self.fixed_columns)
             self._fw_record_class = cls
         return self._fw_record_class
@@ -207,7 +206,7 @@ class EDIWriter(BatchWriter):
         super().__init__(
             data=data,
             file=file,
-            columns=None,   # no single column list; detected per record by BatchWriter
+            # no single column list; detected per record by BatchWriter
             encoding=encoding,
             write_headers=False,
         )
@@ -218,7 +217,7 @@ class EDIWriter(BatchWriter):
             cols = self.edi_columns.get(type_code)
             if cols is None:
                 raise ValueError(f"No column definition for record type '{type_code}'")
-            cls = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {})
+            cls = type(f'EDI_{type_code}_Record', (FixedWidthRecord,), {'__slots__': ()})
             cls.set_fields(cols)
             self._type_factories[type_code] = cls
         return self._type_factories[type_code]

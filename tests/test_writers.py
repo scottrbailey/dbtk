@@ -11,12 +11,11 @@ from datetime import date, datetime
 from collections import namedtuple
 
 from dbtk.readers import CSVReader
-from dbtk.utils import FixedColumn
+from dbtk.record import FixedColumn
 from dbtk.writers import (
     CSVWriter, ExcelWriter, FixedWidthWriter,
     JSONWriter, NDJSONWriter, XMLWriter,
     to_csv, to_excel, to_fixed_width, to_json, to_ndjson, to_xml,
-    select_columns, exclude_columns, rename_columns, tuples_to_records,
 )
 from dbtk.record import Record
 
@@ -104,6 +103,37 @@ def sample_columns(sample_records):
     return []
 
 
+class TestRowToTupleColumnOrder:
+    """
+    Regression test for _row_to_tuple()'s Record-vs-list dispatch bug.
+
+    Record is itself a list subclass, so isinstance(record, (list, tuple))
+    always matched it and read by raw position instead of by column name.
+    That's invisible when self.columns happens to match the record's own
+    field order, but silently scrambles values under the wrong header the
+    moment it doesn't - e.g. self.columns set to something other than the
+    record's own field order.
+    """
+
+    def test_mismatched_columns_reads_by_name_not_position(self, tmp_path):
+        RecordCls = type('R', (Record,), {'__slots__': ()})
+        RecordCls.set_fields(['a', 'b'])
+        record = RecordCls(1, 2)  # a=1, b=2 in the record's own native order
+
+        output_file = tmp_path / "output.csv"
+        with CSVWriter([record], output_file) as writer:
+            # Force a mismatch - self.columns ('b', 'a') no longer matches
+            # the record's real field order ('a', 'b').
+            writer.columns = ['b', 'a']
+            writer.write()
+
+        lines = output_file.read_text(encoding='utf-8-sig').splitlines()
+        assert lines[0] == 'b,a'
+        # 'b' column must hold b's value (2), 'a' column must hold a's value (1) -
+        # not a raw positional copy of the record (which would print '1,2').
+        assert lines[1] == '2,1'
+
+
 # Base Writer Tests using CSV
 class TestBaseWriter:
     """Tests for base writer functionality using CSVWriter."""
@@ -144,10 +174,12 @@ class TestBaseWriter:
             assert len(records) == 10
 
     def test_write_from_lists(self, tmp_path, sample_lists, sample_columns):
-        """Test writing from list of lists with explicit columns."""
+        """Test writing from list of lists, named via RecordShaper.from_tuples()."""
+        from dbtk.record import RecordShaper
+
         output_file = tmp_path / "output.csv"
 
-        with CSVWriter(sample_lists, output_file, columns=sample_columns) as writer:
+        with CSVWriter(RecordShaper.from_tuples(sample_lists, sample_columns), output_file) as writer:
             writer.write()
 
         # Read back and verify
@@ -155,6 +187,54 @@ class TestBaseWriter:
             records = list(reader)
             assert len(records) == 10
             assert reader.headers == sample_columns
+
+    def test_write_from_plain_lists_with_headers_raises(self, tmp_path):
+        """Plain positional data with no names must not silently get col_00N headers."""
+        output_file = tmp_path / "output.csv"
+        rows = [(1, 'Aang', 'aang@avatar.com'), (2, 'Katara', 'katara@avatar.com')]
+
+        with pytest.raises(TypeError):
+            CSVWriter(rows, output_file)
+
+    def test_write_from_plain_lists_without_headers_uses_placeholder_columns(self, tmp_path):
+        """write_headers=False means names are never displayed, so no error is needed."""
+        output_file = tmp_path / "output.csv"
+        rows = [(1, 'Aang', 'aang@avatar.com'), (2, 'Katara', 'katara@avatar.com')]
+
+        with CSVWriter(rows, output_file, write_headers=False) as writer:
+            count = writer.write()
+
+        assert count == len(rows)
+        lines = output_file.read_text(encoding='utf-8-sig').splitlines()
+        assert lines[0] == '1,Aang,aang@avatar.com'
+
+    def test_explicit_headers_is_an_accepted_name_source_for_positional_data(self, tmp_path):
+        """An explicit headers= override is just as good a name source as
+        RecordShaper for positional data - there's no lookup to get wrong,
+        only display text, and headers= already provides that. Mirrors how
+        BulkSurge.dump() feeds real INSERT-statement columns as headers=
+        for otherwise-nameless SQL bind-param tuples."""
+        output_file = tmp_path / "output.csv"
+        rows = [(1, 'Aang'), (2, 'Katara')]
+
+        with CSVWriter(rows, output_file, headers=['id', 'name']) as writer:
+            writer.write()
+
+        lines = output_file.read_text(encoding='utf-8-sig').splitlines()
+        assert lines[0] == 'id,name'
+        assert lines[1] == '1,Aang'
+
+    def test_columns_kwarg_no_longer_accepted(self, tmp_path, sample_records):
+        """columns= was removed from the public writer API in favor of
+        RecordShaper.from_tuples() - superseded by RecordShaper, redundant,
+        and the source of the isinstance(Record, (list, tuple)) dispatch bug.
+        It's no longer a named parameter anywhere on the public path, so it
+        falls through to **csv_kwargs and on to csv.writer(), which rejects
+        it - confirming there's no way left to reach the old override."""
+        output_file = tmp_path / "output.csv"
+        with pytest.raises(TypeError):
+            with CSVWriter(sample_records, output_file, columns=['a', 'b']) as writer:
+                writer.write()
 
     def test_write_headers_true(self, tmp_path, sample_records):
         """Test write_headers=True writes header row."""
@@ -662,6 +742,16 @@ class TestFixedWidthWriter:
 class TestJSONWriter:
     """Tests specific to JSON writer."""
 
+    def test_positional_data_always_raises(self, tmp_path):
+        """JSON output is inherently name-keyed on every row - unlike CSV,
+        there's no write_headers=False escape hatch, since JSON never
+        exposes write_headers at all. Positional data always needs
+        RecordShaper.from_tuples() first."""
+        from dbtk.writers import JSONWriter
+
+        with pytest.raises(TypeError):
+            JSONWriter([(1, 'Aang'), (2, 'Katara')], tmp_path / "output.json")
+
     def test_write_json_array(self, tmp_path, sample_records):
         """Test writing JSON as array of objects."""
         output_file = tmp_path / "output.json"
@@ -771,150 +861,6 @@ class TestXMLWriter:
         assert root.tag == 'data'
         records = root.findall('record')
         assert len(records) == 10
-
-    def test_custom_element_names(self, tmp_path, sample_records):
-        """Test custom root and record element names."""
-        output_file = tmp_path / "output.xml"
-
-        to_xml(sample_records, output_file, root_element='trainees', record_element='trainee')
-
-        from lxml import etree
-        tree = etree.parse(str(output_file))
-        root = tree.getroot()
-
-        assert root.tag == 'trainees'
-        records = root.findall('trainee')
-        assert len(records) == 10
-
-    def test_xml_pretty_print(self, tmp_path, sample_records):
-        """Test XML with pretty printing."""
-        output_file = tmp_path / "output.xml"
-
-        to_xml(sample_records, output_file, pretty=True)
-
-        with open(output_file, encoding='utf-8-sig') as f:
-            content = f.read()
-
-        # Should have indentation
-        assert '\n  ' in content or '\n    ' in content
-
-    def test_xml_streaming(self, tmp_path, sample_records):
-        """Test XML streaming mode."""
-        output_file = tmp_path / "output.xml"
-
-        to_xml(sample_records, output_file, stream=True)
-
-        assert output_file.exists()
-
-        # Verify it's valid XML
-        from lxml import etree
-        tree = etree.parse(str(output_file))
-        root = tree.getroot()
-
-        records = root.findall('record')
-        assert len(records) == 10
-
-
-class TestDatabaseWriter:
-    """Tests specific to DatabaseWriter."""
-
-    def test_database_writer_init(self, sample_records):
-        """Test DatabaseWriter initialization."""
-        from unittest.mock import Mock
-        from dbtk.writers.database import DatabaseWriter
-
-        # Create mock cursor with required attributes
-        mock_cursor = Mock()
-        mock_cursor.connection.driver.paramstyle = 'named'
-
-        writer = DatabaseWriter(
-            data=sample_records,
-            target_cursor=mock_cursor,
-            target_table='test_table'
-        )
-
-        assert writer.target_table == 'test_table'
-        assert writer.batch_size == 1000
-        assert writer.commit_frequency == 10000
-        assert writer.paramstyle == 'named'
-
-    def test_database_writer_custom_params(self, sample_records):
-        """Test DatabaseWriter with custom batch and commit settings."""
-        from unittest.mock import Mock
-        from dbtk.writers.database import DatabaseWriter
-
-        mock_cursor = Mock()
-        mock_cursor.connection.driver.paramstyle = 'qmark'
-
-        writer = DatabaseWriter(
-            data=sample_records,
-            target_cursor=mock_cursor,
-            target_table='test_table',
-            batch_size=500,
-            commit_frequency=5000
-        )
-
-        assert writer.batch_size == 500
-        assert writer.commit_frequency == 5000
-
-    def test_database_writer_insert_statement_generation(self, sample_records):
-        """Test that INSERT statement is generated correctly."""
-        from unittest.mock import Mock
-        from dbtk.writers.database import DatabaseWriter
-
-        mock_cursor = Mock()
-        mock_cursor.connection.driver.paramstyle = 'named'
-
-        writer = DatabaseWriter(
-            data=sample_records,
-            target_cursor=mock_cursor,
-            target_table='test_table'
-        )
-
-        # Verify INSERT statement was created
-        assert writer.insert_sql is not None
-        assert 'INSERT INTO test_table' in writer.insert_sql
-        assert writer.param_names is not None
-        assert len(writer.param_names) > 0
-
-    def test_cursor_to_cursor_function(self, sample_records):
-        """Test cursor_to_cursor convenience function."""
-        from unittest.mock import Mock, patch
-        from dbtk.writers.database import cursor_to_cursor
-
-        mock_cursor = Mock()
-        mock_cursor.connection.driver.paramstyle = 'format'
-
-        # Patch DatabaseWriter.write to avoid actual execution
-        with patch('dbtk.writers.database.DatabaseWriter.write', return_value=10):
-            count = cursor_to_cursor(
-                source_data=sample_records,
-                target_cursor=mock_cursor,
-                target_table='test_table'
-            )
-
-        assert count == 10
-
-    def test_database_writer_different_paramstyles(self, sample_dicts):
-        """Test DatabaseWriter handles different paramstyles."""
-        from unittest.mock import Mock
-        from dbtk.writers.database import DatabaseWriter
-
-        paramstyles = ['qmark', 'format', 'named', 'pyformat', 'numeric']
-
-        for paramstyle in paramstyles:
-            mock_cursor = Mock()
-            mock_cursor.connection.driver.paramstyle = paramstyle
-
-            writer = DatabaseWriter(
-                data=sample_dicts,
-                target_cursor=mock_cursor,
-                target_table='test_table'
-            )
-
-            # Should create writer without errors
-            assert writer.paramstyle == paramstyle
-            assert writer.insert_sql is not None
 
     def test_custom_element_names(self, tmp_path, sample_records):
         """Test custom root and record element names."""
@@ -1175,189 +1121,3 @@ class TestCompression:
             lines = f.readlines()
         assert len(lines) == 4  # 1 header + 3 data
 
-
-class TestSelectColumns:
-    """Tests for the select_columns() row-shaping generator (select + reorder)."""
-
-    def test_selects_and_reorders(self, sample_records):
-        out = list(select_columns(sample_records, ['monk_name', 'trainee_id']))
-
-        assert len(out) == len(sample_records)
-        assert all(isinstance(r, Record) for r in out)
-        assert out[0].keys() == ['monk_name', 'trainee_id']
-        assert out[0]['trainee_id'] == sample_records[0]['trainee_id']
-
-    def test_works_with_dicts(self, sample_dicts):
-        out = list(select_columns(sample_dicts, ['trainee_id', 'monk_name']))
-        assert out[0].to_dict() == {
-            'trainee_id': sample_dicts[0]['trainee_id'],
-            'monk_name': sample_dicts[0]['monk_name'],
-        }
-
-    def test_works_with_namedtuples(self, sample_namedtuples):
-        out = list(select_columns(sample_namedtuples, ['monk_name']))
-        assert out[0].keys() == ['monk_name']
-        assert out[0]['monk_name'] == sample_namedtuples[0].monk_name
-
-    def test_plain_tuples_raise_type_error(self, sample_lists):
-        """Positional rows carry no column names; use tuples_to_records() first."""
-        with pytest.raises(TypeError):
-            list(select_columns(sample_lists, ['monk_name']))
-
-    def test_pipes_directly_into_writer(self, tmp_path, sample_records):
-        output_file = tmp_path / "output.csv"
-        to_csv(select_columns(sample_records, ['monk_name', 'trainee_id']), output_file)
-
-        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
-            records = list(reader)
-        assert len(records) == len(sample_records)
-        assert reader.headers == ['monk_name', 'trainee_id']
-
-    def test_empty_col_names_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            select_columns(sample_records, [])
-
-    def test_unknown_column_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            list(select_columns(sample_records, ['not_a_real_column']))
-
-    def test_empty_input_yields_nothing(self):
-        assert list(select_columns([], ['a'])) == []
-
-
-class TestExcludeColumns:
-    """Tests for the exclude_columns() row-shaping generator (block-list)."""
-
-    def test_excludes_and_preserves_order(self, sample_records, sample_columns):
-        out = list(exclude_columns(sample_records, ['bison_companion', 'last_training']))
-
-        assert len(out) == len(sample_records)
-        assert all(isinstance(r, Record) for r in out)
-        expected = [c for c in sample_columns if c not in ('bison_companion', 'last_training')]
-        assert out[0].keys() == expected
-        assert out[0]['monk_name'] == sample_records[0]['monk_name']
-
-    def test_accepts_a_set(self, sample_records, sample_columns):
-        """Order doesn't matter for exclude, so a set works as well as a list."""
-        out = list(exclude_columns(sample_records, {'bison_companion'}))
-        assert 'bison_companion' not in out[0].keys()
-
-    def test_works_with_namedtuples(self, sample_namedtuples):
-        out = list(exclude_columns(sample_namedtuples, ['bison_companion']))
-        assert 'bison_companion' not in out[0].keys()
-        assert out[0]['monk_name'] == sample_namedtuples[0].monk_name
-
-    def test_plain_tuples_raise_type_error(self, sample_lists):
-        with pytest.raises(TypeError):
-            list(exclude_columns(sample_lists, ['monk_name']))
-
-    def test_pipes_directly_into_writer(self, tmp_path, sample_records):
-        output_file = tmp_path / "output.csv"
-        to_csv(exclude_columns(sample_records, ['bison_companion']), output_file)
-
-        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
-            records = list(reader)
-        assert len(records) == len(sample_records)
-        assert 'bison_companion' not in reader.headers
-        assert 'monk_name' in reader.headers
-
-    def test_empty_col_names_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            exclude_columns(sample_records, [])
-
-    def test_unknown_column_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            list(exclude_columns(sample_records, ['not_a_real_column']))
-
-    def test_exclude_everything_raises(self, sample_records, sample_columns):
-        with pytest.raises(ValueError):
-            list(exclude_columns(sample_records, sample_columns))
-
-    def test_empty_input_yields_nothing(self):
-        assert list(exclude_columns([], ['a'])) == []
-
-
-class TestRenameColumns:
-    """Tests for the rename_columns() row-shaping generator (partial rename, pass-through)."""
-
-    def test_renames_only_listed_columns(self, sample_records, sample_columns):
-        out = list(rename_columns(sample_records, {'monk_name': 'Name'}))
-
-        assert len(out) == len(sample_records)
-        assert all(isinstance(r, Record) for r in out)
-        expected = ['Name' if c == 'monk_name' else c for c in sample_columns]
-        assert out[0].keys() == expected
-        assert out[0]['Name'] == sample_records[0]['monk_name']
-        assert out[0]['trainee_id'] == sample_records[0]['trainee_id']
-
-    def test_falsy_value_keeps_original_name(self, sample_records, sample_columns):
-        out = list(rename_columns(sample_records, {'monk_name': '', 'trainee_id': None}))
-        assert out[0].keys() == sample_columns
-
-    def test_works_with_dicts_and_namedtuples(self, sample_dicts, sample_namedtuples):
-        out_dict = list(rename_columns(sample_dicts, {'monk_name': 'Name'}))
-        assert 'Name' in out_dict[0].keys()
-
-        out_nt = list(rename_columns(sample_namedtuples, {'monk_name': 'Name'}))
-        assert 'Name' in out_nt[0].keys()
-
-    def test_plain_tuples_raise_type_error(self, sample_lists):
-        with pytest.raises(TypeError):
-            list(rename_columns(sample_lists, {'monk_name': 'Name'}))
-
-    def test_pipes_directly_into_writer(self, tmp_path, sample_records):
-        output_file = tmp_path / "output.csv"
-        to_csv(rename_columns(sample_records, {'monk_name': 'Name'}), output_file)
-
-        with CSVReader(open(output_file, encoding='utf-8-sig'), add_row_num=False) as reader:
-            records = list(reader)
-        assert len(records) == len(sample_records)
-        assert 'Name' in reader.headers
-        assert 'monk_name' not in reader.headers
-
-    def test_empty_mapping_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            rename_columns(sample_records, {})
-
-    def test_unknown_column_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            list(rename_columns(sample_records, {'not_a_real_column': 'X'}))
-
-    def test_empty_input_yields_nothing(self):
-        assert list(rename_columns([], {'a': 'b'})) == []
-
-
-class TestTuplesToRecords:
-    """Tests for the tuples_to_records() positional-to-Record converter."""
-
-    def test_names_positions(self, sample_lists, sample_columns):
-        out = list(tuples_to_records(sample_lists, sample_columns))
-
-        assert len(out) == len(sample_lists)
-        assert all(isinstance(r, Record) for r in out)
-        assert out[0].keys() == sample_columns
-        assert list(out[0].values()) == sample_lists[0]
-
-    def test_falsy_column_drops_position(self, sample_lists, sample_columns):
-        columns = list(sample_columns)
-        columns[1] = None  # drop the second column entirely
-        out = list(tuples_to_records(sample_lists, columns))
-
-        expected = [c for c in sample_columns if c != sample_columns[1]]
-        assert out[0].keys() == expected
-
-    def test_composes_with_select_columns(self, sample_lists, sample_columns):
-        from dbtk.writers import select_columns
-        out = list(select_columns(tuples_to_records(sample_lists, sample_columns), ['monk_name']))
-        assert out[0].keys() == ['monk_name']
-
-    def test_row_length_mismatch_raises(self):
-        with pytest.raises(ValueError):
-            list(tuples_to_records([(1, 2)], ['a', 'b', 'c']))
-
-    def test_all_falsy_columns_raises(self):
-        with pytest.raises(ValueError):
-            list(tuples_to_records([(1, 2)], [None, None]))
-
-    def test_empty_input_yields_nothing(self):
-        assert list(tuples_to_records([], ['a', 'b'])) == []
