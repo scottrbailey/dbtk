@@ -638,10 +638,21 @@ encrypt_config_file(path)           # Encrypt passwords in config
 ```python
 from dbtk import setup_logging, cleanup_old_logs, errors_logged
 
-setup_logging(name=None, log_dir='./logs', level='INFO', **kwargs)
-cleanup_old_logs(log_dir='./logs', retention_days=30, dry_run=False)
+setup_logging(script_name=None, log_dir=None, level=None, split_errors=None,
+               console=None, format=None, timestamp_format=None, filename_format=None)
+cleanup_old_logs(log_dir=None, pattern='*.log', dry_run=False)  # retention_days is config-only
 errors_logged()  # Returns error log path or None
 ```
+
+### File Expiry
+
+```python
+from dbtk.utils import expire_files
+
+expire_files(src_dir, days_old, pattern='*', archive_dir=None, dry_run=False)
+# archive_dir=None -> delete matching files older than days_old; given -> move them there instead
+```
+Details: [Expiring Old Files](10-advanced.md#expiring-old-files).
 
 ### Column Definition Generator
 

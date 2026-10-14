@@ -348,6 +348,18 @@ settings:
     retention_days: 30                   # For cleanup_old_logs()
 ```
 
+Every setting above except `retention_days` can also be overridden per-script as a
+`setup_logging()` keyword argument (`directory` → `log_dir`, everything else by the
+same name):
+
+```python
+dbtk.setup_logging('fire_nation_etl', level='DEBUG', filename_format='%Y%m%d')
+```
+
+`retention_days` is intentionally config-only - there's no `setup_logging()` or
+`cleanup_old_logs()` override for it, so a one-off script can't quietly shorten
+everyone else's log retention.
+
 **Filename patterns:**
 
 ```python
@@ -367,16 +379,17 @@ settings:
 **Automatic log cleanup:**
 
 ```python
-# Clean logs older than retention period (default: 30 days)
+# Clean logs older than retention period (from config, default: 30 days)
 deleted = dbtk.cleanup_old_logs()
 print(f"Deleted {len(deleted)} old log files")
-
-# Custom retention
-dbtk.cleanup_old_logs(retention_days=7)
 
 # Dry run to see what would be deleted
 would_delete = dbtk.cleanup_old_logs(dry_run=True)
 ```
+
+Under the hood, `cleanup_old_logs()` is a thin wrapper around the general-purpose
+`dbtk.utils.expire_files()` - see [Expiring old files](10-advanced.md#expiring-old-files)
+for cleaning up things other than logs (inbound extracts, generated exports, etc.).
 
 **Error detection for notifications:**
 
