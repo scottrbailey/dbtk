@@ -204,3 +204,67 @@ class TestGlobalFunctions:
         with patch('dbtk.config._config_manager', None):  # Force new instance
             result = get_setting('default_timezone', 'UTC', config_file=str(test_config_file))
             assert result == 'UTC'
+
+class TestGenericEncryptedParams:
+    """Any encrypted_* connection key is decrypted to its bare name, not just encrypted_password."""
+
+    @pytest.fixture
+    def encrypted_config_file(self, tmp_path, config_manager):
+        import yaml
+        cfg = {
+            'connections': {
+                'snowy': {
+                    'type': 'postgres',
+                    'host': 'localhost',
+                    'database': 'northpole',
+                    'user': 'sokka',
+                    'encrypted_password': config_manager.encrypt_password('boomerang'),
+                    'encrypted_private_key_file_pwd': config_manager.encrypt_password('space_sword'),
+                },
+            },
+            'passwords': {
+                'api_token': {
+                    'encrypted_password': config_manager.encrypt_password('appa'),
+                },
+            },
+        }
+        path = tmp_path / 'dbtk.yml'
+        path.write_text(yaml.safe_dump(cfg))
+        return path
+
+    def test_all_encrypted_keys_decrypted(self, encrypted_config_file):
+        config = ConfigManager(str(encrypted_config_file)).get_connection_config('snowy')
+
+        assert config['password'] == 'boomerang'
+        assert config['private_key_file_pwd'] == 'space_sword'
+        assert not any(k.startswith('encrypted_') for k in config)
+
+    def test_migrate_config_reencrypts_all_encrypted_keys(self, encrypted_config_file, tmp_path):
+        import yaml
+        from cryptography.fernet import Fernet
+        from dbtk.config import migrate_config
+
+        new_key = _generate_encryption_key()
+        target = tmp_path / 'migrated.yml'
+        migrate_config(str(encrypted_config_file), str(target), new_key)
+
+        migrated = yaml.safe_load(target.read_text())
+        fernet = Fernet(new_key.encode())
+        snowy = migrated['connections']['snowy']
+        assert fernet.decrypt(snowy['encrypted_password'].encode()).decode() == 'boomerang'
+        assert fernet.decrypt(snowy['encrypted_private_key_file_pwd'].encode()).decode() == 'space_sword'
+        token = migrated['passwords']['api_token']['encrypted_password']
+        assert fernet.decrypt(token.encode()).decode() == 'appa'
+
+    def test_config_only_validation_keeps_encrypted_keys(self, caplog):
+        from dbtk.database import _validate_connection_params
+
+        params = _validate_connection_params(
+            'psycopg2', config_only=True,
+            host='localhost', database='northpole', user='sokka',
+            encrypted_password='x', encrypted_private_key_file_pwd='y',
+        )
+
+        assert params['encrypted_password'] == 'x'
+        assert params['encrypted_private_key_file_pwd'] == 'y'
+        assert 'encrypted_private_key_file_pwd' not in caplog.text

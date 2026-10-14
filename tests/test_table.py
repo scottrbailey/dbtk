@@ -1417,3 +1417,21 @@ class TestAdvancedFeatures:
         assert row['nomad_id'] == 'ROHAN001'
         assert row['name'] == 'Rohan'
         assert row['airbending_level'] == 2
+
+
+class TestGetColumnDefinitionsQuoting:
+    """get_column_definitions() must quote the table name like the rest of Table's SQL."""
+
+    def test_table_name_needing_quotes(self, cursor):
+        """A table name with a space only works if the introspection query quotes it."""
+        cursor.execute('CREATE TABLE "Ba Sing Se" (name TEXT, ring INTEGER)')
+        table = Table('Ba Sing Se', columns={'name': {}, 'ring': {}}, cursor=cursor)
+
+        col_defs = table.get_column_definitions()
+
+        assert [c[0] for c in col_defs] == ['name', 'ring']
+
+    def test_plain_table_name_unchanged(self, cursor, airbender_table):
+        """Names that don't need quoting still introspect normally."""
+        col_defs = airbender_table.get_column_definitions()
+        assert 'nomad_id' in [c[0] for c in col_defs]
