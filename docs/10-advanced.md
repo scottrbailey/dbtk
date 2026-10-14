@@ -84,9 +84,9 @@ For detailed documentation on identity resolution, validation, and logging tools
 
 ## Expiring Old Files
 
-**The problem:** Interface jobs pull in files - Banner extracts, vendor drops, generated
-exports - that need to be cleared out (or moved to an archive) once they've aged past
-some retention window. Every integration ends up hand-rolling the same "glob a directory,
+**The problem:** Integration jobs accumulate files - inbound extracts, vendor drops,
+generated exports - that need to be cleared out (or moved to an archive) once they've aged
+past some retention window. Every job ends up hand-rolling the same "glob a directory,
 check mtimes, delete-or-move" loop.
 
 **The solution:** `dbtk.utils.expire_files()` handles the common pattern in one call. No

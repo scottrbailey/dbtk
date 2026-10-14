@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`dbtk.utils.expire_files(src_dir, days_old, pattern='*', archive_dir=None, dry_run=False)`**
   — general-purpose delete-or-archive-by-age utility for the "clear out files past a
-  retention window" pattern that interface jobs end up hand-rolling over and over.
+  retention window" pattern that integration jobs end up hand-rolling over and over.
   Without `archive_dir`, matching files older than `days_old` are deleted; with it,
   they're moved there instead (a name collision at the destination leaves the source
   file in place rather than overwriting). `dbtk.cleanup_old_logs()` is now a thin

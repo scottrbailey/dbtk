@@ -535,7 +535,7 @@ def expire_files(
     """
     Delete or archive files older than a given age.
 
-    Common interface pattern: inbound/processed files need to be cleared out
+    Common integration pattern: inbound/processed files need to be cleared out
     (or moved to an archive location) after they've aged past some retention
     window. Only regular files matching `pattern` are considered; matching
     subdirectories are left alone.
