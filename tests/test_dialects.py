@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dbtk.dialects import OracleDialect, PostgresDialect
+from dbtk.dialects import MySQLDialect, OracleDialect, PostgresDialect, SQLServerDialect
 
 
 def _mock_cursor() -> MagicMock:
@@ -66,3 +66,48 @@ class TestOracleTableMetadataNames:
         for p in params:
             assert p['table_name'] == table
             assert p['schema_name'] == schema
+
+
+class TestSQLServerTableMetadataNames:
+    """SQLServerDialect.table_metadata() table-name parsing."""
+
+    @pytest.mark.parametrize('name, schema, table', [
+        ('WaterTribe', None, 'WaterTribe'),
+        ('north.WaterTribe', 'north', 'WaterTribe'),
+        ('Agna_Qel_a.north.WaterTribe', 'north', 'WaterTribe'),
+    ])
+    def test_schema_and_table_extracted(self, name: str, schema: str, table: str) -> None:
+        """One-, two-, and three-part names bind the trailing schema/table parts, case preserved."""
+        cursor = _mock_cursor()
+        SQLServerDialect().table_metadata(cursor, name, add_comments=True)
+
+        params = _bind_params(cursor)
+        assert params == [(table, schema), (table, schema)]
+
+    def test_joins_are_schema_aware(self) -> None:
+        """Same-named tables in different schemas must not cross-match PKs or comments."""
+        cursor = _mock_cursor()
+        SQLServerDialect().table_metadata(cursor, 'north.WaterTribe', add_comments=False)
+
+        col_query = cursor.execute.call_args.args[0]
+        assert 'c.table_schema = pk.table_schema' in col_query
+        assert 'SCHEMA_NAME(t.schema_id) = c.table_schema' in col_query
+        assert 'c.table_schema = COALESCE(?, c.table_schema)' in col_query
+
+
+class TestMySQLTableMetadataNames:
+    """MySQLDialect.table_metadata() table-name parsing."""
+
+    @pytest.mark.parametrize('name, schema, table', [
+        ('air_temples', None, 'air_temples'),
+        ('nomads.air_temples', 'nomads', 'air_temples'),
+    ])
+    def test_schema_and_table_extracted(self, name: str, schema: str, table: str) -> None:
+        """A `db.table` name binds the database as the schema; unqualified falls back to DATABASE()."""
+        cursor = _mock_cursor()
+        MySQLDialect().table_metadata(cursor, name, add_comments=True)
+
+        params = _bind_params(cursor)
+        assert params == [(table, schema), (table, schema)]
+        for call in cursor.execute.call_args_list:
+            assert 'COALESCE(%s, DATABASE())' in call.args[0]

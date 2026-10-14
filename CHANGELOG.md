@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   take the last two parts as schema and table. The database part is not used for lookup;
   metadata comes from whichever database the connection is attached to.
 
+- **SQL Server and MySQL `table_metadata()` now understand dotted names** — previously
+  they passed the whole string (e.g. `dbo.users`) through as the table name and found no
+  columns. SQL Server takes the last two parts as schema and table, and its column query
+  now joins primary keys and `sys.tables` on schema as well as name, so same-named tables
+  in different schemas no longer cross-match. MySQL treats `db.table` as database and
+  table, falling back to `DATABASE()` when unqualified. Neither dialect folds case, so
+  names are matched as given.
+
 - **`Table.get_column_definitions()` now quotes the table name** with `quote_identifier()`,
   matching every other SQL statement `Table` generates. A name that needs quoting
   (spaces, mixed case) previously failed in the introspection query.

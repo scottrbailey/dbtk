@@ -32,14 +32,19 @@ class MySQLDialect(DatabaseDialect):
         ON DUPLICATE KEY UPDATE {update_clause}""")
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
+        # In MySQL a schema *is* a database, so `db.table` names the database to look in.
+        parts = table_name.split('.')
+        schema = parts[-2] if len(parts) >= 2 else None
+        table_name = parts[-1]
+
         table_comment = None
         if add_comments:
             cmt_query = '''
                 SELECT table_comment
                 FROM information_schema.tables
-                WHERE table_name = %s AND table_schema = DATABASE()
+                WHERE table_name = %s AND table_schema = COALESCE(%s, DATABASE())
             '''
-            cursor.execute(cmt_query, (table_name,))
+            cursor.execute(cmt_query, (table_name, schema))
             row = cursor.fetchone()
             if row and row[0]:
                 table_comment = row[0]
@@ -54,10 +59,10 @@ class MySQLDialect(DatabaseDialect):
                 COALESCE(c.column_comment, '') as comments
             FROM information_schema.columns c
             WHERE c.table_name = %s
-              AND c.table_schema = DATABASE()
+              AND c.table_schema = COALESCE(%s, DATABASE())
             ORDER BY c.ordinal_position
         '''
-        cursor.execute(col_query, (table_name,))
+        cursor.execute(col_query, (table_name, schema))
 
         columns = {}
         column_comments = {}
