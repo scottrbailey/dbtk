@@ -60,7 +60,7 @@ im = IdentityManager(
     source_key='student_id',
     target_key='erp_person_id',
     resolver=stmt,
-    alternate_keys=['banner_id'],   # Optional extra keys to track per entity
+    alternate_keys=['legacy_id'],   # Optional extra keys to track per entity
 )
 
 # Without a resolver — tracking/logging mode only
@@ -112,11 +112,11 @@ im = IdentityManager('crm_id', 'erp_id', resolver=stmt,
                      alternate_keys=['staging_id', 'legacy_id'])
 
 entity = im.resolve(row)
-# entity['banner_id'] is populated if the resolver returns it
+# entity['legacy_id'] is populated if the resolver returns it
 
 # Read or write any tracked key directly
-im.set_id(source_id, 'staging_id', 'B00123')
-banner = im.get_id(source_id, 'staging_id')
+im.set_id(source_id, 'staging_id', 'STG00123')
+staging_id = im.get_id(source_id, 'staging_id')
 ```
 
 ### add_error / add_message
@@ -195,7 +195,7 @@ with dbtk.connect('erp_db') as db:
     stmt = cursor.prepare_file('sql/resolve_student.sql')
 
     im = IdentityManager('student_id', 'erp_person_id', resolver=stmt,
-                         alternate_keys=['banner_id'])
+                         alternate_keys=['legacy_id'])
 
     student_table = dbtk.etl.Table('students', columns_config, cursor)
 

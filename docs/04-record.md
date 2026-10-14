@@ -388,9 +388,9 @@ mapping has to work against sources that may or may not carry a given column:
 # Works whether or not this particular extract includes the ssn column
 writers.to_csv(RecordShaper(cursor).exclude(['ssn'], strict=False), 'users.csv')
 
-# One mapping for extracts with or without the table-name prefix
-mapping = {'spriden_pidm': 'pidm', 'spriden_id': 'id'}
-writers.to_csv(RecordShaper(cursor).rename(mapping, strict=False), 'ids.csv')
+# Same mapping for the full extract and a trimmed-down one that lacks region_cd
+mapping = {'cust_no': 'customer_id', 'region_cd': 'region'}
+writers.to_csv(RecordShaper(cursor).rename(mapping, strict=False), 'customers.csv')
 ```
 
 Even with `strict=False`, a `select()` or `exclude()` that would leave zero columns raises

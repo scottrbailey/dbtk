@@ -103,7 +103,7 @@ class IdentityManager:
 
         stmt = cursor.prepare_file('sql/resolve_student.sql')
         im = IdentityManager('student_id', 'erp_person_id', resolver=stmt,
-                             alternate_keys=['banner_id'])
+                             alternate_keys=['legacy_id'])
 
         for row in reader:
             entity = im.resolve(row)
