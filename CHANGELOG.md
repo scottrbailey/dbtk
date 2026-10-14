@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`dbtk.utils.expire_files(src_dir, days_old, archive_dir=None, pattern='*', dry_run=False)`**
+  — general-purpose delete-or-archive-by-age utility for the "clear out files past a
+  retention window" pattern that interface jobs end up hand-rolling over and over.
+  Without `archive_dir`, matching files older than `days_old` are deleted; with it,
+  they're moved there instead (a name collision at the destination leaves the source
+  file in place rather than overwriting). `dbtk.cleanup_old_logs()` is now a thin
+  wrapper around this function.
+
+- **`setup_logging()` gained `format`, `timestamp_format`, and `filename_format`
+  keyword arguments** — previously these three `logging.*` config settings could only
+  be set in `dbtk.yml`, with no way to override them per-script like the other five
+  settings (`log_dir`, `level`, `split_errors`, `console`, plus the new `script_name`).
+
+### Changed
+
+- **`cleanup_old_logs()` no longer accepts a `retention_days` parameter.** Retention is
+  now config-only (`logging.retention_days` in `dbtk.yml`, default 30) — a per-script
+  override made it too easy for one job to quietly shorten everyone else's log
+  retention. `setup_logging()` never accepted `retention_days` and still doesn't.
+
+---
+
 ## [0.9.0] - 2026-10-13
 
 ### Added
