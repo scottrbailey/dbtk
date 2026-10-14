@@ -649,7 +649,7 @@ errors_logged()  # Returns error log path or None
 ```python
 from dbtk.utils import expire_files
 
-expire_files(src_dir, days_old, archive_dir=None, pattern='*', dry_run=False)
+expire_files(src_dir, days_old, pattern='*', archive_dir=None, dry_run=False)
 # archive_dir=None -> delete matching files older than days_old; given -> move them there instead
 ```
 Details: [Expiring Old Files](10-advanced.md#expiring-old-files).
