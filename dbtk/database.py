@@ -333,8 +333,10 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
 
     # Initialize with config-only parameters if needed
     validated_params = {}
-    if config_only and 'encrypted_password' in params:
-        validated_params['encrypted_password'] = params['encrypted_password']
+    if config_only:
+        for key in params:
+            if key.startswith('encrypted_'):
+                validated_params[key] = params[key]
 
     # get default port if not specified
     if 'port' not in params:
@@ -369,7 +371,7 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     all_valid_params.update(driver_info.get('optional_params', set()))
 
     for key, value in params.items():
-        if key in all_valid_params or (config_only and key == 'encrypted_password'):
+        if key in all_valid_params or (config_only and key.startswith('encrypted_')):
             validated_params[key] = value
         else:
             logger.warning(f"Unknown parameter '{key}' for driver '{driver_name}' — ignoring")

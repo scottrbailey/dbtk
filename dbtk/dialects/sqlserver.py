@@ -48,6 +48,10 @@ class SQLServerDialect(DatabaseDialect):
     # ------------------------------------------------------------------
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
+        parts = table_name.split('.')
+        schema = parts[-2] if len(parts) >= 2 else None
+        table_name = parts[-1]
+
         table_comment = None
         if add_comments:
             cmt_query = '''
@@ -58,8 +62,9 @@ class SQLServerDialect(DatabaseDialect):
                     AND ep.minor_id = 0
                     AND ep.name = 'MS_Description'
                 WHERE t.name = ?
+                  AND SCHEMA_NAME(t.schema_id) = COALESCE(?, SCHEMA_NAME(t.schema_id))
             '''
-            cursor.execute(cmt_query, (table_name,))
+            cursor.execute(cmt_query, (table_name, schema))
             row = cursor.fetchone()
             if row and row[0]:
                 table_comment = row[0]
@@ -74,22 +79,28 @@ class SQLServerDialect(DatabaseDialect):
                 COALESCE(ep.value, '') as comments
             FROM information_schema.columns c
             LEFT JOIN (
-                SELECT kcu.column_name, kcu.table_name
+                SELECT kcu.column_name, kcu.table_name, kcu.table_schema
                 FROM information_schema.table_constraints tc
                 JOIN information_schema.key_column_usage kcu
                     ON tc.constraint_name = kcu.constraint_name
+                    AND tc.constraint_schema = kcu.constraint_schema
                 WHERE tc.constraint_type = 'PRIMARY KEY'
-            ) pk ON c.column_name = pk.column_name AND c.table_name = pk.table_name
-            LEFT JOIN sys.tables t ON t.name = c.table_name
+            ) pk ON c.column_name = pk.column_name
+                AND c.table_name = pk.table_name
+                AND c.table_schema = pk.table_schema
+            LEFT JOIN sys.tables t
+                ON t.name = c.table_name
+                AND SCHEMA_NAME(t.schema_id) = c.table_schema
             LEFT JOIN sys.columns sc ON sc.object_id = t.object_id AND sc.name = c.column_name
             LEFT JOIN sys.extended_properties ep
                 ON ep.major_id = t.object_id
                 AND ep.minor_id = sc.column_id
                 AND ep.name = 'MS_Description'
             WHERE c.table_name = ?
+              AND c.table_schema = COALESCE(?, c.table_schema)
             ORDER BY c.ordinal_position
         '''
-        cursor.execute(col_query, (table_name,))
+        cursor.execute(col_query, (table_name, schema))
 
         columns = {}
         column_comments = {}

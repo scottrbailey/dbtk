@@ -115,10 +115,6 @@ Writers
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: dbtk.writers.utils
-   :members: select_columns, exclude_columns, rename_columns
-   :show-inheritance:
-
 .. automodule:: dbtk.writers.csv
    :members:
    :undoc-members:

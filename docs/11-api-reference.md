@@ -346,7 +346,7 @@ Located in `dbtk.writers`. Full guide: [Data Writers](06-writers.md). All writer
 
 ### Common Parameters
 
-File-based writers share `data=None`, `file=None`, `columns=None`, `encoding='utf-8'`; `CSVWriter`/`ExcelWriter` add `headers=None`, `write_headers=True`; most add `compression='infer'`.
+File-based writers share `data=None`, `file=None`, `encoding='utf-8'`; `CSVWriter`/`ExcelWriter` add `headers=None`, `write_headers=True`; most add `compression='infer'`.
 See [Common Writer Parameters](06-writers.md#common-writer-parameters) for the full breakdown.
 
 ### Writer Functions
@@ -371,21 +371,26 @@ to_edi(data, columns, file=None, encoding='utf-8', truncate_overflow=False)
 ```
 Details: [Fixed-Width Files](06-writers.md#fixed-width-files-with-fixedwidthwriter), [EDI](06-writers.md#edi-electronic-data-interchange-fixed-width-with-ediwriter)
 
-### select_columns / exclude_columns / rename_columns
+### RecordShaper
 
 ```python
-select_columns(rows, col_names)     # allow-list (list), also sets output order
-exclude_columns(rows, col_names)    # block-list (list/tuple/set), source order preserved
-rename_columns(rows, mapping)       # dict source->new name; unlisted columns pass through unchanged
+from dbtk.record import RecordShaper
+
+RecordShaper(rows)                                  # wrap a cursor/reader/iterable of Record, dict, or namedtuple
+RecordShaper.from_tuples(rows, columns)             # name positional rows; a falsy entry drops that position
+    .select(col_names, strict=True)                 # allow-list (list), also sets output order
+    .exclude(col_names, strict=True)                # block-list (list/tuple/set), source order preserved
+    .rename(mapping, strict=True)                   # dict source->new name; unlisted columns pass through unchanged
+    .columns                                        # column names as of this step
 ```
-Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
+Lazily reshape a row stream before it reaches a writer. Each call returns a new `RecordShaper`, so steps chain (`RecordShaper(cursor).exclude([...]).rename({...})`). Column names are validated eagerly against the schema at that point in the chain; `strict=False` skips names that aren't present instead of raising `ValueError`. Single-pass: iterating any step consumes the whole chain, and iterating another step afterward raises `RuntimeError`. Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
 
 ### XMLStreamer
 
 For large XML exports — writes incrementally, constant memory:
 
 ```python
-XMLStreamer(data=None, file=None, columns=None, encoding='utf-8', root_element='data', record_element='record')
+XMLStreamer(data=None, file=None, encoding='utf-8', root_element='data', record_element='record')
 # write_batch(records), close()
 ```
 Details: [Streaming XML with XMLStreamer](06-writers.md#streaming-xml-with-xmlstreamer).

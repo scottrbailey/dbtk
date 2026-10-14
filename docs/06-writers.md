@@ -68,10 +68,15 @@ Every file-based writer (`CSVWriter`, `JSONWriter`, `NDJSONWriter`, `XMLWriter`,
 
 | Parameter       | Default    | Description                                                                 |
 |-----------------|------------|-------------------------------------------------------------------------------|
-| `data`          | `None`     | Cursor, or iterable of Records/dicts/namedtuples/lists. `None` for streaming-only (`write_batch()`) |
+| `data`          | `None`     | Cursor, or iterable of Records/dicts/namedtuples. `None` for streaming-only (`write_batch()`) |
 | `file`          | `None`     | Output path or open file handle. `None` writes to stdout (20-row preview)     |
-| `columns`       | `None`     | Column names, only needed for list-of-lists data with no header of its own    |
 | `encoding`      | `'utf-8'`  | Output encoding for text formats                                              |
+
+Plain lists/tuples carry no column names. Name them first with
+[`RecordShaper.from_tuples()`](04-record.md#from_tuples--attach-column-names-to-positional-data);
+writers raise `TypeError` for unnamed positional rows wherever they'd need to display column names.
+(`FixedWidthWriter` and `EDIWriter` take their own `columns=` layout of `FixedColumn` specs. That's a
+different thing, covered below.)
 
 A second tier of parameters is common to the writers that produce a header row — `CSVWriter` and `ExcelWriter`:
 
@@ -186,9 +191,9 @@ with ExcelWriter(file='combined.xlsx') as writer:
 ## Reshaping the Row Stream
 
 Need to drop columns, keep only some, reorder them, or rename headers before writing? Don't
-materialize the whole result set to do it — DBTK provides small generator functions
-(`select_columns`, `exclude_columns`, `rename_columns`, `tuples_to_records`) that reshape a row
-stream one record at a time, so any writer below can consume the result directly. See
+materialize the whole result set to do it — `dbtk.record.RecordShaper` reshapes a row stream
+one record at a time (`select()`, `exclude()`, `rename()`, and `from_tuples()` for positional
+data), so any writer below can consume the result directly. See
 [Working with Streaming Records](04-record.md#working-with-streaming-records) in the Record
 documentation for the full rundown.
 
@@ -316,7 +321,7 @@ count = writers.cursor_to_cursor(source_cursor, target_cursor, 'intel_archive')
 print(f"Transferred {count} strategic records")
 ```
 
-The INSERT statement's column list is built from the source data's columns — use [`select_columns()` or `exclude_columns()`](04-record.md#working-with-streaming-records) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
+The INSERT statement's column list is built from the source data's columns — use [`RecordShaper.select()` or `.exclude()`](04-record.md#working-with-streaming-records) first if the source has columns the target table doesn't (or shouldn't) have. `batch_size` controls rows per `executemany()`; `commit_frequency` controls how often the target connection commits.
 
 ---
 

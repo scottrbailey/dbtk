@@ -48,12 +48,9 @@ class OracleDialect(DatabaseDialect):
     # ------------------------------------------------------------------
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
-        table_name = table_name.upper()
-        tab_info = table_name.split('.')
-        schema_name = None
-        if len(tab_info) == 2:
-            schema_name = tab_info[0]
-            table_name = tab_info[1]
+        parts = table_name.upper().split('.')
+        schema_name = parts[-2] if len(parts) >= 2 else None
+        table_name = parts[-1]
 
         table_comment = None
         if add_comments:
