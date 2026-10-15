@@ -340,7 +340,8 @@ writers.to_csv(RecordShaper(cursor).exclude(['ssn', 'password_hash']), 'users.cs
 ```
 
 `col_names` is a block-list — a list, tuple, or set all work, since order never matters for
-exclusion. Everything else passes through in its original order.
+exclusion. Everything else passes through in its original order. An empty list is a no-op,
+so a drop-list built in code doesn't need special handling when it comes out empty.
 
 ### rename() — relabel some columns, leave the rest alone
 
@@ -351,7 +352,51 @@ writers.to_csv(RecordShaper(cursor).rename({'signup_date': 'Joined On'}), 'custo
 `mapping` is a dict of source name -> new name. Only the columns you list are relabeled;
 everything else keeps its original name and position — this is a pure rename, not a select.
 A falsy value (`''` or `None`) is a no-op for that column, so you can build the mapping
-programmatically without filtering out unchanged entries.
+programmatically without filtering out unchanged entries. An empty dict is a no-op too.
+
+`mapping` can also be a function. It's called once for each column with the column's
+current name and returns the new name, or something falsy to leave the name alone. That's
+the natural fit for pattern-based renames, such as stripping a prefix regardless of its case:
+
+```python
+shaped = RecordShaper(reader).rename(
+    lambda c: c[4:].lower() if c.lower().startswith('src_') else None
+)
+```
+
+The function runs when `rename()` is called, not once per row, so mistakes surface
+immediately. If it raises, you get a `ValueError` naming the column it failed on, with the
+original exception chained. If it returns anything other than a string or a falsy value,
+you get a `TypeError`. `strict` doesn't apply to the function form, since there are no
+names to look up.
+
+`rename()` never silently overwrites a column. If two columns would end up with the same
+name, whether from a dict or a function, it raises `ValueError` listing the columns that
+collide. Swapping two names (`{'a': 'b', 'b': 'a'}`) is fine, since each name still ends up
+on exactly one column.
+
+### Original or normalized names
+
+Records keep two names for each column: the original, exactly as the database or file
+header spelled it, and a normalized form (lowercased, with spaces and punctuation turned
+into underscores) for attribute access; see [Normalized Field Names](#normalized-field-names)
+above. When the rows are Records — cursor results, file readers, `from_tuples()` output, or any earlier
+`RecordShaper` step — `select()`, `exclude()`, and dict keys passed to `rename()` accept
+either name, just as `record['...']` does:
+
+```python
+# Source header: ssn, Start Year, AMT_Total
+shaped = RecordShaper(reader).select(['ssn', 'start_year', 'amt_total'])
+shaped.columns   # ['ssn', 'Start Year', 'AMT_Total']
+```
+
+The output always keeps the original column names; only `rename()` changes a name. If a name
+matches one column's original name and another column's normalized name, the original-name
+match wins. Naming the same column twice, for example once by each spelling, raises
+`ValueError` rather than producing a duplicate column.
+
+Plain dicts and namedtuples have no normalized names, so for those sources only their own
+keys or field names match.
 
 ### Chaining
 
@@ -421,11 +466,45 @@ This is also how to hand positional data to a writer at all. Writers no longer a
 `columns=` parameter, and positional rows with no names raise `TypeError` wherever the writer
 would need to display column names.
 
+### Stepping through rows
+
+A `RecordShaper` is an iterator, like DBTK's readers and cursors, so you can pull rows one at
+a time while testing a pipeline, without materializing the stream:
+
+```python
+shaped = RecordShaper(reader).rename(lambda c: c[4:] if c.lower().startswith('src_') else None)
+next(shaped)            # first row
+next(shaped)            # second row
+for row in shaped:      # picks up at the third row
+    ...
+```
+
+`itertools.islice(shaped, 5)` grabs the next five. Once a `RecordShaper` is exhausted it
+yields nothing more, the same as a reader.
+
+### Keep the result of each call
+
+`select()`, `exclude()`, and `rename()` return a *new* `RecordShaper`; the one you called them
+on is retired. Iterating a retired step raises `RuntimeError`, which catches the easy mistake
+of calling a method without keeping its result:
+
+```python
+records = RecordShaper(reader)
+records.rename(col_map)              # result discarded
+writers.to_csv(records, 'out.csv')   # RuntimeError: rename() was chained from this RecordShaper...
+
+records = records.rename(col_map)    # keep it
+writers.to_csv(records, 'out.csv')   # works
+```
+
+`.columns` still works on a retired step. Chain every step before you start reading; calling
+`select()`, `exclude()`, or `rename()` once rows have been read raises `RuntimeError` too.
+
 ### One pass only
 
-A `RecordShaper` wraps a stream, and a stream can only be read once. Iterating any step in a
-chain marks the whole chain as consumed. Iterating a second step afterward raises
-`RuntimeError` rather than quietly returning nothing:
+A `RecordShaper` wraps a stream, and a stream can only be read once. Once one step in a chain
+starts reading, iterating or calling `next()` on any other step raises `RuntimeError` rather
+than quietly returning partial results:
 
 ```python
 base = RecordShaper(cursor)

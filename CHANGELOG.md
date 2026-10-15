@@ -32,6 +32,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `encrypt_config_file()` still only encrypts `password`; other values must be encrypted
   with `encrypt_password()` and added to the config by hand.
 
+### Changed
+
+- **`RecordShaper` matches original or normalized column names for Record rows** —
+  `select()`, `exclude()`, and `rename()` dict keys now accept either form, the same way
+  `record['...']` does. Previously only original names matched, so a column named
+  `perdtot_EMPR_AMT` couldn't be selected or renamed as `perdtot_empr_amt`. An exact
+  original-name match wins over a normalized one, and output columns keep their original
+  names. Plain dict and namedtuple sources still match exact keys only.
+
+- **`RecordShaper.rename()` accepts a function** — `rename(fn)` calls `fn` once per column
+  with its current name and uses the returned name, or keeps the name if the result is
+  falsy. The function runs when `rename()` is called, not per row. An exception from it is
+  re-raised as `ValueError` naming the column, and a non-string, truthy return value raises
+  `TypeError`.
+
+- **`RecordShaper` is now an iterator** — `next(shaper)` returns one row at a time, and a
+  `for` loop continues where `next()` left off, matching readers and cursors. An exhausted
+  `RecordShaper` now yields nothing on a second pass instead of raising. Other steps in the
+  same chain still raise `RuntimeError` once one step has started reading.
+
+- **`RecordShaper` retires a step once a method is chained from it** — iterating a step
+  that `select()`/`exclude()`/`rename()` was called on raises `RuntimeError` naming the
+  method, so `shaper.rename(...)` without keeping the result fails loudly instead of
+  silently writing un-renamed data. Calling those methods after reading has started also
+  raises. `.columns` still works on a retired step.
+
+- **`RecordShaper.rename({})` and `exclude([])` are now no-ops** instead of raising
+  `ValueError`, so mappings and drop-lists built in code don't need an emptiness check.
+  `select([])` still raises.
+
+- **`RecordShaper` raises instead of silently de-duplicating column names** — a `rename()`
+  that would give two columns the same name, a `select()` that names the same column twice,
+  or a `rename()` mapping with two keys for the same column now raises `ValueError`.
+  Previously the output Record class renamed the duplicate to `name_2` and logged a warning.
+
 ### Fixed
 
 - **Three-part table names (`db.schema.table`)** — `PostgresDialect` and `OracleDialect`

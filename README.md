@@ -34,7 +34,7 @@ systems. A slow job needs scheduling, monitoring, failure recovery, a maintenanc
 When something breaks, you're debugging someone else's abstraction layer.
 
 The alternative — SQLAlchemy + pandas + custom batch loops — means writing the same
-boilerplate across every interface, slowly accreting defensive code for every edge case.
+boilerplate across every integration, slowly accreting defensive code for every edge case.
 And when you finally write the database load, you're still doing row-at-a-time inserts
 through an ORM that knows nothing about COPY or bcp.
 
