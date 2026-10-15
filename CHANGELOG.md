@@ -34,12 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`RecordShaper` matches original or normalized column names for Record rows** —
-  `select()`, `exclude()`, and `rename()` dict keys now accept either form, the same way
+- **`RecordShaper` always emits Records** — dict and namedtuple rows are converted to
+  Records as they're read, so a bare `RecordShaper`, a no-op step, and a step that changes
+  something all yield the same type. Record rows pass through untouched. Plain tuples now
+  raise `TypeError` (pointing at `from_tuples()`) as soon as iteration starts, even with no
+  method called.
+
+- **`RecordShaper` matches original or normalized column names** — `select()`,
+  `exclude()`, and `rename()` dict keys now accept either form, the same way
   `record['...']` does. Previously only original names matched, so a column named
-  `perdtot_EMPR_AMT` couldn't be selected or renamed as `perdtot_empr_amt`. An exact
-  original-name match wins over a normalized one, and output columns keep their original
-  names. Plain dict and namedtuple sources still match exact keys only.
+  `Start Year` couldn't be selected as `start_year`. An exact original-name match wins over
+  a normalized one, and output columns keep their original names.
 
 - **`RecordShaper.rename()` accepts a function** — `rename(fn)` calls `fn` once per column
   with its current name and uses the returned name, or keeps the name if the result is

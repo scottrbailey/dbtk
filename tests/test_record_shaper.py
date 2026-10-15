@@ -65,6 +65,11 @@ def sample_lists():
     ]
 
 
+def as_dicts(rows):
+    """Records -> plain dicts, for comparing output against dict fixtures."""
+    return [r.to_dict() for r in rows]
+
+
 class CountingIterator:
     """Wraps an iterator and counts how many times __next__ was called."""
     def __init__(self, source):
@@ -85,9 +90,24 @@ class CountingIterator:
 
 class TestPassthrough:
 
-    def test_no_op_yields_original_rows_unchanged(self, sample_dicts):
+    def test_no_op_yields_records_with_same_content(self, sample_dicts):
         out = list(RecordShaper(sample_dicts))
-        assert out == sample_dicts
+        assert all(isinstance(r, Record) for r in out)
+        assert as_dicts(out) == sample_dicts
+
+    def test_record_sources_pass_through_unchanged(self, sample_records):
+        out = list(RecordShaper(sample_records))
+        assert all(a is b for a, b in zip(out, sample_records))
+
+    def test_namedtuple_sources_become_records(self, sample_namedtuples):
+        out = list(RecordShaper(sample_namedtuples))
+        assert all(isinstance(r, Record) for r in out)
+        assert out[0].keys() == ['id', 'name', 'email']
+        assert out[0].name == 'Aang'
+
+    def test_plain_tuples_raise_even_without_a_method(self, sample_lists):
+        with pytest.raises(TypeError, match='from_tuples'):
+            list(RecordShaper(sample_lists))
 
     def test_construction_does_not_touch_source(self, sample_dicts):
         counter = CountingIterator(sample_dicts)
@@ -266,20 +286,20 @@ class TestChainedValidation:
 
 @pytest.fixture
 def mixed_case_records():
-    cls = make_record_class('ssn', 'perdtot_year', 'perdtot_EMPR_AMT')
+    cls = make_record_class('ssn', 'src_year', 'src_TOTAL_AMT')
     return [cls('111', 2025, 10.5), cls('222', 2026, 20.0)]
 
 
 class TestNormalizedNames:
 
     def test_select_by_normalized_name_returns_original_name(self, mixed_case_records):
-        out = list(RecordShaper(mixed_case_records).select(['perdtot_empr_amt', 'ssn']))
-        assert out[0].keys() == ['perdtot_EMPR_AMT', 'ssn']
-        assert out[0]['perdtot_EMPR_AMT'] == 10.5
+        out = list(RecordShaper(mixed_case_records).select(['src_total_amt', 'ssn']))
+        assert out[0].keys() == ['src_TOTAL_AMT', 'ssn']
+        assert out[0]['src_TOTAL_AMT'] == 10.5
 
     def test_select_same_column_by_both_names_raises(self, mixed_case_records):
         with pytest.raises(ValueError, match='more than once'):
-            RecordShaper(mixed_case_records).select(['perdtot_EMPR_AMT', 'perdtot_empr_amt'])
+            RecordShaper(mixed_case_records).select(['src_TOTAL_AMT', 'src_total_amt'])
 
     def test_original_name_wins_over_normalized(self):
         # 'Start Year' normalizes to 'start_year', which collides with the second
@@ -291,25 +311,25 @@ class TestNormalizedNames:
         assert out[0]['start_year'] == 'from start_year'
 
     def test_exclude_by_normalized_name(self, mixed_case_records):
-        out = list(RecordShaper(mixed_case_records).exclude(['perdtot_empr_amt']))
-        assert out[0].keys() == ['ssn', 'perdtot_year']
+        out = list(RecordShaper(mixed_case_records).exclude(['src_total_amt']))
+        assert out[0].keys() == ['ssn', 'src_year']
 
     def test_rename_by_normalized_key(self, mixed_case_records):
-        col_map = {'perdtot_year': 'year', 'perdtot_empr_amt': 'empr_amt'}
+        col_map = {'src_year': 'year', 'src_total_amt': 'total_amt'}
         out = list(RecordShaper(mixed_case_records).rename(col_map))
-        assert out[0].keys() == ['ssn', 'year', 'empr_amt']
-        assert out[1]['empr_amt'] == 20.0
+        assert out[0].keys() == ['ssn', 'year', 'total_amt']
+        assert out[1]['total_amt'] == 20.0
 
     def test_rename_same_column_by_both_names_raises(self, mixed_case_records):
         with pytest.raises(ValueError, match='more than once'):
             RecordShaper(mixed_case_records).rename(
-                {'perdtot_EMPR_AMT': 'a', 'perdtot_empr_amt': 'b'})
+                {'src_TOTAL_AMT': 'a', 'src_total_amt': 'b'})
 
     def test_normalized_names_work_after_a_chained_step(self, mixed_case_records):
         out = list(RecordShaper(mixed_case_records)
                    .exclude(['ssn'])
-                   .select(['perdtot_empr_amt']))
-        assert out[0].keys() == ['perdtot_EMPR_AMT']
+                   .select(['src_total_amt']))
+        assert out[0].keys() == ['src_TOTAL_AMT']
 
     def test_from_tuples_repeated_name_selects_the_right_column(self):
         # set_fields() renames the second 'id' to 'id_2'; selecting it must read position 2
@@ -322,10 +342,17 @@ class TestNormalizedNames:
         out = list(RecordShaper.from_tuples([(1, 'x')], ['Row ID', 'Label']).select(['row_id']))
         assert out[0].keys() == ['Row ID']
 
-    def test_dict_sources_match_exact_keys_only(self):
-        rows = [{'perdtot_EMPR_AMT': 1}]
-        with pytest.raises(ValueError, match='not found'):
-            RecordShaper(rows).select(['perdtot_empr_amt'])
+    def test_dict_sources_also_match_normalized_names(self):
+        rows = [{'src_TOTAL_AMT': 1}]
+        out = list(RecordShaper(rows).select(['src_total_amt']))
+        assert out[0].keys() == ['src_TOTAL_AMT']
+        assert out[0]['src_TOTAL_AMT'] == 1
+
+    def test_noop_rename_on_dicts_yields_records(self):
+        # Output type must not depend on whether the rename changed anything
+        rows = [{'a': 1}]
+        assert isinstance(next(RecordShaper(rows).rename(lambda c: None)), Record)
+        assert isinstance(next(RecordShaper(rows).exclude([])), Record)
 
 
 # ---------------------------------------------------------------------------
@@ -336,9 +363,9 @@ class TestRenameFunction:
 
     def test_strip_prefix_any_case(self, mixed_case_records):
         out = list(RecordShaper(mixed_case_records).rename(
-            lambda c: c[8:].lower() if c.lower().startswith('perdtot_') else None))
-        assert out[0].keys() == ['ssn', 'year', 'empr_amt']
-        assert [r['empr_amt'] for r in out] == [10.5, 20.0]
+            lambda c: c[4:].lower() if c.lower().startswith('src_') else None))
+        assert out[0].keys() == ['ssn', 'year', 'total_amt']
+        assert [r['total_amt'] for r in out] == [10.5, 20.0]
 
     def test_function_called_once_per_column_at_rename_time(self, mixed_case_records):
         calls = []
@@ -348,7 +375,7 @@ class TestRenameFunction:
             return col.upper()
 
         shaper = RecordShaper(mixed_case_records).rename(fn)
-        assert calls == ['ssn', 'perdtot_year', 'perdtot_EMPR_AMT']
+        assert calls == ['ssn', 'src_year', 'src_TOTAL_AMT']
         list(shaper)
         assert len(calls) == 3  # not called again per row
 
@@ -394,10 +421,10 @@ class TestRenameCollisions:
             RecordShaper(sample_records).rename({'name': 'email'})
 
     def test_function_rename_collision_raises(self):
-        cls = make_record_class('year', 'perdtot_year')
+        cls = make_record_class('year', 'src_year')
         rows = [cls(1, 2)]
-        with pytest.raises(ValueError, match=r"\['year', 'perdtot_year'\] -> 'year'"):
-            RecordShaper(rows).rename(lambda c: c.replace('perdtot_', ''))
+        with pytest.raises(ValueError, match=r"\['year', 'src_year'\] -> 'year'"):
+            RecordShaper(rows).rename(lambda c: c.replace('src_', ''))
 
     def test_swapping_two_names_is_allowed(self, sample_records):
         out = list(RecordShaper(sample_records).rename({'name': 'email', 'email': 'name'}))
@@ -415,7 +442,7 @@ class TestNoOpStages:
     def test_noop_stage_shares_single_pass_state(self, sample_dicts):
         base = RecordShaper(iter(sample_dicts))
         noop = base.rename({})
-        assert list(noop) == sample_dicts
+        assert as_dicts(noop) == sample_dicts
         with pytest.raises(RuntimeError):
             list(base)
 
@@ -491,7 +518,7 @@ class TestSinglePass:
 
         list(a)
         # b is a completely separate lineage - must be unaffected
-        assert list(b) == sample_dicts
+        assert as_dicts(b) == sample_dicts
 
 
 class TestIterator:
@@ -503,7 +530,7 @@ class TestIterator:
 
     def test_next_on_unchained_root(self, sample_dicts):
         shaper = RecordShaper(sample_dicts)
-        assert next(shaper) == sample_dicts[0]
+        assert next(shaper).to_dict() == sample_dicts[0]
 
     def test_next_then_loop_continues(self, sample_records):
         shaper = RecordShaper(sample_records).rename({'name': 'Name'})
@@ -522,7 +549,7 @@ class TestIterator:
         shaper = RecordShaper(iter(sample_dicts))
         first = next(shaper)
         assert shaper.columns == ['id', 'name', 'email']
-        assert [first] + list(shaper) == sample_dicts
+        assert as_dicts([first] + list(shaper)) == sample_dicts
 
     def test_loop_on_unresolved_root_then_columns(self, sample_dicts):
         shaper = RecordShaper(iter(sample_dicts))
@@ -530,7 +557,7 @@ class TestIterator:
         for row in shaper:
             out.append(row)
             _ = shaper.columns
-        assert out == sample_dicts
+        assert as_dicts(out) == sample_dicts
 
     def test_resolved_stage_hands_loops_the_raw_generator(self, sample_records):
         shaper = RecordShaper(sample_records).select(['id'])

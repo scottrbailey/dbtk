@@ -322,7 +322,9 @@ from dbtk.record import RecordShaper
 
 Wrap any stream of self-describing rows — a cursor, a reader, or an iterable of `Record`,
 dict, or namedtuple rows — and chain the steps you need. Every step is lazy: nothing is read
-from the source until a writer (or your own loop) iterates the result.
+from the source until a writer (or your own loop) iterates the result. A `RecordShaper`
+always emits Records: Record rows pass through as-is, and dict or namedtuple rows are
+converted as they're read.
 
 ### select() — keep some columns, in a given order
 
@@ -380,9 +382,9 @@ on exactly one column.
 Records keep two names for each column: the original, exactly as the database or file
 header spelled it, and a normalized form (lowercased, with spaces and punctuation turned
 into underscores) for attribute access; see [Normalized Field Names](#normalized-field-names)
-above. When the rows are Records — cursor results, file readers, `from_tuples()` output, or any earlier
-`RecordShaper` step — `select()`, `exclude()`, and dict keys passed to `rename()` accept
-either name, just as `record['...']` does:
+above. Because a `RecordShaper` works with Records throughout, `select()`, `exclude()`, and
+dict keys passed to `rename()` accept either name, just as `record['...']` does — whether the
+source rows were Records, dicts, or namedtuples:
 
 ```python
 # Source header: ssn, Start Year, AMT_Total
@@ -394,9 +396,6 @@ The output always keeps the original column names; only `rename()` changes a nam
 matches one column's original name and another column's normalized name, the original-name
 match wins. Naming the same column twice, for example once by each spelling, raises
 `ValueError` rather than producing a duplicate column.
-
-Plain dicts and namedtuples have no normalized names, so for those sources only their own
-keys or field names match.
 
 ### Chaining
 
