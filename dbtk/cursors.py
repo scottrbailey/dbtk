@@ -322,6 +322,7 @@ class Cursor:
         Example
         -------
         ::
+
             from dbtk.utils import ParamStyle, process_sql_parameters
 
             # query with :named or %(pyformat)s parameters
