@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `encrypt_config_file()` still only encrypts `password`; other values must be encrypted
   with `encrypt_password()` and added to the config by hand.
 
+### Changed
+
+- **`RecordShaper` matches original or normalized column names for Record rows** —
+  `select()`, `exclude()`, and `rename()` dict keys now accept either form, the same way
+  `record['...']` does. Previously only original names matched, so a column named
+  `perdtot_EMPR_AMT` couldn't be selected or renamed as `perdtot_empr_amt`. An exact
+  original-name match wins over a normalized one, and output columns keep their original
+  names. Plain dict and namedtuple sources still match exact keys only.
+
+- **`RecordShaper.rename()` accepts a function** — `rename(fn)` calls `fn` once per column
+  with its current name and uses the returned name, or keeps the name if the result is
+  falsy. The function runs when `rename()` is called, not per row. An exception from it is
+  re-raised as `ValueError` naming the column, and a non-string, truthy return value raises
+  `TypeError`.
+
+- **`RecordShaper.rename({})` and `exclude([])` are now no-ops** instead of raising
+  `ValueError`, so mappings and drop-lists built in code don't need an emptiness check.
+  `select([])` still raises.
+
+- **`RecordShaper` raises instead of silently de-duplicating column names** — a `rename()`
+  that would give two columns the same name, a `select()` that names the same column twice,
+  or a `rename()` mapping with two keys for the same column now raises `ValueError`.
+  Previously the output Record class renamed the duplicate to `name_2` and logged a warning.
+
 ### Fixed
 
 - **Three-part table names (`db.schema.table`)** — `PostgresDialect` and `OracleDialect`

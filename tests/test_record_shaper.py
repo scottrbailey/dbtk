@@ -176,9 +176,9 @@ class TestExclude:
         out = list(RecordShaper(sample_records).exclude({'name'}))
         assert out[0].keys() == ['id', 'email']
 
-    def test_empty_col_names_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            RecordShaper(sample_records).exclude([])
+    def test_empty_col_names_is_noop(self, sample_records):
+        out = list(RecordShaper(sample_records).exclude([]))
+        assert [r.keys() for r in out] == [['id', 'name', 'email']] * 3
 
     def test_strict_raises_on_unknown_column(self, sample_records):
         with pytest.raises(ValueError):
@@ -208,9 +208,9 @@ class TestRename:
         out = list(RecordShaper(sample_records).rename({'name': '', 'id': None, 'email': 'Email'}))
         assert out[0].keys() == ['id', 'name', 'Email']
 
-    def test_empty_mapping_raises(self, sample_records):
-        with pytest.raises(ValueError):
-            RecordShaper(sample_records).rename({})
+    def test_empty_mapping_is_noop(self, sample_records):
+        out = list(RecordShaper(sample_records).rename({}))
+        assert out == sample_records
 
     def test_strict_raises_on_unknown_source_column(self, sample_records):
         with pytest.raises(ValueError):
@@ -243,7 +243,12 @@ class TestChainedValidation:
 
     def test_select_after_rename_rejects_old_name(self, sample_records):
         with pytest.raises(ValueError):
-            RecordShaper(sample_records).rename({'name': 'Name'}).select(['name'])
+            RecordShaper(sample_records).rename({'name': 'full_name'}).select(['name'])
+
+    def test_select_after_rename_matches_new_names_normalized_form(self, sample_records):
+        # 'Name' normalizes to 'name', so the renamed column is still reachable that way
+        out = list(RecordShaper(sample_records).rename({'name': 'Name'}).select(['name']))
+        assert out[0].keys() == ['Name']
 
     def test_exclude_then_rename_then_select(self, sample_records):
         out = list(
@@ -253,6 +258,159 @@ class TestChainedValidation:
             .select(['Name'])
         )
         assert [r['Name'] for r in out] == ['Aang', 'Katara', 'Sokka']
+
+
+# ---------------------------------------------------------------------------
+# Original vs normalized names (Record sources)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mixed_case_records():
+    cls = make_record_class('ssn', 'perdtot_year', 'perdtot_EMPR_AMT')
+    return [cls('111', 2025, 10.5), cls('222', 2026, 20.0)]
+
+
+class TestNormalizedNames:
+
+    def test_select_by_normalized_name_returns_original_name(self, mixed_case_records):
+        out = list(RecordShaper(mixed_case_records).select(['perdtot_empr_amt', 'ssn']))
+        assert out[0].keys() == ['perdtot_EMPR_AMT', 'ssn']
+        assert out[0]['perdtot_EMPR_AMT'] == 10.5
+
+    def test_select_same_column_by_both_names_raises(self, mixed_case_records):
+        with pytest.raises(ValueError, match='more than once'):
+            RecordShaper(mixed_case_records).select(['perdtot_EMPR_AMT', 'perdtot_empr_amt'])
+
+    def test_original_name_wins_over_normalized(self):
+        # 'Start Year' normalizes to 'start_year', which collides with the second
+        # column's original name - so that one gets normalized to 'start_year_2'.
+        cls = make_record_class('Start Year', 'start_year')
+        rows = [cls('from Start Year', 'from start_year')]
+        out = list(RecordShaper(rows).select(['start_year']))
+        assert out[0].keys() == ['start_year']
+        assert out[0]['start_year'] == 'from start_year'
+
+    def test_exclude_by_normalized_name(self, mixed_case_records):
+        out = list(RecordShaper(mixed_case_records).exclude(['perdtot_empr_amt']))
+        assert out[0].keys() == ['ssn', 'perdtot_year']
+
+    def test_rename_by_normalized_key(self, mixed_case_records):
+        col_map = {'perdtot_year': 'year', 'perdtot_empr_amt': 'empr_amt'}
+        out = list(RecordShaper(mixed_case_records).rename(col_map))
+        assert out[0].keys() == ['ssn', 'year', 'empr_amt']
+        assert out[1]['empr_amt'] == 20.0
+
+    def test_rename_same_column_by_both_names_raises(self, mixed_case_records):
+        with pytest.raises(ValueError, match='more than once'):
+            RecordShaper(mixed_case_records).rename(
+                {'perdtot_EMPR_AMT': 'a', 'perdtot_empr_amt': 'b'})
+
+    def test_normalized_names_work_after_a_chained_step(self, mixed_case_records):
+        out = list(RecordShaper(mixed_case_records)
+                   .exclude(['ssn'])
+                   .select(['perdtot_empr_amt']))
+        assert out[0].keys() == ['perdtot_EMPR_AMT']
+
+    def test_from_tuples_supports_normalized_names(self):
+        out = list(RecordShaper.from_tuples([(1, 'x')], ['Row ID', 'Label']).select(['row_id']))
+        assert out[0].keys() == ['Row ID']
+
+    def test_dict_sources_match_exact_keys_only(self):
+        rows = [{'perdtot_EMPR_AMT': 1}]
+        with pytest.raises(ValueError, match='not found'):
+            RecordShaper(rows).select(['perdtot_empr_amt'])
+
+
+# ---------------------------------------------------------------------------
+# rename() with a function
+# ---------------------------------------------------------------------------
+
+class TestRenameFunction:
+
+    def test_strip_prefix_any_case(self, mixed_case_records):
+        out = list(RecordShaper(mixed_case_records).rename(
+            lambda c: c[8:].lower() if c.lower().startswith('perdtot_') else None))
+        assert out[0].keys() == ['ssn', 'year', 'empr_amt']
+        assert [r['empr_amt'] for r in out] == [10.5, 20.0]
+
+    def test_function_called_once_per_column_at_rename_time(self, mixed_case_records):
+        calls = []
+
+        def fn(col):
+            calls.append(col)
+            return col.upper()
+
+        shaper = RecordShaper(mixed_case_records).rename(fn)
+        assert calls == ['ssn', 'perdtot_year', 'perdtot_EMPR_AMT']
+        list(shaper)
+        assert len(calls) == 3  # not called again per row
+
+    def test_function_that_renames_nothing_is_noop(self, sample_records):
+        out = list(RecordShaper(sample_records).rename(lambda c: None))
+        assert out == sample_records
+
+    def test_function_returning_same_name_is_noop(self, sample_records):
+        out = list(RecordShaper(sample_records).rename(lambda c: c))
+        assert out == sample_records
+
+    def test_function_exception_names_the_column(self, sample_records):
+        def fn(col):
+            if col == 'email':
+                raise KeyError('boom')
+            return None
+
+        with pytest.raises(ValueError, match="column 'email'") as exc_info:
+            RecordShaper(sample_records).rename(fn)
+        assert isinstance(exc_info.value.__cause__, KeyError)
+
+    def test_function_returning_non_string_raises_type_error(self, sample_records):
+        with pytest.raises(TypeError, match="column 'id'"):
+            RecordShaper(sample_records).rename(lambda c: c == 'id')
+
+    def test_function_on_namedtuples(self, sample_namedtuples):
+        out = list(RecordShaper(sample_namedtuples).rename(str.upper))
+        assert out[0].keys() == ['ID', 'NAME', 'EMAIL']
+        assert out[0]['NAME'] == 'Aang'
+
+    def test_function_on_empty_source_yields_nothing(self):
+        assert list(RecordShaper([]).rename(str.upper)) == []
+
+
+# ---------------------------------------------------------------------------
+# rename() never clobbers columns, and no-op stages stay single-pass
+# ---------------------------------------------------------------------------
+
+class TestRenameCollisions:
+
+    def test_dict_rename_onto_existing_column_raises(self, sample_records):
+        with pytest.raises(ValueError, match="same name"):
+            RecordShaper(sample_records).rename({'name': 'email'})
+
+    def test_function_rename_collision_raises(self):
+        cls = make_record_class('year', 'perdtot_year')
+        rows = [cls(1, 2)]
+        with pytest.raises(ValueError, match=r"\['year', 'perdtot_year'\] -> 'year'"):
+            RecordShaper(rows).rename(lambda c: c.replace('perdtot_', ''))
+
+    def test_swapping_two_names_is_allowed(self, sample_records):
+        out = list(RecordShaper(sample_records).rename({'name': 'email', 'email': 'name'}))
+        assert out[0].keys() == ['id', 'email', 'name']
+        assert out[0]['email'] == 'Aang'
+
+
+class TestNoOpStages:
+
+    def test_noop_stage_is_a_new_instance(self, sample_records):
+        base = RecordShaper(sample_records)
+        assert base.rename({}) is not base
+        assert base.exclude([]) is not base
+
+    def test_noop_stage_shares_single_pass_state(self, sample_dicts):
+        base = RecordShaper(iter(sample_dicts))
+        noop = base.rename({})
+        assert list(noop) == sample_dicts
+        with pytest.raises(RuntimeError):
+            list(base)
 
 
 # ---------------------------------------------------------------------------

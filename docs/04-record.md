@@ -340,7 +340,8 @@ writers.to_csv(RecordShaper(cursor).exclude(['ssn', 'password_hash']), 'users.cs
 ```
 
 `col_names` is a block-list — a list, tuple, or set all work, since order never matters for
-exclusion. Everything else passes through in its original order.
+exclusion. Everything else passes through in its original order. An empty list is a no-op,
+so a drop-list built in code doesn't need special handling when it comes out empty.
 
 ### rename() — relabel some columns, leave the rest alone
 
@@ -351,7 +352,51 @@ writers.to_csv(RecordShaper(cursor).rename({'signup_date': 'Joined On'}), 'custo
 `mapping` is a dict of source name -> new name. Only the columns you list are relabeled;
 everything else keeps its original name and position — this is a pure rename, not a select.
 A falsy value (`''` or `None`) is a no-op for that column, so you can build the mapping
-programmatically without filtering out unchanged entries.
+programmatically without filtering out unchanged entries. An empty dict is a no-op too.
+
+`mapping` can also be a function. It's called once for each column with the column's
+current name and returns the new name, or something falsy to leave the name alone. That's
+the natural fit for pattern-based renames, such as stripping a prefix regardless of its case:
+
+```python
+shaped = RecordShaper(reader).rename(
+    lambda c: c[4:].lower() if c.lower().startswith('src_') else None
+)
+```
+
+The function runs when `rename()` is called, not once per row, so mistakes surface
+immediately. If it raises, you get a `ValueError` naming the column it failed on, with the
+original exception chained. If it returns anything other than a string or a falsy value,
+you get a `TypeError`. `strict` doesn't apply to the function form, since there are no
+names to look up.
+
+`rename()` never silently overwrites a column. If two columns would end up with the same
+name, whether from a dict or a function, it raises `ValueError` listing the columns that
+collide. Swapping two names (`{'a': 'b', 'b': 'a'}`) is fine, since each name still ends up
+on exactly one column.
+
+### Original or normalized names
+
+Records keep two names for each column: the original, exactly as the database or file
+header spelled it, and a normalized form (lowercased, with spaces and punctuation turned
+into underscores) for attribute access; see [Normalized Field Names](#normalized-field-names)
+above. When the rows are Records — cursor results, file readers, `from_tuples()` output, or any earlier
+`RecordShaper` step — `select()`, `exclude()`, and dict keys passed to `rename()` accept
+either name, just as `record['...']` does:
+
+```python
+# Source header: ssn, Start Year, AMT_Total
+shaped = RecordShaper(reader).select(['ssn', 'start_year', 'amt_total'])
+shaped.columns   # ['ssn', 'Start Year', 'AMT_Total']
+```
+
+The output always keeps the original column names; only `rename()` changes a name. If a name
+matches one column's original name and another column's normalized name, the original-name
+match wins. Naming the same column twice, for example once by each spelling, raises
+`ValueError` rather than producing a duplicate column.
+
+Plain dicts and namedtuples have no normalized names, so for those sources only their own
+keys or field names match.
 
 ### Chaining
 
