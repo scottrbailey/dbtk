@@ -311,6 +311,13 @@ class TestNormalizedNames:
                    .select(['perdtot_empr_amt']))
         assert out[0].keys() == ['perdtot_EMPR_AMT']
 
+    def test_from_tuples_repeated_name_selects_the_right_column(self):
+        # set_fields() renames the second 'id' to 'id_2'; selecting it must read position 2
+        shaper = RecordShaper.from_tuples([(1, 2)], ['id', 'id'])
+        assert shaper.columns == ['id', 'id_2']
+        out = list(shaper.select(['id_2']))
+        assert out[0]['id_2'] == 2
+
     def test_from_tuples_supports_normalized_names(self):
         out = list(RecordShaper.from_tuples([(1, 'x')], ['Row ID', 'Label']).select(['row_id']))
         assert out[0].keys() == ['Row ID']

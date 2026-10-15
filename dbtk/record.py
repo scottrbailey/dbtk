@@ -1169,7 +1169,10 @@ class RecordShaper:
 
         instance = cls.__new__(cls)
         instance._rows = _gen()
-        instance._columns = kept_names
+        # Take names from the record class, not `kept_names`: set_fields() renames a
+        # repeated name (e.g. a second 'id' becomes 'id_2'), and _columns must stay
+        # parallel to _normalized for name resolution to pick the right column.
+        instance._columns = list(output_cls._fields)
         instance._normalized = list(output_cls._fields_normalized)
         instance._by_name = True
         instance._empty = False

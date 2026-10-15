@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a `rename()` mapping with two keys for the same column now raises `ValueError`.
   Previously the output Record class renamed the duplicate to `name_2` and logged a warning.
 
+- **`cleanup_old_logs()` no longer accepts a `retention_days` parameter.** Retention is
+  now config-only (`logging.retention_days` in `dbtk.yml`, default 30) — a per-script
+  override made it too easy for one job to quietly shorten everyone else's log
+  retention. `setup_logging()` never accepted `retention_days` and still doesn't.
+
 ### Fixed
 
 - **Three-part table names (`db.schema.table`)** — `PostgresDialect` and `OracleDialect`
@@ -86,14 +91,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Table.get_column_definitions()` now quotes the table name** with `quote_identifier()`,
   matching every other SQL statement `Table` generates. A name that needs quoting
   (spaces, mixed case) previously failed in the introspection query.
-
-
-### Changed
-
-- **`cleanup_old_logs()` no longer accepts a `retention_days` parameter.** Retention is
-  now config-only (`logging.retention_days` in `dbtk.yml`, default 30) — a per-script
-  override made it too easy for one job to quietly shorten everyone else's log
-  retention. `setup_logging()` never accepted `retention_days` and still doesn't.
 
 
 ### Documentation
@@ -126,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dbtk.__init__` — it's a reach-for-it-when-needed tool, not a default-path
   one; import via `dbtk.record.RecordShaper`.
 
-## [0.9.0] - 2026-10-13
+### Changed
 
 - **`_row_num` on readers now reflects true source-file position** — previously
   computed as `skip_rows + <count of records that passed filters>`, which only

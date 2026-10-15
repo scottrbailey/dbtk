@@ -584,7 +584,12 @@ def expire_files(
         if not file.is_file():
             continue
 
-        file_mtime = dt.datetime.fromtimestamp(file.stat().st_mtime)
+        try:
+            file_mtime = dt.datetime.fromtimestamp(file.stat().st_mtime)
+        except OSError as e:
+            # e.g. removed by another process between glob() and stat()
+            logger.warning(f"Skipping {file}: {e}")
+            continue
         if file_mtime >= cutoff:
             continue
 

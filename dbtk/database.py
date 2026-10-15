@@ -331,12 +331,7 @@ def _validate_connection_params(driver_name: str, config_only: bool = False, **p
     param_map = driver_info.get('param_map', {})
     params = {param_map.get(k, k): v for k, v in params.items()}
 
-    # Initialize with config-only parameters if needed
     validated_params = {}
-    if config_only:
-        for key in params:
-            if key.startswith('encrypted_'):
-                validated_params[key] = params[key]
 
     # get default port if not specified
     if 'port' not in params:
