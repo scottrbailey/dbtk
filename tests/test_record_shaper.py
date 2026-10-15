@@ -457,35 +457,26 @@ class TestFromTuples:
 
 class TestSinglePass:
 
-    def test_reiterating_same_object_raises(self, sample_records):
+    def test_reiterating_exhausted_stage_yields_nothing(self, sample_records):
+        # Iterator semantics, same as readers and cursors
         shaper = RecordShaper(sample_records)
-        list(shaper)
-        with pytest.raises(RuntimeError):
-            list(shaper)
+        assert len(list(shaper)) == 3
+        assert list(shaper) == []
 
-    def test_partial_iteration_still_marks_consumed(self, sample_records):
+    def test_partial_iteration_continues_where_it_left_off(self, sample_records):
         shaper = RecordShaper(sample_records)
         for _ in shaper:
             break
-        with pytest.raises(RuntimeError):
-            list(shaper)
+        assert [r['name'] for r in shaper] == ['Katara', 'Sokka']
 
-    def test_fork_after_intermediate_stage_raises_on_second_branch(self, sample_records):
-        a = RecordShaper(sample_records)
-        b = a.select(['id', 'name'])
-        c = b.rename({'name': 'Name'})
+    def test_fork_second_branch_raises(self, sample_records):
+        base = RecordShaper(sample_records)
+        names = base.select(['name'])
+        emails = base.select(['email'])
 
-        list(b)  # consume via the intermediate stage
-        with pytest.raises(RuntimeError):
-            list(c)  # c shares the same lineage - must not silently succeed
-
-    def test_root_iteration_after_deriving_child_raises_on_child(self, sample_records):
-        a = RecordShaper(sample_records)
-        b = a.select(['id'])
-
-        list(a)  # consume via the root directly
-        with pytest.raises(RuntimeError):
-            list(b)
+        list(names)
+        with pytest.raises(RuntimeError, match='another point in its chain'):
+            list(emails)
 
     def test_independent_roots_do_not_interfere(self, sample_records, sample_dicts):
         a = RecordShaper(sample_records)
@@ -494,6 +485,93 @@ class TestSinglePass:
         list(a)
         # b is a completely separate lineage - must be unaffected
         assert list(b) == sample_dicts
+
+
+class TestIterator:
+
+    def test_next_returns_one_row_at_a_time(self, sample_records):
+        shaper = RecordShaper(sample_records).select(['name'])
+        assert next(shaper)['name'] == 'Aang'
+        assert next(shaper)['name'] == 'Katara'
+
+    def test_next_on_unchained_root(self, sample_dicts):
+        shaper = RecordShaper(sample_dicts)
+        assert next(shaper) == sample_dicts[0]
+
+    def test_next_then_loop_continues(self, sample_records):
+        shaper = RecordShaper(sample_records).rename({'name': 'Name'})
+        next(shaper)
+        assert [r['Name'] for r in shaper] == ['Katara', 'Sokka']
+
+    def test_next_raises_stop_iteration_when_exhausted(self, sample_records):
+        shaper = RecordShaper(sample_records[:1]).select(['id'])
+        next(shaper)
+        with pytest.raises(StopIteration):
+            next(shaper)
+
+    def test_columns_after_next_does_not_drop_rows(self, sample_dicts):
+        # Schema still unknown when reading starts; a later .columns peek
+        # must not lose a row from either next() or a loop.
+        shaper = RecordShaper(iter(sample_dicts))
+        first = next(shaper)
+        assert shaper.columns == ['id', 'name', 'email']
+        assert [first] + list(shaper) == sample_dicts
+
+    def test_loop_on_unresolved_root_then_columns(self, sample_dicts):
+        shaper = RecordShaper(iter(sample_dicts))
+        out = []
+        for row in shaper:
+            out.append(row)
+            _ = shaper.columns
+        assert out == sample_dicts
+
+    def test_resolved_stage_hands_loops_the_raw_generator(self, sample_records):
+        shaper = RecordShaper(sample_records).select(['id'])
+        assert iter(shaper) is not shaper  # fast path, no per-row __next__
+
+
+class TestChainedStageRetired:
+
+    def test_discarded_rename_result_raises_with_method_name(self, sample_records):
+        records = RecordShaper(sample_records)
+        records.rename({'name': 'Name'})  # result not kept
+        with pytest.raises(RuntimeError, match=r'rename\(\) was chained'):
+            list(records)
+
+    def test_next_on_retired_stage_raises(self, sample_records):
+        records = RecordShaper(sample_records)
+        records.select(['id'])
+        with pytest.raises(RuntimeError, match=r'select\(\) was chained'):
+            next(records)
+
+    def test_noop_call_still_retires_stage(self, sample_records):
+        records = RecordShaper(sample_records)
+        records.exclude([])
+        with pytest.raises(RuntimeError, match=r'exclude\(\) was chained'):
+            list(records)
+
+    def test_failed_call_does_not_retire_stage(self, sample_records):
+        records = RecordShaper(sample_records)
+        with pytest.raises(ValueError):
+            records.rename({'not_a_column': 'x'})
+        assert len(list(records)) == 3
+
+    def test_columns_still_available_on_retired_stage(self, sample_records):
+        records = RecordShaper(sample_records)
+        records.select(['id'])
+        assert records.columns == ['id', 'name', 'email']
+
+    def test_reassigning_keeps_working(self, sample_records):
+        records = RecordShaper(sample_records)
+        records = records.rename({'name': 'Name'})
+        records = records.select(['Name'])
+        assert [r['Name'] for r in records] == ['Aang', 'Katara', 'Sokka']
+
+    def test_chaining_after_reading_started_raises(self, sample_records):
+        shaper = RecordShaper(sample_records).select(['id', 'name'])
+        next(shaper)
+        with pytest.raises(RuntimeError, match='already started'):
+            shaper.rename({'name': 'Name'})
 
 
 # ---------------------------------------------------------------------------

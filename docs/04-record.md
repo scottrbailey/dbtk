@@ -466,11 +466,45 @@ This is also how to hand positional data to a writer at all. Writers no longer a
 `columns=` parameter, and positional rows with no names raise `TypeError` wherever the writer
 would need to display column names.
 
+### Stepping through rows
+
+A `RecordShaper` is an iterator, like DBTK's readers and cursors, so you can pull rows one at
+a time while testing a pipeline, without materializing the stream:
+
+```python
+shaped = RecordShaper(reader).rename(lambda c: c[4:] if c.lower().startswith('src_') else None)
+next(shaped)            # first row
+next(shaped)            # second row
+for row in shaped:      # picks up at the third row
+    ...
+```
+
+`itertools.islice(shaped, 5)` grabs the next five. Once a `RecordShaper` is exhausted it
+yields nothing more, the same as a reader.
+
+### Keep the result of each call
+
+`select()`, `exclude()`, and `rename()` return a *new* `RecordShaper`; the one you called them
+on is retired. Iterating a retired step raises `RuntimeError`, which catches the easy mistake
+of calling a method without keeping its result:
+
+```python
+records = RecordShaper(reader)
+records.rename(col_map)              # result discarded
+writers.to_csv(records, 'out.csv')   # RuntimeError: rename() was chained from this RecordShaper...
+
+records = records.rename(col_map)    # keep it
+writers.to_csv(records, 'out.csv')   # works
+```
+
+`.columns` still works on a retired step. Chain every step before you start reading; calling
+`select()`, `exclude()`, or `rename()` once rows have been read raises `RuntimeError` too.
+
 ### One pass only
 
-A `RecordShaper` wraps a stream, and a stream can only be read once. Iterating any step in a
-chain marks the whole chain as consumed. Iterating a second step afterward raises
-`RuntimeError` rather than quietly returning nothing:
+A `RecordShaper` wraps a stream, and a stream can only be read once. Once one step in a chain
+starts reading, iterating or calling `next()` on any other step raises `RuntimeError` rather
+than quietly returning partial results:
 
 ```python
 base = RecordShaper(cursor)

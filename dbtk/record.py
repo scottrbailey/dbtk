@@ -1041,9 +1041,11 @@ class _ShaperState:
     Tracks whether a RecordShaper lineage has begun iteration.
 
     Shared by reference across a root RecordShaper and every stage chained
-    from it, so consuming any one stage marks the whole lineage consumed -
-    including sibling stages built from a common ancestor (a "fork") that
-    would otherwise silently draw from the same half-drained source.
+    from it. Once one stage starts reading, every *other* stage in the
+    lineage refuses to - including sibling stages built from a common
+    ancestor (a "fork") that would otherwise silently draw from the same
+    half-drained source. The stage that started reading keeps its own
+    ``_started`` flag so it can continue across ``next()`` calls and loops.
     """
     __slots__ = ('consumed',)
 
@@ -1064,13 +1066,23 @@ class RecordShaper:
     handing it to a writer or another consumer. It is not needed for
     everyday work with individual Record objects.
 
-    Single-pass
-    -----------
+    Single-pass iterator
+    --------------------
+    A ``RecordShaper`` is an iterator, like DBTK's readers and cursors:
+    ``next(shaper)`` returns one row at a time, and a ``for`` loop picks up
+    wherever ``next()`` left off. Once exhausted, it yields nothing more.
+
     The wrapped source can be drained only once, no matter how many
-    ``RecordShaper`` objects reference it. Iterating one stage marks the
-    *entire* lineage - the root and every stage chained from it, in either
-    direction - as consumed. Iterating a second stage afterward raises
-    ``RuntimeError`` rather than silently returning partial or empty results.
+    ``RecordShaper`` objects reference it. Once one stage starts reading,
+    iterating or calling ``next()`` on any *other* stage in the lineage
+    raises ``RuntimeError`` rather than silently returning partial results.
+
+    Calling ``select()``/``exclude()``/``rename()`` on a stage returns a new
+    stage and retires the one it was called on: iterating the retired stage
+    raises ``RuntimeError`` naming the method, which catches the common slip
+    of calling ``shaper.rename(...)`` without keeping its result. Chaining
+    from a stage after reading has started also raises. ``columns`` still
+    works on a retired stage.
 
     Column validation
     ------------------
@@ -1098,7 +1110,8 @@ class RecordShaper:
         ...     .rename({'signup_date': 'Joined On'})
         ...     .exclude(['internal_id']))
     """
-    __slots__ = ('_rows', '_columns', '_normalized', '_by_name', '_empty', '_state')
+    __slots__ = ('_rows', '_columns', '_normalized', '_by_name', '_empty', '_state',
+                 '_chained_by', '_started')
 
     def __init__(self, rows: Iterable[Any]) -> None:
         self._rows: Iterator[Any] = iter(rows)
@@ -1107,6 +1120,8 @@ class RecordShaper:
         self._by_name: bool = True
         self._empty: bool = False
         self._state = _ShaperState()
+        self._chained_by: Optional[str] = None
+        self._started: bool = False
 
     @classmethod
     def from_tuples(cls, rows: Iterable[Sequence[Any]],
@@ -1159,6 +1174,8 @@ class RecordShaper:
         instance._by_name = True
         instance._empty = False
         instance._state = _ShaperState()
+        instance._chained_by = None
+        instance._started = False
         return instance
 
     def _resolve_schema(self) -> None:
@@ -1231,8 +1248,17 @@ class RecordShaper:
         if dupes:
             raise ValueError(f"{what}: {dupes}")
 
-    def _chain(self, gen: Iterator[Any], output_cls: Optional[type] = None,
+    def _check_chainable(self, method: str) -> None:
+        """Refuse to chain from a lineage that has already started reading."""
+        if self._state.consumed:
+            raise RuntimeError(
+                f"can't call {method}() on a RecordShaper whose stream has already "
+                "started being read; chain every step before iterating."
+            )
+
+    def _chain(self, method: str, gen: Iterator[Any], output_cls: Optional[type] = None,
                empty: bool = False) -> 'RecordShaper':
+        """A new stage over `gen`; retires this stage, recording `method` for errors."""
         new = RecordShaper.__new__(RecordShaper)
         new._rows = gen
         new._columns = list(output_cls._fields) if output_cls else []
@@ -1240,10 +1266,17 @@ class RecordShaper:
         new._by_name = True
         new._empty = empty
         new._state = self._state
+        new._chained_by = None
+        new._started = False
+        self._chained_by = method
         return new
 
-    def _passthrough(self) -> 'RecordShaper':
-        """A new stage over the same (already schema-resolved) rows, unchanged."""
+    def _passthrough(self, method: str) -> 'RecordShaper':
+        """A new stage over the same (already schema-resolved) rows, unchanged.
+
+        Retires this stage just like ``_chain()`` does, so a no-op call still
+        catches a discarded result.
+        """
         new = RecordShaper.__new__(RecordShaper)
         new._rows = self._rows
         new._columns = self._columns
@@ -1251,6 +1284,9 @@ class RecordShaper:
         new._by_name = self._by_name
         new._empty = self._empty
         new._state = self._state
+        new._chained_by = None
+        new._started = False
+        self._chained_by = method
         return new
 
     @property
@@ -1287,9 +1323,10 @@ class RecordShaper:
         col_names = list(col_names)
         if not col_names:
             raise ValueError("col_names must not be empty")
+        self._check_chainable('select')
         self._resolve_schema()
         if self._empty:
-            return self._chain(iter(()), empty=True)
+            return self._chain('select', iter(()), empty=True)
 
         resolved, missing = self._resolve_names(col_names)
         if strict and missing:
@@ -1309,7 +1346,7 @@ class RecordShaper:
             for row in rows:
                 yield output_cls(*get(row))
 
-        return self._chain(_gen(), output_cls)
+        return self._chain('select', _gen(), output_cls)
 
     def exclude(self, col_names: Iterable[str], strict: bool = True) -> 'RecordShaper':
         """
@@ -1335,11 +1372,12 @@ class RecordShaper:
             TypeError: If column names can't be determined from the row type.
         """
         col_names = list(col_names)
+        self._check_chainable('exclude')
         self._resolve_schema()
         if not col_names:
-            return self._passthrough()
+            return self._passthrough('exclude')
         if self._empty:
-            return self._chain(iter(()), empty=True)
+            return self._chain('exclude', iter(()), empty=True)
 
         resolved, missing = self._resolve_names(col_names)
         if strict and missing:
@@ -1359,7 +1397,7 @@ class RecordShaper:
             for row in rows:
                 yield output_cls(*get(row))
 
-        return self._chain(_gen(), output_cls)
+        return self._chain('exclude', _gen(), output_cls)
 
     def rename(self, mapping: Union[Dict[str, Optional[str]], Callable[[str], Optional[str]]],
                strict: bool = True) -> 'RecordShaper':
@@ -1400,11 +1438,12 @@ class RecordShaper:
             >>> RecordShaper(reader).rename(
             ...     lambda c: c[8:] if c.lower().startswith('perdtot_') else None)
         """
+        self._check_chainable('rename')
         self._resolve_schema()
         if not callable(mapping) and not mapping:
-            return self._passthrough()
+            return self._passthrough('rename')
         if self._empty:
-            return self._chain(iter(()), empty=True)
+            return self._chain('rename', iter(()), empty=True)
 
         src_cols, by_name = self._columns, self._by_name
         if callable(mapping):
@@ -1438,7 +1477,7 @@ class RecordShaper:
             output_names = [targets.get(c) or c for c in src_cols]
 
         if output_names == src_cols:
-            return self._passthrough()
+            return self._passthrough('rename')
 
         collisions: Dict[str, List[str]] = {}
         for src, out in zip(src_cols, output_names):
@@ -1457,13 +1496,37 @@ class RecordShaper:
             for row in rows:
                 yield output_cls(*get(row))
 
-        return self._chain(_gen(), output_cls)
+        return self._chain('rename', _gen(), output_cls)
 
-    def __iter__(self) -> Iterator[Any]:
+    def _claim(self) -> None:
+        """Make this stage the lineage's reader, or raise if it can't be."""
+        if self._chained_by is not None:
+            raise RuntimeError(
+                f"{self._chained_by}() was chained from this RecordShaper; "
+                f"iterate the RecordShaper that {self._chained_by}() returned instead."
+            )
+        if self._started:
+            return
         if self._state.consumed:
             raise RuntimeError(
-                "This RecordShaper has already been consumed - a stream can "
-                "only be iterated once, from a single point in its chain."
+                "This RecordShaper's stream is already being read from another "
+                "point in its chain - a stream can only be iterated once, from a "
+                "single point in its chain."
             )
         self._state.consumed = True
-        return self._rows
+        self._started = True
+
+    def __iter__(self) -> Iterator[Any]:
+        self._claim()
+        # Fast path: once the schema is known nothing will replace `_rows`, so
+        # hand loops the underlying generator and skip a Python-level __next__
+        # per row. Until then, stay on __next__ so a later `.columns` peek
+        # (which splices the peeked row back into `_rows`) can't drop a row.
+        if self._columns is not None:
+            return self._rows
+        return self
+
+    def __next__(self) -> Any:
+        if not self._started:
+            self._claim()
+        return next(self._rows)

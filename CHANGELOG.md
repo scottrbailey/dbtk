@@ -34,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-raised as `ValueError` naming the column, and a non-string, truthy return value raises
   `TypeError`.
 
+- **`RecordShaper` is now an iterator** — `next(shaper)` returns one row at a time, and a
+  `for` loop continues where `next()` left off, matching readers and cursors. An exhausted
+  `RecordShaper` now yields nothing on a second pass instead of raising. Other steps in the
+  same chain still raise `RuntimeError` once one step has started reading.
+
+- **`RecordShaper` retires a step once a method is chained from it** — iterating a step
+  that `select()`/`exclude()`/`rename()` was called on raises `RuntimeError` naming the
+  method, so `shaper.rename(...)` without keeping the result fails loudly instead of
+  silently writing un-renamed data. Calling those methods after reading has started also
+  raises. `.columns` still works on a retired step.
+
 - **`RecordShaper.rename({})` and `exclude([])` are now no-ops** instead of raising
   `ValueError`, so mappings and drop-lists built in code don't need an emptiness check.
   `select([])` still raises.
