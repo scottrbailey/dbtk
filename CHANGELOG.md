@@ -79,19 +79,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Three-part table names (`db.schema.table`)** — `PostgresDialect` and `OracleDialect`
-  `table_metadata()` and BulkSurge's Oracle direct-path load previously required exactly
-  two parts to recognize a schema, so a three-part name lost its schema entirely. They now
-  take the last two parts as schema and table. The database part is not used for lookup;
-  metadata comes from whichever database the connection is attached to.
+- **Dotted table names in `table_metadata()` / `column_defs_from_db()`** — all four
+  dialects now parse names through one shared `DatabaseDialect.split_table_name()`:
+  - **SQL Server** supports `schema.table` and `database.schema.table`; a three-part name
+    reads that database's catalog views (`[db].information_schema...`, `[db].sys...`).
+    Previously a dotted name was passed through whole and found no columns.
+  - **PostgreSQL** supports `schema.table`, and `database.schema.table` when the database
+    is the one you're connected to; any other database raises `ValueError`, since
+    PostgreSQL can't read another database's catalog over the same connection.
+    Previously a three-part name lost its schema entirely.
+  - **MySQL** supports `database.table` (in MySQL a schema is a database). **Oracle**
+    supports `schema.table`. Both raise `ValueError` for longer names, as does
+    BulkSurge's Oracle direct-path load. Previously SQL Server and MySQL passed dotted
+    names through whole.
+  - Unqualified names are resolved the way the database itself would resolve them in a
+    query — PostgreSQL through `search_path` (`to_regclass()`), SQL Server through the
+    user's default schema and then `dbo` (`OBJECT_ID()`) — instead of matching a table of
+    that name in every schema. A table that isn't found that way still falls back to
+    matching any schema.
 
-- **SQL Server and MySQL `table_metadata()` now understand dotted names** — previously
-  they passed the whole string (e.g. `dbo.users`) through as the table name and found no
-  columns. SQL Server takes the last two parts as schema and table, and its column query
-  now joins primary keys and `sys.tables` on schema as well as name, so same-named tables
-  in different schemas no longer cross-match. MySQL treats `db.table` as database and
-  table, falling back to `DATABASE()` when unqualified. Neither dialect folds case, so
-  names are matched as given.
+- **Same-named tables in different schemas no longer cross-match** — the PostgreSQL and
+  SQL Server column queries joined primary-key constraints and the system catalogs on
+  table name only. With `public.users` and `audit.users` both present, metadata for one
+  could pick up the other's columns, primary-key flags, and column comments. Every join
+  now matches on schema as well.
 
 - **`Table.get_column_definitions()` now quotes the table name** with `quote_identifier()`,
   matching every other SQL statement `Table` generates. A name that needs quoting

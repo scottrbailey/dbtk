@@ -9,6 +9,9 @@ from ..utils import wrap_at_comma
 class MySQLDialect(DatabaseDialect):
     """MySQL/MariaDB dialect. Uses INSERT … ON DUPLICATE KEY UPDATE."""
 
+    max_name_parts = 2
+    name_parts_hint = "In MySQL a schema is a database, so use database.table."
+
     def upsert_sql(self, table_name: str, cols_str: str, placeholders_str: str,
                    key_cols: List[str], update_cols: List[Tuple]) -> str:
         # MySQL/MariaDB: VALUES(col) syntax works on both MySQL and MariaDB
@@ -33,9 +36,7 @@ class MySQLDialect(DatabaseDialect):
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
         # In MySQL a schema *is* a database, so `db.table` names the database to look in.
-        parts = table_name.split('.')
-        schema = parts[-2] if len(parts) >= 2 else None
-        table_name = parts[-1]
+        _, schema, table_name = self.split_table_name(table_name)
 
         table_comment = None
         if add_comments:

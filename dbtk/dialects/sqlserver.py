@@ -48,28 +48,41 @@ class SQLServerDialect(DatabaseDialect):
     # ------------------------------------------------------------------
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
-        parts = table_name.split('.')
-        schema = parts[-2] if len(parts) >= 2 else None
-        table_name = parts[-1]
+        database, schema, table_name = self.split_table_name(table_name)
+
+        # Catalog views are per-database; prefix them to read another database's.
+        # The name can't be a bind parameter, so bracket-quote it ("]" -> "]]").
+        cat = f"[{database.replace(']', ']]')}]." if database else ''
+
+        if schema is None:
+            # Resolve an unqualified name the way a query would (the user's default
+            # schema, then dbo). Falls back to matching any schema if not found.
+            cursor.execute('SELECT OBJECT_SCHEMA_NAME(OBJECT_ID(QUOTENAME(?)))', (table_name,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                schema = row[0]
 
         table_comment = None
         if add_comments:
-            cmt_query = '''
+            cmt_query = f'''
                 SELECT ep.value as comments
-                FROM sys.tables t
-                LEFT JOIN sys.extended_properties ep
+                FROM {cat}sys.tables t
+                JOIN {cat}sys.schemas s ON s.schema_id = t.schema_id
+                LEFT JOIN {cat}sys.extended_properties ep
                     ON ep.major_id = t.object_id
                     AND ep.minor_id = 0
                     AND ep.name = 'MS_Description'
                 WHERE t.name = ?
-                  AND SCHEMA_NAME(t.schema_id) = COALESCE(?, SCHEMA_NAME(t.schema_id))
+                  AND s.name = COALESCE(?, s.name)
             '''
             cursor.execute(cmt_query, (table_name, schema))
             row = cursor.fetchone()
             if row and row[0]:
                 table_comment = row[0]
 
-        col_query = '''
+        # Every join matches on schema as well as name, so same-named tables in
+        # different schemas can't borrow each other's primary keys or comments.
+        col_query = f'''
             SELECT
                 c.column_name,
                 c.data_type,
@@ -77,28 +90,29 @@ class SQLServerDialect(DatabaseDialect):
                 c.is_nullable,
                 CASE WHEN pk.column_name IS NOT NULL THEN 'Y' ELSE 'N' END as key_column,
                 COALESCE(ep.value, '') as comments
-            FROM information_schema.columns c
+            FROM {cat}information_schema.columns c
             LEFT JOIN (
                 SELECT kcu.column_name, kcu.table_name, kcu.table_schema
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage kcu
+                FROM {cat}information_schema.table_constraints tc
+                JOIN {cat}information_schema.key_column_usage kcu
                     ON tc.constraint_name = kcu.constraint_name
                     AND tc.constraint_schema = kcu.constraint_schema
                 WHERE tc.constraint_type = 'PRIMARY KEY'
             ) pk ON c.column_name = pk.column_name
                 AND c.table_name = pk.table_name
                 AND c.table_schema = pk.table_schema
-            LEFT JOIN sys.tables t
+            LEFT JOIN {cat}sys.schemas s ON s.name = c.table_schema
+            LEFT JOIN {cat}sys.tables t
                 ON t.name = c.table_name
-                AND SCHEMA_NAME(t.schema_id) = c.table_schema
-            LEFT JOIN sys.columns sc ON sc.object_id = t.object_id AND sc.name = c.column_name
-            LEFT JOIN sys.extended_properties ep
+                AND t.schema_id = s.schema_id
+            LEFT JOIN {cat}sys.columns sc ON sc.object_id = t.object_id AND sc.name = c.column_name
+            LEFT JOIN {cat}sys.extended_properties ep
                 ON ep.major_id = t.object_id
                 AND ep.minor_id = sc.column_id
                 AND ep.name = 'MS_Description'
             WHERE c.table_name = ?
               AND c.table_schema = COALESCE(?, c.table_schema)
-            ORDER BY c.ordinal_position
+            ORDER BY c.table_schema, c.ordinal_position
         '''
         cursor.execute(col_query, (table_name, schema))
 
