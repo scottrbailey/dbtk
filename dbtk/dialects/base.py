@@ -109,6 +109,36 @@ class DatabaseDialect:
     # Schema introspection
     # ------------------------------------------------------------------
 
+    #: Most dotted parts a table name may have here: 2 for ``schema.table``,
+    #: 3 for ``database.schema.table``.
+    max_name_parts: int = 3
+
+    #: Appended to the error raised for a name with too many parts.
+    name_parts_hint: str = ''
+
+    def split_table_name(self, table_name: str) -> Tuple[Optional[str], Optional[str], str]:
+        """
+        Split a dotted table name into ``(database, schema, table)``.
+
+        Accepts ``table``, ``schema.table``, and (when ``max_name_parts`` is 3)
+        ``database.schema.table``; missing leading parts are ``None``. Case is
+        left as given - dialects that fold unquoted names should fold first.
+
+        Raises:
+            ValueError: If any part is empty, or the name has more parts than
+                this database supports.
+        """
+        parts = table_name.split('.')
+        if any(not p for p in parts):
+            raise ValueError(f"Invalid table name {table_name!r}: empty name part")
+        if len(parts) > self.max_name_parts:
+            raise ValueError(
+                f"{type(self).__name__} supports at most {self.max_name_parts}-part table "
+                f"names, got {table_name!r}. {self.name_parts_hint}".rstrip()
+            )
+        database, schema, table = [None] * (3 - len(parts)) + parts
+        return database, schema, table
+
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
         """Extract column definitions from the database catalog."""
         raise NotImplementedError(f"{type(self).__name__} does not support table_metadata")

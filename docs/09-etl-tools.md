@@ -60,7 +60,7 @@ im = IdentityManager(
     source_key='student_id',
     target_key='erp_person_id',
     resolver=stmt,
-    alternate_keys=['banner_id'],   # Optional extra keys to track per entity
+    alternate_keys=['legacy_id'],   # Optional extra keys to track per entity
 )
 
 # Without a resolver — tracking/logging mode only
@@ -112,11 +112,11 @@ im = IdentityManager('crm_id', 'erp_id', resolver=stmt,
                      alternate_keys=['staging_id', 'legacy_id'])
 
 entity = im.resolve(row)
-# entity['banner_id'] is populated if the resolver returns it
+# entity['legacy_id'] is populated if the resolver returns it
 
 # Read or write any tracked key directly
-im.set_id(source_id, 'staging_id', 'B00123')
-banner = im.get_id(source_id, 'staging_id')
+im.set_id(source_id, 'staging_id', 'STG00123')
+staging_id = im.get_id(source_id, 'staging_id')
 ```
 
 ### add_error / add_message
@@ -195,7 +195,7 @@ with dbtk.connect('erp_db') as db:
     stmt = cursor.prepare_file('sql/resolve_student.sql')
 
     im = IdentityManager('student_id', 'erp_person_id', resolver=stmt,
-                         alternate_keys=['banner_id'])
+                         alternate_keys=['legacy_id'])
 
     student_table = dbtk.etl.Table('students', columns_config, cursor)
 
@@ -348,6 +348,18 @@ settings:
     retention_days: 30                   # For cleanup_old_logs()
 ```
 
+Every setting above except `retention_days` can also be overridden per-script as a
+`setup_logging()` keyword argument (`directory` → `log_dir`, everything else by the
+same name):
+
+```python
+dbtk.setup_logging('fire_nation_etl', level='DEBUG', filename_format='%Y%m%d')
+```
+
+`retention_days` is intentionally config-only - there's no `setup_logging()` or
+`cleanup_old_logs()` override for it, so a one-off script can't quietly shorten
+everyone else's log retention.
+
 **Filename patterns:**
 
 ```python
@@ -367,16 +379,17 @@ settings:
 **Automatic log cleanup:**
 
 ```python
-# Clean logs older than retention period (default: 30 days)
+# Clean logs older than retention period (from config, default: 30 days)
 deleted = dbtk.cleanup_old_logs()
 print(f"Deleted {len(deleted)} old log files")
-
-# Custom retention
-dbtk.cleanup_old_logs(retention_days=7)
 
 # Dry run to see what would be deleted
 would_delete = dbtk.cleanup_old_logs(dry_run=True)
 ```
+
+Under the hood, `cleanup_old_logs()` is a thin wrapper around the general-purpose
+`dbtk.utils.expire_files()` - see [Expiring old files](10-advanced.md#expiring-old-files)
+for cleaning up things other than logs (inbound extracts, generated exports, etc.).
 
 **Error detection for notifications:**
 

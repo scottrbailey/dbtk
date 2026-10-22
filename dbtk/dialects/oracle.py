@@ -11,6 +11,9 @@ class OracleDialect(DatabaseDialect):
     use_upsert = False
     temp_table_all_cols = True
     temp_table_cleanup_commit = True  # TRUNCATE on GTT needs an explicit commit
+    max_name_parts = 2
+    name_parts_hint = ("Oracle has no database.schema.table names; use schema.table, "
+                       "and reach another database through a synonym or database link.")
 
     def _merge_source_clause(self, source_cols: str) -> str:
         return f"SELECT {source_cols} FROM dual"
@@ -48,12 +51,7 @@ class OracleDialect(DatabaseDialect):
     # ------------------------------------------------------------------
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
-        table_name = table_name.upper()
-        tab_info = table_name.split('.')
-        schema_name = None
-        if len(tab_info) == 2:
-            schema_name = tab_info[0]
-            table_name = tab_info[1]
+        _, schema_name, table_name = self.split_table_name(table_name.upper())
 
         table_comment = None
         if add_comments:

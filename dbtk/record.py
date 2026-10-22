@@ -5,7 +5,7 @@ Record classes for database result sets.
 import itertools
 import logging
 import operator
-from typing import Dict, Iterable, List, Any, Iterator, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Any, Iterator, Optional, Sequence, Tuple, Union
 from .utils import to_string, normalize_field_name
 
 logger = logging.getLogger(__name__)
@@ -1041,9 +1041,11 @@ class _ShaperState:
     Tracks whether a RecordShaper lineage has begun iteration.
 
     Shared by reference across a root RecordShaper and every stage chained
-    from it, so consuming any one stage marks the whole lineage consumed -
-    including sibling stages built from a common ancestor (a "fork") that
-    would otherwise silently draw from the same half-drained source.
+    from it. Once one stage starts reading, every *other* stage in the
+    lineage refuses to - including sibling stages built from a common
+    ancestor (a "fork") that would otherwise silently draw from the same
+    half-drained source. The stage that started reading keeps its own
+    ``_started`` flag so it can continue across ``next()`` calls and loops.
     """
     __slots__ = ('consumed',)
 
@@ -1064,13 +1066,23 @@ class RecordShaper:
     handing it to a writer or another consumer. It is not needed for
     everyday work with individual Record objects.
 
-    Single-pass
-    -----------
+    Single-pass iterator
+    --------------------
+    A ``RecordShaper`` is an iterator, like DBTK's readers and cursors:
+    ``next(shaper)`` returns one row at a time, and a ``for`` loop picks up
+    wherever ``next()`` left off. Once exhausted, it yields nothing more.
+
     The wrapped source can be drained only once, no matter how many
-    ``RecordShaper`` objects reference it. Iterating one stage marks the
-    *entire* lineage - the root and every stage chained from it, in either
-    direction - as consumed. Iterating a second stage afterward raises
-    ``RuntimeError`` rather than silently returning partial or empty results.
+    ``RecordShaper`` objects reference it. Once one stage starts reading,
+    iterating or calling ``next()`` on any *other* stage in the lineage
+    raises ``RuntimeError`` rather than silently returning partial results.
+
+    Calling ``select()``/``exclude()``/``rename()`` on a stage returns a new
+    stage and retires the one it was called on: iterating the retired stage
+    raises ``RuntimeError`` naming the method, which catches the common slip
+    of calling ``shaper.rename(...)`` without keeping its result. Chaining
+    from a stage after reading has started also raises. ``columns`` still
+    works on a retired stage.
 
     Column validation
     ------------------
@@ -1079,6 +1091,14 @@ class RecordShaper:
     source. Renaming a column and then selecting it by its *new* name works;
     selecting it by its *old* name (after the rename) fails, because that
     name no longer exists at that point in the chain.
+
+    A ``RecordShaper`` always emits Records. Record sources (cursor results,
+    file readers) pass through as-is; dict and namedtuple rows are converted
+    to Records as they are read. A column can be named by either its
+    original name or its normalized name - ``'Start Year'`` or
+    ``'start_year'`` - just as with ``record['...']``. An exact original-name
+    match wins over a normalized one. Output columns always keep their
+    original names unless ``rename()`` changes them.
 
     Args:
         rows: Source rows - dicts, Records, namedtuples, or a cursor.
@@ -1090,14 +1110,17 @@ class RecordShaper:
         ...     .rename({'signup_date': 'Joined On'})
         ...     .exclude(['internal_id']))
     """
-    __slots__ = ('_rows', '_columns', '_by_name', '_empty', '_state')
+    __slots__ = ('_rows', '_columns', '_normalized', '_empty', '_state',
+                 '_chained_by', '_started')
 
     def __init__(self, rows: Iterable[Any]) -> None:
         self._rows: Iterator[Any] = iter(rows)
         self._columns: Optional[List[str]] = None
-        self._by_name: bool = True
+        self._normalized: Optional[List[str]] = None
         self._empty: bool = False
         self._state = _ShaperState()
+        self._chained_by: Optional[str] = None
+        self._started: bool = False
 
     @classmethod
     def from_tuples(cls, rows: Iterable[Sequence[Any]],
@@ -1145,10 +1168,15 @@ class RecordShaper:
 
         instance = cls.__new__(cls)
         instance._rows = _gen()
-        instance._columns = kept_names
-        instance._by_name = True
+        # Take names from the record class, not `kept_names`: set_fields() renames a
+        # repeated name (e.g. a second 'id' becomes 'id_2'), and _columns must stay
+        # parallel to _normalized for name resolution to pick the right column.
+        instance._columns = list(output_cls._fields)
+        instance._normalized = list(output_cls._fields_normalized)
         instance._empty = False
         instance._state = _ShaperState()
+        instance._chained_by = None
+        instance._started = False
         return instance
 
     def _resolve_schema(self) -> None:
@@ -1165,30 +1193,112 @@ class RecordShaper:
             first = next(self._rows)
         except StopIteration:
             self._columns = []
-            self._by_name = True
+            self._normalized = []
             self._empty = True
             self._rows = iter(())
             return
+        rows = itertools.chain([first], self._rows)
+        if isinstance(first, Record):
+            self._columns = first.keys()
+            self._normalized = first.keys(normalized=True)
+            self._rows = rows
+            return
+
+        # Dicts and namedtuples are converted to Records once, here, so every
+        # stage - including a bare RecordShaper or a no-op step - emits Records
+        # and supports original-or-normalized name lookup.
         if hasattr(first, 'keys'):
-            self._columns = list(first.keys())
-            self._by_name = True
+            src_names = list(first.keys())
+            get = _make_getter(src_names)
         elif hasattr(first, '_fields'):
-            self._columns = list(first._fields)
-            self._by_name = False
+            src_names = list(first._fields)
+            get = tuple
         else:
             raise TypeError(
                 f"can't determine column names from {type(first).__name__} rows; "
                 "use RecordShaper.from_tuples() first to attach column names to positional data."
             )
-        self._rows = itertools.chain([first], self._rows)
+        output_cls = _shaped_record_class(src_names, 'ShapedRecord')
 
-    def _chain(self, gen: Iterator[Any], columns: List[str], empty: bool = False) -> 'RecordShaper':
+        def _gen() -> Iterator['Record']:
+            for row in rows:
+                yield output_cls(*get(row))
+
+        self._columns = list(output_cls._fields)
+        self._normalized = list(output_cls._fields_normalized)
+        self._rows = _gen()
+
+    def _resolve_names(self, names: Iterable[str]) -> Tuple[List[Optional[str]], List[str]]:
+        """Map requested names to original column names at this point in the chain.
+
+        Returns ``(resolved, missing)``: `resolved` is parallel to `names`, with
+        ``None`` for each name that isn't a column; `missing` lists those names.
+        An exact original-name match wins; otherwise a normalized-name match is
+        used when the rows are Records.
+        """
+        originals = set(self._columns)
+        by_normalized = dict(zip(self._normalized, self._columns)) if self._normalized else {}
+        resolved: List[Optional[str]] = []
+        missing: List[str] = []
+        for name in names:
+            if name in originals:
+                resolved.append(name)
+            elif name in by_normalized:
+                resolved.append(by_normalized[name])
+            else:
+                resolved.append(None)
+                missing.append(name)
+        return resolved, missing
+
+    @staticmethod
+    def _check_unique(names: List[str], what: str) -> None:
+        """Raise ValueError if `names` contains duplicates."""
+        seen = set()
+        dupes = []
+        for name in names:
+            if name in seen and name not in dupes:
+                dupes.append(name)
+            seen.add(name)
+        if dupes:
+            raise ValueError(f"{what}: {dupes}")
+
+    def _check_chainable(self, method: str) -> None:
+        """Refuse to chain from a lineage that has already started reading."""
+        if self._state.consumed:
+            raise RuntimeError(
+                f"can't call {method}() on a RecordShaper whose stream has already "
+                "started being read; chain every step before iterating."
+            )
+
+    def _chain(self, method: str, gen: Iterator[Any], output_cls: Optional[type] = None,
+               empty: bool = False) -> 'RecordShaper':
+        """A new stage over `gen`; retires this stage, recording `method` for errors."""
         new = RecordShaper.__new__(RecordShaper)
         new._rows = gen
-        new._columns = columns
-        new._by_name = True
+        new._columns = list(output_cls._fields) if output_cls else []
+        new._normalized = list(output_cls._fields_normalized) if output_cls else []
         new._empty = empty
         new._state = self._state
+        new._chained_by = None
+        new._started = False
+        self._chained_by = method
+        return new
+
+    def _passthrough(self, method: str) -> 'RecordShaper':
+        """A new stage over the same (already schema-resolved) rows, unchanged.
+
+        Retires this stage just like ``_chain()`` does, so a no-op call still
+        catches a discarded result.
+        """
+        new = RecordShaper.__new__(RecordShaper)
+        new._rows = self._rows
+        new._columns = self._columns
+        new._normalized = self._normalized
+        new._empty = self._empty
+        new._state = self._state
+        new._chained_by = None
+        new._started = False
+        self._chained_by = method
         return new
 
     @property
@@ -1202,6 +1312,8 @@ class RecordShaper:
         Select and reorder columns.
 
         `col_names` is an allow-list that also sets the output column order.
+        For Record rows, each name may be an original or normalized column
+        name; the output always uses the original name.
 
         Args:
             col_names: Column names to keep, in the desired output order.
@@ -1214,46 +1326,48 @@ class RecordShaper:
 
         Raises:
             ValueError: If col_names is empty, no requested column survives
-                (empty result after applying `strict`), or (strict only) a
-                requested column isn't present in the current schema.
+                (empty result after applying `strict`), the same column is
+                requested more than once (including by both its original and
+                normalized name), or (strict only) a requested column isn't
+                present in the current schema.
             TypeError: If column names can't be determined from the row type.
         """
         col_names = list(col_names)
         if not col_names:
             raise ValueError("col_names must not be empty")
+        self._check_chainable('select')
         self._resolve_schema()
         if self._empty:
-            return self._chain(iter(()), [], empty=True)
+            return self._chain('select', iter(()), empty=True)
 
-        src_cols, by_name = self._columns, self._by_name
-        if strict:
-            missing = [c for c in col_names if c not in src_cols]
-            if missing:
-                raise ValueError(f"Column(s) not found in source data: {missing}")
-            keep = col_names
-        else:
-            keep = [c for c in col_names if c in src_cols]
+        resolved, missing = self._resolve_names(col_names)
+        if strict and missing:
+            raise ValueError(f"Column(s) not found in source data: {missing}")
+        keep = [c for c in resolved if c is not None]
         if not keep:
             raise ValueError("no columns remain to select")
+        self._check_unique(keep, "Column(s) selected more than once")
 
         output_cls = _shaped_record_class(keep, 'SelectedRecord')
-        keys = keep if by_name else [src_cols.index(c) for c in keep]
-        get = _make_getter(keys)
+        get = _make_getter(keep)
         rows = self._rows
 
         def _gen() -> Iterator['Record']:
             for row in rows:
                 yield output_cls(*get(row))
 
-        return self._chain(_gen(), keep)
+        return self._chain('select', _gen(), output_cls)
 
     def exclude(self, col_names: Iterable[str], strict: bool = True) -> 'RecordShaper':
         """
         Drop columns; source order is preserved for the rest.
 
+        For Record rows, each name may be an original or normalized column
+        name.
+
         Args:
             col_names: Column names to drop. Order doesn't matter; a list,
-                tuple, or set all work.
+                tuple, or set all work. An empty collection is a no-op.
             strict: If True (default), a name not present in the current
                 schema raises ValueError. If False, unknown names are
                 silently ignored.
@@ -1262,89 +1376,165 @@ class RecordShaper:
             RecordShaper: a new stage; this instance is unchanged.
 
         Raises:
-            ValueError: If col_names is empty, dropping them would remove
-                every column, or (strict only) a named column isn't present
-                in the current schema.
+            ValueError: If dropping the named columns would remove every
+                column, or (strict only) a named column isn't present in
+                the current schema.
             TypeError: If column names can't be determined from the row type.
         """
         col_names = list(col_names)
-        if not col_names:
-            raise ValueError("col_names must not be empty")
+        self._check_chainable('exclude')
         self._resolve_schema()
+        if not col_names:
+            return self._passthrough('exclude')
         if self._empty:
-            return self._chain(iter(()), [], empty=True)
+            return self._chain('exclude', iter(()), empty=True)
 
-        src_cols, by_name = self._columns, self._by_name
-        exclude_set = set(col_names)
-        if strict:
-            missing = [c for c in exclude_set if c not in src_cols]
-            if missing:
-                raise ValueError(f"Column(s) not found in source data: {sorted(missing)}")
+        resolved, missing = self._resolve_names(col_names)
+        if strict and missing:
+            raise ValueError(f"Column(s) not found in source data: {sorted(missing)}")
+        src_cols = self._columns
+        exclude_set = {c for c in resolved if c is not None}
         keep = [c for c in src_cols if c not in exclude_set]
         if not keep:
             raise ValueError("excluding these columns would remove every column")
 
         output_cls = _shaped_record_class(keep, 'ExcludedRecord')
-        keys = keep if by_name else [src_cols.index(c) for c in keep]
-        get = _make_getter(keys)
+        get = _make_getter(keep)
         rows = self._rows
 
         def _gen() -> Iterator['Record']:
             for row in rows:
                 yield output_cls(*get(row))
 
-        return self._chain(_gen(), keep)
+        return self._chain('exclude', _gen(), output_cls)
 
-    def rename(self, mapping: Dict[str, str], strict: bool = True) -> 'RecordShaper':
+    def rename(self, mapping: Union[Dict[str, Optional[str]], Callable[[str], Optional[str]]],
+               strict: bool = True) -> 'RecordShaper':
         """
         Rename some columns; everything else passes through unchanged, in
         its original position - this is a pure rename, not a select (use
         ``select()``/``exclude()`` to also narrow the columns).
 
         Args:
-            mapping: Source name -> new name. A falsy value ('' or None) is
-                a no-op for that column (keeps its original name).
-            strict: If True (default), a source name not present in the
-                current schema raises ValueError. If False, such entries are
-                silently ignored (they were already no-ops for the output).
+            mapping: Either a dict of source name -> new name, or a function
+                called once per column with its current (original) name that
+                returns the new name. In both forms a falsy new name (``''``
+                or ``None``) keeps the column's current name. For Record rows,
+                dict keys may be original or normalized column names. An
+                empty dict, or a function that renames nothing, is a no-op.
+                The function runs when ``rename()`` is called, not per row.
+            strict: Dict mappings only. If True (default), a source name not
+                present in the current schema raises ValueError. If False,
+                such entries are silently ignored. Ignored for a function.
 
         Returns:
             RecordShaper: a new stage; this instance is unchanged.
 
         Raises:
-            ValueError: If mapping is empty, or (strict only) a named column
-                isn't present in the current schema.
-            TypeError: If column names can't be determined from the row type.
+            ValueError: If two dict keys name the same column (e.g. by its
+                original and normalized name), two columns would end up with
+                the same name, the function raises (chained to the original
+                exception), or (strict, dict only) a named column isn't
+                present in the current schema.
+            TypeError: If the function returns something other than a str or
+                a falsy value, or column names can't be determined from the
+                row type.
+
+        Examples:
+            >>> RecordShaper(cursor).rename({'signup_date': 'Joined On'})
+
+            >>> # Strip a prefix, whatever its case
+            >>> RecordShaper(reader).rename(
+            ...     lambda c: c[4:] if c.lower().startswith('src_') else None)
         """
-        if not mapping:
-            raise ValueError("mapping must not be empty")
+        self._check_chainable('rename')
         self._resolve_schema()
+        if not callable(mapping) and not mapping:
+            return self._passthrough('rename')
         if self._empty:
-            return self._chain(iter(()), [], empty=True)
+            return self._chain('rename', iter(()), empty=True)
 
-        src_cols, by_name = self._columns, self._by_name
-        if strict:
-            missing = [c for c in mapping if c not in src_cols]
-            if missing:
+        src_cols = self._columns
+        if callable(mapping):
+            output_names = []
+            for col in src_cols:
+                try:
+                    new_name = mapping(col)
+                except Exception as e:
+                    raise ValueError(f"rename function failed on column {col!r}: {e}") from e
+                if new_name and not isinstance(new_name, str):
+                    raise TypeError(
+                        f"rename function returned {new_name!r} ({type(new_name).__name__}) "
+                        f"for column {col!r}; expected a str or a falsy value to keep the name"
+                    )
+                output_names.append(new_name or col)
+        else:
+            keys = list(mapping)
+            resolved, missing = self._resolve_names(keys)
+            if strict and missing:
                 raise ValueError(f"Column(s) not found in source data: {missing}")
+            targets = {}
+            dupes = []
+            for key, col in zip(keys, resolved):
+                if col is None:
+                    continue
+                if col in targets:
+                    dupes.append(col)
+                targets[col] = mapping[key]
+            if dupes:
+                raise ValueError(f"Column(s) named more than once in mapping: {dupes}")
+            output_names = [targets.get(c) or c for c in src_cols]
 
-        output_names = [mapping.get(c) or c for c in src_cols]
+        if output_names == src_cols:
+            return self._passthrough('rename')
+
+        collisions: Dict[str, List[str]] = {}
+        for src, out in zip(src_cols, output_names):
+            collisions.setdefault(out, []).append(src)
+        collisions = {out: srcs for out, srcs in collisions.items() if len(srcs) > 1}
+        if collisions:
+            detail = '; '.join(f"{srcs} -> {out!r}" for out, srcs in collisions.items())
+            raise ValueError(f"rename would give multiple columns the same name: {detail}")
+
         output_cls = _shaped_record_class(output_names, 'RenamedRecord')
-        keys = src_cols if by_name else list(range(len(src_cols)))
-        get = _make_getter(keys)
+        get = _make_getter(src_cols)
         rows = self._rows
 
         def _gen() -> Iterator['Record']:
             for row in rows:
                 yield output_cls(*get(row))
 
-        return self._chain(_gen(), output_names)
+        return self._chain('rename', _gen(), output_cls)
 
-    def __iter__(self) -> Iterator[Any]:
+    def _claim(self) -> None:
+        """Make this stage the lineage's reader, or raise if it can't be."""
+        if self._chained_by is not None:
+            raise RuntimeError(
+                f"{self._chained_by}() was chained from this RecordShaper; "
+                f"iterate the RecordShaper that {self._chained_by}() returned instead."
+            )
+        if self._started:
+            return
         if self._state.consumed:
             raise RuntimeError(
-                "This RecordShaper has already been consumed - a stream can "
-                "only be iterated once, from a single point in its chain."
+                "This RecordShaper's stream is already being read from another "
+                "point in its chain - a stream can only be iterated once, from a "
+                "single point in its chain."
             )
+        # Resolve before handing out rows, so dict/namedtuple sources are
+        # converted and a later `.columns` never has to peek mid-stream.
+        self._resolve_schema()
         self._state.consumed = True
+        self._started = True
+
+    def __iter__(self) -> Iterator[Any]:
+        self._claim()
+        # Hand loops the underlying generator directly, skipping a Python-level
+        # __next__ per row. __next__ pulls from the same generator, so mixing
+        # next() calls and loops stays in step.
         return self._rows
+
+    def __next__(self) -> Any:
+        if not self._started:
+            self._claim()
+        return next(self._rows)

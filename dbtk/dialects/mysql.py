@@ -9,6 +9,9 @@ from ..utils import wrap_at_comma
 class MySQLDialect(DatabaseDialect):
     """MySQL/MariaDB dialect. Uses INSERT … ON DUPLICATE KEY UPDATE."""
 
+    max_name_parts = 2
+    name_parts_hint = "In MySQL a schema is a database, so use database.table."
+
     def upsert_sql(self, table_name: str, cols_str: str, placeholders_str: str,
                    key_cols: List[str], update_cols: List[Tuple]) -> str:
         # MySQL/MariaDB: VALUES(col) syntax works on both MySQL and MariaDB
@@ -32,14 +35,17 @@ class MySQLDialect(DatabaseDialect):
         ON DUPLICATE KEY UPDATE {update_clause}""")
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
+        # In MySQL a schema *is* a database, so `db.table` names the database to look in.
+        _, schema, table_name = self.split_table_name(table_name)
+
         table_comment = None
         if add_comments:
             cmt_query = '''
                 SELECT table_comment
                 FROM information_schema.tables
-                WHERE table_name = %s AND table_schema = DATABASE()
+                WHERE table_name = %s AND table_schema = COALESCE(%s, DATABASE())
             '''
-            cursor.execute(cmt_query, (table_name,))
+            cursor.execute(cmt_query, (table_name, schema))
             row = cursor.fetchone()
             if row and row[0]:
                 table_comment = row[0]
@@ -54,10 +60,10 @@ class MySQLDialect(DatabaseDialect):
                 COALESCE(c.column_comment, '') as comments
             FROM information_schema.columns c
             WHERE c.table_name = %s
-              AND c.table_schema = DATABASE()
+              AND c.table_schema = COALESCE(%s, DATABASE())
             ORDER BY c.ordinal_position
         '''
-        cursor.execute(col_query, (table_name,))
+        cursor.execute(col_query, (table_name, schema))
 
         columns = {}
         column_comments = {}

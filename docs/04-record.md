@@ -312,83 +312,214 @@ same stream directly — most data never needs to live in a list at all. If you 
 column, keep only a few, or rename headers before writing, materializing the whole result set
 into a list just to reshape it throws away that advantage. For a result set with a few thousand
 rows it won't matter; for a multi-million-row export, it's the difference between constant
-memory usage and a program that runs out of it. `dbtk.writers` provides four small generator
-functions that reshape a record stream one row at a time, so filtering, reordering, or renaming
-columns costs nothing beyond what you're already paying to read and write the data.
-
-Each does one job, and they compose freely.
-
-### select_columns — keep some columns, in a given order
+memory usage and a program that runs out of it. `RecordShaper` reshapes a record stream one
+row at a time, so filtering, reordering, or renaming columns costs nothing beyond what you're
+already paying to read and write the data.
 
 ```python
-from dbtk.writers import select_columns
+from dbtk.record import RecordShaper
+```
 
+Wrap any stream of self-describing rows — a cursor, a reader, or an iterable of `Record`,
+dict, or namedtuple rows — and chain the steps you need. Every step is lazy: nothing is read
+from the source until a writer (or your own loop) iterates the result. A `RecordShaper`
+always emits Records: Record rows pass through as-is, and dict or namedtuple rows are
+converted as they're read.
+
+### select() — keep some columns, in a given order
+
+```python
 cursor.execute("SELECT * FROM users")
-writers.to_excel(select_columns(cursor, ['name', 'email', 'signup_date']), 'report.xlsx')
+writers.to_excel(RecordShaper(cursor).select(['name', 'email', 'signup_date']), 'report.xlsx')
 ```
 
 `col_names` is an allow-list; only those columns appear in the output, in the order given.
 
-### exclude_columns — drop some columns, keep the rest
+### exclude() — drop some columns, keep the rest
 
 ```python
-from dbtk.writers import exclude_columns
-
-writers.to_csv(exclude_columns(cursor, ['ssn', 'password_hash']), 'users.csv')
+writers.to_csv(RecordShaper(cursor).exclude(['ssn', 'password_hash']), 'users.csv')
 ```
 
 `col_names` is a block-list — a list, tuple, or set all work, since order never matters for
-exclusion. Everything else passes through in its original order.
+exclusion. Everything else passes through in its original order. An empty list is a no-op,
+so a drop-list built in code doesn't need special handling when it comes out empty.
 
-### rename_columns — relabel some columns, leave the rest alone
+### rename() — relabel some columns, leave the rest alone
 
 ```python
-from dbtk.writers import rename_columns
-
-writers.to_csv(rename_columns(cursor, {'signup_date': 'Joined On'}), 'customers.csv')
+writers.to_csv(RecordShaper(cursor).rename({'signup_date': 'Joined On'}), 'customers.csv')
 ```
 
 `mapping` is a dict of source name -> new name. Only the columns you list are relabeled;
 everything else keeps its original name and position — this is a pure rename, not a select.
 A falsy value (`''` or `None`) is a no-op for that column, so you can build the mapping
-programmatically without filtering out unchanged entries.
+programmatically without filtering out unchanged entries. An empty dict is a no-op too.
 
-### Composing them
-
-`select_columns`, `exclude_columns`, and `rename_columns` all accept and return the same kind
-of self-describing rows, so you can chain them:
+`mapping` can also be a function. It's called once for each column with the column's
+current name and returns the new name, or something falsy to leave the name alone. That's
+the natural fit for pattern-based renames, such as stripping a prefix regardless of its case:
 
 ```python
-writers.to_csv(
-    rename_columns(exclude_columns(cursor, ['ssn']), {'signup_date': 'Joined On'}),
-    'customers.csv',
+shaped = RecordShaper(reader).rename(
+    lambda c: c[4:].lower() if c.lower().startswith('src_') else None
 )
 ```
 
-### tuples_to_records — attach column names to positional data
+The function runs when `rename()` is called, not once per row, so mistakes surface
+immediately. If it raises, you get a `ValueError` naming the column it failed on, with the
+original exception chained. If it returns anything other than a string or a falsy value,
+you get a `TypeError`. `strict` doesn't apply to the function form, since there are no
+names to look up.
 
-`select_columns`, `exclude_columns`, and `rename_columns` all expect self-describing rows —
-cursor results, `Record`, dict, or namedtuple — and infer column names from the first row.
-Plain tuples/lists carry no names of their own, so attach them first:
+`rename()` never silently overwrites a column. If two columns would end up with the same
+name, whether from a dict or a function, it raises `ValueError` listing the columns that
+collide. Swapping two names (`{'a': 'b', 'b': 'a'}`) is fine, since each name still ends up
+on exactly one column.
+
+### Original or normalized names
+
+Records keep two names for each column: the original, exactly as the database or file
+header spelled it, and a normalized form (lowercased, with spaces and punctuation turned
+into underscores) for attribute access; see [Normalized Field Names](#normalized-field-names)
+above. Because a `RecordShaper` works with Records throughout, `select()`, `exclude()`, and
+dict keys passed to `rename()` accept either name, just as `record['...']` does — whether the
+source rows were Records, dicts, or namedtuples:
 
 ```python
-from dbtk.record import tuples_to_records
-# also available as: from dbtk.writers import tuples_to_records
+# Source header: ssn, Start Year, AMT_Total
+shaped = RecordShaper(reader).select(['ssn', 'start_year', 'amt_total'])
+shaped.columns   # ['ssn', 'Start Year', 'AMT_Total']
+```
 
-records = tuples_to_records(rows, ['id', 'name', 'email'])
+The output always keeps the original column names; only `rename()` changes a name. If a name
+matches one column's original name and another column's normalized name, the original-name
+match wins. Naming the same column twice, for example once by each spelling, raises
+`ValueError` rather than producing a duplicate column.
+
+### Chaining
+
+Each call returns a new `RecordShaper`, so steps chain left to right in the order they run:
+
+```python
+shaped = (RecordShaper(cursor)
+          .exclude(['ssn'])
+          .rename({'signup_date': 'Joined On'}))
+writers.to_csv(shaped, 'customers.csv')
+```
+
+Column names are validated eagerly, when each step is added, against the schema *at that
+point in the chain* — not the original source. After a rename, refer to the column by its
+new name:
+
+```python
+RecordShaper(cursor).rename({'signup_date': 'joined'}).select(['name', 'joined'])  # works
+RecordShaper(cursor).rename({'signup_date': 'joined'}).select(['signup_date'])     # ValueError
+```
+
+To check the schema yourself, read `.columns`; it returns the column names as of that step.
+Getting them may peek at the first row, but that row isn't lost, and iterating the stream
+afterward still yields it.
+
+### strict — tolerating missing columns
+
+By default, naming a column that isn't in the stream raises `ValueError` — a typo should fail
+loudly, not silently produce a file missing a column. Pass `strict=False` to `select()`,
+`exclude()`, or `rename()` to skip absent names instead. That's useful when one column list or
+mapping has to work against sources that may or may not carry a given column:
+
+```python
+# Works whether or not this particular extract includes the ssn column
+writers.to_csv(RecordShaper(cursor).exclude(['ssn'], strict=False), 'users.csv')
+
+# Same mapping for the full extract and a trimmed-down one that lacks region_cd
+mapping = {'cust_no': 'customer_id', 'region_cd': 'region'}
+writers.to_csv(RecordShaper(cursor).rename(mapping, strict=False), 'customers.csv')
+```
+
+Even with `strict=False`, a `select()` or `exclude()` that would leave zero columns raises
+`ValueError`.
+
+### from_tuples() — attach column names to positional data
+
+`select()`, `exclude()`, and `rename()` infer column names from the first row, which only works
+for self-describing rows. Plain tuples/lists carry no names of their own, so start from
+`RecordShaper.from_tuples()` instead and name the positions:
+
+```python
+records = RecordShaper.from_tuples(rows, ['id', 'name', 'email'])
 ```
 
 Pass a falsy entry (`None` or `''`) at any position to drop that column entirely instead of
-naming it — handy for filler/padding data you never want to carry forward:
+naming it — handy for filler/padding data you never want to carry forward. The result chains
+like any other `RecordShaper`:
 
 ```python
-records = tuples_to_records(rows, ['id', 'name', None, 'email'])  # 3rd position dropped
-writers.to_csv(select_columns(records, ['name', 'email']), 'users.csv')
+shaped = RecordShaper.from_tuples(rows, ['id', 'name', None, 'email']).select(['name', 'email'])
+writers.to_csv(shaped, 'users.csv')
 ```
 
-All four functions build one Record subclass up front, using the same shared-class pattern
-described in [Performance Note](#performance-note) above, and reuse it for every row — so
-reshaping a stream stays cheap no matter how many rows pass through it.
+A row whose length doesn't match `columns` raises `ValueError` when it's reached.
+
+This is also how to hand positional data to a writer at all. Writers no longer accept a
+`columns=` parameter, and positional rows with no names raise `TypeError` wherever the writer
+would need to display column names.
+
+### Stepping through rows
+
+A `RecordShaper` is an iterator, like DBTK's readers and cursors, so you can pull rows one at
+a time while testing a pipeline, without materializing the stream:
+
+```python
+shaped = RecordShaper(reader).rename(lambda c: c[4:] if c.lower().startswith('src_') else None)
+next(shaped)            # first row
+next(shaped)            # second row
+for row in shaped:      # picks up at the third row
+    ...
+```
+
+`itertools.islice(shaped, 5)` grabs the next five. Once a `RecordShaper` is exhausted it
+yields nothing more, the same as a reader.
+
+### Keep the result of each call
+
+`select()`, `exclude()`, and `rename()` return a *new* `RecordShaper`; the one you called them
+on is retired. Iterating a retired step raises `RuntimeError`, which catches the easy mistake
+of calling a method without keeping its result:
+
+```python
+records = RecordShaper(reader)
+records.rename(col_map)              # result discarded
+writers.to_csv(records, 'out.csv')   # RuntimeError: rename() was chained from this RecordShaper...
+
+records = records.rename(col_map)    # keep it
+writers.to_csv(records, 'out.csv')   # works
+```
+
+`.columns` still works on a retired step. Chain every step before you start reading; calling
+`select()`, `exclude()`, or `rename()` once rows have been read raises `RuntimeError` too.
+
+### One pass only
+
+A `RecordShaper` wraps a stream, and a stream can only be read once. Once one step in a chain
+starts reading, iterating or calling `next()` on any other step raises `RuntimeError` rather
+than quietly returning partial results:
+
+```python
+base = RecordShaper(cursor)
+names = base.select(['name'])
+emails = base.select(['email'])
+
+writers.to_csv(names, 'names.csv')    # consumes the cursor
+writers.to_csv(emails, 'emails.csv')  # RuntimeError - the cursor is already drained
+```
+
+If you need two differently-shaped outputs, re-run the query (or re-open the reader) for
+the second one.
+
+Every step builds one Record subclass up front, using the same shared-class pattern described
+in [Performance Note](#performance-note) above, and reuses it for every row — so reshaping a
+stream stays cheap no matter how many rows pass through it.
 
 ## FixedWidthRecord
 

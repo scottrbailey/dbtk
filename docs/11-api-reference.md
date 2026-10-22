@@ -346,7 +346,7 @@ Located in `dbtk.writers`. Full guide: [Data Writers](06-writers.md). All writer
 
 ### Common Parameters
 
-File-based writers share `data=None`, `file=None`, `columns=None`, `encoding='utf-8'`; `CSVWriter`/`ExcelWriter` add `headers=None`, `write_headers=True`; most add `compression='infer'`.
+File-based writers share `data=None`, `file=None`, `encoding='utf-8'`; `CSVWriter`/`ExcelWriter` add `headers=None`, `write_headers=True`; most add `compression='infer'`.
 See [Common Writer Parameters](06-writers.md#common-writer-parameters) for the full breakdown.
 
 ### Writer Functions
@@ -371,21 +371,26 @@ to_edi(data, columns, file=None, encoding='utf-8', truncate_overflow=False)
 ```
 Details: [Fixed-Width Files](06-writers.md#fixed-width-files-with-fixedwidthwriter), [EDI](06-writers.md#edi-electronic-data-interchange-fixed-width-with-ediwriter)
 
-### select_columns / exclude_columns / rename_columns
+### RecordShaper
 
 ```python
-select_columns(rows, col_names)     # allow-list (list), also sets output order
-exclude_columns(rows, col_names)    # block-list (list/tuple/set), source order preserved
-rename_columns(rows, mapping)       # dict source->new name; unlisted columns pass through unchanged
+from dbtk.record import RecordShaper
+
+RecordShaper(rows)                                  # wrap a cursor/reader/iterable of Record, dict, or namedtuple
+RecordShaper.from_tuples(rows, columns)             # name positional rows; a falsy entry drops that position
+    .select(col_names, strict=True)                 # allow-list (list), also sets output order
+    .exclude(col_names, strict=True)                # block-list (list/tuple/set), source order preserved; empty = no-op
+    .rename(mapping, strict=True)                   # dict source->new name, or fn(name) -> new name; falsy keeps the name
+    .columns                                        # column names as of this step
 ```
-Lazily reshape a row stream (cursors, `Record`, dict, namedtuple) before it reaches a writer, composing freely (`rename_columns(exclude_columns(rows, [...]), {...})`). For raw list/tuple rows, convert first with `tuples_to_records(rows, columns)` (in `dbtk.record`, re-exported from `dbtk.writers`) — a falsy entry in `columns` drops that position instead of naming it. Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
+Lazily reshape a row stream before it reaches a writer. Each call returns a new `RecordShaper`, so steps chain (`RecordShaper(cursor).exclude([...]).rename({...})`). Column names are validated eagerly against the schema at that point in the chain; `strict=False` skips names that aren't present instead of raising `ValueError`. For Record rows, names may be original or normalized (`'Start Year'` or `'start_year'`); output keeps the original names. `rename()` raises `ValueError` rather than give two columns the same name. `RecordShaper` is a single-pass iterator: `next()` returns one row, and loops continue where `next()` left off. Once one step starts reading, any other step in the chain raises `RuntimeError`, as does iterating a step that a method was chained from (a discarded result). Details: [Working with Streaming Records](04-record.md#working-with-streaming-records).
 
 ### XMLStreamer
 
 For large XML exports — writes incrementally, constant memory:
 
 ```python
-XMLStreamer(data=None, file=None, columns=None, encoding='utf-8', root_element='data', record_element='record')
+XMLStreamer(data=None, file=None, encoding='utf-8', root_element='data', record_element='record')
 # write_batch(records), close()
 ```
 Details: [Streaming XML with XMLStreamer](06-writers.md#streaming-xml-with-xmlstreamer).
@@ -638,10 +643,21 @@ encrypt_config_file(path)           # Encrypt passwords in config
 ```python
 from dbtk import setup_logging, cleanup_old_logs, errors_logged
 
-setup_logging(name=None, log_dir='./logs', level='INFO', **kwargs)
-cleanup_old_logs(log_dir='./logs', retention_days=30, dry_run=False)
+setup_logging(script_name=None, log_dir=None, level=None, split_errors=None,
+               console=None, format=None, timestamp_format=None, filename_format=None)
+cleanup_old_logs(log_dir=None, pattern='*.log', dry_run=False)  # retention_days is config-only
 errors_logged()  # Returns error log path or None
 ```
+
+### File Expiry
+
+```python
+from dbtk.utils import expire_files
+
+expire_files(src_dir, days_old, pattern='*', archive_dir=None, dry_run=False)
+# archive_dir=None -> delete matching files older than days_old; given -> move them there instead
+```
+Details: [Expiring Old Files](10-advanced.md#expiring-old-files).
 
 ### Column Definition Generator
 

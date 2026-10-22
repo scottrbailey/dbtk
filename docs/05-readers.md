@@ -459,7 +459,7 @@ with DataFrameReader(df) as reader:
     surge.insert(reader)
 ```
 
-`DataFrameReader` iterates whatever `df` supports (`iter_rows(named=True)` for polars, `itertuples()`/`to_dict('records')`-style access for pandas) and wraps each row as a `Record`, so it composes with `add_filter()`, `select_columns()`, and every writer exactly like a cursor or file reader.
+`DataFrameReader` iterates whatever `df` supports (`iter_rows(named=True)` for polars, `itertuples()`/`to_dict('records')`-style access for pandas) and wraps each row as a `Record`, so it composes with `add_filter()`, `RecordShaper`, and every writer exactly like a cursor or file reader.
 
 ---
 

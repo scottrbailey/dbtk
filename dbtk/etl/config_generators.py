@@ -19,7 +19,10 @@ def column_defs_from_db(cursor, table_name: str, add_comments: bool = False) -> 
 
     Args:
         cursor: Database cursor (any cursor type)
-        table_name: Name of table to analyze (supports schema.table format)
+        table_name: Name of table to analyze: ``table``, ``schema.table``, or
+            ``database.schema.table`` where the database allows it (SQL Server; on
+            PostgreSQL only the connected database). Unqualified names resolve the
+            way the database would resolve them in a query.
         add_comments: Include table/column comments from database metadata
 
     Returns:

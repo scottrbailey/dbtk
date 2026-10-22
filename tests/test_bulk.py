@@ -1290,3 +1290,38 @@ class TestBulkSurgePostgresRollback:
         fresh_cur.execute("SELECT * FROM bulk_rollback_test")
         assert fresh_cur.fetchall() == []
         fresh_db.close()
+
+
+class TestBulkSurgeOracleDirectTableName:
+    """_load_oracle_direct() schema/table parsing, exercised without a live Oracle connection."""
+
+    @staticmethod
+    def _fake_surge(table_name: str):
+        from unittest.mock import MagicMock
+        from dbtk.dialects import OracleDialect
+        surge = MagicMock()
+        surge.cursor.connection.dialect = OracleDialect()
+        surge.table.name = table_name
+        surge._get_columns.return_value = ['id', 'name']
+        surge.batched.return_value = [[(1, 'Zuko')]]
+        surge.batch_size = 1000
+        return surge
+
+    def test_schema_and_table_passed_to_direct_path_load(self):
+        surge = self._fake_surge('ozai.fire_nation')
+        BulkSurge._load_oracle_direct(surge, [])
+
+        kwargs = surge.cursor.connection.direct_path_load.call_args.kwargs
+        assert kwargs['schema_name'] == 'ozai'
+        assert kwargs['table_name'] == 'fire_nation'
+
+    def test_three_part_name_raises(self):
+        # Oracle has no database.schema.table names
+        surge = self._fake_surge('caldera.ozai.fire_nation')
+        with pytest.raises(ValueError, match='database link'):
+            BulkSurge._load_oracle_direct(surge, [])
+
+    def test_unqualified_name_raises(self):
+        surge = self._fake_surge('fire_nation')
+        with pytest.raises(ValueError, match=r'\[schema\]\.\[table\]'):
+            BulkSurge._load_oracle_direct(surge, [])

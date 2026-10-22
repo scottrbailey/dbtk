@@ -69,7 +69,7 @@ Readers
 -------
 
 .. automodule:: dbtk.readers.utils
-   :members: get_reader
+   :members:
    :show-inheritance:
 
 .. automodule:: dbtk.readers.base
@@ -115,10 +115,6 @@ Writers
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: dbtk.writers.utils
-   :members: select_columns, exclude_columns, rename_columns
-   :show-inheritance:
-
 .. automodule:: dbtk.writers.csv
    :members:
    :undoc-members:
@@ -153,14 +149,18 @@ Utilities
 ---------
 
 .. automodule:: dbtk.utils
-   :members: ErrorDetail, FixedColumn, ParamStyle
-   :undoc-members:
+   :members:
    :show-inheritance:
 
 ETL
 -----------
 
 .. automodule:: dbtk.etl.table
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: dbtk.etl.base_surge
    :members:
    :undoc-members:
    :show-inheritance:

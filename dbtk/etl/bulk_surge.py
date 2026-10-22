@@ -418,10 +418,8 @@ class BulkSurge(BaseSurge):
         _ = self.table.get_sql('insert')
         cols = self._get_columns('insert')
 
-        tabname = self.table.name.split('.')
-        if len(tabname) == 2:
-            schema, table_name = tabname
-        else:
+        _, schema, table_name = self.cursor.connection.dialect.split_table_name(self.table.name)
+        if schema is None:
             raise ValueError("Schema is required, use [schema].[table] format")
 
         # Check if driver supports direct_path_load

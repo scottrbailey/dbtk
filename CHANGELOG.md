@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.1] - 2026-10-22
+
+### Added
+
+- **`dbtk.utils.expire_files(src_dir, days_old, pattern='*', archive_dir=None, dry_run=False)`**
+  — general-purpose delete-or-archive-by-age utility for the "clear out files past a
+  retention window" pattern that integration jobs end up hand-rolling over and over.
+  Without `archive_dir`, matching files older than `days_old` are deleted; with it,
+  they're moved there instead (a name collision at the destination leaves the source
+  file in place rather than overwriting). `dbtk.cleanup_old_logs()` is now a thin
+  wrapper around this function.
+
+- **`setup_logging()` gained `format`, `timestamp_format`, and `filename_format`
+  keyword arguments** — previously these three `logging.*` config settings could only
+  be set in `dbtk.yml`, with no way to override them per-script like the other five
+  settings (`log_dir`, `level`, `split_errors`, `console`, plus the new `script_name`).
+ 
+- **Generalized encrypted parameter support** — any connection config key prefixed with
+  `encrypted_` is now decrypted at connection time and stored under the bare key name
+  (e.g. `encrypted_private_key_file_pwd` → `private_key_file_pwd`). Previously only
+  `encrypted_password` was handled. `migrate_config()` re-encrypts all such keys, and
+  `_validate_connection_params(config_only=True)` keeps them without warnings. Note that
+  `encrypt_config_file()` still only encrypts `password`; other values must be encrypted
+  with `encrypt_password()` and added to the config by hand.
+
+### Changed
+
+- **`RecordShaper` always emits Records** — dict and namedtuple rows are converted to
+  Records as they're read, so a bare `RecordShaper`, a no-op step, and a step that changes
+  something all yield the same type. Record rows pass through untouched. Plain tuples now
+  raise `TypeError` (pointing at `from_tuples()`) as soon as iteration starts, even with no
+  method called.
+
+- **`RecordShaper` matches original or normalized column names** — `select()`,
+  `exclude()`, and `rename()` dict keys now accept either form, the same way
+  `record['...']` does. Previously only original names matched, so a column named
+  `Start Year` couldn't be selected as `start_year`. An exact original-name match wins over
+  a normalized one, and output columns keep their original names.
+
+- **`RecordShaper.rename()` accepts a function** — `rename(fn)` calls `fn` once per column
+  with its current name and uses the returned name, or keeps the name if the result is
+  falsy. The function runs when `rename()` is called, not per row. An exception from it is
+  re-raised as `ValueError` naming the column, and a non-string, truthy return value raises
+  `TypeError`.
+
+- **`RecordShaper` is now an iterator** — `next(shaper)` returns one row at a time, and a
+  `for` loop continues where `next()` left off, matching readers and cursors. An exhausted
+  `RecordShaper` now yields nothing on a second pass instead of raising. Other steps in the
+  same chain still raise `RuntimeError` once one step has started reading.
+
+- **`RecordShaper` retires a step once a method is chained from it** — iterating a step
+  that `select()`/`exclude()`/`rename()` was called on raises `RuntimeError` naming the
+  method, so `shaper.rename(...)` without keeping the result fails loudly instead of
+  silently writing un-renamed data. Calling those methods after reading has started also
+  raises. `.columns` still works on a retired step.
+
+- **`RecordShaper.rename({})` and `exclude([])` are now no-ops** instead of raising
+  `ValueError`, so mappings and drop-lists built in code don't need an emptiness check.
+  `select([])` still raises.
+
+- **`RecordShaper` raises instead of silently de-duplicating column names** — a `rename()`
+  that would give two columns the same name, a `select()` that names the same column twice,
+  or a `rename()` mapping with two keys for the same column now raises `ValueError`.
+  Previously the output Record class renamed the duplicate to `name_2` and logged a warning.
+
+- **`cleanup_old_logs()` no longer accepts a `retention_days` parameter.** Retention is
+  now config-only (`logging.retention_days` in `dbtk.yml`, default 30) — a per-script
+  override made it too easy for one job to quietly shorten everyone else's log
+  retention. `setup_logging()` never accepted `retention_days` and still doesn't.
+
+### Fixed
+
+- **Dotted table names in `table_metadata()` / `column_defs_from_db()`** — all four
+  dialects now parse names through one shared `DatabaseDialect.split_table_name()`:
+  - **SQL Server** supports `schema.table` and `database.schema.table`; a three-part name
+    reads that database's catalog views (`[db].information_schema...`, `[db].sys...`).
+    Previously a dotted name was passed through whole and found no columns.
+  - **PostgreSQL** supports `schema.table`, and `database.schema.table` when the database
+    is the one you're connected to; any other database raises `ValueError`, since
+    PostgreSQL can't read another database's catalog over the same connection.
+    Previously a three-part name lost its schema entirely.
+  - **MySQL** supports `database.table` (in MySQL a schema is a database). **Oracle**
+    supports `schema.table`. Both raise `ValueError` for longer names, as does
+    BulkSurge's Oracle direct-path load. Previously SQL Server and MySQL passed dotted
+    names through whole.
+  - Unqualified names are resolved the way the database itself would resolve them in a
+    query — PostgreSQL through `search_path` (`to_regclass()`), SQL Server through the
+    user's default schema and then `dbo` (`OBJECT_ID()`) — instead of matching a table of
+    that name in every schema. A table that isn't found that way still falls back to
+    matching any schema.
+
+- **Same-named tables in different schemas no longer cross-match** — the PostgreSQL and
+  SQL Server column queries joined primary-key constraints and the system catalogs on
+  table name only. With `public.users` and `audit.users` both present, metadata for one
+  could pick up the other's columns, primary-key flags, and column comments. Every join
+  now matches on schema as well.
+
+- **`Table.get_column_definitions()` now quotes the table name** with `quote_identifier()`,
+  matching every other SQL statement `Table` generates. A name that needs quoting
+  (spaces, mixed case) previously failed in the introspection query.
+
+
+### Documentation
+
+- **RecordShaper documented in place of the removed column-shaping functions** — the
+  "Working with Streaming Records" guide, readers/writers guides, and API reference still
+  described `select_columns()`/`exclude_columns()`/`rename_columns()`/`tuples_to_records()`
+  after their 0.9.0 removal. They now cover `RecordShaper`, including `strict=False` and
+  single-pass behavior. The removed `columns=` writer parameter was also dropped from the
+  documented signatures.
+---
+
 ## [0.9.0] - 2026-10-13
 
 ### Added
@@ -27,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dbtk.__init__` — it's a reach-for-it-when-needed tool, not a default-path
   one; import via `dbtk.record.RecordShaper`.
 
-## [0.9.0] - 2026-10-13
+### Changed
 
 - **`_row_num` on readers now reflects true source-file position** — previously
   computed as `skip_rows + <count of records that passed filters>`, which only
