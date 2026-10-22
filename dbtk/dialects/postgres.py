@@ -6,9 +6,31 @@ class PostgresDialect(DatabaseDialect):
     """PostgreSQL dialect. Inherits ON CONFLICT upsert and MERGE template from base."""
 
     def table_metadata(self, cursor, table_name: str, add_comments: bool) -> dict:
-        parts = table_name.lower().split('.')
-        schema = parts[-2] if len(parts) >= 2 else None
-        table_name = parts[-1]
+        database, schema, table_name = self.split_table_name(table_name.lower())
+
+        if database is not None:
+            # PostgreSQL can't read another database's catalog over this connection.
+            cursor.execute('SELECT current_database()')
+            current = cursor.fetchone()[0]
+            if database != current.lower():
+                raise ValueError(
+                    f"Can't read table metadata for {database}.{schema}.{table_name} while "
+                    f"connected to database {current!r}; PostgreSQL has no cross-database "
+                    "catalog access. Connect to that database instead."
+                )
+
+        if schema is None:
+            # Resolve an unqualified name the way a query would: through search_path.
+            # Falls back to matching any schema if the table isn't on the search path.
+            cursor.execute('''
+                SELECT n.nspname
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.oid = to_regclass(quote_ident(%(table_name)s))
+            ''', {'table_name': table_name})
+            row = cursor.fetchone()
+            if row:
+                schema = row[0]
 
         table_comment = None
         if add_comments:
@@ -24,26 +46,35 @@ class PostgresDialect(DatabaseDialect):
             if row and row[0]:
                 table_comment = row[0]
 
+        # Every join matches on schema as well as name, so same-named tables in
+        # different schemas can't borrow each other's primary keys or comments.
         col_query = '''
             SELECT
                 c.column_name,
                 c.data_type,
                 c.numeric_scale,
                 c.is_nullable,
-                CASE WHEN kcu.column_name IS NOT NULL THEN 'Y' ELSE 'N' END as key_column,
+                CASE WHEN pk.column_name IS NOT NULL THEN 'Y' ELSE 'N' END as key_column,
                 COALESCE(col_description(pgc.oid, c.ordinal_position), '') as comments
             FROM information_schema.columns c
-            LEFT JOIN information_schema.table_constraints tc
-                ON c.table_name = tc.table_name
-                AND tc.constraint_type = 'PRIMARY KEY'
-            LEFT JOIN information_schema.key_column_usage kcu
-                ON c.column_name = kcu.column_name
-                AND c.table_name = kcu.table_name
-                AND tc.constraint_name = kcu.constraint_name
-            LEFT JOIN pg_class pgc ON pgc.relname = c.table_name
+            LEFT JOIN (
+                SELECT kcu.table_schema, kcu.table_name, kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON kcu.constraint_schema = tc.constraint_schema
+                    AND kcu.constraint_name = tc.constraint_name
+                    AND kcu.table_name = tc.table_name
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+            ) pk ON pk.table_schema = c.table_schema
+                AND pk.table_name = c.table_name
+                AND pk.column_name = c.column_name
+            LEFT JOIN pg_namespace pgn ON pgn.nspname = c.table_schema
+            LEFT JOIN pg_class pgc
+                ON pgc.relname = c.table_name
+                AND pgc.relnamespace = pgn.oid
             WHERE c.table_name = %(table_name)s
               AND c.table_schema = COALESCE(%(schema)s::varchar, c.table_schema)
-            ORDER BY c.ordinal_position
+            ORDER BY c.table_schema, c.ordinal_position
         '''
         cursor.execute(col_query, {'table_name': table_name, 'schema': schema})
 

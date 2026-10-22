@@ -212,3 +212,22 @@ class TestExpireFiles:
 
         assert result == []
         assert recent_file.exists()
+
+    def test_file_vanishing_mid_sweep_is_skipped(self, tmp_path, monkeypatch):
+        """A file removed between glob() and stat() must not abort the rest of the sweep."""
+        from pathlib import Path
+
+        ghost = tmp_path / 'ghost.txt'   # never created: stat() raises FileNotFoundError
+        old_file = tmp_path / 'old.txt'
+        old_file.write_text('old')
+        _age_file(old_file, days=10)
+
+        real_glob = Path.glob
+        real_is_file = Path.is_file
+        monkeypatch.setattr(Path, 'glob', lambda self, pat: iter([ghost, *real_glob(self, pat)]))
+        monkeypatch.setattr(Path, 'is_file', lambda self: True if self == ghost else real_is_file(self))
+
+        result = expire_files(str(tmp_path), days_old=5)
+
+        assert result == [str(old_file)]
+        assert not old_file.exists()

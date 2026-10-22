@@ -34,12 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`RecordShaper` matches original or normalized column names for Record rows** —
-  `select()`, `exclude()`, and `rename()` dict keys now accept either form, the same way
+- **`RecordShaper` always emits Records** — dict and namedtuple rows are converted to
+  Records as they're read, so a bare `RecordShaper`, a no-op step, and a step that changes
+  something all yield the same type. Record rows pass through untouched. Plain tuples now
+  raise `TypeError` (pointing at `from_tuples()`) as soon as iteration starts, even with no
+  method called.
+
+- **`RecordShaper` matches original or normalized column names** — `select()`,
+  `exclude()`, and `rename()` dict keys now accept either form, the same way
   `record['...']` does. Previously only original names matched, so a column named
-  `perdtot_EMPR_AMT` couldn't be selected or renamed as `perdtot_empr_amt`. An exact
-  original-name match wins over a normalized one, and output columns keep their original
-  names. Plain dict and namedtuple sources still match exact keys only.
+  `Start Year` couldn't be selected as `start_year`. An exact original-name match wins over
+  a normalized one, and output columns keep their original names.
 
 - **`RecordShaper.rename()` accepts a function** — `rename(fn)` calls `fn` once per column
   with its current name and uses the returned name, or keeps the name if the result is
@@ -67,33 +72,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a `rename()` mapping with two keys for the same column now raises `ValueError`.
   Previously the output Record class renamed the duplicate to `name_2` and logged a warning.
 
-### Fixed
-
-- **Three-part table names (`db.schema.table`)** — `PostgresDialect` and `OracleDialect`
-  `table_metadata()` and BulkSurge's Oracle direct-path load previously required exactly
-  two parts to recognize a schema, so a three-part name lost its schema entirely. They now
-  take the last two parts as schema and table. The database part is not used for lookup;
-  metadata comes from whichever database the connection is attached to.
-
-- **SQL Server and MySQL `table_metadata()` now understand dotted names** — previously
-  they passed the whole string (e.g. `dbo.users`) through as the table name and found no
-  columns. SQL Server takes the last two parts as schema and table, and its column query
-  now joins primary keys and `sys.tables` on schema as well as name, so same-named tables
-  in different schemas no longer cross-match. MySQL treats `db.table` as database and
-  table, falling back to `DATABASE()` when unqualified. Neither dialect folds case, so
-  names are matched as given.
-
-- **`Table.get_column_definitions()` now quotes the table name** with `quote_identifier()`,
-  matching every other SQL statement `Table` generates. A name that needs quoting
-  (spaces, mixed case) previously failed in the introspection query.
-
-
-### Changed
-
 - **`cleanup_old_logs()` no longer accepts a `retention_days` parameter.** Retention is
   now config-only (`logging.retention_days` in `dbtk.yml`, default 30) — a per-script
   override made it too easy for one job to quietly shorten everyone else's log
   retention. `setup_logging()` never accepted `retention_days` and still doesn't.
+
+### Fixed
+
+- **Dotted table names in `table_metadata()` / `column_defs_from_db()`** — all four
+  dialects now parse names through one shared `DatabaseDialect.split_table_name()`:
+  - **SQL Server** supports `schema.table` and `database.schema.table`; a three-part name
+    reads that database's catalog views (`[db].information_schema...`, `[db].sys...`).
+    Previously a dotted name was passed through whole and found no columns.
+  - **PostgreSQL** supports `schema.table`, and `database.schema.table` when the database
+    is the one you're connected to; any other database raises `ValueError`, since
+    PostgreSQL can't read another database's catalog over the same connection.
+    Previously a three-part name lost its schema entirely.
+  - **MySQL** supports `database.table` (in MySQL a schema is a database). **Oracle**
+    supports `schema.table`. Both raise `ValueError` for longer names, as does
+    BulkSurge's Oracle direct-path load. Previously SQL Server and MySQL passed dotted
+    names through whole.
+  - Unqualified names are resolved the way the database itself would resolve them in a
+    query — PostgreSQL through `search_path` (`to_regclass()`), SQL Server through the
+    user's default schema and then `dbo` (`OBJECT_ID()`) — instead of matching a table of
+    that name in every schema. A table that isn't found that way still falls back to
+    matching any schema.
+
+- **Same-named tables in different schemas no longer cross-match** — the PostgreSQL and
+  SQL Server column queries joined primary-key constraints and the system catalogs on
+  table name only. With `public.users` and `audit.users` both present, metadata for one
+  could pick up the other's columns, primary-key flags, and column comments. Every join
+  now matches on schema as well.
+
+- **`Table.get_column_definitions()` now quotes the table name** with `quote_identifier()`,
+  matching every other SQL statement `Table` generates. A name that needs quoting
+  (spaces, mixed case) previously failed in the introspection query.
 
 
 ### Documentation
@@ -126,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dbtk.__init__` — it's a reach-for-it-when-needed tool, not a default-path
   one; import via `dbtk.record.RecordShaper`.
 
-## [0.9.0] - 2026-10-13
+### Changed
 
 - **`_row_num` on readers now reflects true source-file position** — previously
   computed as `skip_rows + <count of records that passed filters>`, which only
